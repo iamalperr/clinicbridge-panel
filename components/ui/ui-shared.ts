@@ -8,6 +8,7 @@ export const UI_COLORS = {
   textMuted: "var(--text-muted)",
   bgCard: "var(--bg-card)",
   bgInput: "var(--bg-input)",
+  bgPage: "var(--bg-app)",
   brand: "var(--brand)",
 };
 

@@ -107,7 +107,7 @@ export default function AITestModal({ isOpen, onClose, clinicId, settings }: AIT
             flex: 1,
             overflowY: "auto",
             padding: "16px",
-            background: "var(--bg-page)",
+            background: UI_COLORS.bgPage,
             borderRadius: 12,
             border: `1px solid ${UI_COLORS.border}`,
             display: "flex",

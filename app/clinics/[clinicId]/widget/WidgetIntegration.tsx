@@ -74,7 +74,7 @@ export default function WidgetIntegration({ clinicId }: WidgetIntegrationProps) 
             {copiedCode ? (t("widget.copied") || "Copied!") : (t("widget.copyCode") || "Copy Code")}
           </button>
         </div>
-        <div style={{ padding: 20, background: "var(--bg-page)" }}>
+        <div style={{ padding: 20, background: UI_COLORS.bgPage }}>
           <p style={{ fontSize: 13, color: UI_COLORS.textSecondary, marginBottom: 12 }}>
             {t("widget.installNote") || "Paste this code before the closing </body> tag on your website."}
           </p>
