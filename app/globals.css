@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+:root {
+  /* GLOBAL TOKENS - LIGHT MODE */
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --border-color: #e2e8f0;
+  --muted: #64748b;
+  --muted-bg: #f1f5f9;
+  
+  --primary: #6366f1;
+  --secondary: #f1f5f9;
+  --secondary-fg: #475569;
+  
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+
+  /* BADGE TOKENS */
+  --badge-active-bg: rgba(16, 185, 129, 0.15);
+  --badge-active-fg: #059669; /* deeper green for light mode readability */
+  --badge-inactive-bg: rgba(15, 23, 42, 0.08); /* gray transparent */
+  --badge-inactive-fg: #64748b;
+  --badge-trial-bg: rgba(245, 158, 11, 0.15);
+  --badge-trial-fg: #d97706;
+  --badge-pro-bg: rgba(99, 102, 241, 0.15);
+  --badge-pro-fg: #4f46e5;
+  --badge-enterprise-bg: rgba(168, 85, 247, 0.15);
+  --badge-enterprise-fg: #9333ea;
+  --badge-failed-bg: rgba(239, 68, 68, 0.15);
+  --badge-failed-fg: #dc2626;
+  --badge-open-bg: rgba(59, 130, 246, 0.15);
+  --badge-open-fg: #2563eb;
+
+  /* BACKWARDS COMPATIBILITY MAPPINGS */
+  --bg-app: var(--background);
+  --bg-surface: var(--secondary);
+  --bg-card: var(--card);
+  --bg-card-hover: #f8fafc;
+  --bg-sidebar: #ffffff;
+  --bg-input: rgba(0, 0, 0, 0.04);
+
+  --brand: var(--primary);
+  --brand-light: #818cf8;
+  --brand-dark: #4f46e5;
+  --brand-subtle: rgba(99, 102, 241, 0.09);
+
+  --border: var(--border-color);
+  --border-hover: #cbd5e1;
+  --border-brand: rgba(99, 102, 241, 0.3);
+
+  --text-primary: var(--foreground);
+  --text-secondary: var(--secondary-fg);
+  --text-muted: var(--muted);
+
+  --sidebar-w: 220px;
+  --topbar-h: 56px;
+  --radius: 12px;
+}
+
+.dark {
+  /* GLOBAL TOKENS - DARK MODE */
+  --background: #05090f;
+  --foreground: #dde5f0;
+  --card: #0c1421;
+  --border-color: rgba(255, 255, 255, 0.07);
+  --muted: #3f5068;
+  --muted-bg: #101927;
+  
+  --primary: #6366f1;
+  --secondary: #080e1a;
+  --secondary-fg: #7a8ba8;
+  
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+
+  /* BADGE TOKENS */
+  --badge-active-bg: rgba(16, 185, 129, 0.12);
+  --badge-active-fg: #34d399;
+  --badge-inactive-bg: rgba(255, 255, 255, 0.06);
+  --badge-inactive-fg: #7a8ba8;
+  --badge-trial-bg: rgba(245, 158, 11, 0.12);
+  --badge-trial-fg: #fbbf24;
+  --badge-pro-bg: rgba(99, 102, 241, 0.14);
+  --badge-pro-fg: #a5b4fc;
+  --badge-enterprise-bg: rgba(168, 85, 247, 0.14);
+  --badge-enterprise-fg: #c084fc;
+  --badge-failed-bg: rgba(239, 68, 68, 0.12);
+  --badge-failed-fg: #f87171;
+  --badge-open-bg: rgba(59, 130, 246, 0.12);
+  --badge-open-fg: #60a5fa;
+
+  /* BACKWARDS COMPATIBILITY MAPPINGS */
+  --bg-app: var(--background);
+  --bg-surface: var(--secondary);
+  --bg-card: var(--card);
+  --bg-card-hover: var(--muted-bg);
+  --bg-sidebar: #060b15;
+  --bg-input: rgba(255, 255, 255, 0.04);
+
+  --brand: var(--primary);
+  --brand-light: #818cf8;
+  --brand-dark: #4f46e5;
+  --brand-subtle: rgba(99, 102, 241, 0.09);
+
+  --border: var(--border-color);
+  --border-hover: rgba(255, 255, 255, 0.12);
+  --border-brand: rgba(99, 102, 241, 0.3);
+
+  --text-primary: var(--foreground);
+  --text-secondary: var(--secondary-fg);
+  --text-muted: var(--muted);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+
+body {
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.09); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+
+::selection { background: rgba(99, 102, 241, 0.2); }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 4px; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}

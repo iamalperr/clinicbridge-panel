@@ -1,0 +1,136 @@
+{
+  "nav": {
+    "clinics": "العيادات",
+    "analytics": "التحليلات",
+    "users": "المستخدمون",
+    "settings": "الإعدادات",
+    "platform": "المنصة",
+    "system": "النظام"
+  },
+  "common": {
+    "addClinic": "إضافة عيادة",
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "search": "بحث...",
+    "loading": "جاري التحميل...",
+    "signOut": "تسجيل الخروج",
+    "status": {
+      "active": "نشط",
+      "inactive": "غير نشط",
+      "trial": "تجريبي",
+      "pending": "قيد الانتظار",
+      "learned": "تم التعلم"
+    },
+    "actions": {
+      "edit": "تعديل",
+      "delete": "حذف",
+      "add": "إضافة",
+      "view": "عرض"
+    }
+  },
+  "header": {
+    "searchPlaceholder": "البحث في الوصول...",
+    "notifications": "الإشعارات",
+    "help": "مركز المساعدة"
+  },
+  "clinics": {
+    "title": "العيادات",
+    "subtitle": "إدارة جميع حسابات العيادات ومساعدي الذكاء الاصطناعي.",
+    "allClinics": "جميع العيادات",
+    "tabs": {
+      "overview": "نظرة عامة",
+      "promptStudio": "ستوديو الأوامر",
+      "voice": "الصوت",
+      "widget": "الودجت",
+      "training": "التدريب",
+      "notes": "الملاحظات",
+      "usage": "الاستخدام",
+      "logs": "السجلات",
+      "settings": "الإعدادات"
+    },
+    "stats": {
+      "totalClinics": "إجمالي العيادات",
+      "activeClinics": "العيادات النشطة",
+      "totalMessages": "إجمالي الرسائل",
+      "conversations": "المحادثات",
+      "resolveRate": "معدل الحل",
+      "avgResponse": "متوسط الرد"
+    },
+    "overview": {
+      "moduleStatus": "حالة الوحدة",
+      "moduleSubtitle": "القدرات النشطة لهذه العيادة",
+      "quickInfo": "معلومات سريعة",
+      "lastActive": "آخر نشاط",
+      "timezone": "المنطقة الزمنية",
+      "language": "اللغة"
+    }
+  },
+  "training": {
+    "title": "مركز التدريب",
+    "subtitle": "إدارة معلومات العيادة لتدريب المساعد",
+    "writeNote": "كتابة ملاحظة",
+    "writeNoteSubtitle": "إدخال إجراءات العيادة أو التعليمات يدوياً.",
+    "library": "مكتبة المعرفة",
+    "materialName": "اسم المادة",
+    "type": "النوع",
+    "pieces": "القطع",
+    "addNoteTitle": "إضافة ملاحظة جديدة",
+    "noteSaved": "تم حفظ الملاحظة!",
+    "aiInstruction": "قام مساعد الذكاء الاصطناعي بإضافة هذه المعلومات.",
+    "fields": {
+      "title": "العنوان",
+      "content": "المحتوى",
+      "category": "الفئة",
+      "tags": "الوسوم"
+    },
+    "placeholders": {
+      "title": "مثال: ساعات العمل",
+      "content": "تفاصيل تريد للمساعد معرفتها...",
+      "category": "مثال: تشغيلي",
+      "tags": "وسم1, وسم2"
+    },
+    "empty": {
+      "title": "المكتبة فارغة",
+      "description": "لم تقم بإضافة أي مواد بعد.",
+      "noResults": "لم يتم العثور على نتائج"
+    }
+  },
+  "users": {
+    "title": "إدارة المستخدمين",
+    "subtitle": "إدارة حسابات مستخدمي المنصة والعيادة.",
+    "addUser": "إضافة مستخدم",
+    "searchPlaceholder": "البحث بالاسم أو البريد الإلكتروني...",
+    "table": {
+      "user": "المستخدم",
+      "role": "الدور",
+      "clinic": "العيادة",
+      "status": "الحالة",
+      "created": "تاريخ الإنشاء"
+    },
+    "roles": {
+      "admin": "مشرف",
+      "clinicUser": "مستخدم العيادة",
+      "platformWide": "على مستوى المنصة"
+    }
+  },
+  "auth": {
+    "accessDenied": "تم رفض الوصول",
+    "adminOnly": "يمكن للمشرفين فقط الوصول إلى هذه الصفحة.",
+    "pendingTitle": "الوصول قيد الانتظار",
+    "pendingMessage": "لم يتم تفويض حسابك بعد. يرجى الاتصال بمشرف النظام."
+  },
+  "analytics": {
+    "title": "التحليلات",
+    "subtitle": "تتبع أداء العيادة ومقاييس الاستخدام.",
+    "downloadReport": "تحميل التقرير",
+    "timeRanges": {
+      "24h": "آخر 24 ساعة",
+      "7d": "آخر 7 أيام",
+      "30day": "آخر 30 يومًا",
+      "all": "كل الوقت"
+    }
+  },
+  "settings": {
+    "subtitle": "إدارة تفضيلات المسؤول وتكوينات النظام."
+  }
+}

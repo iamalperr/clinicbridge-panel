@@ -1,0 +1,225 @@
+{
+  "nav": {
+    "clinics": "Klinikler",
+    "analytics": "Analizler",
+    "users": "Kullanıcılar",
+    "settings": "Ayarlar",
+    "platform": "Platform",
+    "system": "Sistem"
+  },
+  "common": {
+    "addClinic": "Klinik Ekle",
+    "save": "Kaydet",
+    "cancel": "İptal",
+    "search": "Ara...",
+    "loading": "Yükleniyor...",
+    "signOut": "Çıkış Yap",
+    "status": {
+      "active": "Aktif",
+      "inactive": "Pasif",
+      "trial": "Deneme",
+      "pending": "Beklemede",
+      "learned": "Öğrenildi"
+    },
+    "actions": {
+      "edit": "Düzenle",
+      "delete": "Sil",
+      "add": "Ekle",
+      "view": "Görüntüle"
+    }
+  },
+  "header": {
+    "searchPlaceholder": "Erişim arayın...",
+    "notifications": "Bildirimler",
+    "help": "Yardım Merkezi"
+  },
+  "clinics": {
+    "title": "Klinikler",
+    "subtitle": "Tüm klinik hesaplarını ve AI asistanlarını yönetin.",
+    "allClinics": "Tüm Klinikler",
+    "tabs": {
+      "overview": "Genel Bakış",
+      "promptStudio": "Prompt Studio",
+      "voice": "Sesli Yanıt",
+      "widget": "Web Widget",
+      "training": "Eğitim",
+      "notes": "Notlar",
+      "usage": "Kullanım",
+      "logs": "Görüşme Kayıtları",
+      "appointments": "Randevular",
+      "settings": "Ayarlar"
+    },
+    "stats": {
+      "totalClinics": "Toplam Klinik",
+      "activeClinics": "Aktif Klinik",
+      "totalMessages": "Toplam Mesaj",
+      "conversations": "Görüşmeler",
+      "resolveRate": "Çözüm Oranı",
+      "avgResponse": "Ort. Yanıt"
+    },
+    "overview": {
+      "moduleStatus": "Modül Durumu",
+      "moduleSubtitle": "Bu klinik için aktif özellikler",
+      "quickInfo": "Hızlı Bilgiler",
+      "lastActive": "Son Aktivite",
+      "timezone": "Saat Dilimi",
+      "language": "Dil"
+    }
+  },
+  "training": {
+    "title": "AI Bilgi Havuzu",
+    "subtitle": "Asistanınızın klinik hakkındaki tüm bilgilere buradan erişmesini sağlayın.",
+    "addInfo": "Bilgi Ekle",
+    "writeNote": "AI’ya Bilgi Ekle",
+    "writeNoteSubtitle": "Asistanınızın doğru cevap verebilmesi için klinik bilgilerini ekleyin",
+    "library": "Bilgi Kütüphanesi",
+    "materialName": "Bilgi Başlığı",
+    "type": "Tür",
+    "pieces": "Parça",
+    "addNoteTitle": "Yeni Bilgi Ekle",
+    "noteSaved": "Bilgi Kaydedildi!",
+    "aiInstruction": "AI asistanı bu bilgiyi kütüphanesine ekledi.",
+    "fields": {
+      "title": "Başlık",
+      "content": "İçerik",
+      "category": "Kategori",
+      "tags": "Etiketler"
+    },
+    "placeholders": {
+      "title": "Örn: Çalışma Saatleri",
+      "content": "Asistanın bilmesini istediğiniz detaylar...",
+      "category": "Örn: Operasyonel",
+      "tags": "etiket1, etiket2"
+    },
+    "empty": {
+      "title": "Henüz eğitim verisi yok",
+      "description": "İlk bilginizi ekleyerek başlayın",
+      "noResults": "Sonuç Bulunamadı"
+    }
+  },
+  "users": {
+    "title": "Kullanıcı Yönetimi",
+    "subtitle": "Platform ve klinik kullanıcı hesaplarını yönetin.",
+    "addUser": "Kullanıcı Ekle",
+    "searchPlaceholder": "İsim veya e-posta ile ara...",
+    "table": {
+      "user": "Kullanıcı",
+      "role": "Rol",
+      "clinic": "Klinik",
+      "status": "Durum",
+      "created": "Oluşturma"
+    },
+    "roles": {
+      "admin": "Yönetici",
+      "clinicUser": "Klinik Kullanıcısı",
+      "platformWide": "Platform Geneli"
+    }
+  },
+  "auth": {
+    "accessDenied": "Erişim Engellendi",
+    "adminOnly": "Bu sayfaya sadece yöneticiler erişebilir.",
+    "pendingTitle": "Erişim Bekleniyor",
+    "pendingMessage": "Hesabınız henüz yetkilendirilmemiş. Lütfen sistem yöneticiniz ile iletişime geçin."
+  },
+  "analytics": {
+    "title": "Analizler",
+    "subtitle": "Klinik performansını ve kullanım metriklerini izleyin.",
+    "downloadReport": "Raporu İndir",
+    "timeRanges": {
+      "24h": "Son 24 Saat",
+      "7d": "Son 7 Gün",
+      "30d": "Son 30 Gün",
+      "all": "Tüm Zamanlar"
+    }
+  },
+  "settings": {
+    "subtitle": "Yönetici tercihlerini ve sistem konfigürasyonlarını yönetin."
+  },
+  "dashboard": {
+    "title": "Klinik Paneli",
+    "subtitle": "Tüm klinik hesaplarına ve sistem geneli metriklere genel bakış.",
+    "stats": {
+      "totalClinics": "Toplam Klinik",
+      "activeClinics": "Aktif Klinik",
+      "totalMessages": "Toplam Mesaj",
+      "acrossAll": "tüm kliniklerde"
+    },
+    "manageWorkspace": "Çalışma Alanını Yönet",
+    "noClinics": "Henüz klinik yok",
+    "noClinicsDesc": "AI asistanlarını yönetmeye başlamak için ilk kliniğinizi ekleyin.",
+    "noResults": "Sonuç bulunamadı",
+    "noResultsDesc": "Aramanızla eşleşen bir klinik bulamadık.",
+    "loading": "Klinikler yükleniyor...",
+    "cards": {
+      "messages": "Mesajlar",
+      "conversations": "Görüşmeler"
+    },
+    "modal": {
+      "addNew": "Yeni Klinik Ekle",
+      "name": "Klinik Adı",
+      "website": "Domain / Websitesi",
+      "plan": "Abonelik Planı",
+      "status": "Hesap Durumu",
+      "modules": "Aktif Modüller",
+      "success": "Klinik Oluşturuldu!",
+      "successDesc": "başarıyla sisteme eklendi.",
+      "save": "Kliniği Kaydet",
+      "saving": "Kaydediliyor..."
+    },
+    "errors": {
+      "fetch": "Bağlantı hatası: Veriler alınamadı. Yerel veriler gösteriliyor.",
+      "validation": "Lütfen tüm zorunlu alanları doldurun.",
+      "saveFailed": "Klinik kaydedilemedi. Lütfen bağlantınızı kontrol edin."
+    }
+  },
+  "widget": {
+    "integrationTitle": "Widget Entegrasyonu",
+    "integrationSubtitle": "ClinicBridge asistanınızı web sitenize birkaç adımda ekleyin.",
+    "embedCodeTitle": "Web Sitesi Embed Kodu",
+    "copied": "Kopyalandı!",
+    "copyCode": "Kodu Kopyala",
+    "installNote": "Bu kodu web sitenizdeki kapanış </body> etiketinden hemen önce yapıştırın.",
+    "shareableLinkTitle": "Kiosk / Paylaşılabilir Bağlantı",
+    "shareableLinkNote": "Bu doğrudan bağlantıyı hastalarla paylaşın veya lobi tabletlerinde kullanın.",
+    "copyLink": "Bağlantıyı Kopyala",
+    "customDomainTitle": "Özel Alan Adı",
+    "customDomainNote": "Varsayılan bağlantı yerine kendi markalı alan adınızı (örn. ai.klinik.com) kullanın. Profesyonel markalama için mükemmeldir.",
+    "comingSoon": "Çok Yakında"
+  },
+  "aiSettings": {
+    "testAI": "AI Test Et",
+    "testPlayground": "AI Test Alanı",
+    "testSubtitle": "Prompt ayarlarınızı canlıya almadan önce test edin.",
+    "typeMessage": "AI'ya bir mesaj yazın...",
+    "sendTest": "Test Gönder",
+    "waitingAI": "OpenAI yanıtı bekleniyor...",
+    "clearChat": "Sohbeti Temizle",
+    "user": "Siz",
+    "assistant": "Asistan",
+    "testSuccess": "AI yanıtı alındı.",
+    "testError": "AI yanıtı alınamadı."
+  },
+  "appointments": {
+    "title": "Son Randevular",
+    "subtitle": "AI veya manuel olarak oluşturulmuş son randevuları görüntüleyin.",
+    "emptyTitle": "Henüz randevu oluşturulmadı",
+    "emptyDesc": "AI veya manuel kayıtlar burada görünecek.",
+    "columns": {
+      "patient": "Hasta",
+      "service": "Hizmet",
+      "date": "Tarih",
+      "time": "Saat",
+      "status": "Durum",
+      "source": "Kaynak"
+    },
+    "status": {
+      "pending": "Bekliyor",
+      "confirmed": "Onaylandı",
+      "cancelled": "İptal"
+    },
+    "source": {
+      "ai-chat": "AI Chat",
+      "manual": "Manuel"
+    }
+  }
+}

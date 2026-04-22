@@ -1,0 +1,136 @@
+{
+  "nav": {
+    "clinics": "Kliniken",
+    "analytics": "Analysen",
+    "users": "Benutzer",
+    "settings": "Einstellungen",
+    "platform": "Plattform",
+    "system": "System"
+  },
+  "common": {
+    "addClinic": "Klinik hinzufügen",
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "search": "Suchen...",
+    "loading": "Laden...",
+    "signOut": "Abmelden",
+    "status": {
+      "active": "Aktiv",
+      "inactive": "Inaktiv",
+      "trial": "Testversion",
+      "pending": "Ausstehend",
+      "learned": "Gelernt"
+    },
+    "actions": {
+      "edit": "Bearbeiten",
+      "delete": "Löschen",
+      "add": "Hinzufügen",
+      "view": "Ansehen"
+    }
+  },
+  "header": {
+    "searchPlaceholder": "Zugriff suchen...",
+    "notifications": "Benachrichtigungen",
+    "help": "Hilfezentrum"
+  },
+  "clinics": {
+    "title": "Kliniken",
+    "subtitle": "Verwalten Sie alle Klinik-Konten und KI-Assistenten.",
+    "allClinics": "Alle Kliniken",
+    "tabs": {
+      "overview": "Übersicht",
+      "promptStudio": "Prompt Studio",
+      "voice": "Sprache",
+      "widget": "Widget",
+      "training": "Schulung",
+      "notes": "Notizen",
+      "usage": "Nutzung",
+      "logs": "Protokolle",
+      "settings": "Einstellungen"
+    },
+    "stats": {
+      "totalClinics": "Kliniken Gesamt",
+      "activeClinics": "Aktive Kliniken",
+      "totalMessages": "Nachrichten Gesamt",
+      "conversations": "Gespräche",
+      "resolveRate": "Lösungsrate",
+      "avgResponse": "Durchschn. Antwort"
+    },
+    "overview": {
+      "moduleStatus": "Modulstatus",
+      "moduleSubtitle": "Aktive Funktionen für diese Klinik",
+      "quickInfo": "Kurzinfo",
+      "lastActive": "Zuletzt Aktiv",
+      "timezone": "Zeitzone",
+      "language": "Sprache"
+    }
+  },
+  "training": {
+    "title": "Schulungszentrum",
+    "subtitle": "Klinikinformationen für die KI-Schulung verwalten",
+    "writeNote": "Notiz schreiben",
+    "writeNoteSubtitle": "Klinikabläufe oder Anweisungen manuell eingeben.",
+    "library": "Wissensdatenbank",
+    "materialName": "Materialname",
+    "type": "Typ",
+    "pieces": "Teile",
+    "addNoteTitle": "Neue Notiz hinzufügen",
+    "noteSaved": "Notiz gespeichert!",
+    "aiInstruction": "Der KI-Assistent hat diese Information hinzugefügt.",
+    "fields": {
+      "title": "Titel",
+      "content": "Inhalt",
+      "category": "Kategorie",
+      "tags": "Tags"
+    },
+    "placeholders": {
+      "title": "z.B. Arbeitszeiten",
+      "content": "Details für den Assistenten...",
+      "category": "z.B. Operativ",
+      "tags": "tag1, tag2"
+    },
+    "empty": {
+      "title": "Datenbank ist leer",
+      "description": "Sie haben noch keine Materialien hinzugefügt.",
+      "noResults": "Keine Ergebnisse gefunden"
+    }
+  },
+  "users": {
+    "title": "Benutzerverwaltung",
+    "subtitle": "Plattform- und Klinik-Benutzerkonten verwalten.",
+    "addUser": "Benutzer hinzufügen",
+    "searchPlaceholder": "Nach Name oder E-Mail suchen...",
+    "table": {
+      "user": "Benutzer",
+      "role": "Rolle",
+      "clinic": "Klinik",
+      "status": "Status",
+      "created": "Erstellt"
+    },
+    "roles": {
+      "admin": "Administrator",
+      "clinicUser": "Klinikbenutzer",
+      "platformWide": "Plattformweit"
+    }
+  },
+  "auth": {
+    "accessDenied": "Zugriff verweigert",
+    "adminOnly": "Nur Administratoren haben Zugriff auf diese Seite.",
+    "pendingTitle": "Zugriff ausstehend",
+    "pendingMessage": "Ihr Konto wurde noch nicht autorisiert. Bitte kontaktieren Sie Ihren Admin."
+  },
+  "analytics": {
+    "title": "Analysen",
+    "subtitle": "Verfolgen Sie die Klinikleistung und Nutzungskennzahlen.",
+    "downloadReport": "Bericht herunterladen",
+    "timeRanges": {
+      "24h": "Letzte 24 Stunden",
+      "7d": "Letzte 7 Tage",
+      "30d": "Letzte 30 Tage",
+      "all": "Alle Zeit"
+    }
+  },
+  "settings": {
+    "subtitle": "Administratoreinstellungen und Systemkonfigurationen verwalten."
+  }
+}

@@ -1,0 +1,112 @@
+export type Plan = "starter" | "pro" | "enterprise";
+export type ClinicStatus = "active" | "inactive" | "trial";
+
+export type UserRole = "admin" | "clinicUser";
+
+export interface UserProfile {
+  uid: string;
+  name?: string;
+  email: string;
+  role: UserRole;
+  status?: "active" | "pending" | "suspended";
+  clinicId?: string;
+  createdAt?: string | number | { seconds: number; nanoseconds: number } | object;
+}
+
+export interface Clinic {
+  id: string;
+  name: string;
+  domain?: string;
+  plan?: Plan;
+  status?: ClinicStatus;
+  language?: string;
+  timezone?: string;
+  email?: string;
+  phone?: string;
+  createdAt?: string | number | { seconds: number; nanoseconds: number } | object; // Support strings, timestamps and ServerValue without using any
+  lastActive?: string;
+  modules?: {
+    ai: boolean;
+    widget: boolean;
+    voice: boolean;
+  };
+  messages?: number;
+  conversations?: number;
+  appointmentCount?: number;
+}
+
+export interface ConversationLog {
+  id: string;
+  userName: string;
+  firstMessage: string;
+  messageCount: number;
+  status: "resolved" | "open" | "escalated";
+  timestamp: string;
+  durationSec: number;
+}
+
+export interface TrainingEntry {
+  id: string;
+  type: "url" | "file" | "text";
+  title: string;
+  source: string;
+  status: "indexed" | "pending" | "failed";
+  createdAt: string;
+}
+
+export interface TrainingMaterial {
+  id: string;
+  title: string;
+  content: string;
+  category?: string;
+  tags?: string[];
+  type: "note";
+  status: "learned" | "pending";
+  clinicId: string;
+  createdAt: string | number | object;
+  updatedAt: string | number | object;
+}
+export interface WidgetSettings {
+  title: string;
+  welcomeMessage: string;
+  primaryColor: string;
+  position: "bottom-right" | "bottom-left";
+  showAvatar: boolean;
+  showOnlineStatus: boolean;
+  placeholder: string;
+  updatedAt?: any;
+}
+
+export interface PromptSettings {
+  systemPrompt: string;
+  welcomeMessage: string;
+  fallbackMessage: string;
+  model: string;
+  temperature: number;
+  updatedAt?: any;
+}
+
+export interface Patient {
+  id: string;
+  clinicId: string;
+  fullName: string;
+  phone: string;
+  email?: string;
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface Appointment {
+  id: string;
+  clinicId: string;
+  patientId: string;
+  patientName: string;
+  service: string;
+  preferredDate: string;
+  preferredTime: string;
+  status: "pending" | "confirmed" | "cancelled";
+  source: "ai-chat" | "manual";
+  notes?: string;
+  createdAt: any;
+  updatedAt: any;
+}

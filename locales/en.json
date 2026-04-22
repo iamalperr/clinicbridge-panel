@@ -1,0 +1,225 @@
+{
+  "nav": {
+    "clinics": "Clinics",
+    "analytics": "Analytics",
+    "users": "Users",
+    "settings": "Settings",
+    "platform": "Platform",
+    "system": "System"
+  },
+  "common": {
+    "addClinic": "Add Clinic",
+    "save": "Save",
+    "cancel": "Cancel",
+    "search": "Search...",
+    "loading": "Loading...",
+    "signOut": "Sign Out",
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive",
+      "trial": "Trial",
+      "pending": "Pending",
+      "learned": "Learned"
+    },
+    "actions": {
+      "edit": "Edit",
+      "delete": "Delete",
+      "add": "Add",
+      "view": "View"
+    }
+  },
+  "header": {
+    "searchPlaceholder": "Search access...",
+    "notifications": "Notifications",
+    "help": "Help Center"
+  },
+  "clinics": {
+    "title": "Clinics",
+    "subtitle": "Manage all clinic accounts and AI assistants.",
+    "allClinics": "All Clinics",
+    "tabs": {
+      "overview": "Overview",
+      "promptStudio": "Prompt Studio",
+      "voice": "Voice",
+      "widget": "Widget",
+      "training": "Training",
+      "notes": "Notes",
+      "usage": "Usage",
+      "logs": "Logs",
+      "appointments": "Appointments",
+      "settings": "Settings"
+    },
+    "stats": {
+      "totalClinics": "Total Clinics",
+      "activeClinics": "Active Clinics",
+      "totalMessages": "Total Messages",
+      "conversations": "Conversations",
+      "resolveRate": "Resolve Rate",
+      "avgResponse": "Avg. Response"
+    },
+    "overview": {
+      "moduleStatus": "Module Status",
+      "moduleSubtitle": "Active capabilities for this clinic",
+      "quickInfo": "Quick Info",
+      "lastActive": "Last Active",
+      "timezone": "Timezone",
+      "language": "Language"
+    }
+  },
+  "training": {
+    "title": "AI Knowledge Pool",
+    "subtitle": "Ensure your assistant has access to all clinical information from here.",
+    "addInfo": "Add Information",
+    "writeNote": "Add Info to AI",
+    "writeNoteSubtitle": "Add clinic information so your assistant can answer correctly",
+    "library": "Knowledge Library",
+    "materialName": "Information Title",
+    "type": "Type",
+    "pieces": "Pieces",
+    "addNoteTitle": "Add New Information",
+    "noteSaved": "Information Saved!",
+    "aiInstruction": "The AI assistant has added this information to its library.",
+    "fields": {
+      "title": "Title",
+      "content": "Content",
+      "category": "Category",
+      "tags": "Tags"
+    },
+    "placeholders": {
+      "title": "e.g., Working Hours",
+      "content": "Details you want the assistant to know...",
+      "category": "e.g., Operational",
+      "tags": "tag1, tag2"
+    },
+    "empty": {
+      "title": "No training data yet",
+      "description": "Start by adding your first piece of information",
+      "noResults": "No Results Found"
+    }
+  },
+  "users": {
+    "title": "User Management",
+    "subtitle": "Manage platform and clinic user accounts.",
+    "addUser": "Add User",
+    "searchPlaceholder": "Search by name or email...",
+    "table": {
+      "user": "User",
+      "role": "Role",
+      "clinic": "Clinic",
+      "status": "Status",
+      "created": "Created"
+    },
+    "roles": {
+      "admin": "Admin",
+      "clinicUser": "Clinic User",
+      "platformWide": "Platform Wide"
+    }
+  },
+  "auth": {
+    "accessDenied": "Access Denied",
+    "adminOnly": "Only administrators can access this page.",
+    "pendingTitle": "Access Pending",
+    "pendingMessage": "Your account has not been authorized yet. Please contact your system administrator."
+  },
+  "analytics": {
+    "title": "Analytics",
+    "subtitle": "Track clinic performance and usage metrics.",
+    "downloadReport": "Download Report",
+    "timeRanges": {
+      "24h": "Last 24 Hours",
+      "7d": "Last 7 Days",
+      "30d": "Last 30 Days",
+      "all": "All Time"
+    }
+  },
+  "settings": {
+    "subtitle": "Manage administrator preferences and system configurations."
+  },
+  "dashboard": {
+    "title": "Clinics Dashboard",
+    "subtitle": "Overview of all clinic accounts and system-wide metrics.",
+    "stats": {
+      "totalClinics": "Total Clinics",
+      "activeClinics": "Active Clinics",
+      "totalMessages": "Total Messages",
+      "acrossAll": "across all clinics"
+    },
+    "manageWorkspace": "Manage Workspace",
+    "noClinics": "No clinics yet",
+    "noClinicsDesc": "Add your first clinic to start managing AI assistants.",
+    "noResults": "No results found",
+    "noResultsDesc": "We couldn't find any clinic matching your search.",
+    "loading": "Loading clinics...",
+    "cards": {
+      "messages": "Messages",
+      "conversations": "Conversations"
+    },
+    "modal": {
+      "addNew": "Add New Clinic",
+      "name": "Clinic Name",
+      "website": "Domain / Website",
+      "plan": "Subscription Plan",
+      "status": "Account Status",
+      "modules": "Active Modules",
+      "success": "Clinic Created!",
+      "successDesc": "has been successfully added to the system.",
+      "save": "Save Clinic",
+      "saving": "Saving..."
+    },
+    "errors": {
+      "fetch": "Connection error: Data could not be retrieved. Showing local data.",
+      "validation": "Please fill in all required fields.",
+      "saveFailed": "Failed to save clinic. Please check your connection."
+    }
+  },
+  "widget": {
+    "integrationTitle": "Widget Integration",
+    "integrationSubtitle": "Embed your ClinicBridge assistant into your website in a few steps.",
+    "embedCodeTitle": "Website Embed Code",
+    "copied": "Copied!",
+    "copyCode": "Copy Code",
+    "installNote": "Paste this code before the closing </body> tag on your website.",
+    "shareableLinkTitle": "Kiosk / Shareable Link",
+    "shareableLinkNote": "Share this direct link with patients or use it on lobby tablets.",
+    "copyLink": "Copy Link",
+    "customDomainTitle": "Custom Domain",
+    "customDomainNote": "Use your own branded domain (e.g., ai.yourclinic.com) instead of the default link. Perfect for professional branding.",
+    "comingSoon": "Coming Soon"
+  },
+  "aiSettings": {
+    "testAI": "Test AI",
+    "testPlayground": "AI Test Playground",
+    "testSubtitle": "Test your prompt settings before making them live.",
+    "typeMessage": "Type a message to the AI...",
+    "sendTest": "Send Test",
+    "waitingAI": "Waiting for OpenAI response...",
+    "clearChat": "Clear Chat",
+    "user": "You",
+    "assistant": "Assistant",
+    "testSuccess": "AI response received.",
+    "testError": "Failed to get AI response."
+  },
+  "appointments": {
+    "title": "Recent Appointments",
+    "subtitle": "View recent appointments booked via AI or manually.",
+    "emptyTitle": "No appointments yet",
+    "emptyDesc": "AI or manual bookings will appear here.",
+    "columns": {
+      "patient": "Patient",
+      "service": "Service",
+      "date": "Date",
+      "time": "Time",
+      "status": "Status",
+      "source": "Source"
+    },
+    "status": {
+      "pending": "Pending",
+      "confirmed": "Confirmed",
+      "cancelled": "Cancelled"
+    },
+    "source": {
+      "ai-chat": "AI Chat",
+      "manual": "Manual"
+    }
+  }
+}

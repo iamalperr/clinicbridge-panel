@@ -1,0 +1,136 @@
+{
+  "nav": {
+    "clinics": "Clínicas",
+    "analytics": "Análisis",
+    "users": "Usuarios",
+    "settings": "Ajustes",
+    "platform": "Plataforma",
+    "system": "Sistema"
+  },
+  "common": {
+    "addClinic": "Añadir clínica",
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "search": "Buscar...",
+    "loading": "Cargando...",
+    "signOut": "Cerrar sesión",
+    "status": {
+      "active": "Activo",
+      "inactive": "Inactivo",
+      "trial": "Prueba",
+      "pending": "Pendiente",
+      "learned": "Aprendido"
+    },
+    "actions": {
+      "edit": "Editar",
+      "delete": "Eliminar",
+      "add": "Añadir",
+      "view": "Ver"
+    }
+  },
+  "header": {
+    "searchPlaceholder": "Buscar acceso...",
+    "notifications": "Notificaciones",
+    "help": "Centro de ayuda"
+  },
+  "clinics": {
+    "title": "Clínicas",
+    "subtitle": "Gestione todas las cuentas de clínicas y asistentes de IA.",
+    "allClinics": "Todas las clínicas",
+    "tabs": {
+      "overview": "Resumen",
+      "promptStudio": "Studio de Prompts",
+      "voice": "Voz",
+      "widget": "Widget",
+      "training": "Entrenamiento",
+      "notes": "Notas",
+      "usage": "Uso",
+      "logs": "Registros",
+      "settings": "Ajustes"
+    },
+    "stats": {
+      "totalClinics": "Total de clínicas",
+      "activeClinics": "Clínicas activas",
+      "totalMessages": "Total de mensajes",
+      "conversations": "Conversaciones",
+      "resolveRate": "Tasa de resolución",
+      "avgResponse": "Promedio de respuesta"
+    },
+    "overview": {
+      "moduleStatus": "Estado del módulo",
+      "moduleSubtitle": "Capacidades activas para esta clínica",
+      "quickInfo": "Información rápida",
+      "lastActive": "Última actividad",
+      "timezone": "Zona horaria",
+      "language": "Idioma"
+    }
+  },
+  "training": {
+    "title": "Centro de entrenamiento",
+    "subtitle": "Gestione la información de la clínica para el entrenamiento de la IA",
+    "writeNote": "Escribir nota",
+    "writeNoteSubtitle": "Introduzca manualmente los procedimientos de la clínica.",
+    "library": "Biblioteca de conocimientos",
+    "materialName": "Nombre del material",
+    "type": "Tipo",
+    "pieces": "Piezas",
+    "addNoteTitle": "Añadir nueva nota",
+    "noteSaved": "¡Nota guardada!",
+    "aiInstruction": "El asistente de IA ha añadido esta información.",
+    "fields": {
+      "title": "Título",
+      "content": "Contenido",
+      "category": "Categoría",
+      "tags": "Etiquetas"
+    },
+    "placeholders": {
+      "title": "ej. Horario de trabajo",
+      "content": "Detalles que quieres que sepa el asistente...",
+      "category": "ej. Operativo",
+      "tags": "etiqueta1, etiqueta2"
+    },
+    "empty": {
+      "title": "La biblioteca está vacía",
+      "description": "Aún no ha añadido ningún material.",
+      "noResults": "No se han encontrado resultados"
+    }
+  },
+  "users": {
+    "title": "Gestión de usuarios",
+    "subtitle": "Gestione las cuentas de usuario de la plataforma y de la clínica.",
+    "addUser": "Añadir usuario",
+    "searchPlaceholder": "Buscar por nombre o correo...",
+    "table": {
+      "user": "Usuario",
+      "role": "Rol",
+      "clinic": "Clínica",
+      "status": "Estado",
+      "created": "Creado"
+    },
+    "roles": {
+      "admin": "Administrador",
+      "clinicUser": "Usuario de clínica",
+      "platformWide": "Toda la plataforma"
+    }
+  },
+  "auth": {
+    "accessDenied": "Acceso denegado",
+    "adminOnly": "Solo los administradores pueden acceder a esta página.",
+    "pendingTitle": "Acceso pendiente",
+    "pendingMessage": "Su cuenta aún no ha sido autorizada. Contacte con su administrador."
+  },
+  "analytics": {
+    "title": "Análisis",
+    "subtitle": "Siga el rendimiento de la clínica y las métricas de uso.",
+    "downloadReport": "Descargar informe",
+    "timeRanges": {
+      "24h": "Últimas 24 horas",
+      "7d": "Últimos 7 días",
+      "30d": "Últimos 30 días",
+      "all": "Todo el tiempo"
+    }
+  },
+  "settings": {
+    "subtitle": "Gestione las preferencias del administrador y configuraciones del sistema."
+  }
+}
