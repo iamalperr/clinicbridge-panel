@@ -4,6 +4,7 @@ export type ClinicStatus = "active" | "inactive" | "trial";
 export type UserRole = "admin" | "clinicUser";
 
 export interface UserProfile {
+  id?: string;
   uid: string;
   name?: string;
   email: string;

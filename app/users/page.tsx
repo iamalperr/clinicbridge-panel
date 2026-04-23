@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, where } from "firebase/firestore";
+import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, where, doc, updateDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import type { UserProfile, Clinic, UserRole } from "@/lib/types";
@@ -12,7 +12,7 @@ import Modal from "@/components/ui/Modal";
 import Badge from "@/components/ui/Badge";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 import PageHeader from "@/components/ui/PageHeader";
-import { UserPlus, Search, Shield, Building2, Calendar } from "lucide-react";
+import { UserPlus, Search, Shield, Building2, Calendar, Edit2, Trash2, Power, Ban } from "lucide-react";
 
 import { useI18n } from "@/lib/i18n-context";
 
@@ -29,6 +29,11 @@ export default function UsersPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Action states
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // Form state
   const [newUser, setNewUser] = useState<Partial<UserProfile>>({
@@ -47,7 +52,7 @@ export default function UsersPage() {
         getDocs(collection(db, "clinics"))
       ]);
       
-      setUsers(userSnap.docs.map(d => ({ ...d.data() as UserProfile })));
+      setUsers(userSnap.docs.map(d => ({ id: d.id, ...d.data() as UserProfile })));
       setClinics(clinicSnap.docs.map(d => ({ id: d.id, ...d.data() as Omit<Clinic, "id"> })));
     } catch (err) {
       console.error("Failed to fetch users/clinics:", err);
@@ -61,16 +66,115 @@ export default function UsersPage() {
   }, []);
 
   const filteredUsers = useMemo(() => {
-    return users.filter(u => 
-      u.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [users, searchQuery]);
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return users;
+
+    return users.filter(u => {
+      const clinicName = clinics.find(c => c.id === u.clinicId)?.name || "";
+      const roleStr = u.role === "admin" ? t("users.roles.admin") : t("users.roles.clinicUser");
+      
+      return (
+        u.name?.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q) ||
+        roleStr.toLowerCase().includes(q) ||
+        clinicName.toLowerCase().includes(q)
+      );
+    });
+  }, [users, clinics, searchQuery, t]);
+
+  const openAddUser = () => {
+    setNewUser({ name: "", email: "", role: "clinicUser", status: "active", clinicId: "" });
+    setEditingUserId(null);
+    setIsModalOpen(true);
+  };
+
+  const openEditUser = (user: UserProfile) => {
+    setNewUser({
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      clinicId: user.clinicId || ""
+    });
+    setEditingUserId(user.id || null);
+    setIsModalOpen(true);
+  };
+
+  const toggleUserStatus = async (user: UserProfile) => {
+    if (!user.id) return;
+    try {
+      const newStatus = user.status === "active" ? "pending" : "active";
+      await updateDoc(doc(db, "users", user.id), { status: newStatus });
+      fetchData(); // Refresh list
+    } catch (err) {
+      console.error("Failed to toggle user status:", err);
+    }
+  };
+
+  const confirmDeleteUser = (user: UserProfile) => {
+    if (user.email === profile?.email) {
+      alert("Kendi hesabınızı silemezsiniz.");
+      return;
+    }
+    const adminCount = users.filter(u => u.role === "admin").length;
+    if (user.role === "admin" && adminCount <= 1) {
+      alert("Sistemdeki son admin kullanıcıyı silemezsiniz.");
+      return;
+    }
+    setUserToDelete(user);
+  };
+
+  const handleDeleteUser = async () => {
+    if (!userToDelete?.id) return;
+    setIsDeleting(true);
+    try {
+      await deleteDoc(doc(db, "users", userToDelete.id));
+      setUserToDelete(null);
+      fetchData();
+    } catch (err) {
+      console.error("Failed to delete user:", err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const handleAddUser = async () => {
     // Validation
     if (!newUser.name || !newUser.email || !newUser.role) {
       setError(t("common.loading") /* Need a generic validation error key really, using placeholder */);
+      return;
+    }
+
+    if (newUser.role === "clinicUser" && !newUser.clinicId) {
+      setError(t("users.table.clinic"));
+      return;
+    }
+
+    if (editingUserId) {
+      setIsSubmitting(true);
+      setError(null);
+      try {
+        const userData = {
+          name: newUser.name,
+          role: newUser.role,
+          status: newUser.status || "active",
+          clinicId: newUser.role === "admin" ? null : newUser.clinicId,
+        };
+        // Don't update email directly to prevent auth mismatch
+        await updateDoc(doc(db, "users", editingUserId), userData);
+        
+        setSubmitSuccess(true);
+        setTimeout(() => {
+          setIsModalOpen(false);
+          setSubmitSuccess(false);
+          fetchData();
+        }, 1500);
+      } catch (err) {
+        console.error("Failed to update user:", err);
+        setError(t("common.loading"));
+      } finally {
+        setIsSubmitting(false);
+      }
       return;
     }
 
@@ -155,7 +259,7 @@ export default function UsersPage() {
         backHref="/clinics"
         backLabel="Dashboard"
         actions={
-          <Button onClick={() => setIsModalOpen(true)}>
+          <Button onClick={openAddUser}>
             <UserPlus size={18} style={{ marginRight: 8 }} />
             {t("users.addUser")}
           </Button>
@@ -167,7 +271,7 @@ export default function UsersPage() {
         <div style={{ position: "relative", flex: 1, maxWidth: 400 }}>
           <Search size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: UI_COLORS.textMuted }} />
           <input 
-            placeholder={t("users.searchPlaceholder")} 
+            placeholder="İsim, e-posta, rol veya klinik ile ara..." 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{ 
@@ -194,12 +298,13 @@ export default function UsersPage() {
               <th style={{ padding: "16px 20px", fontSize: 12, fontWeight: 700, color: UI_COLORS.textMuted, textTransform: "uppercase" }}>{t("users.table.clinic")}</th>
               <th style={{ padding: "16px 20px", fontSize: 12, fontWeight: 700, color: UI_COLORS.textMuted, textTransform: "uppercase" }}>{t("users.table.status")}</th>
               <th style={{ padding: "16px 20px", fontSize: 12, fontWeight: 700, color: UI_COLORS.textMuted, textTransform: "uppercase" }}>{t("users.table.created")}</th>
+              <th style={{ padding: "16px 20px", width: 120 }}></th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={5} style={{ padding: "48px", textAlign: "center", color: UI_COLORS.textMuted }}>
+                <td colSpan={6} style={{ padding: "48px", textAlign: "center", color: UI_COLORS.textMuted }}>
                   <div style={{ display: "inline-block", width: 20, height: 20, border: "2px solid var(--border)", borderTopColor: "var(--brand)", borderRadius: "50%", animation: "spin 0.8s linear infinite", marginBottom: 12 }} />
                   <p>{t("common.loading")}</p>
                   <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
@@ -207,7 +312,7 @@ export default function UsersPage() {
               </tr>
             ) : filteredUsers.length === 0 ? (
               <tr>
-                <td colSpan={5} style={{ padding: "48px", textAlign: "center", color: UI_COLORS.textMuted }}>
+                <td colSpan={6} style={{ padding: "48px", textAlign: "center", color: UI_COLORS.textMuted }}>
                   {t("training.empty.noResults")}
                 </td>
               </tr>
@@ -257,6 +362,19 @@ export default function UsersPage() {
                       <span style={{ fontSize: 13 }}>New Account</span>
                     </div>
                   </td>
+                  <td style={{ padding: "16px 20px", textAlign: "right" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+                      <button onClick={() => openEditUser(u)} style={{ background: "transparent", border: "none", color: UI_COLORS.textSecondary, cursor: "pointer", padding: 6, borderRadius: 6 }} title="Düzenle">
+                        <Edit2 size={16} />
+                      </button>
+                      <button onClick={() => toggleUserStatus(u)} style={{ background: "transparent", border: "none", color: UI_COLORS.textSecondary, cursor: "pointer", padding: 6, borderRadius: 6 }} title={u.status === "active" ? "Pasife Al" : "Aktifleştir"}>
+                        {u.status === "active" ? <Ban size={16} /> : <Power size={16} />}
+                      </button>
+                      <button onClick={() => confirmDeleteUser(u)} style={{ background: "transparent", border: "none", color: UI_COLORS.danger, cursor: "pointer", padding: 6, borderRadius: 6 }} title="Sil">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))
             )}
@@ -298,6 +416,7 @@ export default function UsersPage() {
               placeholder="e.g. email@com" 
               value={newUser.email}
               onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+              disabled={!!editingUserId} // Prevent changing email on edit to avoid auth issues
             />
             
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
@@ -350,11 +469,31 @@ export default function UsersPage() {
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 12, paddingTop: 18, borderTop: `1px solid ${UI_COLORS.border}` }}>
               <Button variant="ghost" onClick={() => setIsModalOpen(false)} disabled={isSubmitting}>{t("common.cancel")}</Button>
               <Button onClick={handleAddUser} disabled={isSubmitting}>
-                {isSubmitting ? t("common.loading") : t("common.save")}
+                {isSubmitting ? t("common.loading") : (editingUserId ? t("common.save") : t("common.save"))}
               </Button>
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={!!userToDelete}
+        onClose={() => !isDeleting && setUserToDelete(null)}
+        title="Kullanıcıyı Sil"
+        width={400}
+      >
+        <div style={{ padding: "10px 0" }}>
+          <p style={{ color: UI_COLORS.textPrimary, fontSize: 14, lineHeight: 1.5 }}>
+            <strong>{userToDelete?.name || userToDelete?.email}</strong> kullanıcısını silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
+          </p>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }}>
+            <Button variant="ghost" onClick={() => setUserToDelete(null)} disabled={isDeleting}>{t("common.cancel")}</Button>
+            <Button onClick={handleDeleteUser} disabled={isDeleting} style={{ background: UI_COLORS.danger, color: "white" }}>
+              {isDeleting ? t("common.loading") : "Evet, Sil"}
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
