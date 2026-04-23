@@ -33,6 +33,7 @@ export default function UsersPage() {
   // Action states
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   
   // Form state
@@ -112,15 +113,18 @@ export default function UsersPage() {
   };
 
   const confirmDeleteUser = (user: UserProfile) => {
-    if (user.email === profile?.email) {
-      alert("Kendi hesabınızı silemezsiniz.");
+    if (user.uid === profile?.uid) {
+      setDeleteError("Kendi hesabınızı silemezsiniz. Güvenlik nedeniyle bu işlem engellenmiştir.");
+      setUserToDelete(user);
       return;
     }
     const adminCount = users.filter(u => u.role === "admin").length;
     if (user.role === "admin" && adminCount <= 1) {
-      alert("Sistemdeki son admin kullanıcıyı silemezsiniz.");
+      setDeleteError("Sistemde en az bir yönetici bulunmalıdır.");
+      setUserToDelete(user);
       return;
     }
+    setDeleteError(null);
     setUserToDelete(user);
   };
 
@@ -479,20 +483,53 @@ export default function UsersPage() {
       {/* Delete Confirmation Modal */}
       <Modal
         isOpen={!!userToDelete}
-        onClose={() => !isDeleting && setUserToDelete(null)}
-        title="Kullanıcıyı Sil"
+        onClose={() => {
+          if (!isDeleting) {
+            setUserToDelete(null);
+            setDeleteError(null);
+          }
+        }}
+        title={deleteError ? "İşlem Engellendi" : "Kullanıcıyı Sil"}
         width={400}
       >
         <div style={{ padding: "10px 0" }}>
-          <p style={{ color: UI_COLORS.textPrimary, fontSize: 14, lineHeight: 1.5 }}>
-            <strong>{userToDelete?.name || userToDelete?.email}</strong> kullanıcısını silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
-          </p>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }}>
-            <Button variant="ghost" onClick={() => setUserToDelete(null)} disabled={isDeleting}>{t("common.cancel")}</Button>
-            <Button onClick={handleDeleteUser} disabled={isDeleting} style={{ background: UI_COLORS.danger, color: "white" }}>
-              {isDeleting ? t("common.loading") : "Evet, Sil"}
-            </Button>
-          </div>
+          {deleteError ? (
+            <>
+              <div style={{ 
+                padding: "16px", 
+                background: "rgba(239, 68, 68, 0.08)", 
+                border: `1px solid ${UI_COLORS.danger}20`,
+                borderRadius: 8,
+                color: UI_COLORS.danger,
+                fontSize: 14,
+                fontWeight: 500,
+                lineHeight: 1.5,
+                display: "flex",
+                alignItems: "center",
+                gap: 12
+              }}>
+                <Shield size={24} style={{ flexShrink: 0 }} />
+                <span>{deleteError}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 24 }}>
+                <Button onClick={() => { setUserToDelete(null); setDeleteError(null); }}>
+                  Anladım
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p style={{ color: UI_COLORS.textPrimary, fontSize: 14, lineHeight: 1.5 }}>
+                <strong>{userToDelete?.name || userToDelete?.email}</strong> kullanıcısını silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
+              </p>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }}>
+                <Button variant="ghost" onClick={() => setUserToDelete(null)} disabled={isDeleting}>{t("common.cancel")}</Button>
+                <Button onClick={handleDeleteUser} disabled={isDeleting} style={{ background: UI_COLORS.danger, color: "white" }}>
+                  {isDeleting ? t("common.loading") : "Evet, Sil"}
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </Modal>
     </div>
