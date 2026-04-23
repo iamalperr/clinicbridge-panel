@@ -348,7 +348,7 @@ export default function WidgetPreview({ settings }: WidgetPreviewProps) {
               }}
             />
             <button 
-              onClick={handleSend}
+              onClick={() => handleSend()}
               disabled={hasConsent !== true}
               style={{
                 width: 32, height: 32, borderRadius: 8,
