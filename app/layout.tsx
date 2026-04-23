@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/lib/auth-context";
 import { I18nProvider } from "@/lib/i18n-context";
 import AuthGuard from "@/components/auth/AuthGuard";
+import CookieBanner from "@/components/ui/CookieBanner";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -29,6 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </AuthGuard>
             </AuthProvider>
           </I18nProvider>
+          <CookieBanner />
         </ThemeProvider>
       </body>
     </html>

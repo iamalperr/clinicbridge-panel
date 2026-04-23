@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { Input } from "@/components/ui/Input";
+import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 import Logo from "@/components/ui/Logo";
@@ -127,15 +128,16 @@ export default function LoginPage() {
         </div>
 
         {/* Footer info */}
-        <p style={{ 
-          textAlign: "center", 
-          fontSize: 12.5, 
-          color: UI_COLORS.textMuted, 
-          marginTop: 32,
-          fontWeight: 500
-        }}>
-          © 2026 ClinicBridge — Powerful AI for Modern Clinics
-        </p>
+        <div style={{ textAlign: "center", marginTop: 32, display: "flex", flexDirection: "column", gap: 12 }}>
+          <p style={{ fontSize: 12.5, color: UI_COLORS.textMuted, fontWeight: 500 }}>
+            © 2026 ClinicBridge — Powerful AI for Modern Clinics
+          </p>
+          <div style={{ display: "flex", justifyContent: "center", gap: 16 }}>
+            <Link href="/privacy" style={{ fontSize: 12, color: UI_COLORS.textMuted, textDecoration: "none" }}>Gizlilik Politikası</Link>
+            <Link href="/kvkk" style={{ fontSize: 12, color: UI_COLORS.textMuted, textDecoration: "none" }}>KVKK</Link>
+            <Link href="/terms" style={{ fontSize: 12, color: UI_COLORS.textMuted, textDecoration: "none" }}>Kullanım Şartları</Link>
+          </div>
+        </div>
       </div>
     </main>
   );
