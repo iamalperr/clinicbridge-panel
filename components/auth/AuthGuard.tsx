@@ -22,8 +22,28 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div style={{ height: "100dvh", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-app)" }}>
-        <p style={{ color: "var(--text-muted)", fontSize: 14 }}>Loading session...</p>
+      <div style={{ 
+        height: "100dvh", 
+        width: "100%", 
+        display: "flex", 
+        flexDirection: "column", 
+        alignItems: "center", 
+        justifyContent: "center", 
+        background: "var(--bg-app)",
+        gap: 16
+      }}>
+        <div style={{ 
+          width: 32, 
+          height: 32, 
+          borderRadius: "50%", 
+          border: "3px solid rgba(99, 102, 241, 0.2)", 
+          borderTopColor: "#6366f1", 
+          animation: "spin 1s linear infinite" 
+        }} />
+        <p style={{ color: "var(--text-muted, #64748b)", fontSize: 14, fontWeight: 500 }}>
+          Hesabınız kontrol ediliyor...
+        </p>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }

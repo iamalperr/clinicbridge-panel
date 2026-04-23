@@ -26,9 +26,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       console.log("[Auth] State changed. UID:", currentUser?.uid);
-      setUser(currentUser);
       
       if (currentUser) {
+        setLoading(true);
+        setUser(currentUser);
         try {
           const docRef = doc(db, "users", currentUser.uid);
           const docSnap = await getDoc(docRef);
@@ -46,6 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setProfile(null);
         }
       } else {
+        setUser(null);
         setProfile(null);
       }
       setLoading(false);
