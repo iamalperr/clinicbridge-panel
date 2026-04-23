@@ -2,8 +2,6 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { verifyPasswordResetCode, confirmPasswordReset } from "firebase/auth";
-import { auth } from "@/lib/firebase";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { UI_COLORS } from "@/components/ui/ui-shared";
@@ -14,7 +12,7 @@ import { Eye, EyeOff, CheckCircle2, ShieldAlert } from "lucide-react";
 function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const oobCode = searchParams.get("oobCode");
+  const token = searchParams.get("token") || searchParams.get("oobCode");
 
   const [email, setEmail] = useState<string | null>(null);
   const [password, setPassword] = useState("");
@@ -28,37 +26,40 @@ function ResetPasswordForm() {
 
   useEffect(() => {
     async function verifyCode() {
-      if (!oobCode) {
+      if (!token) {
         setError("Şifre sıfırlama bağlantısı eksik veya geçersiz.");
         setVerifying(false);
         return;
       }
 
-      // Developer Bypass for testing UI without Firebase Admin
-      if (oobCode.startsWith("mock_token_")) {
-        console.warn("DEVELOPER MODE: Using mock token bypass for reset password flow.");
-        setEmail("test@clinicbridge.com (Mock)");
-        setVerifying(false);
-        return;
-      }
-
       try {
-        const userEmail = await verifyPasswordResetCode(auth, oobCode);
-        setEmail(userEmail);
+        const res = await fetch("/api/auth/verify-reset-token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Bağlantı geçersiz veya süresi dolmuş.");
+        }
+
+        setEmail(data.email);
       } catch (err: any) {
         console.error("Token verification failed:", err);
-        setError("Bu şifre sıfırlama bağlantısı geçersiz veya süresi dolmuş. Lütfen yeni bir bağlantı isteyin.");
+        setError(err.message || "Bu şifre sıfırlama bağlantısı geçersiz veya süresi dolmuş. Lütfen yeni bir bağlantı isteyin.");
       } finally {
         setVerifying(false);
       }
     }
 
     verifyCode();
-  }, [oobCode]);
+  }, [token]);
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!oobCode) return;
+    if (!token) return;
 
     if (password.length < 6) {
       setError("Şifre en az 6 karakter olmalıdır.");
@@ -74,20 +75,23 @@ function ResetPasswordForm() {
     setError(null);
 
     try {
-      // Developer Bypass
-      if (oobCode.startsWith("mock_token_")) {
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate network request
-        setSuccess(true);
-        setTimeout(() => router.replace("/login"), 3000);
-        return;
+      const res = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, newPassword: password })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Şifre sıfırlanırken bir hata oluştu.");
       }
 
-      await confirmPasswordReset(auth, oobCode, password);
       setSuccess(true);
       setTimeout(() => router.replace("/login"), 3000);
     } catch (err: any) {
       console.error("Password reset failed:", err);
-      setError("Şifre sıfırlanırken bir hata oluştu. Lütfen tekrar deneyin.");
+      setError(err.message || "Şifre sıfırlanırken bir hata oluştu. Lütfen tekrar deneyin.");
     } finally {
       setLoading(false);
     }

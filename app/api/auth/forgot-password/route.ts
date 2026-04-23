@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
+import { adminDb } from "@/lib/firebase-admin";
+import crypto from "crypto";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -15,11 +17,26 @@ export async function POST(req: Request) {
       );
     }
 
-    // Dynamic origin or fallback to environment URL
+    if (!adminDb) {
+      return NextResponse.json(
+        { error: "Firebase Admin SDK başlatılamadı. Service Account eksik." },
+        { status: 500 }
+      );
+    }
+
+    // Generate token and expiration (15 minutes)
+    const token = crypto.randomUUID();
+    const expiresAt = Date.now() + 15 * 60 * 1000;
+
+    // Store in Firestore
+    await adminDb.collection("password_reset_tokens").add({
+      email,
+      token,
+      expiresAt
+    });
+
     const origin = req.headers.get("origin") || process.env.NEXT_PUBLIC_APP_URL || "https://clinicbridge-ai.com";
-    
-    // Mock reset link (since firebase-admin is not installed to generate a real one)
-    const resetLink = `${origin}/reset-password?oobCode=mock_token_${Date.now()}`;
+    const resetLink = `${origin}/reset-password?token=${token}`;
 
     const { data, error } = await resend.emails.send({
       from: process.env.EMAIL_FROM || "no-reply@clinicbridge-ai.com",
@@ -35,7 +52,7 @@ export async function POST(req: Request) {
             <h3 style="margin-top: 0; font-size: 20px; color: #0f172a;">Şifrenizi Sıfırlayın</h3>
             <p style="font-size: 15px; line-height: 1.6; color: #475569;">
               Merhaba,<br/><br/>
-              Hesabınızın şifresini sıfırlamak için bir talep aldık. Şifrenizi güvenli bir şekilde yenilemek için aşağıdaki butona tıklayabilirsiniz.
+              Hesabınızın şifresini sıfırlamak için bir talep aldık. Şifrenizi güvenli bir şekilde yenilemek için aşağıdaki butona tıklayabilirsiniz. Bu bağlantı 15 dakika boyunca geçerlidir.
             </p>
             
             <div style="text-align: center; margin: 32px 0;">
@@ -57,36 +74,15 @@ export async function POST(req: Request) {
     });
 
     if (error) {
-      console.error("Resend Response Error Details:", {
-        message: error.message,
-        name: error.name,
-        fullError: error
-      });
-      
+      console.error("Resend Response Error Details:", { message: error.message, name: error.name, fullError: error });
       const isDev = process.env.NODE_ENV === "development";
-      const errorMessage = isDev 
-        ? `Resend Error: ${error.message || JSON.stringify(error)}` 
-        : "E-posta gönderilirken bir hata oluştu.";
-        
-      return NextResponse.json({ error: errorMessage }, { status: 500 });
+      return NextResponse.json({ error: isDev ? `Resend Error: ${error.message}` : "E-posta gönderilirken bir hata oluştu." }, { status: 500 });
     }
 
-    console.log("Resend Success Response:", data);
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
-    console.error("Forgot password try/catch error:", {
-      message: error?.message,
-      fullError: error
-    });
-    
+    console.error("Forgot password error:", error);
     const isDev = process.env.NODE_ENV === "development";
-    const errorMessage = isDev 
-      ? `Server Error: ${error?.message || "Unknown"}` 
-      : "Sunucu tarafında bir hata oluştu.";
-      
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: isDev ? `Server Error: ${error?.message}` : "Sunucu tarafında bir hata oluştu." }, { status: 500 });
   }
 }
