@@ -42,21 +42,9 @@ export default function LoginPage() {
         
         {/* Logo & Branding */}
         <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{ 
-            width: 52, 
-            height: 52, 
-            borderRadius: 14, 
-            background: UI_COMMON_STYLES.brandGradient, 
-            display: "flex", 
-            alignItems: "center", 
-            justifyContent: "center", 
-            fontSize: 22, 
-            fontWeight: 800, 
-            color: "white", 
-            margin: "0 auto 20px",
-            boxShadow: "0 8px 16px rgba(99, 102, 241, 0.3)"
-          }}>
-            CB
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 24 }}>
+            <img src="/logo-dark.svg" alt="ClinicBridge" style={{ height: 42 }} className="hidden dark:block" />
+            <img src="/logo.svg" alt="ClinicBridge" style={{ height: 42 }} className="block dark:hidden" />
           </div>
           <h1 style={{ 
             fontSize: 26, 

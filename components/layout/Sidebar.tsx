@@ -91,31 +91,10 @@ export default function Sidebar() {
     }}>
       {/* Logo Area */}
       <div style={{ padding: "24px 20px 20px", borderBottom: `1px solid ${UI_COLORS.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ 
-            width: 34, 
-            height: 34, 
-            borderRadius: 10, 
-            background: UI_COMMON_STYLES.brandGradient, 
-            display: "flex", 
-            alignItems: "center", 
-            justifyContent: "center", 
-            fontSize: 14, 
-            fontWeight: 800, 
-            color: "white",
-            boxShadow: UI_COMMON_STYLES.logoShadow
-          }}>
-            CB
-          </div>
-          <span style={{ 
-            fontWeight: 800, 
-            fontSize: 16, 
-            color: UI_COLORS.textPrimary, 
-            letterSpacing: "-0.5px" 
-          }}>
-            ClinicBridge
-          </span>
-        </div>
+        <Link href="/clinics" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
+          <img src="/logo-dark.svg" alt="ClinicBridge" style={{ height: 28 }} className="hidden dark:block" />
+          <img src="/logo.svg" alt="ClinicBridge" style={{ height: 28 }} className="block dark:hidden" />
+        </Link>
       </div>
 
       {/* Navigation */}
