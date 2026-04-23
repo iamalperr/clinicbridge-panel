@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { collection, getDocs, addDoc, serverTimestamp, query, orderBy } from "firebase/firestore";
+import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import type { UserProfile, Clinic, UserRole } from "@/lib/types";
@@ -74,8 +74,10 @@ export default function UsersPage() {
       return;
     }
 
+    const normalizedEmail = newUser.email.trim().toLowerCase();
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(newUser.email)) {
+    if (!emailRegex.test(normalizedEmail)) {
       setError(t("common.search") /* Placeholder */);
       return;
     }
@@ -85,14 +87,30 @@ export default function UsersPage() {
       return;
     }
 
+    // 1. Frontend State Check (Case-insensitive)
+    const isDuplicateLocal = users.some(u => u.email.trim().toLowerCase() === normalizedEmail);
+    if (isDuplicateLocal) {
+      setError("Bu e-posta adresiyle kayıtlı bir kullanıcı zaten mevcut.");
+      return;
+    }
+
     setIsSubmitting(true);
     setError(null);
 
     try {
+      // 2. Backend Direct Query Check (To prevent concurrent duplicates)
+      const duplicateQuery = query(collection(db, "users"), where("email", "==", normalizedEmail));
+      const duplicateSnap = await getDocs(duplicateQuery);
+      
+      if (!duplicateSnap.empty) {
+        setError("Bu e-posta adresiyle kayıtlı bir kullanıcı zaten mevcut.");
+        setIsSubmitting(false);
+        return;
+      }
       const userData = {
         uid: "", // Manually created profiles start with empty UID
         name: newUser.name,
-        email: newUser.email,
+        email: normalizedEmail,
         role: newUser.role,
         status: newUser.status || "active",
         clinicId: newUser.role === "admin" ? null : newUser.clinicId,
