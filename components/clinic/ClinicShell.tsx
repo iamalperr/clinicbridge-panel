@@ -23,6 +23,7 @@ const TABS = [
 ];
 
 import { useI18n } from "@/lib/i18n-context";
+import { useAuth } from "@/lib/auth-context";
 
 export default function ClinicShell({
   clinicId,
@@ -33,6 +34,7 @@ export default function ClinicShell({
 }) {
   const pathname = usePathname();
   const { t } = useI18n();
+  const { profile } = useAuth();
   const [clinic, setClinic] = useState<Clinic | null>(null);
   const base = `/clinics/${clinicId}`;
 
@@ -42,7 +44,7 @@ export default function ClinicShell({
     { label: t("clinics.tabs.voice"),         path: "/voice" },
     { label: t("clinics.tabs.widget"),        path: "/widget" },
     { label: t("clinics.tabs.training"),      path: "/training" },
-    { label: t("clinics.tabs.notes"),         path: "/notes" },
+    ...(profile?.role === "admin" ? [{ label: t("clinics.tabs.notes"), path: "/notes" }] : []),
     { label: t("clinics.tabs.usage"),         path: "/usage" },
     { label: t("clinics.tabs.logs"),          path: "/logs" },
     { label: t("clinics.tabs.appointments"),  path: "/appointments" },

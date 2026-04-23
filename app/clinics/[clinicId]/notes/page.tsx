@@ -5,8 +5,11 @@ import SectionCard from "@/components/ui/SectionCard";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { UI_COLORS } from "@/components/ui/ui-shared";
+import { useAuth } from "@/lib/auth-context";
+import UnauthorizedScreen from "@/components/auth/UnauthorizedScreen";
 
 export default function ClinicNotesPage() {
+  const { profile, loading } = useAuth();
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -14,6 +17,12 @@ export default function ClinicNotesPage() {
   const [notes, setNotes] = useState(
     "1. Kliniğimiz Pazar günleri kapalıdır.\n2. Diş teli kontrol randevuları sadece Dr. Yılmaz tarafından verilmektedir.\n3. Acil durumlarda hastaları nöbetçi polikliniğe yönlendir."
   );
+
+  if (loading) return null;
+  
+  if (profile?.role !== "admin") {
+    return <UnauthorizedScreen />;
+  }
 
   const handleSave = () => {
     setIsSaving(true);

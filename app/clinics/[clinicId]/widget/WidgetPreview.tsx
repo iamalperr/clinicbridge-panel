@@ -16,6 +16,13 @@ interface WidgetPreviewProps {
   settings: WidgetSettings;
 }
 
+const QUICK_QUESTIONS = [
+  "Randevu nasıl alabilirim?",
+  "Muayene ücretiniz nedir?",
+  "Klinik nerede?",
+  "Çalışma saatleriniz nedir?"
+];
+
 export default function WidgetPreview({ settings }: WidgetPreviewProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
@@ -57,18 +64,21 @@ export default function WidgetPreview({ settings }: WidgetPreviewProps) {
     }
   }, [messages, isTyping]);
 
-  const handleSend = () => {
-    if (hasConsent !== true || !inputValue.trim()) return;
+  const handleSend = (overrideText?: string) => {
+    const textToSend = overrideText || inputValue;
+    if (hasConsent !== true || !textToSend.trim()) return;
 
     const userMsg: Message = {
       id: Date.now().toString(),
-      text: inputValue,
+      text: textToSend,
       sender: "user",
       timestamp: new Date(),
     };
 
     setMessages((prev) => [...prev, userMsg]);
-    setInputValue("");
+    if (!overrideText) {
+      setInputValue("");
+    }
     setIsTyping(true);
 
     // Mock bot response
@@ -269,7 +279,48 @@ export default function WidgetPreview({ settings }: WidgetPreviewProps) {
         </div>
 
         {/* Input Area */}
-        <div style={{ padding: 16, borderTop: `1px solid ${UI_COLORS.border}`, background: "var(--bg-card)" }}>
+        <div style={{ padding: "12px 16px 16px 16px", borderTop: `1px solid ${UI_COLORS.border}`, background: "var(--bg-card)", display: "flex", flexDirection: "column", gap: 12 }}>
+          
+          {/* Quick Questions */}
+          <div 
+            className="hide-scrollbar"
+            style={{ 
+              display: "flex", 
+              gap: 8, 
+              overflowX: "auto",
+              paddingBottom: 2,
+              opacity: hasConsent !== true ? 0.3 : 1,
+              pointerEvents: hasConsent !== true ? "none" : "auto"
+            }}
+          >
+            {QUICK_QUESTIONS.map((q, idx) => (
+              <button
+                key={idx}
+                onClick={() => handleSend(q)}
+                style={{
+                  background: "rgba(255,255,255,0.03)",
+                  border: `1px solid ${settings.primaryColor || UI_COLORS.brand}40`,
+                  color: settings.primaryColor || UI_COLORS.brand,
+                  padding: "6px 12px",
+                  borderRadius: 100,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                  cursor: "pointer",
+                  transition: "all 0.2s"
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = `${settings.primaryColor || UI_COLORS.brand}15`;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.03)";
+                }}
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+
           <div style={{ 
             display: "flex", 
             alignItems: "center", 
@@ -371,6 +422,14 @@ export default function WidgetPreview({ settings }: WidgetPreviewProps) {
         }
         .typing-dot:nth-child(2) { animation-delay: 0.2s; }
         .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        
+        .hide-scrollbar::-webkit-scrollbar {
+          display: none;
+        }
+        .hide-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
       `}</style>
     </div>
   );
