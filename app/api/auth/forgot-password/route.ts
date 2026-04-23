@@ -15,8 +15,11 @@ export async function POST(req: Request) {
       );
     }
 
+    // Dynamic origin or fallback to environment URL
+    const origin = req.headers.get("origin") || process.env.NEXT_PUBLIC_APP_URL || "https://clinicbridge-ai.com";
+    
     // Mock reset link (since firebase-admin is not installed to generate a real one)
-    const resetLink = `https://clinicbridge-ai.com/reset-password?token=mock_token_${Date.now()}`;
+    const resetLink = `${origin}/reset-password?oobCode=mock_token_${Date.now()}`;
 
     const { data, error } = await resend.emails.send({
       from: process.env.EMAIL_FROM || "no-reply@clinicbridge-ai.com",
@@ -54,15 +57,35 @@ export async function POST(req: Request) {
     });
 
     if (error) {
-      console.error("Resend error:", error);
-      return NextResponse.json({ error: "E-posta gönderilirken bir hata oluştu." }, { status: 500 });
+      console.error("Resend Response Error Details:", {
+        message: error.message,
+        name: error.name,
+        fullError: error
+      });
+      
+      const isDev = process.env.NODE_ENV === "development";
+      const errorMessage = isDev 
+        ? `Resend Error: ${error.message || JSON.stringify(error)}` 
+        : "E-posta gönderilirken bir hata oluştu.";
+        
+      return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
 
+    console.log("Resend Success Response:", data);
     return NextResponse.json({ success: true, data });
-  } catch (error) {
-    console.error("Forgot password error:", error);
+  } catch (error: any) {
+    console.error("Forgot password try/catch error:", {
+      message: error?.message,
+      fullError: error
+    });
+    
+    const isDev = process.env.NODE_ENV === "development";
+    const errorMessage = isDev 
+      ? `Server Error: ${error?.message || "Unknown"}` 
+      : "Sunucu tarafında bir hata oluştu.";
+      
     return NextResponse.json(
-      { error: "Sunucu tarafında bir hata oluştu." },
+      { error: errorMessage },
       { status: 500 }
     );
   }
