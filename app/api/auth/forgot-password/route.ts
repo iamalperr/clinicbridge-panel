@@ -17,12 +17,17 @@ export async function POST(req: Request) {
       );
     }
 
+    if (!adminDb) {
+      console.error("Forgot Password: adminDb is null. Check Firebase Admin init.");
+      return NextResponse.json({ error: "Sunucu yapılandırma hatası. Lütfen daha sonra tekrar deneyin." }, { status: 500 });
+    }
+
     // Generate token and expiration (15 minutes)
     const token = crypto.randomUUID();
     const expiresAt = Date.now() + 15 * 60 * 1000;
 
     // Store in Firestore
-    await adminDb!.collection("password_reset_tokens").add({
+    await adminDb.collection("password_reset_tokens").add({
       email,
       token,
       expiresAt

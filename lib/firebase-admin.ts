@@ -7,7 +7,12 @@ if (!admin.apps.length) {
     const privateKey = process.env.FIREBASE_PRIVATE_KEY;
 
     if (!projectId || !clientEmail || !privateKey) {
-      console.warn('Firebase Admin credentials missing. Ensure FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY are set.');
+      const missing = [];
+      if (!projectId) missing.push('FIREBASE_PROJECT_ID (veya NEXT_PUBLIC_FIREBASE_PROJECT_ID)');
+      if (!clientEmail) missing.push('FIREBASE_CLIENT_EMAIL');
+      if (!privateKey) missing.push('FIREBASE_PRIVATE_KEY');
+      
+      throw new Error(`Firebase Admin credentials missing. Eksik değişkenler: ${missing.join(', ')}`);
     } else {
       admin.initializeApp({
         credential: admin.credential.cert({

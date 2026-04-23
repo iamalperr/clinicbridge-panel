@@ -10,7 +10,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Token eksik." }, { status: 400 });
     }
 
-    const tokensRef = adminDb!.collection("password_reset_tokens");
+    if (!adminDb) {
+      console.error("Verify Token: adminDb is null. Check Firebase Admin init.");
+      return NextResponse.json({ error: "Sunucu yapılandırma hatası." }, { status: 500 });
+    }
+
+    const tokensRef = adminDb.collection("password_reset_tokens");
     const snapshot = await tokensRef.where("token", "==", token).limit(1).get();
 
     if (snapshot.empty) {

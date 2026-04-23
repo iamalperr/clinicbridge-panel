@@ -13,8 +13,13 @@ export async function POST(req: Request) {
       );
     }
 
+    if (!adminDb || !adminAuth) {
+      console.error("Reset Password: adminDb or adminAuth is null. Check Firebase Admin init.");
+      return NextResponse.json({ error: "Sunucu yapılandırma hatası." }, { status: 500 });
+    }
+
     // 1. Verify Token
-    const tokensRef = adminDb!.collection("password_reset_tokens");
+    const tokensRef = adminDb.collection("password_reset_tokens");
     const snapshot = await tokensRef.where("token", "==", token).limit(1).get();
 
     if (snapshot.empty) {
@@ -38,8 +43,8 @@ export async function POST(req: Request) {
     // 2. Update Password via Firebase Admin Auth
     const email = tokenData.email;
     try {
-      const userRecord = await adminAuth!.getUserByEmail(email);
-      await adminAuth!.updateUser(userRecord.uid, {
+      const userRecord = await adminAuth.getUserByEmail(email);
+      await adminAuth.updateUser(userRecord.uid, {
         password: newPassword
       });
     } catch (authError: any) {
