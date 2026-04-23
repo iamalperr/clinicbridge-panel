@@ -19,7 +19,10 @@ export default function ClinicSettingsPage() {
     aiEnabled: "active",
     language: "tr",
     welcomeMessage: "Merhaba! Size nasıl yardımcı olabilirim?",
-    kvkkRequired: true
+    kvkkRequired: true,
+    enableHumanHandoff: false,
+    whatsappNumber: "",
+    telegramUsername: ""
   });
 
   const handleSave = () => {
@@ -101,6 +104,43 @@ export default function ClinicSettingsPage() {
             <p style={{ fontSize: 13, color: UI_COLORS.textSecondary, marginTop: 4, lineHeight: 1.5 }}>
               Hastalar AI asistanıyla sohbet etmeye başlamadan önce KVKK aydınlatma metnini onaylamak zorundadır.
             </p>
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Canlı Destek & İletişim">
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+            <input 
+              type="checkbox" 
+              id="handoff"
+              checked={form.enableHumanHandoff}
+              onChange={(e) => setForm({ ...form, enableHumanHandoff: e.target.checked })}
+              style={{ marginTop: 4, width: 18, height: 18, accentColor: UI_COLORS.brand, cursor: "pointer" }}
+            />
+            <div>
+              <label htmlFor="handoff" style={{ fontSize: 14, fontWeight: 600, color: UI_COLORS.textPrimary, cursor: "pointer", display: "block" }}>
+                Canlı Desteğe Aktarım (Human Handoff)
+              </label>
+              <p style={{ fontSize: 13, color: UI_COLORS.textSecondary, marginTop: 4, lineHeight: 1.5 }}>
+                Kullanıcı asistanla konuşurken "canlı destek, insana bağla, whatsapp" gibi ifadeler kullanırsa asistan otomatik olarak canlı destek butonları sunar.
+              </p>
+            </div>
+          </div>
+          
+          <div style={{ display: "flex", flexDirection: "column", gap: 20, opacity: form.enableHumanHandoff ? 1 : 0.5, pointerEvents: form.enableHumanHandoff ? "auto" : "none" }}>
+            <Input 
+              label="WhatsApp Numarası" 
+              value={form.whatsappNumber}
+              placeholder="+90 555 123 45 67"
+              onChange={(e) => setForm({ ...form, whatsappNumber: e.target.value })}
+            />
+            <Input 
+              label="Telegram Kullanıcı Adı veya Linki" 
+              value={form.telegramUsername}
+              placeholder="örn: @clinicbridge"
+              onChange={(e) => setForm({ ...form, telegramUsername: e.target.value })}
+            />
           </div>
         </div>
       </SectionCard>

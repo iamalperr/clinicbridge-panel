@@ -24,6 +24,9 @@ export interface Clinic {
   timezone?: string;
   email?: string;
   phone?: string;
+  whatsappNumber?: string;
+  telegramUsername?: string;
+  enableHumanHandoff?: boolean;
   createdAt?: string | number | { seconds: number; nanoseconds: number } | object; // Support strings, timestamps and ServerValue without using any
   lastActive?: string;
   modules?: {

@@ -10,10 +10,16 @@ interface Message {
   text: string;
   sender: "user" | "bot";
   timestamp: Date;
+  isHandoff?: boolean;
 }
 
 interface WidgetPreviewProps {
   settings: WidgetSettings;
+  clinicContact?: {
+    whatsappNumber?: string;
+    telegramUsername?: string;
+    enableHumanHandoff?: boolean;
+  };
 }
 
 const QUICK_QUESTIONS = [
@@ -23,7 +29,7 @@ const QUICK_QUESTIONS = [
   "Çalışma saatleriniz nedir?"
 ];
 
-export default function WidgetPreview({ settings }: WidgetPreviewProps) {
+export default function WidgetPreview({ settings, clinicContact = { enableHumanHandoff: true, whatsappNumber: "905551234567", telegramUsername: "clinicbridge" } }: WidgetPreviewProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -81,15 +87,52 @@ export default function WidgetPreview({ settings }: WidgetPreviewProps) {
     }
     setIsTyping(true);
 
-    // Mock bot response
+    // Intent Detection
+    const normalizedText = textToSend.toLowerCase().trim()
+      .replace(/ı/g, 'i').replace(/ğ/g, 'g').replace(/ü/g, 'u')
+      .replace(/ş/g, 's').replace(/ö/g, 'o').replace(/ç/g, 'c');
+      
+    const handoffKeywords = [
+      "canli destek", "insana bagla", "musteri temsilcisi", 
+      "gercek kisi", "whatsapp", "telegram", "klinikle gorus", 
+      "insanla", "biriyle gorus", "asistan degil", "canli birine"
+    ];
+
+    const isHandoffIntent = handoffKeywords.some(keyword => normalizedText.includes(keyword));
+
     setTimeout(() => {
-      const botMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        text: "Bu bir önizleme modudur. Gerçek asistanınız burada verdiğiniz bilgilere göre yanıt verecektir.",
-        sender: "bot",
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, botMsg]);
+      if (isHandoffIntent) {
+        console.log("HUMAN_HANDOFF_EVENT", {
+          clinicId: "preview-clinic-id",
+          userMessage: textToSend,
+          timestamp: new Date().toISOString()
+        });
+
+        if (!clinicContact.enableHumanHandoff || (!clinicContact.whatsappNumber && !clinicContact.telegramUsername)) {
+          setMessages((prev) => [...prev, {
+            id: (Date.now() + 1).toString(),
+            text: "Şu anda canlı destek hattı tanımlı değil. Lütfen klinik ile telefon veya e-posta üzerinden iletişime geçin.",
+            sender: "bot",
+            timestamp: new Date(),
+          }]);
+        } else {
+          setMessages((prev) => [...prev, {
+            id: (Date.now() + 1).toString(),
+            text: "Sizi yetkili ekibimize aktarıyorum.",
+            sender: "bot",
+            timestamp: new Date(),
+            isHandoff: true
+          }]);
+        }
+      } else {
+        const botMsg: Message = {
+          id: (Date.now() + 1).toString(),
+          text: "Bu bir önizleme modudur. Gerçek asistanınız burada verdiğiniz bilgilere göre yanıt verecektir.",
+          sender: "bot",
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, botMsg]);
+      }
       setIsTyping(false);
     }, 1500);
   };
@@ -251,16 +294,66 @@ export default function WidgetPreview({ settings }: WidgetPreviewProps) {
                   }}
                 >
                   <div style={{
-                    padding: "10px 14px",
+                    padding: msg.isHandoff ? "16px" : "10px 14px",
                     borderRadius: msg.sender === "user" ? "16px 16px 2px 16px" : "16px 16px 16px 2px",
-                    background: msg.sender === "user" ? settings.primaryColor : "rgba(255,255,255,0.05)",
+                    background: msg.sender === "user" ? settings.primaryColor : "var(--bg-card)",
                     color: msg.sender === "user" ? "white" : "var(--text-primary)",
                     fontSize: 14,
                     lineHeight: "1.5",
-                    boxShadow: msg.sender === "user" ? "0 4px 10px rgba(0,0,0,0.1)" : "none",
-                    border: msg.sender === "bot" ? `1px solid ${UI_COLORS.border}` : "none"
+                    boxShadow: msg.sender === "user" || msg.isHandoff ? "0 4px 12px rgba(0,0,0,0.08)" : "none",
+                    border: msg.sender === "bot" ? `1px solid ${UI_COLORS.border}` : "none",
+                    width: msg.isHandoff ? "100%" : "auto",
+                    minWidth: msg.isHandoff ? "240px" : "auto",
                   }}>
-                    {msg.text}
+                    {msg.isHandoff ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, color: settings.primaryColor || UI_COLORS.brand }}>
+                          <User size={18} />
+                          <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Canlı Destek</h4>
+                        </div>
+                        <p style={{ margin: 0, fontSize: 13, color: UI_COLORS.textSecondary }}>
+                          Dilerseniz kliniğimizle WhatsApp veya Telegram üzerinden doğrudan iletişime geçebilirsiniz.
+                        </p>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+                          {clinicContact.whatsappNumber && (
+                            <a 
+                              href={`https://wa.me/${clinicContact.whatsappNumber.replace(/[\s+]/g, '')}`} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              style={{
+                                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                                background: "#25D366", color: "white", textDecoration: "none",
+                                padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 600
+                              }}
+                            >
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                              </svg>
+                              WhatsApp ile Bağlan
+                            </a>
+                          )}
+                          {clinicContact.telegramUsername && (
+                            <a 
+                              href={clinicContact.telegramUsername.startsWith("http") ? clinicContact.telegramUsername : `https://t.me/${clinicContact.telegramUsername.replace('@', '')}`}
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              style={{
+                                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                                background: "#0088cc", color: "white", textDecoration: "none",
+                                padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 600
+                              }}
+                            >
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M11.944 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0a12 12 0 00-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 01.171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+                              </svg>
+                              Telegram ile Bağlan
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      msg.text
+                    )}
                   </div>
                   <span style={{ fontSize: 10, color: UI_COLORS.textMuted, alignSelf: msg.sender === "user" ? "flex-end" : "flex-start" }}>
                     {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

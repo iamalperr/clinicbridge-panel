@@ -11,7 +11,7 @@ if (!admin.apps.length) {
       if (!projectId) missing.push('FIREBASE_PROJECT_ID (veya NEXT_PUBLIC_FIREBASE_PROJECT_ID)');
       if (!clientEmail) missing.push('FIREBASE_CLIENT_EMAIL');
       if (!privateKey) missing.push('FIREBASE_PRIVATE_KEY');
-      
+
       throw new Error(`Firebase Admin credentials missing. Eksik değişkenler: ${missing.join(', ')}`);
     } else {
       admin.initializeApp({
@@ -31,3 +31,8 @@ const adminDb = admin.apps.length ? admin.firestore() : null;
 const adminAuth = admin.apps.length ? admin.auth() : null;
 
 export { adminDb, adminAuth };
+console.log("ENV CHECK:", {
+  projectId: !!process.env.FIREBASE_PROJECT_ID,
+  clientEmail: !!process.env.FIREBASE_CLIENT_EMAIL,
+  privateKey: !!process.env.FIREBASE_PRIVATE_KEY,
+});
