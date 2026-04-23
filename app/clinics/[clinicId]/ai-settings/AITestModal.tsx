@@ -55,6 +55,7 @@ export default function AITestModal({ isOpen, onClose, clinicId, settings }: AIT
         body: JSON.stringify({
           messages: updatedMessages,
           settings: settings,
+          patientConsent: true,
         }),
       });
 

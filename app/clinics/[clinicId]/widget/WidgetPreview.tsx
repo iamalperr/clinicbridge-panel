@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { MessageSquare, Send, RotateCcw, X, User } from "lucide-react";
+import { MessageSquare, Send, RotateCcw, X, User, Shield } from "lucide-react";
 import { UI_COLORS } from "@/components/ui/ui-shared";
 import type { WidgetSettings } from "@/lib/types";
 
@@ -20,19 +20,36 @@ export default function WidgetPreview({ settings }: WidgetPreviewProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [hasConsent, setHasConsent] = useState<boolean | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Initial welcome message
-    setMessages([
-      {
-        id: "1",
-        text: settings.welcomeMessage || "Merhaba! Size nasıl yardımcı olabilirim?",
-        sender: "bot",
-        timestamp: new Date(),
-      },
-    ]);
-  }, [settings.welcomeMessage]);
+    const consent = sessionStorage.getItem("patientConsent");
+    if (consent === "true") setHasConsent(true);
+    else if (consent === "false") setHasConsent(false);
+  }, []);
+
+  useEffect(() => {
+    if (hasConsent === true) {
+      setMessages([
+        {
+          id: "1",
+          text: settings.welcomeMessage || "Merhaba! Size nasıl yardımcı olabilirim?",
+          sender: "bot",
+          timestamp: new Date(),
+        },
+      ]);
+    } else if (hasConsent === false) {
+      setMessages([
+        {
+          id: "1",
+          text: "KVKK onayı olmadan asistan hizmeti kullanılamaz. Görüşmeye başlamak için sayfayı yenileyip onay verebilirsiniz.",
+          sender: "bot",
+          timestamp: new Date(),
+        },
+      ]);
+    }
+  }, [settings.welcomeMessage, hasConsent]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -41,7 +58,7 @@ export default function WidgetPreview({ settings }: WidgetPreviewProps) {
   }, [messages, isTyping]);
 
   const handleSend = () => {
-    if (!inputValue.trim()) return;
+    if (hasConsent !== true || !inputValue.trim()) return;
 
     const userMsg: Message = {
       id: Date.now().toString(),
@@ -68,10 +85,11 @@ export default function WidgetPreview({ settings }: WidgetPreviewProps) {
   };
 
   const resetChat = () => {
+    if (hasConsent !== true) return;
     setMessages([
       {
         id: "1",
-        text: settings.welcomeMessage,
+        text: settings.welcomeMessage || "Merhaba! Size nasıl yardımcı olabilirim?",
         sender: "bot",
         timestamp: new Date(),
       },
@@ -163,42 +181,90 @@ export default function WidgetPreview({ settings }: WidgetPreviewProps) {
             flexDirection: "column",
             gap: 16,
             background: "var(--bg-page)",
+            position: "relative"
           }}
         >
-          {messages.map((msg) => (
-            <div 
-              key={msg.id}
-              style={{
-                alignSelf: msg.sender === "user" ? "flex-end" : "flex-start",
-                maxWidth: "85%",
-                display: "flex",
-                flexDirection: "column",
-                gap: 4
-              }}
-            >
-              <div style={{
-                padding: "10px 14px",
-                borderRadius: msg.sender === "user" ? "16px 16px 2px 16px" : "16px 16px 16px 2px",
-                background: msg.sender === "user" ? settings.primaryColor : "rgba(255,255,255,0.05)",
-                color: msg.sender === "user" ? "white" : "var(--text-primary)",
-                fontSize: 14,
-                lineHeight: "1.5",
-                boxShadow: msg.sender === "user" ? "0 4px 10px rgba(0,0,0,0.1)" : "none",
-                border: msg.sender === "bot" ? `1px solid ${UI_COLORS.border}` : "none"
-              }}>
-                {msg.text}
+          {hasConsent === null ? (
+            <div style={{
+              position: "absolute",
+              top: 0, left: 0, right: 0, bottom: 0,
+              background: UI_COLORS.bgCard,
+              zIndex: 10,
+              padding: 24,
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "center"
+            }}>
+              <div style={{ width: 48, height: 48, borderRadius: 12, background: "rgba(99, 102, 241, 0.1)", color: UI_COLORS.brand, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+                <Shield size={24} />
               </div>
-              <span style={{ fontSize: 10, color: UI_COLORS.textMuted, alignSelf: msg.sender === "user" ? "flex-end" : "flex-start" }}>
-                {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: UI_COLORS.textPrimary, marginBottom: 8 }}>KVKK ve Gizlilik</h3>
+              <p style={{ fontSize: 13, color: UI_COLORS.textSecondary, lineHeight: 1.5, marginBottom: 24 }}>
+                Yapay zekâ asistanımızla yapacağınız görüşmelerde sağladığınız sağlık verileriniz hizmet kalitesi amacıyla işlenebilir.
+                Detaylı bilgi için <a href="/kvkk" target="_blank" style={{ color: UI_COLORS.brand, textDecoration: "none" }}>Aydınlatma Metni</a>'ni inceleyebilirsiniz.
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <button 
+                  onClick={() => {
+                    sessionStorage.setItem("patientConsent", "true");
+                    setHasConsent(true);
+                  }}
+                  style={{
+                    background: settings.primaryColor || UI_COLORS.brand,
+                    color: "white", padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 600, border: "none", cursor: "pointer"
+                  }}>
+                  Kabul Ediyorum ve Devam Et
+                </button>
+                <button 
+                  onClick={() => {
+                    sessionStorage.setItem("patientConsent", "false");
+                    setHasConsent(false);
+                  }}
+                  style={{
+                    background: "transparent", color: UI_COLORS.textSecondary, padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 600, border: `1px solid ${UI_COLORS.border}`, cursor: "pointer"
+                  }}>
+                  Reddet
+                </button>
+              </div>
             </div>
-          ))}
-          {isTyping && (
-            <div style={{ alignSelf: "flex-start", background: "rgba(255,255,255,0.05)", padding: "10px 14px", borderRadius: "16px 16px 16px 2px", display: "flex", gap: 4 }}>
-              <div className="typing-dot" style={{ width: 6, height: 6, borderRadius: "50%", background: UI_COLORS.textMuted }} />
-              <div className="typing-dot" style={{ width: 6, height: 6, borderRadius: "50%", background: UI_COLORS.textMuted }} />
-              <div className="typing-dot" style={{ width: 6, height: 6, borderRadius: "50%", background: UI_COLORS.textMuted }} />
-            </div>
+          ) : (
+            <>
+              {messages.map((msg) => (
+                <div 
+                  key={msg.id}
+                  style={{
+                    alignSelf: msg.sender === "user" ? "flex-end" : "flex-start",
+                    maxWidth: "85%",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4
+                  }}
+                >
+                  <div style={{
+                    padding: "10px 14px",
+                    borderRadius: msg.sender === "user" ? "16px 16px 2px 16px" : "16px 16px 16px 2px",
+                    background: msg.sender === "user" ? settings.primaryColor : "rgba(255,255,255,0.05)",
+                    color: msg.sender === "user" ? "white" : "var(--text-primary)",
+                    fontSize: 14,
+                    lineHeight: "1.5",
+                    boxShadow: msg.sender === "user" ? "0 4px 10px rgba(0,0,0,0.1)" : "none",
+                    border: msg.sender === "bot" ? `1px solid ${UI_COLORS.border}` : "none"
+                  }}>
+                    {msg.text}
+                  </div>
+                  <span style={{ fontSize: 10, color: UI_COLORS.textMuted, alignSelf: msg.sender === "user" ? "flex-end" : "flex-start" }}>
+                    {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              ))}
+              {isTyping && (
+                <div style={{ alignSelf: "flex-start", background: "rgba(255,255,255,0.05)", padding: "10px 14px", borderRadius: "16px 16px 16px 2px", display: "flex", gap: 4 }}>
+                  <div className="typing-dot" style={{ width: 6, height: 6, borderRadius: "50%", background: UI_COLORS.textMuted }} />
+                  <div className="typing-dot" style={{ width: 6, height: 6, borderRadius: "50%", background: UI_COLORS.textMuted }} />
+                  <div className="typing-dot" style={{ width: 6, height: 6, borderRadius: "50%", background: UI_COLORS.textMuted }} />
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -215,30 +281,33 @@ export default function WidgetPreview({ settings }: WidgetPreviewProps) {
           }}>
             <input 
               type="text"
-              placeholder={settings.placeholder || "Bir mesaj yazın..."}
+              placeholder={hasConsent === false ? "KVKK onayı gerekli" : (settings.placeholder || "Bir mesaj yazın...")}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              disabled={hasConsent !== true}
               style={{
                 flex: 1,
                 background: "transparent",
                 border: "none",
                 color: "var(--text-primary)",
                 fontSize: 14,
-                outline: "none"
+                outline: "none",
+                opacity: hasConsent !== true ? 0.5 : 1
               }}
             />
             <button 
               onClick={handleSend}
+              disabled={hasConsent !== true}
               style={{
                 width: 32, height: 32, borderRadius: 8,
-                background: settings.primaryColor,
-                color: "white",
+                background: hasConsent !== true ? "transparent" : settings.primaryColor,
+                color: hasConsent !== true ? UI_COLORS.textMuted : "white",
                 border: "none",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                cursor: "pointer"
+                cursor: hasConsent !== true ? "not-allowed" : "pointer"
               }}
             >
               <Send size={16} />

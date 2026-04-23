@@ -3,7 +3,14 @@ import OpenAI from "openai";
 
 export async function POST(req: Request) {
   try {
-    const { messages, userMessage, settings } = await req.json();
+    const { messages, userMessage, settings, patientConsent } = await req.json();
+
+    if (patientConsent !== true) {
+      return NextResponse.json(
+        { error: "KVKK onayı olmadan AI hizmeti kullanılamaz." },
+        { status: 403 }
+      );
+    }
 
     if (!settings || (!userMessage && !messages)) {
       return NextResponse.json(
