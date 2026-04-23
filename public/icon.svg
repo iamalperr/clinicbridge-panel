@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <defs>
+    <linearGradient id="bridgeGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#7C3AED" />
+      <stop offset="50%" stop-color="#4F46E5" />
+      <stop offset="100%" stop-color="#0EA5E9" />
+    </linearGradient>
+    <linearGradient id="sparkGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#C084FC" />
+      <stop offset="100%" stop-color="#38BDF8" />
+    </linearGradient>
+  </defs>
+  <path d="M 20 95 C 20 0, 100 0, 100 95" stroke="url(#bridgeGrad)" stroke-width="14" stroke-linecap="round" />
+  <path d="M 60 34 Q 60 68 45 68 Q 60 68 60 102 Q 60 68 75 68 Q 60 68 60 34 Z" fill="url(#sparkGrad)" />
+</svg>
