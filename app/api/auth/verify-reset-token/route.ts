@@ -10,14 +10,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Token eksik." }, { status: 400 });
     }
 
-    if (!adminDb) {
-      return NextResponse.json(
-        { error: "Firebase Admin SDK başlatılamadı. Service Account eksik." },
-        { status: 500 }
-      );
-    }
-
-    const tokensRef = adminDb.collection("password_reset_tokens");
+    const tokensRef = adminDb!.collection("password_reset_tokens");
     const snapshot = await tokensRef.where("token", "==", token).limit(1).get();
 
     if (snapshot.empty) {

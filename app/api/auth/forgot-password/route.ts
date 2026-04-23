@@ -17,19 +17,12 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!adminDb) {
-      return NextResponse.json(
-        { error: "Firebase Admin SDK başlatılamadı. Service Account eksik." },
-        { status: 500 }
-      );
-    }
-
     // Generate token and expiration (15 minutes)
     const token = crypto.randomUUID();
     const expiresAt = Date.now() + 15 * 60 * 1000;
 
     // Store in Firestore
-    await adminDb.collection("password_reset_tokens").add({
+    await adminDb!.collection("password_reset_tokens").add({
       email,
       token,
       expiresAt
