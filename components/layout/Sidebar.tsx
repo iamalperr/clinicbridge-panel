@@ -9,6 +9,7 @@ import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 import { Grid, BarChart3, Settings, Users, LogOut } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n-context";
+import Logo from "@/components/ui/Logo";
 
 function NavItem({ href, label, icon }: { href: string; label: string; icon: React.ReactNode }) {
   const pathname = usePathname();
@@ -91,9 +92,8 @@ export default function Sidebar() {
     }}>
       {/* Logo Area */}
       <div style={{ padding: "24px 20px 20px", borderBottom: `1px solid ${UI_COLORS.border}` }}>
-        <Link href="/clinics" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
-          <img src="/logo-dark.svg" alt="ClinicBridge" style={{ height: 28 }} className="hidden dark:block" />
-          <img src="/logo.svg" alt="ClinicBridge" style={{ height: 28 }} className="block dark:hidden" />
+        <Link href="/clinics" style={{ textDecoration: "none" }}>
+          <Logo size="md" />
         </Link>
       </div>
 

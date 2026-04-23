@@ -7,6 +7,7 @@ import { auth } from "@/lib/firebase";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
+import Logo from "@/components/ui/Logo";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -43,8 +44,7 @@ export default function LoginPage() {
         {/* Logo & Branding */}
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 24 }}>
-            <img src="/logo-dark.svg" alt="ClinicBridge" style={{ height: 42 }} className="hidden dark:block" />
-            <img src="/logo.svg" alt="ClinicBridge" style={{ height: 42 }} className="block dark:hidden" />
+            <Logo size="lg" />
           </div>
           <h1 style={{ 
             fontSize: 26, 
