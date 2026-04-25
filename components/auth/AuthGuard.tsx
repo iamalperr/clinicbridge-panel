@@ -12,7 +12,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!loading) {
-      const PUBLIC_ROUTES = ["/login", "/privacy", "/terms", "/kvkk"];
+      const PUBLIC_ROUTES = ["/login", "/privacy", "/terms", "/kvkk", "/landing"];
       const isPublicRoute = PUBLIC_ROUTES.includes(pathname);
       
       if (!user && !isPublicRoute) {
@@ -52,7 +52,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   // Prevent flashing of protected content if redirecting to login
-  const PUBLIC_ROUTES = ["/login", "/privacy", "/terms", "/kvkk"];
+  const PUBLIC_ROUTES = ["/login", "/privacy", "/terms", "/kvkk", "/landing"];
   const isPublicRoute = PUBLIC_ROUTES.includes(pathname);
 
   if (!user && !isPublicRoute) {
