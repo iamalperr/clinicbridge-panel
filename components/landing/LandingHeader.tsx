@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useLandingLang, LandingLanguage } from "@/lib/landing-translations";
 import { Menu, X } from "lucide-react";
 
+import Image from "next/image";
+
 export default function LandingHeader() {
   const { lang, setLang, t } = useLandingLang();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -20,9 +22,7 @@ export default function LandingHeader() {
       <header className="lp-header" id="lp-header">
         <div className="lp-header-inner">
           <a href="#" className="lp-logo" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
-            <div className="lp-logo-icon" aria-hidden="true">
-              <span>CB</span>
-            </div>
+            <Image src="/icon.svg" alt="ClinicBridge" width={36} height={36} className="lp-logo-icon-img" priority />
             <span className="lp-logo-text">
               <span className="lp-logo-clinic">Clinic</span>
               <span className="lp-logo-bridge">Bridge</span>

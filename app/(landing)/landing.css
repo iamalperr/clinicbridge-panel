@@ -143,24 +143,11 @@
   opacity: 0.85;
 }
 
-.lp-logo-icon {
+.lp-logo-icon-img {
   width: 36px;
   height: 36px;
   min-width: 36px;
-  border-radius: 10px;
-  background: var(--lp-gradient);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 8px rgba(14, 165, 233, 0.25);
-}
-
-.lp-logo-icon span {
-  color: #fff;
-  font-weight: 800;
-  font-size: 13px;
-  letter-spacing: -0.5px;
-  line-height: 1;
+  display: block;
 }
 
 .lp-logo-text {
