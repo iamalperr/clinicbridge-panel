@@ -6,7 +6,7 @@ import ThemeToggle from "@/components/ui/ThemeToggle";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
-import { Grid, BarChart3, Settings, Users, LogOut } from "lucide-react";
+import { Grid, BarChart3, Settings, Users, LogOut, ClipboardList } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n-context";
 import Logo from "@/components/ui/Logo";
@@ -109,6 +109,9 @@ export default function Sidebar() {
         <SectionLabel>{t("nav.platform")}</SectionLabel>
         <NavItem href="/clinics" label={t("nav.clinics")} icon={<Grid size={18} />} />
         <NavItem href="/analytics" label={t("nav.analytics")} icon={<BarChart3 size={18} />} />
+        {profile?.role === "admin" && (
+          <NavItem href="/demo-requests" label="Demo Talepleri" icon={<ClipboardList size={18} />} />
+        )}
         
         <SectionLabel>{t("nav.system")}</SectionLabel>
         {profile?.role === "admin" && (
