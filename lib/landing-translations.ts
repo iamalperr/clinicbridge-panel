@@ -69,8 +69,21 @@ const tr = {
       { icon: "plane", label: "Sağlık Turizmi / Yabancı Hasta" },
     ],
   },
+  clinicTypes: {
+    title: "Farklı Klinik Türleri İçin Akıllı Hasta Karşılama",
+    subtitle: "ClinicBridge AI; diş, estetik, saç ekimi, psikoloji, dermatoloji ve sağlık turizmi odaklı kliniklerde hasta sorularını yanıtlamak ve randevu taleplerini yönlendirmek için kullanılabilir.",
+    cards: [
+      { icon: "tooth",    title: "Diş Klinikleri",                         desc: "İmplant, ortodonti, diş beyazlatma ve randevu sorularını otomatik yanıtlayın." },
+      { icon: "sparkles", title: "Estetik & Plastik Cerrahi Klinikleri",   desc: "Operasyon süreçleri, ön görüşme talepleri ve fiyat aralığı sorularını profesyonel şekilde yönlendirin." },
+      { icon: "scissors", title: "Saç Ekimi Klinikleri",                   desc: "Yurt içi ve yurt dışı hasta adaylarının paket, süreç ve uygunluk sorularını anında karşılayın." },
+      { icon: "sun",      title: "Dermatoloji Klinikleri",                 desc: "Cilt tedavileri, leke tedavisi, akne ve kontrol randevuları için ön bilgilendirme sağlayın." },
+      { icon: "brain",    title: "Psikoloji & Terapi Merkezleri",          desc: "Seans bilgileri, uzman seçimi ve uygun randevu taleplerini hızlıca yönlendirin." },
+      { icon: "plane",    title: "Sağlık Turizmi Klinikleri",              desc: "Çok dilli hasta iletişimi, transfer, konaklama ve ön görüşme taleplerini tek akışta yönetin." },
+    ],
+  },
   benefits: {
     title: "Kliniğiniz İçin Daha Fazla Dönüşüm, Daha Az Operasyonel Yük",
+
     items: [
       "Daha hızlı hasta yanıtı",
       "Daha profesyonel ilk temas",
@@ -163,6 +176,18 @@ const en = {
       { icon: "calendar", label: "Appointment Availability" },
       { icon: "map-pin", label: "Location & Directions" },
       { icon: "plane", label: "Health Tourism / International Patients" },
+    ],
+  },
+  clinicTypes: {
+    title: "Built for Different Types of Clinics",
+    subtitle: "ClinicBridge AI can be used by dental, aesthetic, hair transplant, dermatology, psychology, and medical tourism clinics to answer patient questions and guide appointment requests.",
+    cards: [
+      { icon: "tooth",     title: "Dental Clinics",                          desc: "Automatically answer questions about implants, orthodontics, teeth whitening, and appointment availability." },
+      { icon: "sparkles",  title: "Aesthetic & Plastic Surgery Clinics",    desc: "Guide patients through procedure details, consultation requests, and pricing-related questions professionally." },
+      { icon: "scissors",  title: "Hair Transplant Clinics",                desc: "Instantly support local and international patient candidates with package, process, and eligibility questions." },
+      { icon: "sun",       title: "Dermatology Clinics",                    desc: "Provide initial guidance for skin treatments, acne care, pigmentation treatments, and follow-up appointments." },
+      { icon: "brain",     title: "Psychology & Therapy Centers",            desc: "Guide patients about session details, specialist selection, and appointment requests." },
+      { icon: "plane",     title: "Medical Tourism Clinics",                desc: "Manage multilingual patient communication, transfer, accommodation, and consultation requests in a single flow." },
     ],
   },
   benefits: {

@@ -8,6 +8,7 @@ import ProblemSection from "@/components/landing/ProblemSection";
 import SolutionSection from "@/components/landing/SolutionSection";
 import PatientJourneySection from "@/components/landing/PatientJourneySection";
 import UseCasesSection from "@/components/landing/UseCasesSection";
+import ClinicTypesSection from "@/components/landing/ClinicTypesSection";
 import BenefitsSection from "@/components/landing/BenefitsSection";
 import DemoCTASection from "@/components/landing/DemoCTASection";
 import LandingFooter from "@/components/landing/LandingFooter";
@@ -22,6 +23,7 @@ export default function Home() {
         <SolutionSection />
         <PatientJourneySection />
         <UseCasesSection />
+        <ClinicTypesSection />
         <BenefitsSection />
         <DemoCTASection />
         <LandingFooter />

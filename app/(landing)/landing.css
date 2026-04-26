@@ -455,6 +455,20 @@
   background: linear-gradient(135deg, #EF4444, #F97316);
 }
 
+/* ─── Clinic Types Cards ─── */
+.lp-clinic-type-icon {
+  background: var(--lp-gradient-subtle);
+  color: var(--lp-primary);
+}
+
+/* Each card gets a unique accent stripe on hover */
+.lp-clinic-type-card:nth-child(1)::before { background: linear-gradient(135deg, #0EA5E9, #14B8A6); }
+.lp-clinic-type-card:nth-child(2)::before { background: linear-gradient(135deg, #8B5CF6, #EC4899); }
+.lp-clinic-type-card:nth-child(3)::before { background: linear-gradient(135deg, #F59E0B, #EF4444); }
+.lp-clinic-type-card:nth-child(4)::before { background: linear-gradient(135deg, #10B981, #0EA5E9); }
+.lp-clinic-type-card:nth-child(5)::before { background: linear-gradient(135deg, #6366F1, #8B5CF6); }
+.lp-clinic-type-card:nth-child(6)::before { background: linear-gradient(135deg, #F97316, #FBBF24); }
+
 /* ─── Journey Timeline ─── */
 .lp-timeline {
   display: flex;
