@@ -8,6 +8,8 @@ import { UI_COLORS } from "@/components/ui/ui-shared";
 import Logo from "@/components/ui/Logo";
 import Link from "next/link";
 import { Eye, EyeOff, CheckCircle2, ShieldAlert } from "lucide-react";
+import { verifyPasswordResetCode, confirmPasswordReset, updatePassword } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 
 function ResetPasswordForm() {
   const router = useRouter();
@@ -27,25 +29,36 @@ function ResetPasswordForm() {
   useEffect(() => {
     async function verifyCode() {
       if (!token) {
+        // Allow authenticated users to reset their password without a token
+        if (auth.currentUser) {
+          setEmail(auth.currentUser.email);
+          setVerifying(false);
+          return;
+        }
         setError("Şifre sıfırlama bağlantısı eksik veya geçersiz.");
         setVerifying(false);
         return;
       }
 
       try {
-        const res = await fetch("/api/auth/verify-reset-token", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token })
-        });
+        if (searchParams.has("oobCode")) {
+          const email = await verifyPasswordResetCode(auth, token as string);
+          setEmail(email);
+        } else {
+          const res = await fetch("/api/auth/verify-reset-token", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token })
+          });
 
-        const data = await res.json();
+          const data = await res.json();
 
-        if (!res.ok) {
-          throw new Error(data.error || "Bağlantı geçersiz veya süresi dolmuş.");
+          if (!res.ok) {
+            throw new Error(data.error || "Bağlantı geçersiz veya süresi dolmuş.");
+          }
+
+          setEmail(data.email);
         }
-
-        setEmail(data.email);
       } catch (err: any) {
         console.error("Token verification failed:", err);
         setError(err.message || "Bu şifre sıfırlama bağlantısı geçersiz veya süresi dolmuş. Lütfen yeni bir bağlantı isteyin.");
@@ -54,12 +67,16 @@ function ResetPasswordForm() {
       }
     }
 
-    verifyCode();
-  }, [token]);
+    // Give auth state a moment to initialize before checking currentUser
+    const unsubscribe = auth.onAuthStateChanged(() => {
+      verifyCode();
+      unsubscribe();
+    });
+  }, [token, searchParams]);
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token) return;
+    if (!token && !auth.currentUser) return;
 
     if (password.length < 6) {
       setError("Şifre en az 6 karakter olmalıdır.");
@@ -75,22 +92,34 @@ function ResetPasswordForm() {
     setError(null);
 
     try {
-      const res = await fetch("/api/auth/reset-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, newPassword: password })
-      });
+      console.log("[Auth] Starting password reset process...");
 
-      const data = await res.json();
+      if (auth.currentUser && !token) {
+        console.log("[Auth] User is authenticated. Using updatePassword flow.");
+        await updatePassword(auth.currentUser, password);
+      } else if (searchParams.has("oobCode")) {
+        console.log("[Auth] Using Firebase confirmPasswordReset flow.");
+        await confirmPasswordReset(auth, token as string, password);
+      } else {
+        console.log("[Auth] Using custom API reset flow.");
+        const res = await fetch("/api/auth/reset-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, newPassword: password })
+        });
 
-      if (!res.ok) {
-        throw new Error(data.error || "Şifre sıfırlanırken bir hata oluştu.");
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Şifre sıfırlanırken bir hata oluştu.");
+        }
       }
 
+      console.log("[Auth] Password reset successful. Firebase Auth updated.");
       setSuccess(true);
       setTimeout(() => router.replace("/login"), 3000);
     } catch (err: any) {
-      console.error("Password reset failed:", err);
+      console.error("[Auth] Password reset failed:", err);
       setError(err.message || "Şifre sıfırlanırken bir hata oluştu. Lütfen tekrar deneyin.");
     } finally {
       setLoading(false);
