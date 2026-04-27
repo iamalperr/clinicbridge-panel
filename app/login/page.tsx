@@ -29,11 +29,29 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    
+    const cleanEmail = email.trim();
+    
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      console.log(`[Auth] Attempting login for email: ${cleanEmail}`);
+      const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password);
+      console.log(`[Auth] Firebase response success. UID:`, userCredential.user.uid);
       router.replace("/clinics");
-    } catch {
-      setError("Login failed. Please check your credentials and try again.");
+    } catch (err: any) {
+      console.error(`[Auth] Firebase login error for ${cleanEmail}:`, err.code, err.message);
+      
+      const errorCode = err.code;
+      if (errorCode === "auth/invalid-credential" || errorCode === "auth/wrong-password") {
+        setError("Hatalı e-posta veya şifre girdiniz.");
+      } else if (errorCode === "auth/user-not-found") {
+        setError("Bu e-posta adresiyle kayıtlı bir kullanıcı bulunamadı.");
+      } else if (errorCode === "auth/invalid-email") {
+        setError("Geçersiz bir e-posta adresi girdiniz.");
+      } else if (errorCode === "auth/too-many-requests") {
+        setError("Çok fazla başarısız deneme yapıldı. Lütfen daha sonra tekrar deneyin veya şifrenizi sıfırlayın.");
+      } else {
+        setError(err.message || "Giriş yapılamadı. Lütfen bilgilerinizi kontrol edip tekrar deneyin.");
+      }
     } finally {
       setLoading(false);
     }
