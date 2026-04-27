@@ -244,6 +244,26 @@
         "title": "Fast Resolution",
         "desc": "Guides the user to the shortest path toward a solution without extending the conversation unnecessarily."
       }
+    },
+    "guardrailsTitle": "AI Guardrails",
+    "guardrailsSubtitle": "These are hard rules that prioritize patient safety and compliance. They cannot be overridden by standard prompts.",
+    "guardrails": {
+      "noDiagnosis": {
+        "title": "No Medical Diagnosis",
+        "desc": "Do not provide medical diagnosis or treatment recommendations."
+      },
+      "noAssumptions": {
+        "title": "No Assumptions",
+        "desc": "Do not assume patient condition without clear information."
+      },
+      "emergencyRouting": {
+        "title": "Emergency Guidance",
+        "desc": "If situation is urgent, direct user to clinic or emergency services."
+      },
+      "dataPrivacy": {
+        "title": "Data Privacy",
+        "desc": "Avoid sharing sensitive or personal data."
+      }
     }
   },
   "appointments": {

@@ -31,6 +31,20 @@ export async function POST(req: Request) {
       apiKey: process.env.OPENAI_API_KEY,
     });
 
+    // Construct Guardrails
+    const activeGuardrails: string[] = [];
+    if (settings.guardrails) {
+      Object.values(settings.guardrails).forEach((guardrail: any) => {
+        if (guardrail.enabled && guardrail.text) {
+          activeGuardrails.push(guardrail.text);
+        }
+      });
+    }
+
+    const guardrailRules = activeGuardrails.length > 0
+      ? `CRITICAL GUARDRAILS (MUST FOLLOW):\n- ${activeGuardrails.join("\n- ")}\n\n`
+      : "";
+
     // Construct Behavior Rules based on Quality Criteria
     const activeCriteria: string[] = [];
     if (settings.qualityCriteria) {
@@ -48,8 +62,8 @@ export async function POST(req: Request) {
 
     // Prepare System Instruction
     const systemInstruction = settings.systemPrompt 
-      ? `${settings.systemPrompt}${criteriaRules}\n\nIMPORTANT: If the user asks to book an appointment (e.g., "randevu almak istiyorum"), you MUST respond in valid JSON format exactly like this:\n{ "message": "Your response text here...", "quickReplies": ["Option 1", "Option 2", "Option 3"] }\nOtherwise, just respond normally in plain text.`
-      : `You are a helpful assistant.${criteriaRules}`;
+      ? `${guardrailRules}${settings.systemPrompt}${criteriaRules}\n\nIMPORTANT: If the user asks to book an appointment (e.g., "randevu almak istiyorum"), you MUST respond in valid JSON format exactly like this:\n{ "message": "Your response text here...", "quickReplies": ["Option 1", "Option 2", "Option 3"] }\nOtherwise, just respond normally in plain text.`
+      : `${guardrailRules}You are a helpful assistant.${criteriaRules}`;
 
     // Build the messages array for OpenAI
     // We favor the full 'messages' array if provided by the client (stateful chat)

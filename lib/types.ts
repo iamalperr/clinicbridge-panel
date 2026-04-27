@@ -95,6 +95,12 @@ export interface PromptSettings {
     consistency: boolean;
     fastResolution: boolean;
   };
+  guardrails?: {
+    noDiagnosis: { enabled: boolean; text: string };
+    noAssumptions: { enabled: boolean; text: string };
+    emergencyRouting: { enabled: boolean; text: string };
+    dataPrivacy: { enabled: boolean; text: string };
+  };
   updatedAt?: any;
 }
 

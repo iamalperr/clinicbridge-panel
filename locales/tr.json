@@ -244,6 +244,26 @@
         "title": "Hızlı Çözüm",
         "desc": "Sorunu uzatmadan, en kısa yoldan çözüme kavuşturacak yönlendirmeleri yapar."
       }
+    },
+    "guardrailsTitle": "Zorunlu AI Kuralları",
+    "guardrailsSubtitle": "Hasta güvenliğini ve uyumluluğu önceleyen kesin kurallardır. Standart komutlar tarafından geçersiz kılınamaz.",
+    "guardrails": {
+      "noDiagnosis": {
+        "title": "Tıbbi Teşhis Yok",
+        "desc": "Asla tıbbi teşhis koyma veya doğrudan tedavi önerme."
+      },
+      "noAssumptions": {
+        "title": "Varsayım Yapma",
+        "desc": "Net bilgi olmadan hastanın durumu hakkında varsayımda bulunma."
+      },
+      "emergencyRouting": {
+        "title": "Acil Durum Yönlendirmesi",
+        "desc": "Durum acilse, kullanıcıyı derhal kliniğe veya acil servise yönlendir."
+      },
+      "dataPrivacy": {
+        "title": "Veri Gizliliği",
+        "desc": "Hassas kişisel verileri paylaşmaktan ve talep etmekten kaçın."
+      }
     }
   },
   "appointments": {
