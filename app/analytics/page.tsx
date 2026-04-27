@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { MOCK_CLINICS, MOCK_STATS } from "@/lib/mock-data";
 import StatCard from "@/components/ui/StatCard";
@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/Button";
 import { BarChart3, Activity, Download, TrendingUp, Users, MessageSquare, Clock, Star, Heart, CalendarCheck, UserPlus, AlertTriangle } from "lucide-react";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 import PageHeader from "@/components/ui/PageHeader";
+import { db } from "@/lib/firebase";
+import { doc, getDoc } from "firebase/firestore";
 import { formatNumber } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n-context";
 import { Check } from "lucide-react";
@@ -29,6 +31,29 @@ export default function AnalyticsPage() {
     if (isClinicUser && profile?.clinicId) return profile.clinicId;
     return "all";
   });
+  const [fetchedClinicName, setFetchedClinicName] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchClinicName() {
+      if (selectedClinicId && selectedClinicId !== "all") {
+        try {
+          const docRef = doc(db, "clinics", selectedClinicId);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists() && docSnap.data().name) {
+            setFetchedClinicName(docSnap.data().name);
+          } else {
+            setFetchedClinicName(null);
+          }
+        } catch (error) {
+          console.error("Failed to fetch clinic name:", error);
+          setFetchedClinicName(null);
+        }
+      } else {
+        setFetchedClinicName(null);
+      }
+    }
+    fetchClinicName();
+  }, [selectedClinicId]);
 
   // Security: If user is a clinic user but has no assigned clinic, block access to analytics data
   if (isClinicUser && !profile?.clinicId) {
@@ -48,7 +73,7 @@ export default function AnalyticsPage() {
   // Mock filtering based on selected clinic
   const isGlobal = selectedClinicId === "all";
   const matchedClinic = MOCK_CLINICS.find(c => c.id === selectedClinicId);
-  const selectedClinicName = isGlobal ? t("clinics.allClinics") : (matchedClinic?.name || "Atanan Klinik");
+  const selectedClinicName = isGlobal ? t("clinics.allClinics") : (fetchedClinicName || matchedClinic?.name || "");
   
   const aiQualityScore = isGlobal ? "94%" : "97%";
   const patientSat = isGlobal ? "4.8/5" : "4.9/5";
@@ -190,7 +215,7 @@ export default function AnalyticsPage() {
       {/* AI Performance Section */}
       <div style={{ marginBottom: 24, display: "flex", alignItems: "center", gap: 12 }}>
         <h3 style={{ fontSize: 18, fontWeight: 700, color: UI_COLORS.textPrimary }}>
-          {t("analytics.aiPerformance")} - {selectedClinicName}
+          {t("analytics.aiPerformance")}{selectedClinicName ? ` - ${selectedClinicName}` : ""}
         </h3>
         <div style={{ height: 1, flex: 1, background: `linear-gradient(to right, ${UI_COLORS.border}, transparent)` }} />
         {!isClinicUser && (
