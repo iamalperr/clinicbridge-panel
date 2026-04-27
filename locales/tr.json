@@ -268,5 +268,62 @@
       "ai-chat": "AI Chat",
       "manual": "Manuel"
     }
+  },
+  "aiSkills": {
+    "title": "AI Yetenekleri ve Becerileri",
+    "subtitle": "Asistanınızın operasyonel yeteneklerini ve kullanabileceği araçları yönetin.",
+    "status": {
+      "active": "Aktif",
+      "always_active": "Her Zaman Aktif",
+      "disabled": "Pasif"
+    },
+    "categories": {
+      "patient_experience": "HASTA DENEYİMİ",
+      "appointments": "RANDEVULAR",
+      "communication": "İLETİŞİM",
+      "knowledge": "BİLGİ YÖNETİMİ"
+    },
+    "skills": {
+      "send_patient_satisfaction_survey": {
+        "title": "Hasta Memnuniyet Anketi",
+        "description": "Randevu veya AI görüşmesi sonrasında kısa bir memnuniyet anketi gönderir."
+      },
+      "collect_appointment_feedback": {
+        "title": "Randevu Geri Bildirimi",
+        "description": "Randevu deneyimi, doktor iletişimi, bekleme süresi ve klinik hizmeti hakkında geri bildirim toplar."
+      },
+      "follow_up_treatment_interest": {
+        "title": "Tedavi İlgisi Takibi",
+        "description": "Tedaviler hakkında soru soran ancak randevu almayan hastalarla iletişime geçer."
+      },
+      "create_appointment_request": {
+        "title": "Randevu Talebi Oluşturma",
+        "description": "Hastaların uygun iletişim seçeneklerinden yeni bir randevu talep etmesine yardımcı olur."
+      },
+      "send_appointment_reminder": {
+        "title": "Randevu Hatırlatıcı",
+        "description": "Planlanmış randevulardan önce hatırlatma mesajları gönderir."
+      },
+      "follow_up_missed_appointment": {
+        "title": "Kaçırılan Randevu Takibi",
+        "description": "Randevusuna gelmeyen hastalara nazik bir takip mesajı gönderir."
+      },
+      "human_handoff": {
+        "title": "Canlı Desteğe Aktarım",
+        "description": "Hastalar gerçek bir kişiyle görüşmek istediğinde, asistan onları WhatsApp, Telegram veya telefon üzerinden klinik personeline yönlendirir."
+      },
+      "emergency_guidance": {
+        "title": "Acil Durum Yönlendirmesi",
+        "description": "Hasta acil semptomlar tarif ettiğinde, asistan teşhis koymaktan kaçınır ve onları doğrudan kliniğe veya acil servise yönlendirir."
+      },
+      "knowledge_lookup": {
+        "title": "Bilgi Bankası Sorgulama",
+        "description": "Hasta sorularını yanıtlamak için kliniğin yüklediği belgeleri, SSS'leri ve tedavi bilgilerini arar."
+      },
+      "clinic_policy_lookup": {
+        "title": "Klinik Politikası Sorgulama",
+        "description": "Klinik çalışma saatleri, iptal politikası, fiyatlandırma politikası ve randevu kuralları hakkındaki soruları yanıtlar."
+      }
+    }
   }
 }

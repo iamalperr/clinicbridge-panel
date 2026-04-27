@@ -268,5 +268,62 @@
       "ai-chat": "AI Chat",
       "manual": "Manual"
     }
+  },
+  "aiSkills": {
+    "title": "AI Skills & Capabilities",
+    "subtitle": "Manage your assistant's operational capabilities and tools.",
+    "status": {
+      "active": "Active",
+      "always_active": "Always Active",
+      "disabled": "Disabled"
+    },
+    "categories": {
+      "patient_experience": "PATIENT EXPERIENCE",
+      "appointments": "APPOINTMENTS",
+      "communication": "COMMUNICATION",
+      "knowledge": "KNOWLEDGE"
+    },
+    "skills": {
+      "send_patient_satisfaction_survey": {
+        "title": "Patient Satisfaction Survey",
+        "description": "Sends a short satisfaction survey after the appointment or after an AI conversation."
+      },
+      "collect_appointment_feedback": {
+        "title": "Appointment Feedback",
+        "description": "Collects feedback about appointment experience, doctor communication, waiting time and clinic service."
+      },
+      "follow_up_treatment_interest": {
+        "title": "Treatment Interest Follow-up",
+        "description": "Follows up with patients who asked about treatments but did not book an appointment."
+      },
+      "create_appointment_request": {
+        "title": "Appointment Request",
+        "description": "Helps patients request a new appointment from available contact options."
+      },
+      "send_appointment_reminder": {
+        "title": "Appointment Reminder",
+        "description": "Sends reminder messages before scheduled appointments."
+      },
+      "follow_up_missed_appointment": {
+        "title": "Missed Appointment Follow-up",
+        "description": "Sends a polite follow-up message to patients who missed their appointment."
+      },
+      "human_handoff": {
+        "title": "Human Handoff",
+        "description": "When patients want a real person, the assistant directs them to clinic staff via WhatsApp, Telegram or phone."
+      },
+      "emergency_guidance": {
+        "title": "Emergency Guidance",
+        "description": "If the patient describes urgent symptoms, the assistant avoids diagnosis and directs them to contact the clinic or emergency services."
+      },
+      "knowledge_lookup": {
+        "title": "Knowledge Lookup",
+        "description": "Searches the clinic’s uploaded documents, FAQs and treatment information to answer patient questions."
+      },
+      "clinic_policy_lookup": {
+        "title": "Clinic Policy Lookup",
+        "description": "Answers questions about clinic working hours, cancellation policy, pricing policy and appointment rules."
+      }
+    }
   }
 }
