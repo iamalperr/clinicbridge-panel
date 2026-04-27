@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, where, doc, updateDoc, deleteDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import type { UserProfile, Clinic, UserRole } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
@@ -44,6 +44,9 @@ export default function UsersPage() {
     status: "active",
     clinicId: ""
   });
+  
+  const [temporaryPassword, setTemporaryPassword] = useState("");
+  const [createdUserData, setCreatedUserData] = useState<{email: string, password?: string | null, resetLink?: string | null} | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -85,6 +88,10 @@ export default function UsersPage() {
 
   const openAddUser = () => {
     setNewUser({ name: "", email: "", role: "clinicUser", status: "active", clinicId: "" });
+    setTemporaryPassword("");
+    setCreatedUserData(null);
+    setSubmitSuccess(false);
+    setError(null);
     setEditingUserId(null);
     setIsModalOpen(true);
   };
@@ -206,38 +213,41 @@ export default function UsersPage() {
     setError(null);
 
     try {
-      // 2. Backend Direct Query Check (To prevent concurrent duplicates)
-      const duplicateQuery = query(collection(db, "users"), where("email", "==", normalizedEmail));
-      const duplicateSnap = await getDocs(duplicateQuery);
-      
-      if (!duplicateSnap.empty) {
-        setError("Bu e-posta adresiyle kayıtlı bir kullanıcı zaten mevcut.");
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) {
+        setError("Oturum süresi dolmuş. Lütfen sayfayı yenileyip tekrar deneyin.");
         setIsSubmitting(false);
         return;
       }
-      const userData = {
-        uid: "", // Manually created profiles start with empty UID
-        name: newUser.name,
-        email: normalizedEmail,
-        role: newUser.role,
-        status: newUser.status || "active",
-        clinicId: newUser.role === "admin" ? null : newUser.clinicId,
-        createdAt: serverTimestamp()
-      };
 
-      await addDoc(collection(db, "users"), userData);
+      const res = await fetch("/api/admin/users/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: newUser.name,
+          email: normalizedEmail,
+          role: newUser.role,
+          clinicId: newUser.clinicId,
+          password: temporaryPassword || undefined
+        })
+      });
+
+      const data = await res.json();
       
+      if (!res.ok) {
+        throw new Error(data.error || "Kullanıcı oluşturulurken bir hata oluştu.");
+      }
+
+      setCreatedUserData(data.data);
       setSubmitSuccess(true);
-      setTimeout(() => {
-        setIsModalOpen(false);
-        setSubmitSuccess(false);
-        setNewUser({ name: "", email: "", role: "clinicUser", status: "active", clinicId: "" });
-        fetchData();
-      }, 1500);
+      fetchData(); // Refresh list to show new user
       
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to add user:", err);
-      setError(t("common.loading"));
+      setError(err.message || t("common.loading"));
     } finally {
       setIsSubmitting(false);
     }
@@ -393,7 +403,7 @@ export default function UsersPage() {
         title={t("users.addUser")} 
         width={500}
       >
-        {submitSuccess ? (
+        {submitSuccess && createdUserData ? (
           <div style={{ padding: "20px 0", textAlign: "center" }}>
             <div style={{ 
               width: 56, height: 56, borderRadius: "50%", 
@@ -403,8 +413,30 @@ export default function UsersPage() {
             }}>
               <Shield size={28} />
             </div>
-            <h3 style={{ color: UI_COLORS.textPrimary, marginBottom: 8 }}>{t("training.noteSaved") /* Using generic success */}</h3>
-            <p style={{ color: UI_COLORS.textSecondary }}>{t("training.aiInstruction")}</p>
+            <h3 style={{ color: UI_COLORS.textPrimary, marginBottom: 8 }}>Kullanıcı Başarıyla Oluşturuldu</h3>
+            <p style={{ color: UI_COLORS.textSecondary, marginBottom: 24 }}>Yeni kullanıcının sisteme giriş bilgileri aşağıdadır:</p>
+            
+            <div style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${UI_COLORS.border}`, borderRadius: 12, padding: 16, textAlign: "left", marginBottom: 24 }}>
+              <p style={{ margin: "0 0 8px", fontSize: 14 }}><strong style={{ color: UI_COLORS.textMuted }}>E-posta:</strong> <span style={{ color: UI_COLORS.textPrimary }}>{createdUserData.email}</span></p>
+              {createdUserData.password && (
+                <p style={{ margin: 0, fontSize: 14 }}><strong style={{ color: UI_COLORS.textMuted }}>Geçici Şifre:</strong> <span style={{ color: UI_COLORS.textPrimary, fontFamily: "monospace", letterSpacing: 1 }}>{createdUserData.password}</span></p>
+              )}
+            </div>
+
+            <Button fullWidth onClick={() => { setIsModalOpen(false); setSubmitSuccess(false); setCreatedUserData(null); }}>Kapat</Button>
+          </div>
+        ) : submitSuccess ? (
+          <div style={{ padding: "20px 0", textAlign: "center" }}>
+            <div style={{ 
+              width: 56, height: 56, borderRadius: "50%", 
+              background: "rgba(16, 185, 129, 0.1)", color: "#10b981",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              margin: "0 auto 16px"
+            }}>
+              <Shield size={28} />
+            </div>
+            <h3 style={{ color: UI_COLORS.textPrimary, marginBottom: 8 }}>Kullanıcı Güncellendi</h3>
+            <p style={{ color: UI_COLORS.textSecondary }}>Kullanıcı bilgileri başarıyla kaydedildi.</p>
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -453,6 +485,16 @@ export default function UsersPage() {
                   { label: "...", value: "" },
                   ...clinics.map(c => ({ label: c.name, value: c.id }))
                 ]}
+              />
+            )}
+
+            {!editingUserId && (
+              <Input 
+                label="Geçici Şifre (İsteğe Bağlı)" 
+                type="text"
+                placeholder="Boş bırakılırsa güvenli bir şifre otomatik oluşturulur" 
+                value={temporaryPassword}
+                onChange={(e) => setTemporaryPassword(e.target.value)}
               />
             )}
 
