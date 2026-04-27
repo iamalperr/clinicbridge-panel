@@ -30,12 +30,25 @@ export default function AnalyticsPage() {
     return "all";
   });
 
+  // Security: If user is a clinic user but has no assigned clinic, block access to analytics data
+  if (isClinicUser && !profile?.clinicId) {
+    return (
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 40, background: "var(--bg-app)" }}>
+        <EmptyState 
+          title="Erişim Hatası" 
+          description="Bu hesap henüz herhangi bir kliniğe atanmamış. Lütfen yönetici ile iletişime geçin." 
+        />
+      </div>
+    );
+  }
+
   const activeClinics = MOCK_CLINICS.filter(c => c.status === "active").length;
   const topClinics = [...MOCK_CLINICS].sort((a, b) => (b.messages || 0) - (a.messages || 0)).slice(0, 5);
 
   // Mock filtering based on selected clinic
   const isGlobal = selectedClinicId === "all";
-  const selectedClinicName = isGlobal ? t("clinics.allClinics") : MOCK_CLINICS.find(c => c.id === selectedClinicId)?.name || "";
+  const matchedClinic = MOCK_CLINICS.find(c => c.id === selectedClinicId);
+  const selectedClinicName = isGlobal ? t("clinics.allClinics") : (matchedClinic?.name || "Atanan Klinik");
   
   const aiQualityScore = isGlobal ? "94%" : "97%";
   const patientSat = isGlobal ? "4.8/5" : "4.9/5";
@@ -180,21 +193,18 @@ export default function AnalyticsPage() {
           {t("analytics.aiPerformance")} - {selectedClinicName}
         </h3>
         <div style={{ height: 1, flex: 1, background: `linear-gradient(to right, ${UI_COLORS.border}, transparent)` }} />
-        <div style={{ width: 220 }}>
-          <Select 
-            value={selectedClinicId}
-            onChange={(e) => setSelectedClinicId(e.target.value)}
-            disabled={isClinicUser}
-            options={
-              isClinicUser 
-                ? MOCK_CLINICS.filter(c => c.id === profile?.clinicId).map(c => ({ label: c.name, value: c.id }))
-                : [
-                    { label: t("clinics.allClinics"), value: "all" },
-                    ...MOCK_CLINICS.map(c => ({ label: c.name, value: c.id }))
-                  ]
-            }
-          />
-        </div>
+        {!isClinicUser && (
+          <div style={{ width: 220 }}>
+            <Select 
+              value={selectedClinicId}
+              onChange={(e) => setSelectedClinicId(e.target.value)}
+              options={[
+                { label: t("clinics.allClinics"), value: "all" },
+                ...MOCK_CLINICS.map(c => ({ label: c.name, value: c.id }))
+              ]}
+            />
+          </div>
+        )}
       </div>
 
       <div style={{ 
@@ -316,53 +326,55 @@ export default function AnalyticsPage() {
           </div>
         </SectionCard>
 
-        {/* Top Clinics */}
-        <SectionCard title={t("analytics.highestVolume")} icon={<BarChart3 size={18} />}>
-          {topClinics.length === 0 ? (
-            <EmptyState title={t("training.empty.noResults")} />
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {topClinics.map((clinic, i) => (
-                <div key={clinic.id} style={{ 
-                  display: "flex", 
-                  alignItems: "center", 
-                  justifyContent: "space-between",
-                  padding: "12px 16px",
-                  borderRadius: 16,
-                  background: "rgba(255, 255, 255, 0.02)",
-                  border: `1px solid ${UI_COLORS.border}`,
-                  transition: "transform 0.2s, background 0.2s",
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                    <div style={{ 
-                      width: 32, 
-                      height: 32, 
-                      borderRadius: 10, 
-                      background: "rgba(99, 102, 241, 0.1)", 
-                      color: UI_COLORS.brand, 
-                      display: "flex", 
-                      alignItems: "center", 
-                      justifyContent: "center", 
-                      fontSize: 13, 
-                      fontWeight: 800 
-                    }}>
-                      #{i + 1}
-                    </div>
-                    <div>
-                      <p style={{ fontSize: 14.5, fontWeight: 700, color: UI_COLORS.textPrimary }}>{clinic.name}</p>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                        <p style={{ fontSize: 12, color: UI_COLORS.textMuted }}>{formatNumber(clinic.messages ?? 0)} messages</p>
-                        <span style={{ width: 3, height: 3, borderRadius: "50%", background: UI_COLORS.border }} />
-                        <span style={{ fontSize: 11, fontWeight: 700, color: "#10b981" }}>+5.2%</span>
+        {/* Top Clinics - Hidden for clinic users to prevent visibility leaks */}
+        {!isClinicUser && (
+          <SectionCard title={t("analytics.highestVolume")} icon={<BarChart3 size={18} />}>
+            {topClinics.length === 0 ? (
+              <EmptyState title={t("training.empty.noResults")} />
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {topClinics.map((clinic, i) => (
+                  <div key={clinic.id} style={{ 
+                    display: "flex", 
+                    alignItems: "center", 
+                    justifyContent: "space-between",
+                    padding: "12px 16px",
+                    borderRadius: 16,
+                    background: "rgba(255, 255, 255, 0.02)",
+                    border: `1px solid ${UI_COLORS.border}`,
+                    transition: "transform 0.2s, background 0.2s",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                      <div style={{ 
+                        width: 32, 
+                        height: 32, 
+                        borderRadius: 10, 
+                        background: "rgba(99, 102, 241, 0.1)", 
+                        color: UI_COLORS.brand, 
+                        display: "flex", 
+                        alignItems: "center", 
+                        justifyContent: "center", 
+                        fontSize: 13, 
+                        fontWeight: 800 
+                      }}>
+                        #{i + 1}
+                      </div>
+                      <div>
+                        <p style={{ fontSize: 14.5, fontWeight: 700, color: UI_COLORS.textPrimary }}>{clinic.name}</p>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+                          <p style={{ fontSize: 12, color: UI_COLORS.textMuted }}>{formatNumber(clinic.messages ?? 0)} messages</p>
+                          <span style={{ width: 3, height: 3, borderRadius: "50%", background: UI_COLORS.border }} />
+                          <span style={{ fontSize: 11, fontWeight: 700, color: "#10b981" }}>+5.2%</span>
+                        </div>
                       </div>
                     </div>
+                    {clinic.plan && <Badge variant={clinic.plan} />}
                   </div>
-                  {clinic.plan && <Badge variant={clinic.plan} />}
-                </div>
-              ))}
-            </div>
-          )}
-        </SectionCard>
+                ))}
+              </div>
+            )}
+          </SectionCard>
+        )}
       </div>
     </div>
   );
