@@ -24,8 +24,31 @@ export async function POST(req: Request) {
     }
 
     // 2. Verify Admin Role
-    const callerDoc = await adminDb.collection("users").where("uid", "==", decodedToken.uid).limit(1).get();
-    if (callerDoc.empty || callerDoc.docs[0].data().role !== "admin") {
+    console.log(`[AdminAuth] Validating user UID: ${decodedToken.uid}, Email: ${decodedToken.email}`);
+    
+    let callerDoc = await adminDb.collection("users").where("uid", "==", decodedToken.uid).limit(1).get();
+    let callerData = callerDoc.empty ? null : callerDoc.docs[0].data();
+
+    // If Firestore document is missing by UID, try to find by Email (legacy users often have uid: "")
+    if (!callerData && decodedToken.email) {
+      console.log(`[AdminAuth] UID not found. Falling back to email lookup: ${decodedToken.email}`);
+      const callerByEmail = await adminDb.collection("users").where("email", "==", decodedToken.email).limit(1).get();
+      
+      if (!callerByEmail.empty) {
+        callerData = callerByEmail.docs[0].data();
+        // Safely sync the missing UID back to the Firestore profile
+        await adminDb.collection("users").doc(callerByEmail.docs[0].id).set({ uid: decodedToken.uid }, { merge: true });
+        console.log(`[AdminAuth] Synced UID for legacy user profile: ${decodedToken.email}`);
+      }
+    }
+
+    // Support all possible admin role values across the system
+    const adminRoles = ["admin", "platform_admin", "Yönetici", "yonetici"];
+    const resolvedRole = callerData?.role || "none";
+
+    console.log(`[AdminAuth] Resolved user role: ${resolvedRole}`);
+
+    if (!callerData || !adminRoles.includes(resolvedRole)) {
       return NextResponse.json({ error: "Bu işlemi yapmak için yönetici (admin) yetkisine sahip olmalısınız." }, { status: 403 });
     }
 
@@ -53,12 +76,16 @@ export async function POST(req: Request) {
         email: normalizedEmail,
         password: tempPassword,
         displayName: name,
+        emailVerified: false,
       });
     } catch (err: any) {
       if (err.code === "auth/email-already-exists") {
-        return NextResponse.json({ error: "Bu e-posta adresiyle kayıtlı bir kullanıcı zaten mevcut." }, { status: 400 });
+        console.log(`[Auth] User ${normalizedEmail} already exists in Firebase Auth. Fetching existing user record to sync Firestore profile...`);
+        userRecord = await adminAuth.getUserByEmail(normalizedEmail);
+      } else {
+        console.error("Firebase Auth creation failed:", err);
+        return NextResponse.json({ error: `Firebase Auth oluşturma işlemi başarısız: ${err.message}` }, { status: 500 });
       }
-      throw err;
     }
 
     // 6. Generate Password Reset Link (Optional but preferred)
@@ -70,16 +97,21 @@ export async function POST(req: Request) {
     }
 
     // 7. Store user in Firestore
-    const userDocRef = adminDb.collection("users").doc(); // Use auto-generated ID for document
-    await userDocRef.set({
-      uid: userRecord.uid,
-      email: normalizedEmail,
-      name,
-      role,
-      clinicId: role === "admin" ? null : clinicId,
-      status: "active",
-      createdAt: FieldValue.serverTimestamp(),
-    });
+    try {
+      const userDocRef = adminDb.collection("users").doc(userRecord.uid);
+      await userDocRef.set({
+        uid: userRecord.uid,
+        email: normalizedEmail,
+        name,
+        role,
+        clinicId: role === "admin" ? null : clinicId,
+        status: "active",
+        createdAt: FieldValue.serverTimestamp(),
+      }, { merge: true }); // Use merge in case the document already exists to avoid overwriting everything
+    } catch (err: any) {
+      console.error("Firestore profile creation failed:", err);
+      return NextResponse.json({ error: `Firestore profil oluşturma işlemi başarısız: ${err.message}` }, { status: 500 });
+    }
 
     return NextResponse.json({
       success: true,
