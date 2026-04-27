@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState, useMemo } from "react";
-import { collection, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, getDoc, doc, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { useAuth } from "@/lib/auth-context";
 import type { Clinic, Plan, ClinicStatus } from "@/lib/types";
 import { MOCK_CLINICS } from "@/lib/mock-data";
 import Badge from "@/components/ui/Badge";
@@ -19,8 +20,12 @@ import { CheckCircle2, Loader2, Sparkles, Layout, Mic } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
 
 export default function ClinicsPage() {
+  const { profile } = useAuth();
   const { t } = useI18n();
   const [clinics, setClinics] = useState<Clinic[]>([]);
+  
+  const roleStr = profile?.role as string;
+  const isClinicUser = roleStr === "clinicUser" || roleStr === "Klinik Kullanıcısı";
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -38,11 +43,21 @@ export default function ClinicsPage() {
     setLoading(true);
     setError(null);
     try {
-      const snap = await getDocs(collection(db, "clinics"));
-      if (snap.empty) {
-        setClinics([]);
+      if (isClinicUser && profile?.clinicId) {
+        const docRef = doc(db, "clinics", profile.clinicId);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          setClinics([{ id: docSnap.id, ...(docSnap.data() as Omit<Clinic, "id">) }]);
+        } else {
+          setClinics([]);
+        }
       } else {
-        setClinics(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Clinic, "id">) })));
+        const snap = await getDocs(collection(db, "clinics"));
+        if (snap.empty) {
+          setClinics([]);
+        } else {
+          setClinics(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Clinic, "id">) })));
+        }
       }
     } catch (err) {
       console.error("Firestore error:", err);
@@ -117,9 +132,11 @@ export default function ClinicsPage() {
           <h1 style={{ fontSize: 24, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.5px" }}>{t("dashboard.title")}</h1>
           <p style={{ color: UI_COLORS.textSecondary, marginTop: 4, fontSize: 14 }}>{t("dashboard.subtitle")}</p>
         </div>
-        <Button onClick={() => setIsAddModalOpen(true)}>
-          + {t("common.addClinic")}
-        </Button>
+        {!isClinicUser && (
+          <Button onClick={() => setIsAddModalOpen(true)}>
+            + {t("common.addClinic")}
+          </Button>
+        )}
       </div>
 
       {/* Summary stats */}

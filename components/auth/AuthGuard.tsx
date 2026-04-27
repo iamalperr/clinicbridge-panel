@@ -60,10 +60,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   // Authorization Logic
-  const isAuthorized = profile && (
-    profile.role === "admin" || 
-    profile.status === "active"
-  );
+  const roleStr = profile?.role as string;
+  const isAdmin = roleStr === "admin" || roleStr === "platform_admin" || roleStr === "Yönetici" || roleStr === "yonetici";
+  const isClinicUser = roleStr === "clinicUser" || roleStr === "Klinik Kullanıcısı";
+
+  const isAuthorized = profile && (isAdmin || profile.status === "active");
 
   if (user && !isAuthorized && !isPublicRoute) {
     console.warn("[AuthGuard] Blocking access. State:", {
@@ -73,6 +74,23 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       status: profile?.status
     });
     return <UnauthorizedScreen />;
+  }
+
+  // Route-Level Role Guards for Clinic Users
+  if (user && profile && !isPublicRoute && isClinicUser) {
+    // Block access to User Management
+    if (pathname.startsWith("/users")) {
+      return <UnauthorizedScreen />;
+    }
+    
+    // Block access to other clinics
+    const clinicMatch = pathname.match(/^\/clinics\/([^/]+)/);
+    if (clinicMatch) {
+      const accessedClinicId = clinicMatch[1];
+      if (profile.clinicId && accessedClinicId !== profile.clinicId) {
+        return <UnauthorizedScreen />;
+      }
+    }
   }
 
   return <>{children}</>;

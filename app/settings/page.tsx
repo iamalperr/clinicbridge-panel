@@ -1,20 +1,73 @@
 "use client";
 
-import { User, Bell, Palette, Shield, Lock, LogOut, ChevronRight } from "lucide-react";
+import { useState } from "react";
+import { User, Bell, Palette, Shield, Lock, LogOut, ChevronRight, Loader2, CheckCircle2 } from "lucide-react";
 import SectionCard from "@/components/ui/SectionCard";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import ThemeToggle from "@/components/ui/ThemeToggle";
+import Modal from "@/components/ui/Modal";
 import { UI_COLORS } from "@/components/ui/ui-shared";
 import PageHeader from "@/components/ui/PageHeader";
 import { useAuth } from "@/lib/auth-context";
-import { signOut } from "firebase/auth";
+import { signOut, EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useI18n } from "@/lib/i18n-context";
 
 export default function SettingsPage() {
   const { profile } = useAuth();
   const { t } = useI18n();
+
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const handlePasswordChange = async () => {
+    if (newPassword.length < 8) {
+      setError("Yeni şifre en az 8 karakter olmalıdır.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Yeni şifreler eşleşmiyor.");
+      return;
+    }
+
+    const currentUser = auth.currentUser;
+    if (!currentUser || !currentUser.email) return;
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const credential = EmailAuthProvider.credential(currentUser.email, currentPassword);
+      await reauthenticateWithCredential(currentUser, credential);
+      await updatePassword(currentUser, newPassword);
+      
+      setSuccess(true);
+      setTimeout(() => {
+        setIsPasswordModalOpen(false);
+        setSuccess(false);
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+      }, 2000);
+    } catch (err: any) {
+      console.error("Password change failed:", err);
+      if (err.code === "auth/invalid-credential") {
+        setError("Mevcut şifreniz hatalı.");
+      } else if (err.code === "auth/weak-password") {
+        setError("Yeni şifre çok zayıf.");
+      } else {
+        setError("Şifre güncellenirken bir hata oluştu.");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div style={{ 
@@ -115,6 +168,11 @@ export default function SettingsPage() {
                 transition: "background 0.2s",
                 border: `1px solid ${UI_COLORS.border}`
               }}
+              onClick={() => {
+                setError(null);
+                setSuccess(false);
+                setIsPasswordModalOpen(true);
+              }}
               onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.02)"}
               onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
               >
@@ -174,6 +232,66 @@ export default function SettingsPage() {
           </p>
         </div>
       </div>
+
+      {/* Password Change Modal */}
+      <Modal isOpen={isPasswordModalOpen} onClose={() => !isSubmitting && !success && setIsPasswordModalOpen(false)} title="Şifre Değiştir" width={450}>
+        {success ? (
+          <div style={{ padding: "30px 0", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div style={{ width: 64, height: 64, borderRadius: "50%", background: "rgba(16, 185, 129, 0.1)", color: "#10b981", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+              <CheckCircle2 size={32} />
+            </div>
+            <h3 style={{ color: UI_COLORS.textPrimary, fontSize: 18, marginBottom: 8 }}>Şifre Güncellendi</h3>
+            <p style={{ color: UI_COLORS.textSecondary, fontSize: 14 }}>Şifreniz başarıyla değiştirildi.</p>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <Input 
+              label="Mevcut Şifre" 
+              type="password" 
+              value={currentPassword} 
+              onChange={(e) => setCurrentPassword(e.target.value)} 
+              placeholder="••••••••"
+            />
+            <Input 
+              label="Yeni Şifre" 
+              type="password" 
+              value={newPassword} 
+              onChange={(e) => setNewPassword(e.target.value)} 
+              placeholder="En az 8 karakter"
+            />
+            <Input 
+              label="Yeni Şifre (Tekrar)" 
+              type="password" 
+              value={confirmPassword} 
+              onChange={(e) => setConfirmPassword(e.target.value)} 
+              placeholder="••••••••"
+            />
+            
+            {error && (
+              <div style={{ padding: "10px 14px", background: "rgba(239, 68, 68, 0.08)", border: `1px solid ${UI_COLORS.danger}20`, borderRadius: 8, color: UI_COLORS.danger, fontSize: 13, fontWeight: 500 }}>
+                {error}
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 12, paddingTop: 18, borderTop: `1px solid ${UI_COLORS.border}` }}>
+              <Button variant="ghost" onClick={() => setIsPasswordModalOpen(false)} disabled={isSubmitting}>İptal</Button>
+              <Button onClick={handlePasswordChange} disabled={!currentPassword || !newPassword || !confirmPassword || isSubmitting} style={{ minWidth: 140 }}>
+                {isSubmitting ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Loader2 size={16} className="animate-spin" />
+                    Kaydediliyor...
+                  </div>
+                ) : "Şifreyi Güncelle"}
+              </Button>
+            </div>
+          </div>
+        )}
+        <style>{`
+          .animate-spin { animation: spin 1s linear infinite; }
+          @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        `}</style>
+      </Modal>
+
     </div>
   );
 }

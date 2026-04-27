@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useAuth } from "@/lib/auth-context";
 import { MOCK_CLINICS, MOCK_STATS } from "@/lib/mock-data";
 import StatCard from "@/components/ui/StatCard";
 import SectionCard from "@/components/ui/SectionCard";
@@ -17,11 +18,17 @@ import { Check } from "lucide-react";
 
 export default function AnalyticsPage() {
   const { t } = useI18n();
+  const { profile } = useAuth();
   const [timeRange, setTimeRange] = useState("7d");
   const [isExporting, setIsExporting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
-  const [selectedClinicId, setSelectedClinicId] = useState("all");
+  const roleStr = profile?.role as string;
+  const isClinicUser = roleStr === "clinicUser" || roleStr === "Klinik Kullanıcısı";
+  const [selectedClinicId, setSelectedClinicId] = useState(() => {
+    if (isClinicUser && profile?.clinicId) return profile.clinicId;
+    return "all";
+  });
 
   const activeClinics = MOCK_CLINICS.filter(c => c.status === "active").length;
   const topClinics = [...MOCK_CLINICS].sort((a, b) => (b.messages || 0) - (a.messages || 0)).slice(0, 5);
@@ -128,42 +135,44 @@ export default function AnalyticsPage() {
         }
       />
 
-      {/* Top Stats */}
-      <div style={{ 
-        display: "grid", 
-        gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", 
-        gap: 20, 
-        marginBottom: 32 
-      }}>
-        <StatCard 
-          label={t("clinics.stats.totalMessages")} 
-          value={formatNumber(MOCK_STATS.totalMessages)} 
-          subtext="Total platform volume" 
-          icon={<MessageSquare size={18} />}
-          trend={{ value: 12.4, isUp: true }}
-        />
-        <StatCard 
-          label={t("clinics.stats.conversations")} 
-          value={formatNumber(MOCK_STATS.totalConversations)} 
-          subtext="Resolved interactions" 
-          icon={<Users size={18} />}
-          trend={{ value: 8.2, isUp: true }}
-        />
-        <StatCard 
-          label={t("clinics.stats.activeClinics")} 
-          value={activeClinics} 
-          subtext="Operational now" 
-          icon={<Activity size={18} />}
-          trend={{ value: 2, isUp: true }}
-        />
-        <StatCard 
-          label={t("clinics.stats.avgResponse")} 
-          value={`${MOCK_STATS.avgResponseTime}s`} 
-          subtext="Per message" 
-          icon={<Clock size={18} />}
-          trend={{ value: 4.1, isUp: false }}
-        />
-      </div>
+      {/* Top Stats - Hidden for Clinic Users as these are platform wide */}
+      {!isClinicUser && (
+        <div style={{ 
+          display: "grid", 
+          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", 
+          gap: 20, 
+          marginBottom: 32 
+        }}>
+          <StatCard 
+            label={t("clinics.stats.totalMessages")} 
+            value={formatNumber(MOCK_STATS.totalMessages)} 
+            subtext="Total platform volume" 
+            icon={<MessageSquare size={18} />}
+            trend={{ value: 12.4, isUp: true }}
+          />
+          <StatCard 
+            label={t("clinics.stats.conversations")} 
+            value={formatNumber(MOCK_STATS.totalConversations)} 
+            subtext="Resolved interactions" 
+            icon={<Users size={18} />}
+            trend={{ value: 8.2, isUp: true }}
+          />
+          <StatCard 
+            label={t("clinics.stats.activeClinics")} 
+            value={activeClinics} 
+            subtext="Operational now" 
+            icon={<Activity size={18} />}
+            trend={{ value: 2, isUp: true }}
+          />
+          <StatCard 
+            label={t("clinics.stats.avgResponse")} 
+            value={`${MOCK_STATS.avgResponseTime}s`} 
+            subtext="Per message" 
+            icon={<Clock size={18} />}
+            trend={{ value: 4.1, isUp: false }}
+          />
+        </div>
+      )}
 
       {/* AI Performance Section */}
       <div style={{ marginBottom: 24, display: "flex", alignItems: "center", gap: 12 }}>
@@ -175,10 +184,15 @@ export default function AnalyticsPage() {
           <Select 
             value={selectedClinicId}
             onChange={(e) => setSelectedClinicId(e.target.value)}
-            options={[
-              { label: t("clinics.allClinics"), value: "all" },
-              ...MOCK_CLINICS.map(c => ({ label: c.name, value: c.id }))
-            ]}
+            disabled={isClinicUser}
+            options={
+              isClinicUser 
+                ? MOCK_CLINICS.filter(c => c.id === profile?.clinicId).map(c => ({ label: c.name, value: c.id }))
+                : [
+                    { label: t("clinics.allClinics"), value: "all" },
+                    ...MOCK_CLINICS.map(c => ({ label: c.name, value: c.id }))
+                  ]
+            }
           />
         </div>
       </div>
