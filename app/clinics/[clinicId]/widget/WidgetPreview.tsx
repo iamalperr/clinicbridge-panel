@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { MessageSquare, Send, RotateCcw, X, User, Shield } from "lucide-react";
+import { Send, RotateCcw, X, User, Shield, Sparkles } from "lucide-react";
 import { UI_COLORS } from "@/components/ui/ui-shared";
 import type { WidgetSettings } from "@/lib/types";
 
@@ -28,6 +28,160 @@ const QUICK_QUESTIONS = [
   "Klinik nerede?",
   "Çalışma saatleriniz nedir?"
 ];
+
+// ─── Floating CTA Button ─────────────────────────────────────────────────────
+interface FloatingCTAProps {
+  side: "right" | "left";
+  active: boolean;
+  primaryColor?: string;
+}
+
+function FloatingCTAButton({ side, active, primaryColor }: FloatingCTAProps) {
+  const [showTooltip, setShowTooltip] = useState(true);
+  const [tooltipExiting, setTooltipExiting] = useState(false);
+
+  // Auto-dismiss tooltip after 3 s
+  useEffect(() => {
+    if (!active) return;
+    const timer = setTimeout(() => {
+      setTooltipExiting(true);
+      setTimeout(() => setShowTooltip(false), 300);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [active]);
+
+  const positionStyle: React.CSSProperties = {
+    position: "absolute",
+    bottom: 28,
+    ...(side === "right" ? { right: 20 } : { left: 20 }),
+  };
+
+  return (
+    <div style={positionStyle}>
+      {/* Tooltip */}
+      {active && showTooltip && (
+        <div
+          className={tooltipExiting ? "cta-pill-tooltip-exit" : "cta-pill-tooltip-enter"}
+          style={{
+            position: "absolute",
+            bottom: "calc(100% + 10px)",
+            ...(side === "right" ? { right: 0 } : { left: 0 }),
+            background: "rgba(15,18,28,0.92)",
+            backdropFilter: "blur(12px)",
+            WebkitBackdropFilter: "blur(12px)",
+            border: "1px solid rgba(255,255,255,0.10)",
+            borderRadius: 10,
+            padding: "8px 14px",
+            whiteSpace: "nowrap",
+            fontSize: 12.5,
+            fontWeight: 600,
+            color: "#e2e8f0",
+            pointerEvents: "none",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
+          }}
+        >
+          Merhaba 👋 Size yardımcı olabilirim
+          {/* Tail */}
+          <span style={{
+            position: "absolute",
+            bottom: -5,
+            ...(side === "right" ? { right: 18 } : { left: 18 }),
+            width: 10, height: 10,
+            background: "rgba(15,18,28,0.92)",
+            border: "1px solid rgba(255,255,255,0.10)",
+            borderTop: "none", borderLeft: "none",
+            transform: "rotate(45deg)",
+            borderRadius: "0 0 2px 0",
+          }} />
+        </div>
+      )}
+
+      {/* Pulse ring */}
+      {active && (
+        <div
+          className="cta-pulse-ring"
+          style={{
+            position: "absolute",
+            inset: -4,
+            borderRadius: 999,
+            border: `2px solid ${primaryColor || "#6366f1"}`,
+            pointerEvents: "none",
+          }}
+        />
+      )}
+
+      {/* Pill button */}
+      <button
+        className="cta-pill"
+        disabled
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "0 18px 0 6px",
+          height: 52,
+          borderRadius: 999,
+          border: "1px solid rgba(255,255,255,0.18)",
+          cursor: "not-allowed",
+          position: "relative",
+          overflow: "hidden",
+          /* Gradient background */
+          background: active
+            ? "linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)"
+            : "rgba(99,102,241,0.15)",
+          color: "white",
+          opacity: active ? 1 : 0.25,
+          transition: "transform 0.25s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.25s ease, opacity 0.3s ease",
+          boxShadow: active
+            ? "0 10px 30px rgba(99,102,241,0.45), 0 2px 8px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.2)"
+            : "none",
+        }}
+      >
+        {/* Glassmorphism overlay */}
+        <span style={{
+          position: "absolute", inset: 0,
+          borderRadius: 999,
+          background: "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)",
+          pointerEvents: "none",
+        }} />
+
+        {/* Icon bubble */}
+        <span
+          className="cta-icon-wrap"
+          style={{
+            width: 40, height: 40,
+            borderRadius: "50%",
+            background: "rgba(255,255,255,0.20)",
+            backdropFilter: "blur(6px)",
+            WebkitBackdropFilter: "blur(6px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            flexShrink: 0,
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.25)",
+          }}
+        >
+          <Sparkles size={18} />
+        </span>
+
+        {/* Label + online dot */}
+        <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2, minWidth: 0 }}>
+          <span style={{ fontSize: 13.5, fontWeight: 700, letterSpacing: "-0.2px", whiteSpace: "nowrap" }}>
+            Asistan ile konuş
+          </span>
+          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{
+              width: 6, height: 6, borderRadius: "50%",
+              background: "#10b981",
+              boxShadow: "0 0 0 2px rgba(16,185,129,0.3)",
+              display: "inline-block",
+            }} />
+            <span style={{ fontSize: 10.5, fontWeight: 600, opacity: 0.8 }}>Online</span>
+          </span>
+        </span>
+      </button>
+    </div>
+  );
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function WidgetPreview({ settings, clinicContact = { enableHumanHandoff: true, whatsappNumber: "905551234567", telegramUsername: "clinicbridge" } }: WidgetPreviewProps) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -460,68 +614,67 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
         </div>
       </div>
 
-      {/* Floating Action Hint */}
-      <div 
-        style={{
-          position: "absolute",
-          bottom: 40,
-          right: 40,
-          width: 56,
-          height: 56,
-          borderRadius: "50%",
-          background: settings.primaryColor,
-          color: "white",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: "0 10px 25px rgba(0,0,0,0.2)",
-          cursor: "not-allowed",
-          opacity: settings.position === "bottom-right" ? 1 : 0.2,
-          transition: "all 0.3s ease"
-        }}
-      >
-        <MessageSquare size={24} />
-      </div>
+      {/* Floating CTA – Bottom Right */}
+      <FloatingCTAButton
+        side="right"
+        active={settings.position === "bottom-right"}
+        primaryColor={settings.primaryColor}
+      />
 
-      <div 
-        style={{
-          position: "absolute",
-          bottom: 40,
-          left: 40,
-          width: 56,
-          height: 56,
-          borderRadius: "50%",
-          background: settings.primaryColor,
-          color: "white",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: "0 10px 25px rgba(0,0,0,0.2)",
-          cursor: "not-allowed",
-          opacity: settings.position === "bottom-left" ? 1 : 0.2,
-          transition: "all 0.3s ease"
-        }}
-      >
-        <MessageSquare size={24} />
-      </div>
+      {/* Floating CTA – Bottom Left */}
+      <FloatingCTAButton
+        side="left"
+        active={settings.position === "bottom-left"}
+        primaryColor={settings.primaryColor}
+      />
 
       <style>{`
         @keyframes typing {
           0%, 100% { opacity: 0.3; transform: translateY(0); }
           50% { opacity: 1; transform: translateY(-2px); }
         }
-        .typing-dot {
-          animation: typing 1s infinite;
-        }
+        .typing-dot { animation: typing 1s infinite; }
         .typing-dot:nth-child(2) { animation-delay: 0.2s; }
         .typing-dot:nth-child(3) { animation-delay: 0.4s; }
-        
-        .hide-scrollbar::-webkit-scrollbar {
-          display: none;
+
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        @keyframes cta-pulse-ring {
+          0%   { transform: scale(1);   opacity: 0.55; }
+          70%  { transform: scale(1.55); opacity: 0; }
+          100% { transform: scale(1.55); opacity: 0; }
         }
-        .hide-scrollbar {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
+        @keyframes cta-float {
+          0%, 100% { transform: translateY(0px); }
+          50%       { transform: translateY(-3px); }
+        }
+        @keyframes cta-tooltip-in {
+          from { opacity: 0; transform: translateY(6px) scale(0.95); }
+          to   { opacity: 1; transform: translateY(0)  scale(1); }
+        }
+        @keyframes cta-tooltip-out {
+          from { opacity: 1; transform: translateY(0)  scale(1); }
+          to   { opacity: 0; transform: translateY(6px) scale(0.95); }
+        }
+        .cta-pulse-ring {
+          animation: cta-pulse-ring 2.2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        .cta-pill:hover {
+          transform: scale(1.04) !important;
+          box-shadow: 0 16px 40px rgba(99,102,241,0.5), 0 0 0 1px rgba(255,255,255,0.15) !important;
+        }
+        .cta-pill:hover .cta-icon-wrap {
+          transform: rotate(-8deg) scale(1.15);
+        }
+        .cta-icon-wrap {
+          transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .cta-pill-tooltip-enter {
+          animation: cta-tooltip-in 0.3s ease forwards;
+        }
+        .cta-pill-tooltip-exit {
+          animation: cta-tooltip-out 0.3s ease forwards;
         }
       `}</style>
     </div>
