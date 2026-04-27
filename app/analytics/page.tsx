@@ -152,7 +152,7 @@ export default function AnalyticsPage() {
 
       {/* AI Performance Section */}
       <div style={{ marginBottom: 24, display: "flex", alignItems: "center", gap: 12 }}>
-        <h3 style={{ fontSize: 18, fontWeight: 700, color: UI_COLORS.textPrimary }}>AI Performance</h3>
+        <h3 style={{ fontSize: 18, fontWeight: 700, color: UI_COLORS.textPrimary }}>{t("analytics.aiPerformance")}</h3>
         <div style={{ height: 1, flex: 1, background: `linear-gradient(to right, ${UI_COLORS.border}, transparent)` }} />
       </div>
 
@@ -163,37 +163,37 @@ export default function AnalyticsPage() {
         marginBottom: 32 
       }}>
         <StatCard 
-          label="AI Quality Score" 
+          label={t("analytics.aiQualityScore")} 
           value="94%" 
-          subtext="Based on criteria rules" 
+          subtext={t("analytics.basedOnCriteria")} 
           icon={<Star size={18} color="#f59e0b" />}
           trend={{ value: 2.1, isUp: true }}
         />
         <StatCard 
-          label="Patient Satisfaction" 
+          label={t("analytics.patientSatisfaction")} 
           value="4.8/5" 
-          subtext="Post-chat feedback" 
+          subtext={t("analytics.postChatFeedback")} 
           icon={<Heart size={18} color="#ec4899" />}
           trend={{ value: 0.2, isUp: true }}
         />
         <StatCard 
-          label="Appt. Conversion" 
+          label={t("analytics.apptConversion")} 
           value="38%" 
-          subtext="Chat to booking rate" 
+          subtext={t("analytics.chatToBooking")} 
           icon={<CalendarCheck size={18} color="#10b981" />}
           trend={{ value: 5.4, isUp: true }}
         />
         <StatCard 
-          label="Human Handoff" 
+          label={t("analytics.humanHandoff")} 
           value="12%" 
-          subtext="Escalation rate" 
+          subtext={t("analytics.escalationRate")} 
           icon={<UserPlus size={18} color="#6366f1" />}
           trend={{ value: 1.5, isUp: false }}
         />
         <StatCard 
-          label="Risk Score" 
-          value="Low (2%)" 
-          subtext="Hallucination / Error rate" 
+          label={t("analytics.riskScore")} 
+          value={`${t("analytics.low")} (2%)`} 
+          subtext={t("analytics.hallucinationRate")} 
           icon={<AlertTriangle size={18} color="#ef4444" />}
           trend={{ value: 0.5, isUp: false }}
         />
@@ -205,7 +205,7 @@ export default function AnalyticsPage() {
         gap: 24 
       }}>
         {/* Trend Area */}
-        <SectionCard title="Usage Trends (Last 7 Days)" icon={<TrendingUp size={18} />}>
+        <SectionCard title={t("analytics.usageTrends")} icon={<TrendingUp size={18} />}>
           <div style={{ position: "relative", paddingTop: 10 }}>
             <div style={{ 
               display: "flex", 
@@ -276,7 +276,7 @@ export default function AnalyticsPage() {
         </SectionCard>
 
         {/* Top Clinics */}
-        <SectionCard title="Highest Volume Clinics" icon={<BarChart3 size={18} />}>
+        <SectionCard title={t("analytics.highestVolume")} icon={<BarChart3 size={18} />}>
           {topClinics.length === 0 ? (
             <EmptyState title={t("training.empty.noResults")} />
           ) : (

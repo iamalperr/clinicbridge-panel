@@ -130,7 +130,21 @@
       "7d": "Last 7 Days",
       "30d": "Last 30 Days",
       "all": "All Time"
-    }
+    },
+    "aiPerformance": "AI Performance",
+    "aiQualityScore": "AI Quality Score",
+    "patientSatisfaction": "Patient Satisfaction",
+    "apptConversion": "Appt. Conversion",
+    "humanHandoff": "Human Handoff",
+    "riskScore": "Risk Score",
+    "basedOnCriteria": "Based on criteria rules",
+    "postChatFeedback": "Post-chat feedback",
+    "chatToBooking": "Chat to booking rate",
+    "escalationRate": "Escalation rate",
+    "hallucinationRate": "Hallucination / Error rate",
+    "usageTrends": "Usage Trends (Last 7 Days)",
+    "highestVolume": "Highest Volume Clinics",
+    "low": "Low"
   },
   "settings": {
     "subtitle": "Manage administrator preferences and system configurations."

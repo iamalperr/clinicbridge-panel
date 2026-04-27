@@ -130,7 +130,21 @@
       "7d": "Son 7 Gün",
       "30d": "Son 30 Gün",
       "all": "Tüm Zamanlar"
-    }
+    },
+    "aiPerformance": "AI Performansı",
+    "aiQualityScore": "AI Kalite Skoru",
+    "patientSatisfaction": "Hasta Memnuniyeti",
+    "apptConversion": "Randevu Dönüşümü",
+    "humanHandoff": "Canlı Destek Talebi",
+    "riskScore": "Risk Skoru",
+    "basedOnCriteria": "Kriter kurallarına göre",
+    "postChatFeedback": "Görüşme sonrası geri bildirim",
+    "chatToBooking": "Sohbetten randevuya dönüşüm oranı",
+    "escalationRate": "Canlı desteğe aktarım oranı",
+    "hallucinationRate": "Hatalı yanıt / risk oranı",
+    "usageTrends": "Kullanım Trendleri (Son 7 Gün)",
+    "highestVolume": "En Yoğun Klinikler",
+    "low": "Düşük"
   },
   "settings": {
     "subtitle": "Yönetici tercihlerini ve sistem konfigürasyonlarını yönetin."
