@@ -19,12 +19,29 @@ interface PageProps {
 }
 
 const DEFAULT_SETTINGS: PromptSettings = {
-  systemPrompt: "You are a helpful AI assistant for this clinic. You assist patients with appointment scheduling, general inquiries about services, pricing information, and basic medical guidance. Always be professional, empathetic, and clear. Do not provide specific medical diagnoses. If the patient's question is urgent or medical, advise them to contact the clinic directly.",
+  systemPrompt: "You are a helpful AI assistant for this clinic...",
   welcomeMessage: "Hello! How can I assist you today?",
   fallbackMessage: "I'm not sure I understood that. Could you rephrase? Or call us directly at our clinic number.",
   model: "gpt-4o",
   temperature: 0.7,
+  qualityCriteria: {
+    accuracy: true,
+    noGuessing: true,
+    appointmentRouting: true,
+    patientSatisfaction: true,
+    consistency: true,
+    fastResolution: true,
+  }
 };
+
+const CRITERIA_UI = [
+  { id: "accuracy", label: "Doğru ve Net Yanıt", desc: "Kullanıcıya karmaşık olmayan, doğrudan ve anlaşılır cevaplar verir." },
+  { id: "noGuessing", label: "Gereksiz Tahmin Yapmaz", desc: "Emin olmadığı veya tıbbi teşhis gerektiren durumlarda varsayım yapmaz." },
+  { id: "appointmentRouting", label: "Randevuya Yönlendirir", desc: "Uygun durumlarda hastayı kliniğe gelmesi veya randevu alması için teşvik eder." },
+  { id: "patientSatisfaction", label: "Hasta Memnuniyeti", desc: "Empatik, kibar ve hastanın endişelerini anlayan profesyonel bir üslup kullanır." },
+  { id: "consistency", label: "Tutarlılık", desc: "Klinik politikaları ve kurallar konusunda çelişkili bilgiler vermez." },
+  { id: "fastResolution", label: "Hızlı Çözüm", desc: "Sorunu uzatmadan, en kısa yoldan çözüme kavuşturacak yönlendirmeleri yapar." },
+] as const;
 
 export default function PromptStudioPage({ params }: PageProps) {
   const { clinicId } = use(params);
@@ -43,7 +60,15 @@ export default function PromptStudioPage({ params }: PageProps) {
         const docSnap = await getDoc(docRef);
         
         if (docSnap.exists()) {
-          setSettings({ ...DEFAULT_SETTINGS, ...docSnap.data() } as PromptSettings);
+          const data = docSnap.data() as PromptSettings;
+          setSettings({ 
+            ...DEFAULT_SETTINGS, 
+            ...data,
+            qualityCriteria: {
+              ...(DEFAULT_SETTINGS.qualityCriteria as any),
+              ...(data.qualityCriteria || {})
+            }
+          });
         }
       } catch (err) {
         console.error("Failed to fetch prompt settings:", err);
@@ -59,10 +84,27 @@ export default function PromptStudioPage({ params }: PageProps) {
     setIsSaving(true);
     try {
       const docRef = doc(db, "promptSettings", clinicId);
-      await setDoc(docRef, {
+      
+      // Auto-generate system prompt based on criteria
+      const activeCriteria = [];
+      if (settings.qualityCriteria?.accuracy) activeCriteria.push("Provide accurate, direct, and clear answers.");
+      if (settings.qualityCriteria?.noGuessing) activeCriteria.push("Do not guess or make assumptions, especially regarding medical diagnoses.");
+      if (settings.qualityCriteria?.appointmentRouting) activeCriteria.push("When appropriate, gently encourage the user to book an appointment or visit the clinic.");
+      if (settings.qualityCriteria?.patientSatisfaction) activeCriteria.push("Maintain a highly empathetic, polite, and professional tone.");
+      if (settings.qualityCriteria?.consistency) activeCriteria.push("Always remain consistent with the clinic's official policies and pricing.");
+      if (settings.qualityCriteria?.fastResolution) activeCriteria.push("Aim for fast resolution by providing the shortest path to solving the user's inquiry.");
+      
+      const newSystemPrompt = `You are a helpful AI assistant for this clinic. Follow these core behavior rules:\n- ${activeCriteria.join("\n- ")}\n\nIf the patient's question is urgent or medical, advise them to contact the clinic directly.`;
+
+      const settingsToSave = {
         ...settings,
+        systemPrompt: newSystemPrompt,
         updatedAt: serverTimestamp(),
-      });
+      };
+
+      await setDoc(docRef, settingsToSave);
+      setSettings(settingsToSave as any); // update local state
+
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
@@ -70,6 +112,16 @@ export default function PromptStudioPage({ params }: PageProps) {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleToggleCriteria = (id: "accuracy" | "noGuessing" | "appointmentRouting" | "patientSatisfaction" | "consistency" | "fastResolution") => {
+    setSettings(prev => ({
+      ...prev,
+      qualityCriteria: {
+        ...(prev.qualityCriteria as any),
+        [id]: !prev.qualityCriteria?.[id]
+      }
+    }));
   };
 
   const modelOptions = [
@@ -90,19 +142,58 @@ export default function PromptStudioPage({ params }: PageProps) {
   return (
     <>
       <SectionCard
-        title="System Prompt"
-        subtitle="The core instruction set that defines your AI assistant's persona and behavior."
+        title="Davranış ve Kalite Ayarları"
+        subtitle="Yapay zekanın hastalarla kuracağı iletişimin sınırlarını ve hedeflerini belirleyin."
       >
-        <Textarea 
-          label="System Prompt" 
-          value={settings.systemPrompt} 
-          onChange={e => setSettings({ ...settings, systemPrompt: e.target.value })} 
-          rows={8} 
-          style={{ minHeight: 140 }}
-        />
-        <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
-          {settings.systemPrompt.length} characters · Be specific about the clinic&apos;s specialty, tone, and limitations.
-        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+          {CRITERIA_UI.map((criteria) => {
+            const isActive = settings.qualityCriteria?.[criteria.id as keyof typeof settings.qualityCriteria];
+            return (
+              <div 
+                key={criteria.id}
+                onClick={() => handleToggleCriteria(criteria.id as any)}
+                style={{
+                  display: "flex", alignItems: "flex-start", gap: 14,
+                  padding: "16px",
+                  background: isActive ? "rgba(99, 102, 241, 0.04)" : UI_COLORS.bgCard,
+                  border: `1px solid ${isActive ? "rgba(99, 102, 241, 0.3)" : UI_COLORS.border}`,
+                  borderRadius: 16,
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                  boxShadow: isActive ? "0 4px 12px rgba(99, 102, 241, 0.05)" : "none"
+                }}
+              >
+                {/* Custom Toggle Switch */}
+                <div style={{
+                  width: 36, height: 20, borderRadius: 10, flexShrink: 0,
+                  background: isActive ? UI_COLORS.brand : "rgba(255,255,255,0.1)",
+                  position: "relative",
+                  transition: "background 0.3s ease",
+                  border: isActive ? "none" : `1px solid ${UI_COLORS.border}`,
+                  marginTop: 2
+                }}>
+                  <div style={{
+                    width: 14, height: 14, borderRadius: "50%",
+                    background: "#fff",
+                    position: "absolute", top: isActive ? 3 : 2,
+                    left: isActive ? 19 : 2,
+                    transition: "left 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                    boxShadow: "0 2px 4px rgba(0,0,0,0.2)"
+                  }} />
+                </div>
+                
+                <div>
+                  <h4 style={{ fontSize: 14.5, fontWeight: 700, color: isActive ? UI_COLORS.brand : UI_COLORS.textPrimary, marginBottom: 4, transition: "color 0.2s" }}>
+                    {criteria.label}
+                  </h4>
+                  <p style={{ fontSize: 12.5, color: UI_COLORS.textSecondary, lineHeight: 1.4 }}>
+                    {criteria.desc}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </SectionCard>
 
       <SectionCard title="Messages">

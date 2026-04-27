@@ -87,6 +87,14 @@ export interface PromptSettings {
   fallbackMessage: string;
   model: string;
   temperature: number;
+  qualityCriteria?: {
+    accuracy: boolean;
+    noGuessing: boolean;
+    appointmentRouting: boolean;
+    patientSatisfaction: boolean;
+    consistency: boolean;
+    fastResolution: boolean;
+  };
   updatedAt?: any;
 }
 
