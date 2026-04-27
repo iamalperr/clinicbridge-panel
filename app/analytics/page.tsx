@@ -8,7 +8,7 @@ import Badge from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
-import { BarChart3, Activity, Download, TrendingUp, Users, MessageSquare, Clock } from "lucide-react";
+import { BarChart3, Activity, Download, TrendingUp, Users, MessageSquare, Clock, Star, Heart, CalendarCheck, UserPlus, AlertTriangle } from "lucide-react";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 import PageHeader from "@/components/ui/PageHeader";
 import { formatNumber } from "@/lib/utils";
@@ -147,6 +147,55 @@ export default function AnalyticsPage() {
           subtext="Per message" 
           icon={<Clock size={18} />}
           trend={{ value: 4.1, isUp: false }}
+        />
+      </div>
+
+      {/* AI Performance Section */}
+      <div style={{ marginBottom: 24, display: "flex", alignItems: "center", gap: 12 }}>
+        <h3 style={{ fontSize: 18, fontWeight: 700, color: UI_COLORS.textPrimary }}>AI Performance</h3>
+        <div style={{ height: 1, flex: 1, background: `linear-gradient(to right, ${UI_COLORS.border}, transparent)` }} />
+      </div>
+
+      <div style={{ 
+        display: "grid", 
+        gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
+        gap: 20, 
+        marginBottom: 32 
+      }}>
+        <StatCard 
+          label="AI Quality Score" 
+          value="94%" 
+          subtext="Based on criteria rules" 
+          icon={<Star size={18} color="#f59e0b" />}
+          trend={{ value: 2.1, isUp: true }}
+        />
+        <StatCard 
+          label="Patient Satisfaction" 
+          value="4.8/5" 
+          subtext="Post-chat feedback" 
+          icon={<Heart size={18} color="#ec4899" />}
+          trend={{ value: 0.2, isUp: true }}
+        />
+        <StatCard 
+          label="Appt. Conversion" 
+          value="38%" 
+          subtext="Chat to booking rate" 
+          icon={<CalendarCheck size={18} color="#10b981" />}
+          trend={{ value: 5.4, isUp: true }}
+        />
+        <StatCard 
+          label="Human Handoff" 
+          value="12%" 
+          subtext="Escalation rate" 
+          icon={<UserPlus size={18} color="#6366f1" />}
+          trend={{ value: 1.5, isUp: false }}
+        />
+        <StatCard 
+          label="Risk Score" 
+          value="Low (2%)" 
+          subtext="Hallucination / Error rate" 
+          icon={<AlertTriangle size={18} color="#ef4444" />}
+          trend={{ value: 0.5, isUp: false }}
         />
       </div>
 
