@@ -197,7 +197,40 @@
     "user": "Siz",
     "assistant": "Asistan",
     "testSuccess": "AI yanıtı alındı.",
-    "testError": "AI yanıtı alınamadı."
+    "testError": "AI yanıtı alınamadı.",
+    "promptStudioTitle": "AI Karakteri ve Üslubu (System Prompt)",
+    "promptStudioSubtitle": "Asistanın temel kişiliğini, kliniğin uzmanlık alanını ve iletişim dilini belirleyin.",
+    "systemInstructionLabel": "Sistem Talimatı",
+    "systemInstructionPlaceholder": "Örn: Sen bu klinik için çalışan profesyonel ve yardımsever bir yapay zeka asistanısın...",
+    "systemInstructionHelper": "karakter · Bu alan sadece asistanın kimliğini belirler. Davranış kuralları için aşağıdaki bölümü kullanın.",
+    "behaviorSettingsTitle": "Davranış ve Kalite Ayarları",
+    "behaviorSettingsSubtitle": "Yapay zekanın hastalarla kuracağı iletişimin sınırlarını ve hedeflerini belirleyin.",
+    "criteria": {
+      "accuracy": {
+        "title": "Doğru ve Net Yanıt",
+        "desc": "Kullanıcıya karmaşık olmayan, doğrudan ve anlaşılır cevaplar verir."
+      },
+      "noGuessing": {
+        "title": "Gereksiz Tahmin Yapmaz",
+        "desc": "Emin olmadığı veya tıbbi teşhis gerektiren durumlarda varsayım yapmaz."
+      },
+      "appointmentRouting": {
+        "title": "Randevuya Yönlendirir",
+        "desc": "Uygun durumlarda hastayı kliniğe gelmesi veya randevu alması için teşvik eder."
+      },
+      "patientSatisfaction": {
+        "title": "Hasta Memnuniyeti",
+        "desc": "Empatik, kibar ve hastanın endişelerini anlayan profesyonel bir üslup kullanır."
+      },
+      "consistency": {
+        "title": "Tutarlılık",
+        "desc": "Klinik politikaları ve kurallar konusunda çelişkili bilgiler vermez."
+      },
+      "fastResolution": {
+        "title": "Hızlı Çözüm",
+        "desc": "Sorunu uzatmadan, en kısa yoldan çözüme kavuşturacak yönlendirmeleri yapar."
+      }
+    }
   },
   "appointments": {
     "title": "Son Randevular",

@@ -197,7 +197,40 @@
     "user": "You",
     "assistant": "Assistant",
     "testSuccess": "AI response received.",
-    "testError": "Failed to get AI response."
+    "testError": "Failed to get AI response.",
+    "promptStudioTitle": "AI Character & Tone (System Prompt)",
+    "promptStudioSubtitle": "Define the assistant’s core personality, clinic expertise, and communication style.",
+    "systemInstructionLabel": "System Instruction",
+    "systemInstructionPlaceholder": "e.g., You are a professional and helpful AI assistant working for this clinic...",
+    "systemInstructionHelper": "characters · This field only defines the assistant identity. Use the behavior rules below for response quality settings.",
+    "behaviorSettingsTitle": "Behavior & Quality Settings",
+    "behaviorSettingsSubtitle": "Define the assistant’s communication boundaries and goals when speaking with patients.",
+    "criteria": {
+      "accuracy": {
+        "title": "Clear and Accurate Answer",
+        "desc": "Provides direct, understandable answers without unnecessary complexity."
+      },
+      "noGuessing": {
+        "title": "Does Not Over-Assume",
+        "desc": "Does not make assumptions when uncertain or when medical diagnosis is required."
+      },
+      "appointmentRouting": {
+        "title": "Guides to Appointment",
+        "desc": "Encourages the patient to visit the clinic or book an appointment when appropriate."
+      },
+      "patientSatisfaction": {
+        "title": "Patient Satisfaction",
+        "desc": "Uses an empathetic, polite, and professional tone."
+      },
+      "consistency": {
+        "title": "Consistency",
+        "desc": "Avoids giving contradictory information about clinic policies and rules."
+      },
+      "fastResolution": {
+        "title": "Fast Resolution",
+        "desc": "Guides the user to the shortest path toward a solution without extending the conversation unnecessarily."
+      }
+    }
   },
   "appointments": {
     "title": "Recent Appointments",

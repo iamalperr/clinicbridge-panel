@@ -34,13 +34,13 @@ const DEFAULT_SETTINGS: PromptSettings = {
   }
 };
 
-const CRITERIA_UI = [
-  { id: "accuracy", label: "Doğru ve Net Yanıt", desc: "Kullanıcıya karmaşık olmayan, doğrudan ve anlaşılır cevaplar verir." },
-  { id: "noGuessing", label: "Gereksiz Tahmin Yapmaz", desc: "Emin olmadığı veya tıbbi teşhis gerektiren durumlarda varsayım yapmaz." },
-  { id: "appointmentRouting", label: "Randevuya Yönlendirir", desc: "Uygun durumlarda hastayı kliniğe gelmesi veya randevu alması için teşvik eder." },
-  { id: "patientSatisfaction", label: "Hasta Memnuniyeti", desc: "Empatik, kibar ve hastanın endişelerini anlayan profesyonel bir üslup kullanır." },
-  { id: "consistency", label: "Tutarlılık", desc: "Klinik politikaları ve kurallar konusunda çelişkili bilgiler vermez." },
-  { id: "fastResolution", label: "Hızlı Çözüm", desc: "Sorunu uzatmadan, en kısa yoldan çözüme kavuşturacak yönlendirmeleri yapar." },
+const CRITERIA_KEYS = [
+  "accuracy",
+  "noGuessing",
+  "appointmentRouting",
+  "patientSatisfaction",
+  "consistency",
+  "fastResolution",
 ] as const;
 
 export default function PromptStudioPage({ params }: PageProps) {
@@ -127,33 +127,33 @@ export default function PromptStudioPage({ params }: PageProps) {
   return (
     <>
       <SectionCard
-        title="AI Karakteri ve Üslubu (System Prompt)"
-        subtitle="Asistanın temel kişiliğini, kliniğin uzmanlık alanını ve iletişim dilini belirleyin."
+        title={t("aiSettings.promptStudioTitle")}
+        subtitle={t("aiSettings.promptStudioSubtitle")}
       >
         <Textarea 
-          label="Sistem Talimatı" 
+          label={t("aiSettings.systemInstructionLabel")} 
           value={settings.systemPrompt} 
           onChange={e => setSettings({ ...settings, systemPrompt: e.target.value })} 
           rows={6} 
           style={{ minHeight: 120 }}
-          placeholder="Örn: Sen bu klinik için çalışan profesyonel ve yardımsever bir yapay zeka asistanısın..."
+          placeholder={t("aiSettings.systemInstructionPlaceholder")}
         />
         <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
-          {settings.systemPrompt.length} karakter · Bu alan sadece asistanın kimliğini belirler. Davranış kuralları için aşağıdaki bölümü kullanın.
+          {settings.systemPrompt.length} {t("aiSettings.systemInstructionHelper")}
         </p>
       </SectionCard>
 
       <SectionCard
-        title="Davranış ve Kalite Ayarları"
-        subtitle="Yapay zekanın hastalarla kuracağı iletişimin sınırlarını ve hedeflerini belirleyin."
+        title={t("aiSettings.behaviorSettingsTitle")}
+        subtitle={t("aiSettings.behaviorSettingsSubtitle")}
       >
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
-          {CRITERIA_UI.map((criteria) => {
-            const isActive = settings.qualityCriteria?.[criteria.id as keyof typeof settings.qualityCriteria];
+          {CRITERIA_KEYS.map((criteriaId) => {
+            const isActive = settings.qualityCriteria?.[criteriaId];
             return (
               <div 
-                key={criteria.id}
-                onClick={() => handleToggleCriteria(criteria.id as any)}
+                key={criteriaId}
+                onClick={() => handleToggleCriteria(criteriaId as any)}
                 style={{
                   display: "flex", alignItems: "flex-start", gap: 14,
                   padding: "16px",
@@ -186,10 +186,10 @@ export default function PromptStudioPage({ params }: PageProps) {
                 
                 <div>
                   <h4 style={{ fontSize: 14.5, fontWeight: 700, color: isActive ? UI_COLORS.brand : UI_COLORS.textPrimary, marginBottom: 4, transition: "color 0.2s" }}>
-                    {criteria.label}
+                    {t(`aiSettings.criteria.${criteriaId}.title`)}
                   </h4>
                   <p style={{ fontSize: 12.5, color: UI_COLORS.textSecondary, lineHeight: 1.4 }}>
-                    {criteria.desc}
+                    {t(`aiSettings.criteria.${criteriaId}.desc`)}
                   </p>
                 </div>
               </div>
