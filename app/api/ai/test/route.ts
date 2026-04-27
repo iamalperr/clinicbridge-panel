@@ -31,10 +31,25 @@ export async function POST(req: Request) {
       apiKey: process.env.OPENAI_API_KEY,
     });
 
+    // Construct Behavior Rules based on Quality Criteria
+    const activeCriteria: string[] = [];
+    if (settings.qualityCriteria) {
+      if (settings.qualityCriteria.accuracy) activeCriteria.push("Provide accurate, direct, and clear answers.");
+      if (settings.qualityCriteria.noGuessing) activeCriteria.push("Do not guess or make assumptions, especially regarding medical diagnoses.");
+      if (settings.qualityCriteria.appointmentRouting) activeCriteria.push("When appropriate, gently encourage the user to book an appointment or visit the clinic.");
+      if (settings.qualityCriteria.patientSatisfaction) activeCriteria.push("Maintain a highly empathetic, polite, and professional tone.");
+      if (settings.qualityCriteria.consistency) activeCriteria.push("Always remain consistent with the clinic's official policies and pricing.");
+      if (settings.qualityCriteria.fastResolution) activeCriteria.push("Aim for fast resolution by providing the shortest path to solving the user's inquiry.");
+    }
+    
+    const criteriaRules = activeCriteria.length > 0 
+      ? `\n\nBEHAVIOR RULES:\n- ${activeCriteria.join("\n- ")}`
+      : "";
+
     // Prepare System Instruction
     const systemInstruction = settings.systemPrompt 
-      ? `${settings.systemPrompt}\n\nIMPORTANT: If the user asks to book an appointment (e.g., "randevu almak istiyorum"), you MUST respond in valid JSON format exactly like this:\n{ "message": "Your response text here...", "quickReplies": ["Option 1", "Option 2", "Option 3"] }\nOtherwise, just respond normally in plain text.`
-      : "You are a helpful assistant.";
+      ? `${settings.systemPrompt}${criteriaRules}\n\nIMPORTANT: If the user asks to book an appointment (e.g., "randevu almak istiyorum"), you MUST respond in valid JSON format exactly like this:\n{ "message": "Your response text here...", "quickReplies": ["Option 1", "Option 2", "Option 3"] }\nOtherwise, just respond normally in plain text.`
+      : `You are a helpful assistant.${criteriaRules}`;
 
     // Build the messages array for OpenAI
     // We favor the full 'messages' array if provided by the client (stateful chat)

@@ -85,26 +85,11 @@ export default function PromptStudioPage({ params }: PageProps) {
     try {
       const docRef = doc(db, "promptSettings", clinicId);
       
-      // Auto-generate system prompt based on criteria
-      const activeCriteria = [];
-      if (settings.qualityCriteria?.accuracy) activeCriteria.push("Provide accurate, direct, and clear answers.");
-      if (settings.qualityCriteria?.noGuessing) activeCriteria.push("Do not guess or make assumptions, especially regarding medical diagnoses.");
-      if (settings.qualityCriteria?.appointmentRouting) activeCriteria.push("When appropriate, gently encourage the user to book an appointment or visit the clinic.");
-      if (settings.qualityCriteria?.patientSatisfaction) activeCriteria.push("Maintain a highly empathetic, polite, and professional tone.");
-      if (settings.qualityCriteria?.consistency) activeCriteria.push("Always remain consistent with the clinic's official policies and pricing.");
-      if (settings.qualityCriteria?.fastResolution) activeCriteria.push("Aim for fast resolution by providing the shortest path to solving the user's inquiry.");
-      
-      const newSystemPrompt = `You are a helpful AI assistant for this clinic. Follow these core behavior rules:\n- ${activeCriteria.join("\n- ")}\n\nIf the patient's question is urgent or medical, advise them to contact the clinic directly.`;
-
-      const settingsToSave = {
+      await setDoc(docRef, {
         ...settings,
-        systemPrompt: newSystemPrompt,
         updatedAt: serverTimestamp(),
-      };
-
-      await setDoc(docRef, settingsToSave);
-      setSettings(settingsToSave as any); // update local state
-
+      });
+      
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
@@ -141,6 +126,23 @@ export default function PromptStudioPage({ params }: PageProps) {
 
   return (
     <>
+      <SectionCard
+        title="AI Karakteri ve Üslubu (System Prompt)"
+        subtitle="Asistanın temel kişiliğini, kliniğin uzmanlık alanını ve iletişim dilini belirleyin."
+      >
+        <Textarea 
+          label="Sistem Talimatı" 
+          value={settings.systemPrompt} 
+          onChange={e => setSettings({ ...settings, systemPrompt: e.target.value })} 
+          rows={6} 
+          style={{ minHeight: 120 }}
+          placeholder="Örn: Sen bu klinik için çalışan profesyonel ve yardımsever bir yapay zeka asistanısın..."
+        />
+        <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
+          {settings.systemPrompt.length} karakter · Bu alan sadece asistanın kimliğini belirler. Davranış kuralları için aşağıdaki bölümü kullanın.
+        </p>
+      </SectionCard>
+
       <SectionCard
         title="Davranış ve Kalite Ayarları"
         subtitle="Yapay zekanın hastalarla kuracağı iletişimin sınırlarını ve hedeflerini belirleyin."
