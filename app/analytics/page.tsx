@@ -21,8 +21,25 @@ export default function AnalyticsPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
+  const [selectedClinicId, setSelectedClinicId] = useState("all");
+
   const activeClinics = MOCK_CLINICS.filter(c => c.status === "active").length;
   const topClinics = [...MOCK_CLINICS].sort((a, b) => (b.messages || 0) - (a.messages || 0)).slice(0, 5);
+
+  // Mock filtering based on selected clinic
+  const isGlobal = selectedClinicId === "all";
+  const selectedClinicName = isGlobal ? t("clinics.allClinics") : MOCK_CLINICS.find(c => c.id === selectedClinicId)?.name || "";
+  
+  const aiQualityScore = isGlobal ? "94%" : "97%";
+  const patientSat = isGlobal ? "4.8/5" : "4.9/5";
+  const apptConversion = isGlobal ? "38%" : "45%";
+  const humanHandoff = isGlobal ? "12%" : "7%";
+  const riskScore = isGlobal ? `${t("analytics.low")} (2%)` : `${t("analytics.low")} (1%)`;
+  
+  // Mock trend data
+  const baseTrendData = [450, 520, 480, 600, 710, 680, 850];
+  const trendData = isGlobal ? baseTrendData : baseTrendData.map(v => Math.round(v * 0.15));
+  const maxTrend = Math.max(...trendData);
 
   const handleExport = () => {
     setIsExporting(true);
@@ -61,9 +78,7 @@ export default function AnalyticsPage() {
     }, 1500);
   };
 
-  // Mock trend data
-  const trendData = [450, 520, 480, 600, 710, 680, 850];
-  const maxTrend = Math.max(...trendData);
+
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "32px 40px" }}>
@@ -152,8 +167,20 @@ export default function AnalyticsPage() {
 
       {/* AI Performance Section */}
       <div style={{ marginBottom: 24, display: "flex", alignItems: "center", gap: 12 }}>
-        <h3 style={{ fontSize: 18, fontWeight: 700, color: UI_COLORS.textPrimary }}>{t("analytics.aiPerformance")}</h3>
+        <h3 style={{ fontSize: 18, fontWeight: 700, color: UI_COLORS.textPrimary }}>
+          {t("analytics.aiPerformance")} - {selectedClinicName}
+        </h3>
         <div style={{ height: 1, flex: 1, background: `linear-gradient(to right, ${UI_COLORS.border}, transparent)` }} />
+        <div style={{ width: 220 }}>
+          <Select 
+            value={selectedClinicId}
+            onChange={(e) => setSelectedClinicId(e.target.value)}
+            options={[
+              { label: t("clinics.allClinics"), value: "all" },
+              ...MOCK_CLINICS.map(c => ({ label: c.name, value: c.id }))
+            ]}
+          />
+        </div>
       </div>
 
       <div style={{ 
@@ -164,35 +191,35 @@ export default function AnalyticsPage() {
       }}>
         <StatCard 
           label={t("analytics.aiQualityScore")} 
-          value="94%" 
+          value={aiQualityScore} 
           subtext={t("analytics.basedOnCriteria")} 
           icon={<Star size={18} color="#f59e0b" />}
           trend={{ value: 2.1, isUp: true }}
         />
         <StatCard 
           label={t("analytics.patientSatisfaction")} 
-          value="4.8/5" 
+          value={patientSat} 
           subtext={t("analytics.postChatFeedback")} 
           icon={<Heart size={18} color="#ec4899" />}
           trend={{ value: 0.2, isUp: true }}
         />
         <StatCard 
           label={t("analytics.apptConversion")} 
-          value="38%" 
+          value={apptConversion} 
           subtext={t("analytics.chatToBooking")} 
           icon={<CalendarCheck size={18} color="#10b981" />}
           trend={{ value: 5.4, isUp: true }}
         />
         <StatCard 
           label={t("analytics.humanHandoff")} 
-          value="12%" 
+          value={humanHandoff} 
           subtext={t("analytics.escalationRate")} 
           icon={<UserPlus size={18} color="#6366f1" />}
           trend={{ value: 1.5, isUp: false }}
         />
         <StatCard 
           label={t("analytics.riskScore")} 
-          value={`${t("analytics.low")} (2%)`} 
+          value={riskScore} 
           subtext={t("analytics.hallucinationRate")} 
           icon={<AlertTriangle size={18} color="#ef4444" />}
           trend={{ value: 0.5, isUp: false }}
