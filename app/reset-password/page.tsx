@@ -61,7 +61,16 @@ function ResetPasswordForm() {
         }
       } catch (err: any) {
         console.error("Token verification failed:", err);
-        setError(err.message || "Bu şifre sıfırlama bağlantısı geçersiz veya süresi dolmuş. Lütfen yeni bir bağlantı isteyin.");
+        
+        // Map Firebase Auth Errors
+        let errorMessage = "Bu şifre sıfırlama bağlantısı geçersiz veya süresi dolmuş. Lütfen yeni bir bağlantı isteyin.";
+        if (err.code === "auth/expired-action-code") {
+          errorMessage = "Şifre sıfırlama bağlantısının süresi dolmuş. Lütfen yeni bir bağlantı isteyin.";
+        } else if (err.code === "auth/invalid-action-code") {
+          errorMessage = "Şifre sıfırlama bağlantısı geçersiz veya daha önce kullanılmış.";
+        }
+        
+        setError(errorMessage);
       } finally {
         setVerifying(false);
       }
@@ -120,7 +129,21 @@ function ResetPasswordForm() {
       setTimeout(() => router.replace("/login"), 3000);
     } catch (err: any) {
       console.error("[Auth] Password reset failed:", err);
-      setError(err.message || "Şifre sıfırlanırken bir hata oluştu. Lütfen tekrar deneyin.");
+      
+      let errorMessage = "Şifre sıfırlanırken bir hata oluştu. Lütfen tekrar deneyin.";
+      if (err.code === "auth/weak-password") {
+        errorMessage = "Şifre çok zayıf. Lütfen daha güçlü bir şifre belirleyin.";
+      } else if (err.code === "auth/expired-action-code") {
+        errorMessage = "Şifre sıfırlama bağlantısının süresi dolmuş. Lütfen yeni bir bağlantı isteyin.";
+      } else if (err.code === "auth/invalid-action-code") {
+        errorMessage = "Şifre sıfırlama bağlantısı geçersiz veya daha önce kullanılmış.";
+      } else if (err.code === "auth/user-disabled") {
+        errorMessage = "Bu kullanıcı hesabı devre dışı bırakılmış.";
+      } else if (err.code === "auth/user-not-found") {
+        errorMessage = "Kullanıcı hesabı bulunamadı.";
+      }
+
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
