@@ -65,12 +65,14 @@ export default function DemoCTASection() {
       await submitDemoRequest(form);
       setSubmitState("success");
       setForm(EMPTY_FORM);
-    } catch (err) {
-      console.error("[DemoForm] Submit failed:", err);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "";
+      console.error("[DemoForm] Submit failed:", errMsg, err);
       setServerError(
-        lang === "tr"
-          ? "Bir hata oluştu. Lütfen tekrar deneyin."
-          : "Something went wrong. Please try again."
+        errMsg ||
+          (lang === "tr"
+            ? "Bir hata oluştu. Lütfen tekrar deneyin."
+            : "Something went wrong. Please try again.")
       );
       setSubmitState("error");
     }

@@ -98,7 +98,7 @@ const tr = {
     form: {
       name: "Ad Soyad", clinic: "Klinik Adı", phone: "Telefon", email: "E-posta",
       website: "Web Sitesi", message: "Mesaj", submit: "Demo Talep Et",
-      success: "Talebiniz başarıyla iletildi! En kısa sürede sizinle iletişime geçeceğiz.",
+      success: "Demo talebiniz başarıyla alındı. En kısa sürede sizinle iletişime geçeceğiz.",
       namePlaceholder: "Adınız ve soyadınız", clinicPlaceholder: "Kliniğinizin adı",
       phonePlaceholder: "+90 5XX XXX XX XX", emailPlaceholder: "ornek@klinik.com",
       websitePlaceholder: "https://kliniginiz.com", messagePlaceholder: "Projeniz hakkında kısaca bilgi verin...",

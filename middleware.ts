@@ -61,6 +61,14 @@ export function middleware(req: NextRequest) {
     // Allow /landing (for backward compat — it redirects to "/" internally)
     if (pathname === "/landing") return NextResponse.next();
 
+    // Allow demo-request API (called from the landing page form)
+    if (pathname === "/api/demo-request") return NextResponse.next();
+
+    // Allow legal pages accessible from landing footer
+    if (pathname.startsWith("/(legal)") || pathname === "/privacy" || pathname === "/terms") {
+      return NextResponse.next();
+    }
+
     // Block everything else → back to landing
     return NextResponse.redirect(new URL("/", req.url));
   }

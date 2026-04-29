@@ -1,12 +1,10 @@
 import {
   collection,
-  addDoc,
   getDocs,
   doc,
   updateDoc,
   query,
   orderBy,
-  serverTimestamp,
   Timestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -34,12 +32,16 @@ export interface DemoRequest extends DemoRequestData {
 /* ─── Submit (public — called from landing page) ─────────── */
 
 export async function submitDemoRequest(data: DemoRequestData): Promise<void> {
-  await addDoc(collection(db, "demoRequests"), {
-    ...data,
-    source: "landing",
-    status: "new",
-    createdAt: serverTimestamp(),
+  const res = await fetch("/api/demo-request", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
   });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
 }
 
 /* ─── Fetch all (admin only) ─────────────────────────────── */
