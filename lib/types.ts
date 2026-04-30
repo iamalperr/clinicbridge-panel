@@ -27,7 +27,10 @@ export interface Clinic {
   whatsappNumber?: string;
   telegramUsername?: string;
   enableHumanHandoff?: boolean;
-  createdAt?: string | number | { seconds: number; nanoseconds: number } | object; // Support strings, timestamps and ServerValue without using any
+  aiEnabled?: "active" | "inactive";
+  kvkkRequired?: boolean;
+  welcomeMessage?: string;
+  createdAt?: string | number | { seconds: number; nanoseconds: number } | object;
   lastActive?: string;
   modules?: {
     ai: boolean;
@@ -70,6 +73,25 @@ export interface TrainingMaterial {
   createdAt: string | number | object;
   updatedAt: string | number | object;
 }
+export interface ShowBubblesConfig {
+  enabled: boolean;
+  displayMode: "rotate" | "show-all" | "disabled";
+  messages: {
+    tr: string[];
+    en: string[];
+  };
+  timing: {
+    initialDelaySeconds: number;
+    rotationIntervalSeconds: number;
+    autoHideSeconds: number;
+  };
+  behavior: {
+    hideAfterOpen: boolean;
+    showOncePerSession: boolean;
+    disableOnMobile: boolean;
+  };
+}
+
 export interface WidgetSettings {
   title: string;
   welcomeMessage: string;
@@ -78,6 +100,7 @@ export interface WidgetSettings {
   showAvatar: boolean;
   showOnlineStatus: boolean;
   placeholder: string;
+  showBubbles?: ShowBubblesConfig;
   updatedAt?: any;
 }
 

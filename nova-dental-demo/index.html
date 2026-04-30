@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nova Dental Clinic | Premium Dental Care</title>
+  <meta name="description" content="Nova Dental Clinic offers world-class dental treatments including implants, smile design, orthodontics, and teeth whitening. Book your appointment today." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- NAVBAR -->
+  <header id="navbar">
+    <nav class="container nav-inner">
+      <a href="#" class="logo" id="nav-logo">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M14 2C10.5 2 7.5 4.5 7 8C6.5 5 4 3 2 3C2 3 3 9 5 12C6.5 14.5 7 17 7 20C7 23 8.5 26 11 26C12.5 26 13.5 24.5 14 22C14.5 24.5 15.5 26 17 26C19.5 26 21 23 21 20C21 17 21.5 14.5 23 12C25 9 26 3 26 3C24 3 21.5 5 21 8C20.5 4.5 17.5 2 14 2Z" fill="#3B82F6"/>
+        </svg>
+        <span>Nova <span class="logo-accent">Dental</span></span>
+      </a>
+      <ul class="nav-links" id="nav-links">
+        <li><a href="#treatments">Treatments</a></li>
+        <li><a href="#about">About</a></li>
+        <li><a href="#doctors">Doctors</a></li>
+        <li><a href="#testimonials">Testimonials</a></li>
+        <li><a href="#contact">Contact</a></li>
+      </ul>
+      <div class="lang-switcher" id="lang-switcher" role="group" aria-label="Language">
+        <button class="lang-btn active" data-lang="en">EN</button>
+        <button class="lang-btn" data-lang="tr">TR</button>
+      </div>
+      <a href="#contact" class="btn btn-primary nav-cta" id="nav-cta">Book Appointment</a>
+      <button class="hamburger" id="hamburger" aria-label="Open menu">
+        <span></span><span></span><span></span>
+      </button>
+    </nav>
+  </header>
+
+  <!-- HERO -->
+  <section id="hero">
+    <div class="hero-bg-overlay"></div>
+    <img src="images/hero.png" alt="Nova Dental Clinic modern treatment room" class="hero-img" />
+    <div class="container hero-content">
+      <div class="hero-badge">✦ Trusted by 5,000+ Patients</div>
+      <h1>Premium Dental Care<br />for a <span class="gradient-text">Confident Smile</span></h1>
+      <p class="hero-sub">Experience modern dentistry with cutting-edge technology and a compassionate team dedicated to giving you the smile you deserve — comfortably and safely.</p>
+      <div class="hero-actions">
+        <a href="#contact" class="btn btn-primary btn-lg">Book an Appointment</a>
+        <a href="#treatments" class="btn btn-ghost btn-lg">Our Treatments</a>
+      </div>
+      <div class="hero-stats">
+        <div class="stat"><span class="stat-num">15+</span><span class="stat-label">Years Experience</span></div>
+        <div class="stat-divider"></div>
+        <div class="stat"><span class="stat-num">5K+</span><span class="stat-label">Happy Patients</span></div>
+        <div class="stat-divider"></div>
+        <div class="stat"><span class="stat-num">98%</span><span class="stat-label">Satisfaction Rate</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TRUST BAR -->
+  <section id="trust-bar">
+    <div class="container trust-inner">
+      <div class="trust-item">
+        <svg width="22" height="22" fill="none" viewBox="0 0 24 24"><path d="M12 2L3 7v5c0 5.25 3.75 10.15 9 11.35C17.25 22.15 21 17.25 21 12V7L12 2z" fill="#3B82F6"/></svg>
+        <span>ISO Certified Clinic</span>
+      </div>
+      <div class="trust-item">
+        <svg width="22" height="22" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#3B82F6"/><path d="M8 12l2.5 2.5L16 9" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Sterilized & Safe Equipment</span>
+      </div>
+      <div class="trust-item">
+        <svg width="22" height="22" fill="none" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="3" fill="#3B82F6"/><path d="M8 2v4M16 2v4M3 10h18" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span>Flexible Appointment Hours</span>
+      </div>
+      <div class="trust-item">
+        <svg width="22" height="22" fill="none" viewBox="0 0 24 24"><path d="M12 22C6.48 22 2 17.52 2 12S6.48 2 12 2s10 4.48 10 10-4.48 10-10 10z" fill="#3B82F6"/><path d="M12 6v6l4 2" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span>Same-Day Emergency Care</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- TREATMENTS -->
+  <section id="treatments">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Our Services</span>
+        <h2>Comprehensive Dental Treatments</h2>
+        <p>We offer a full spectrum of dental services using the latest technology to ensure the best outcomes for our patients.</p>
+      </div>
+      <div class="treatments-grid">
+        <div class="treatment-card">
+          <div class="treatment-icon">🦷</div>
+          <h3>Implant Treatment</h3>
+          <p>Permanent, natural-looking tooth replacements using titanium implants that integrate seamlessly with your jawbone.</p>
+          <a href="#contact" class="treatment-link">Learn More →</a>
+        </div>
+        <div class="treatment-card">
+          <div class="treatment-icon">✨</div>
+          <h3>Teeth Whitening</h3>
+          <p>Professional-grade whitening treatments that safely brighten your smile by several shades in a single session.</p>
+          <a href="#contact" class="treatment-link">Learn More →</a>
+        </div>
+        <div class="treatment-card">
+          <div class="treatment-icon">😊</div>
+          <h3>Smile Design</h3>
+          <p>A personalized aesthetic transformation combining veneers, shaping, and whitening for your perfect smile.</p>
+          <a href="#contact" class="treatment-link">Learn More →</a>
+        </div>
+        <div class="treatment-card">
+          <div class="treatment-icon">🔧</div>
+          <h3>Orthodontics</h3>
+          <p>Modern braces and clear aligner systems to straighten teeth and correct bite issues for all ages.</p>
+          <a href="#contact" class="treatment-link">Learn More →</a>
+        </div>
+        <div class="treatment-card">
+          <div class="treatment-icon">💊</div>
+          <h3>Root Canal Treatment</h3>
+          <p>Pain-free endodontic therapy to save infected teeth and restore full function with minimal discomfort.</p>
+          <a href="#contact" class="treatment-link">Learn More →</a>
+        </div>
+        <div class="treatment-card">
+          <div class="treatment-icon">🔬</div>
+          <h3>Dental Check-up</h3>
+          <p>Comprehensive oral exams and digital X-rays to detect issues early and keep your smile healthy long-term.</p>
+          <a href="#contact" class="treatment-link">Learn More →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ABOUT -->
+  <section id="about">
+    <div class="container about-inner">
+      <div class="about-visual">
+        <div class="about-img-wrap">
+          <img src="images/hero.png" alt="Nova Dental Clinic interior" />
+          <div class="about-badge-float">
+            <span class="about-badge-num">15+</span>
+            <span class="about-badge-txt">Years of Excellence</span>
+          </div>
+        </div>
+      </div>
+      <div class="about-content">
+        <span class="section-tag">About Us</span>
+        <h2>Your Health Is Our Priority</h2>
+        <p class="about-lead">Nova Dental Clinic was founded with a single mission: to deliver premium dental care in a warm, stress-free environment where every patient feels truly valued.</p>
+        <p>Since 2009, we have been combining clinical excellence with cutting-edge dental technology to transform smiles. Our team of specialists continuously advances their skills through international training programs, ensuring you receive the most effective and up-to-date treatments available.</p>
+        <ul class="about-list">
+          <li><svg width="18" height="18" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#3B82F6"/><path d="M8 12l2.5 2.5L16 9" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> State-of-the-art digital X-ray & 3D scanning</li>
+          <li><svg width="18" height="18" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#3B82F6"/><path d="M8 12l2.5 2.5L16 9" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Multilingual patient support team</li>
+          <li><svg width="18" height="18" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#3B82F6"/><path d="M8 12l2.5 2.5L16 9" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Sedation options for anxious patients</li>
+          <li><svg width="18" height="18" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#3B82F6"/><path d="M8 12l2.5 2.5L16 9" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Transparent pricing with no hidden fees</li>
+        </ul>
+        <a href="#contact" class="btn btn-primary">Meet Our Team</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- DOCTORS -->
+  <section id="doctors">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Our Specialists</span>
+        <h2>Meet the Doctors</h2>
+        <p>Our experienced team of dental professionals is committed to providing personalized, compassionate care.</p>
+      </div>
+      <div class="doctors-grid">
+        <div class="doctor-card">
+          <div class="doctor-img-wrap">
+            <img src="images/doctor1.png" alt="Dr. Marcus Reid" />
+          </div>
+          <div class="doctor-info">
+            <h3>Dr. Marcus Reid</h3>
+            <span class="doctor-title">Oral & Maxillofacial Surgeon</span>
+            <p>Dr. Reid has over 18 years of experience specializing in complex implant surgeries and full-mouth reconstructions. He trained at King's College London and regularly lectures at international dental conferences.</p>
+            <div class="doctor-tags">
+              <span>Implants</span>
+              <span>Surgery</span>
+              <span>Reconstruction</span>
+            </div>
+          </div>
+        </div>
+        <div class="doctor-card">
+          <div class="doctor-img-wrap">
+            <img src="images/doctor2.png" alt="Dr. Elena Vasquez" />
+          </div>
+          <div class="doctor-info">
+            <h3>Dr. Elena Vasquez</h3>
+            <span class="doctor-title">Cosmetic Dentist & Smile Designer</span>
+            <p>Dr. Vasquez is renowned for her artistic approach to smile design. With a background in aesthetic dentistry from Barcelona, she creates beautiful, natural-looking transformations tailored to each patient's unique facial structure.</p>
+            <div class="doctor-tags">
+              <span>Smile Design</span>
+              <span>Veneers</span>
+              <span>Whitening</span>
+            </div>
+          </div>
+        </div>
+        <div class="doctor-card">
+          <div class="doctor-img-wrap">
+            <img src="images/doctor3.png" alt="Dr. James Holloway" />
+          </div>
+          <div class="doctor-info">
+            <h3>Dr. James Holloway</h3>
+            <span class="doctor-title">Orthodontist</span>
+            <p>Dr. Holloway specializes in modern orthodontics for children and adults, offering both traditional braces and invisible aligners. He is a certified Invisalign provider and has helped over 2,000 patients achieve straighter smiles.</p>
+            <div class="doctor-tags">
+              <span>Orthodontics</span>
+              <span>Invisalign</span>
+              <span>Braces</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TESTIMONIALS -->
+  <section id="testimonials">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Patient Stories</span>
+        <h2>What Our Patients Say</h2>
+        <p>Real experiences from real patients who trusted us with their smiles.</p>
+      </div>
+      <div class="testimonials-grid">
+        <div class="testimonial-card">
+          <div class="stars">★★★★★</div>
+          <p>"I had severe dental anxiety for years. The team at Nova Dental made me feel completely at ease from the first consultation. My smile design result is beyond anything I imagined — I genuinely can't stop smiling now."</p>
+          <div class="testimonial-author">
+            <div class="author-avatar">S</div>
+            <div>
+              <strong>Sarah Mitchell</strong>
+              <span>Smile Design Patient</span>
+            </div>
+          </div>
+        </div>
+        <div class="testimonial-card">
+          <div class="stars">★★★★★</div>
+          <p>"Dr. Reid performed my implant surgery and the entire process was pain-free and professional. The follow-up care was exceptional. Six months later my implant feels and looks completely natural."</p>
+          <div class="testimonial-author">
+            <div class="author-avatar">T</div>
+            <div>
+              <strong>Thomas Eriksson</strong>
+              <span>Implant Treatment Patient</span>
+            </div>
+          </div>
+        </div>
+        <div class="testimonial-card">
+          <div class="stars">★★★★★</div>
+          <p>"Nova Dental is on another level. The clinic is beautiful, the technology is impressive, and most importantly, Dr. Vasquez actually listened to what I wanted. My teeth are now 8 shades whiter and perfectly shaped."</p>
+          <div class="testimonial-author">
+            <div class="author-avatar">A</div>
+            <div>
+              <strong>Amelia Torres</strong>
+              <span>Whitening & Veneer Patient</span>
+            </div>
+          </div>
+        </div>
+        <div class="testimonial-card">
+          <div class="stars">★★★★★</div>
+          <p>"My son started orthodontic treatment here at age 12. Dr. Holloway was incredibly patient and made the whole experience fun for him. Two years later, we couldn't be happier with the results."</p>
+          <div class="testimonial-author">
+            <div class="author-avatar">R</div>
+            <div>
+              <strong>Rachel Okonkwo</strong>
+              <span>Orthodontics (Parent)</span>
+            </div>
+          </div>
+        </div>
+        <div class="testimonial-card">
+          <div class="stars">★★★★★</div>
+          <p>"I've been coming to Nova Dental for my annual check-ups for four years now. Their digital scanning technology caught an issue early that my previous dentist had missed for years. Truly world-class care."</p>
+          <div class="testimonial-author">
+            <div class="author-avatar">D</div>
+            <div>
+              <strong>Daniel Park</strong>
+              <span>Regular Check-up Patient</span>
+            </div>
+          </div>
+        </div>
+        <div class="testimonial-card">
+          <div class="stars">★★★★★</div>
+          <p>"I was terrified of root canal treatment after horror stories, but the team made it completely painless. The procedure took only an hour and I walked out feeling fine. I only wish I'd come sooner!"</p>
+          <div class="testimonial-author">
+            <div class="author-avatar">L</div>
+            <div>
+              <strong>Laura Bennett</strong>
+              <span>Root Canal Patient</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONTACT -->
+  <section id="contact">
+    <div class="container contact-inner">
+      <div class="contact-info">
+        <span class="section-tag">Get In Touch</span>
+        <h2>Book Your Appointment</h2>
+        <p>Ready to transform your smile? Contact us today and our team will get back to you within 24 hours to confirm your appointment.</p>
+        <div class="contact-details">
+          <div class="contact-item">
+            <div class="contact-icon">📞</div>
+            <div>
+              <strong>Phone</strong>
+              <span>+1 (800) 668-2536</span>
+            </div>
+          </div>
+          <div class="contact-item">
+            <div class="contact-icon">✉️</div>
+            <div>
+              <strong>Email</strong>
+              <span>hello@novadentalclinic.com</span>
+            </div>
+          </div>
+          <div class="contact-item">
+            <div class="contact-icon">📍</div>
+            <div>
+              <strong>Address</strong>
+              <span>142 Harley Street, London, W1G 7LH</span>
+            </div>
+          </div>
+          <div class="contact-item">
+            <div class="contact-icon">🕐</div>
+            <div>
+              <strong>Hours</strong>
+              <span>Mon–Sat: 8:00 AM – 7:00 PM</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="contact-form-wrap">
+        <form id="appointment-form" class="appointment-form" novalidate>
+          <h3>Request an Appointment</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="form-name">Full Name</label>
+              <input type="text" id="form-name" placeholder="Jane Smith" required />
+            </div>
+            <div class="form-group">
+              <label for="form-phone">Phone Number</label>
+              <input type="tel" id="form-phone" placeholder="+1 (555) 000-0000" required />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="form-email">Email Address</label>
+            <input type="email" id="form-email" placeholder="jane@example.com" required />
+          </div>
+          <div class="form-group">
+            <label for="form-treatment">Treatment of Interest</label>
+            <select id="form-treatment">
+              <option value="">Select a treatment…</option>
+              <option>Implant Treatment</option>
+              <option>Teeth Whitening</option>
+              <option>Smile Design</option>
+              <option>Orthodontics</option>
+              <option>Root Canal Treatment</option>
+              <option>Dental Check-up</option>
+              <option>Other / Not sure</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="form-date">Preferred Date</label>
+            <input type="date" id="form-date" />
+          </div>
+          <div class="form-group">
+            <label for="form-message">Additional Notes</label>
+            <textarea id="form-message" rows="3" placeholder="Tell us about your concern or any special requirements…"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block" id="form-submit">Send Appointment Request</button>
+          <div id="form-success" class="form-success" style="display:none;">
+            <svg width="20" height="20" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#22c55e"/><path d="M8 12l2.5 2.5L16 9" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Thank you! We'll contact you within 24 hours to confirm your appointment.
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer id="footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <a href="#" class="logo logo-white">
+          <svg width="26" height="26" viewBox="0 0 28 28" fill="none"><path d="M14 2C10.5 2 7.5 4.5 7 8C6.5 5 4 3 2 3C2 3 3 9 5 12C6.5 14.5 7 17 7 20C7 23 8.5 26 11 26C12.5 26 13.5 24.5 14 22C14.5 24.5 15.5 26 17 26C19.5 26 21 23 21 20C21 17 21.5 14.5 23 12C25 9 26 3 26 3C24 3 21.5 5 21 8C20.5 4.5 17.5 2 14 2Z" fill="#60A5FA"/></svg>
+          <span>Nova <span class="logo-accent">Dental</span></span>
+        </a>
+        <p>Premium dental care for a lifetime of confident smiles. We combine expertise, technology, and compassion for exceptional patient outcomes.</p>
+      </div>
+      <div class="footer-links-group">
+        <h4>Treatments</h4>
+        <ul>
+          <li><a href="#treatments">Implant Treatment</a></li>
+          <li><a href="#treatments">Teeth Whitening</a></li>
+          <li><a href="#treatments">Smile Design</a></li>
+          <li><a href="#treatments">Orthodontics</a></li>
+          <li><a href="#treatments">Root Canal</a></li>
+        </ul>
+      </div>
+      <div class="footer-links-group">
+        <h4>Clinic</h4>
+        <ul>
+          <li><a href="#about">About Us</a></li>
+          <li><a href="#doctors">Our Doctors</a></li>
+          <li><a href="#testimonials">Testimonials</a></li>
+          <li><a href="#contact">Contact</a></li>
+        </ul>
+      </div>
+      <div class="footer-links-group">
+        <h4>Contact</h4>
+        <ul>
+          <li>+1 (800) 668-2536</li>
+          <li>hello@novadentalclinic.com</li>
+          <li>142 Harley Street, London</li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <div class="container">
+        <span id="footer-copy">© 2025 Nova Dental Clinic. All rights reserved.</span>
+        <a href="https://clinicbridge-ai.com/" target="_blank" rel="noopener noreferrer" class="footer-cb-badge">Powered by <strong>ClinicBridge AI</strong></a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ClinicBridge AI Widget Integration -->
+  <!-- Production: <script src="https://cdn.clinicbridge.ai/widget.js" data-clinic-id="nova-dental"></script> -->
+  <script src="clinicbridge-widget.js" data-clinic-id="nova-dental" data-lang="en"></script>
+
+  <script src="app.js"></script>
+</body>
+</html>
