@@ -52,6 +52,9 @@ export function middleware(req: NextRequest) {
     // Allow /widget.js (the main widget script — served from public/widget.js)
     if (pathname === "/widget.js") return NextResponse.next();
 
+    // Allow the public widget-settings API (widget.js fetches settings from here)
+    if (pathname.startsWith("/api/public/")) return NextResponse.next();
+
     // Allow Next.js static chunks (needed for the JS file itself)
     if (pathname.startsWith("/_next")) return NextResponse.next();
 
