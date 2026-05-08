@@ -12,9 +12,13 @@ export default function WidgetIntegration({ clinicId }: WidgetIntegrationProps) 
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  // TODO: Replace with actual production script
-  const embedCode = `<script src="https://widget.clinicbridge.ai/widget.js" data-clinic-id="${clinicId}"></script>`;
-  const shareableLink = `https://clinicbridge.ai/widget/${clinicId}`;
+  // Widget script URL — managed centrally via NEXT_PUBLIC_WIDGET_SCRIPT_URL
+  const WIDGET_SCRIPT_URL =
+    process.env.NEXT_PUBLIC_WIDGET_SCRIPT_URL ||
+    "https://widget.clinicbridge-ai.com/widget.js";
+
+  const embedCode = `<script src="${WIDGET_SCRIPT_URL}" data-clinic-id="${clinicId}"></script>`;
+  const shareableLink = `https://app.clinicbridge-ai.com/widget/${clinicId}`;
 
   const handleCopyCode = async () => {
     try {
