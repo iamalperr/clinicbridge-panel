@@ -18,21 +18,27 @@ const APP_HOSTNAMES = new Set([
   "app.clinicbridge-ai.com",
 ]);
 
+const WIDGET_HOSTNAMES = new Set([
+  "widget.clinicbridge-ai.com",
+]);
+
 // Routes that belong exclusively to the app subdomain
 const APP_ONLY_PATHS = /^\/(login|clinics|analytics|settings|users|reset-password|api)(\/|$)/;
 
-function getDomainContext(req: NextRequest): "landing" | "app" | "dev" {
+function getDomainContext(req: NextRequest): "landing" | "app" | "widget" | "dev" {
   const host = req.headers.get("host") ?? "";
   // Strip port for local dev comparison
   const hostname = host.split(":")[0];
 
   if (LANDING_HOSTNAMES.has(hostname)) return "landing";
   if (APP_HOSTNAMES.has(hostname)) return "app";
+  if (WIDGET_HOSTNAMES.has(hostname)) return "widget";
 
   // Dev override via query param: ?_domain=app  or  ?_domain=landing
   const devOverride = req.nextUrl.searchParams.get("_domain");
   if (devOverride === "app") return "app";
   if (devOverride === "landing") return "landing";
+  if (devOverride === "widget") return "widget";
 
   return "dev"; // localhost without override → allow everything (normal dev)
 }
@@ -40,6 +46,21 @@ function getDomainContext(req: NextRequest): "landing" | "app" | "dev" {
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const context = getDomainContext(req);
+
+  // ── widget.clinicbridge-ai.com → serve only /widget.js ───────────────────
+  if (context === "widget") {
+    // Allow /widget.js (the main widget script — served from public/widget.js)
+    if (pathname === "/widget.js") return NextResponse.next();
+
+    // Allow Next.js static chunks (needed for the JS file itself)
+    if (pathname.startsWith("/_next")) return NextResponse.next();
+
+    // Block everything else — this domain is widget-script-only
+    return new NextResponse(
+      '// ClinicBridge AI Widget\n// Use: <script src="https://widget.clinicbridge-ai.com/widget.js" data-clinic-id="YOUR_ID"></script>',
+      { status: 200, headers: { "Content-Type": "application/javascript; charset=utf-8" } }
+    );
+  }
 
   // ── clinicbridge-ai.com (landing domain) ──────────────────────────────────
   if (context === "landing") {
