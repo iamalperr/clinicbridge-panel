@@ -49,13 +49,18 @@ const tr = {
   },
   journey: {
     title: "Hastanın Web Sitesindeki Yolculuğunu Akıllı Hale Getirin",
+    subtitle: "ClinicBridge AI, kliniğinizin tonu, hizmetleri ve hasta karşılama yaklaşımına göre eğitilir. Böylece ziyaretçiler standart bir chatbot ile değil, kliniğinize özel dijital hasta asistanı ile iletişim kurar.",
     steps: [
-      { title: "Web Sitesine Giriş", desc: "Hasta kliniğinizin web sitesini ziyaret eder." },
-      { title: "Asistanla Etkileşim", desc: "Sorularını yapay zekâ asistana sorar ve anında yanıt alır." },
-      { title: "Hizmet Bilgisi", desc: "Klinik hizmetleri hakkında detaylı ve anlaşılır bilgi edinir." },
-      { title: "Yönlendirme", desc: "Randevu veya WhatsApp yönlendirmesi ile bir sonraki adıma geçer." },
-      { title: "Dönüşüm", desc: "Klinik yeni hasta talebini kaçırmaz, her talep kayıt altına alınır." },
+      { title: "Web Sitesine Giriş", desc: "Hasta kliniğinizin web sitesini ziyaret eder ve ilk temas noktasına ulaşır." },
+      { title: "Kliniğe Özel Asistanla Etkileşim", desc: "Ziyaretçi, kliniğinizin iletişim tonuna ve hizmet yapısına göre eğitilmiş yapay zekâ asistanıyla konuşur." },
+      { title: "Güven Veren Hizmet Bilgisi", desc: "Asistan; tedaviler, süreçler, sık sorulan sorular ve yönlendirme adımları hakkında anlaşılır bilgiler sunar." },
+      { title: "Akıllı Yönlendirme", desc: "Hastanın ihtiyacına göre randevu, WhatsApp veya canlı ekip yönlendirmesi yapılır." },
+      { title: "Kayıt Altına Alınan Dönüşüm", desc: "Klinik yeni hasta talebini kaçırmaz; her görüşme takip edilebilir ve aksiyona dönüştürülebilir hale gelir." },
     ],
+    highlightCard: {
+      title: "Standart chatbot değil, kliniğinizin dijital hasta danışmanı.",
+      desc: "Her klinik için ayrı yapılandırılır. Hizmetlerinizi, hasta karşılama dilinizi ve sık sorulan sorularınızı öğrenerek markanıza uygun yanıtlar verir.",
+    },
   },
   useCases: {
     title: "En Çok Sorulan Soruları Otomatik Yanıtlayın",
@@ -158,13 +163,18 @@ const en = {
   },
   journey: {
     title: "Make Every Patient's Website Journey Intelligent",
+    subtitle: "ClinicBridge AI is trained on your clinic's tone, services, and patient welcome approach — so visitors interact with a dedicated digital patient assistant, not a generic chatbot.",
     steps: [
-      { title: "Website Visit", desc: "A patient lands on your clinic's website." },
-      { title: "AI Interaction", desc: "They ask questions and receive instant, helpful responses from the AI assistant." },
-      { title: "Service Information", desc: "They learn about your clinic's services with clear, detailed explanations." },
-      { title: "Smart Routing", desc: "They're guided to book an appointment or connect via WhatsApp." },
-      { title: "Conversion", desc: "Your clinic never misses a lead — every inquiry is captured and tracked." },
+      { title: "Website Visit", desc: "The patient visits your clinic's website and reaches the first point of contact." },
+      { title: "Clinic-Tailored AI Interaction", desc: "The visitor chats with an AI assistant trained on your clinic's tone and service structure." },
+      { title: "Trustworthy Service Information", desc: "The assistant provides clear guidance on treatments, processes, FAQs, and next steps." },
+      { title: "Smart Routing", desc: "Based on the patient's needs, they're directed to book an appointment, WhatsApp, or a live team member." },
+      { title: "Captured Conversion", desc: "Your clinic never misses a new patient request — every conversation is trackable and actionable." },
     ],
+    highlightCard: {
+      title: "Not a standard chatbot — your clinic's digital patient advisor.",
+      desc: "Configured separately for each clinic. It learns your services, patient communication style, and FAQs to deliver responses that match your brand.",
+    },
   },
   useCases: {
     title: "Automatically Answer Your Most Common Patient Questions",

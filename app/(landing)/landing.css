@@ -530,7 +530,124 @@
   margin: 0;
 }
 
+/* ─── Journey Layout (timeline + highlight card) ─── */
+.lp-journey-layout {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 48px;
+  align-items: start;
+}
+
+.lp-journey-layout .lp-timeline {
+  max-width: none;
+  margin: 0;
+}
+
+/* ─── Journey Highlight Card ─── */
+.lp-journey-highlight-card {
+  position: sticky;
+  top: 96px;
+  border-radius: 20px;
+  padding: 32px 28px;
+  border: 1px solid rgba(14, 165, 233, 0.18);
+  box-shadow:
+    0 0 0 1px rgba(14, 165, 233, 0.06),
+    0 8px 32px rgba(14, 165, 233, 0.10),
+    0 1px 4px rgba(0, 0, 0, 0.04);
+  background: linear-gradient(160deg, #ffffff 55%, rgba(14, 165, 233, 0.04) 100%);
+  position: relative;
+}
+
+.lp-journey-highlight-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(14,165,233,0.06), rgba(20,184,166,0.06));
+  pointer-events: none;
+  z-index: 0;
+}
+
+.lp-journey-highlight-icon {
+  position: relative;
+  z-index: 1;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: var(--lp-gradient);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 14px rgba(14, 165, 233, 0.28);
+}
+
+.lp-journey-highlight-badge {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 99px;
+  background: var(--lp-gradient-subtle);
+  border: 1px solid rgba(14, 165, 233, 0.18);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--lp-primary-dark);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+
+.lp-journey-highlight-title {
+  position: relative;
+  z-index: 1;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--lp-text);
+  line-height: 1.35;
+  margin-bottom: 12px;
+  letter-spacing: -0.3px;
+}
+
+.lp-journey-highlight-desc {
+  position: relative;
+  z-index: 1;
+  font-size: 14px;
+  color: var(--lp-text-secondary);
+  line-height: 1.7;
+  margin: 0 0 20px;
+}
+
+.lp-journey-highlight-pills {
+  position: relative;
+  z-index: 1;
+  list-style: none;
+  margin: 0;
+  padding: 16px 0 0;
+  border-top: 1px solid rgba(14, 165, 233, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lp-journey-highlight-pills li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lp-text);
+}
+
+.lp-journey-highlight-pills li svg {
+  color: var(--lp-secondary);
+  flex-shrink: 0;
+}
+
 /* ─── Use Case Chips ─── */
+
 .lp-chips {
   display: flex;
   flex-wrap: wrap;
@@ -842,6 +959,13 @@
   .lp-hero-ctas { justify-content: center; }
   .lp-chat-mockup { margin: 0 auto; }
   .lp-cards-grid-3 { grid-template-columns: repeat(2, 1fr); }
+  .lp-journey-layout {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  .lp-journey-highlight-card {
+    position: static;
+  }
 }
 
 @media (max-width: 768px) {
@@ -858,6 +982,8 @@
   .lp-timeline-num { width: 40px; height: 40px; min-width: 40px; font-size: 14px; }
   .lp-header-actions .lp-btn { display: none; }
   .lp-btn { padding: 12px 24px; font-size: 14px; }
+  .lp-journey-highlight-card { padding: 24px 20px; }
+  .lp-journey-highlight-title { font-size: 15px; }
 }
 
 @media (max-width: 480px) {
