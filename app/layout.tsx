@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/lib/auth-context";
@@ -32,6 +33,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </I18nProvider>
           <CookieBanner />
         </ThemeProvider>
+        <Script
+          src="https://widget.clinicbridge.ai/widget.js"
+          data-clinic-id="DnOlKzIhPc4agVymYcoH"
+          strategy="afterInteractive"
+        />
       </body>
     </html>
   );
