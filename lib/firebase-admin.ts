@@ -1,38 +1,108 @@
-import * as admin from 'firebase-admin';
+/**
+ * firebase-admin.ts
+ *
+ * Lazy-initialized Firebase Admin SDK.
+ * - Modül import edildiğinde hiçbir şey çalışmaz.
+ * - getAdminDb() / getAdminAuth() fonksiyonları ilk çağrıldığında initialize olur.
+ * - Build time'da env variables yoksa crash etmez, null döner.
+ */
 
-if (!admin.apps.length) {
-  try {
-    const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+import type { App } from "firebase-admin/app";
+import type { Firestore } from "firebase-admin/firestore";
+import type { Auth } from "firebase-admin/auth";
 
-    if (!projectId || !clientEmail || !privateKey) {
-      const missing = [];
-      if (!projectId) missing.push('FIREBASE_PROJECT_ID (veya NEXT_PUBLIC_FIREBASE_PROJECT_ID)');
-      if (!clientEmail) missing.push('FIREBASE_CLIENT_EMAIL');
-      if (!privateKey) missing.push('FIREBASE_PRIVATE_KEY');
+let _app: App | null = null;
+let _db: Firestore | null = null;
+let _auth: Auth | null = null;
+let _initialized = false;
 
-      throw new Error(`Firebase Admin credentials missing. Eksik değişkenler: ${missing.join(', ')}`);
-    } else {
-      admin.initializeApp({
-        credential: admin.credential.cert({
-          projectId,
-          clientEmail,
-          privateKey: privateKey.replace(/\\n/g, '\n').replace(/^"|"$/g, ''),
-        }),
-      });
-    }
-  } catch (error) {
-    console.error('Firebase Admin Initialization Error:', error);
+function initializeAdmin(): App | null {
+  if (_initialized) return _app;
+  _initialized = true;
+
+  const projectId =
+    process.env.FIREBASE_PROJECT_ID ||
+    process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  const privateKeyRaw = process.env.FIREBASE_PRIVATE_KEY;
+
+  if (!projectId || !clientEmail || !privateKeyRaw) {
+    const missing: string[] = [];
+    if (!projectId) missing.push("FIREBASE_PROJECT_ID");
+    if (!clientEmail) missing.push("FIREBASE_CLIENT_EMAIL");
+    if (!privateKeyRaw) missing.push("FIREBASE_PRIVATE_KEY");
+    console.warn(
+      `[firebase-admin] Credentials missing (${missing.join(", ")}). ` +
+        "Admin SDK disabled — this is expected during build."
+    );
+    return null;
   }
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const adminModule = require("firebase-admin/app");
+    const { getApps, initializeApp, cert } = adminModule;
+
+    if (getApps().length > 0) {
+      _app = getApps()[0] as App;
+    } else {
+      const privateKey = privateKeyRaw
+        .replace(/\\n/g, "\n")
+        .replace(/^"|"$/g, "");
+      _app = initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
+    }
+  } catch (err) {
+    console.error("[firebase-admin] Initialization failed:", err);
+    _app = null;
+  }
+
+  return _app;
 }
 
-const adminDb = admin.apps.length ? admin.firestore() : null;
-const adminAuth = admin.apps.length ? admin.auth() : null;
+export function getAdminDb(): Firestore | null {
+  if (_db) return _db;
+  const app = initializeAdmin();
+  if (!app) return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getFirestore } = require("firebase-admin/firestore");
+    _db = getFirestore(app) as Firestore;
+  } catch (err) {
+    console.error("[firebase-admin] Firestore init failed:", err);
+  }
+  return _db;
+}
 
-export { adminDb, adminAuth };
-console.log("ENV CHECK:", {
-  projectId: !!process.env.FIREBASE_PROJECT_ID,
-  clientEmail: !!process.env.FIREBASE_CLIENT_EMAIL,
-  privateKey: !!process.env.FIREBASE_PRIVATE_KEY,
-});
+export function getAdminAuth(): Auth | null {
+  if (_auth) return _auth;
+  const app = initializeAdmin();
+  if (!app) return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getAuth } = require("firebase-admin/auth");
+    _auth = getAuth(app) as Auth;
+  } catch (err) {
+    console.error("[firebase-admin] Auth init failed:", err);
+  }
+  return _auth;
+}
+
+/**
+ * @deprecated Kullanmayın — getAdminDb() / getAdminAuth() kullanın.
+ * Geriye dönük uyumluluk için bırakıldı.
+ */
+export const adminDb = {
+  get current() {
+    return getAdminDb();
+  },
+};
+
+/**
+ * @deprecated Kullanmayın — getAdminAuth() kullanın.
+ * Geriye dönük uyumluluk için bırakıldı.
+ */
+export const adminAuth = {
+  get current() {
+    return getAdminAuth();
+  },
+};

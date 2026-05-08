@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminDb, adminAuth } from "@/lib/firebase-admin";
+import { getAdminDb, getAdminAuth } from "@/lib/firebase-admin";
 
 export async function POST(req: Request) {
   try {
@@ -13,6 +13,8 @@ export async function POST(req: Request) {
       );
     }
 
+    const adminDb = getAdminDb();
+    const adminAuth = getAdminAuth();
     if (!adminDb || !adminAuth) {
       console.error("Reset Password: adminDb or adminAuth is null. Check Firebase Admin init.");
       return NextResponse.json({ error: "Sunucu yapılandırma hatası." }, { status: 500 });

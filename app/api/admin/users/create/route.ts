@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { getAdminAuth, getAdminDb } from "@/lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 import crypto from "crypto";
 
 export async function POST(req: Request) {
   try {
+    const adminAuth = getAdminAuth();
+    const adminDb = getAdminDb();
     if (!adminAuth || !adminDb) {
       return NextResponse.json({ error: "Sunucu yapılandırma hatası (Firebase Admin)." }, { status: 500 });
     }

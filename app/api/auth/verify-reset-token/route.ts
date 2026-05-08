@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminDb } from "@/lib/firebase-admin";
+import { getAdminDb } from "@/lib/firebase-admin";
 
 export async function POST(req: Request) {
   try {
@@ -10,6 +10,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Token eksik." }, { status: 400 });
     }
 
+    const adminDb = getAdminDb();
     if (!adminDb) {
       console.error("Verify Token: adminDb is null. Check Firebase Admin init.");
       return NextResponse.json({ error: "Sunucu yapılandırma hatası." }, { status: 500 });

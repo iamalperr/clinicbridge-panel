@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
-import { adminDb } from "@/lib/firebase-admin";
+import { getAdminDb } from "@/lib/firebase-admin";
 import crypto from "crypto";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -17,6 +17,7 @@ export async function POST(req: Request) {
       );
     }
 
+    const adminDb = getAdminDb();
     if (!adminDb) {
       console.error("Forgot Password: adminDb is null. Check Firebase Admin init.");
       return NextResponse.json({ error: "Sunucu yapılandırma hatası. Lütfen daha sonra tekrar deneyin." }, { status: 500 });

@@ -1,17 +1,9 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 
-/* ─── Try to import Admin SDK (may be null if credentials are missing) ─── */
-let adminDb: FirebaseFirestore.Firestore | null = null;
-let FieldValue: typeof import("firebase-admin/firestore").FieldValue | null = null;
+import { getAdminDb } from "@/lib/firebase-admin";
+import { FieldValue } from "firebase-admin/firestore";
 
-try {
-  const adminModule = require("@/lib/firebase-admin");
-  adminDb = adminModule.adminDb;
-  FieldValue = require("firebase-admin/firestore").FieldValue;
-} catch {
-  console.warn("[DemoRequest API] Firebase Admin SDK not available, using REST API fallback.");
-}
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -103,7 +95,8 @@ export async function POST(req: Request) {
     /* ─── Write to Firestore ───────────────────────────────── */
     let docId: string;
 
-    if (adminDb && FieldValue) {
+    const adminDb = getAdminDb();
+    if (adminDb) {
       // Preferred: use Admin SDK (bypasses security rules)
       const docRef = await adminDb.collection("demoRequests").add({
         ...sanitised,
@@ -116,6 +109,7 @@ export async function POST(req: Request) {
       docId = await writeViaRestApi(sanitised);
       console.log("[DemoRequest API] Created via REST API fallback:", docId);
     }
+
 
     /* ─── Notification e-mail (best-effort) ────────────────── */
     try {
