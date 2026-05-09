@@ -355,6 +355,39 @@
             : 'Sorry, I cannot respond right now. Please call the clinic.');
           chatHistory.push({ role: 'assistant', content: reply });
           appendMsg(reply, false, msgs, lang, false);
+
+          // Handle appointment creation action
+          if (data && data.appointmentAction) {
+            var appt = data.appointmentAction;
+            fetch(API_BASE + '/api/public/appointment', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                clinicId:         clinicId,
+                patientName:      appt.patientName,
+                patientPhone:     appt.patientPhone,
+                requestedService: appt.requestedService,
+                requestedDate:    appt.requestedDate,
+                requestedTime:    appt.requestedTime,
+                originalText:     appt.originalText || text,
+                conversationId:   sessionId,
+              }),
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(res) {
+              console.log('[ClinicBridge Widget] Appointment result:', res);
+              if (res && res.duplicate) {
+                var dupeMsg = lang === 'tr'
+                  ? 'Bu bilgilerle bir randevu talebiniz zaten mevcut. Farklı bir tarih/saat seçmek ister misiniz?'
+                  : 'An appointment with these details already exists. Would you like a different time?';
+                chatHistory.push({ role: 'assistant', content: dupeMsg });
+                appendMsg(dupeMsg, false, msgs, lang, false);
+              }
+            })
+            .catch(function(err) {
+              console.error('[ClinicBridge Widget] Appointment API error:', err);
+            });
+          }
         })
         .catch(function(err) {
           console.error('[ClinicBridge Widget] API error:', err);

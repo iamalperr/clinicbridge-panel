@@ -119,22 +119,40 @@ export async function POST(req: Request) {
 
     debugLog.push(`topDocs=[${topDocs.slice(0, 5).map(d => d.title).join(", ")}]`);
 
-    // ── Build system prompt ───────────────────────────────────────────────────
+    // ── Build system prompt ───────────────────────────────────────────────────────────────────────────
     const customPrompt = promptSettings?.systemPrompt ?? "";
+    const today = new Date().toLocaleDateString("tr-TR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 
     const systemPrompt = [
-      `Sen ${clinicName}'nin dijital hasta asistanısın.`,
-      customPrompt ? `\nKLİNİĞE ÖZEL TALİMATLAR:\n${customPrompt}` : "",
+      `Sen ${clinicName}'nin dijital hasta asistanissin. Bugunun tarihi: ${today}.`,
+      customPrompt ? `\nKLINIGE OZEL TALIMATLAR:\n${customPrompt}` : "",
       knowledgeContext
-        ? `\nKLİNİK BİLGİ HAVUZU (cevaplarında bu bilgileri kullan):\n\n${knowledgeContext}`
-        : "\n(Bu klinik için henüz eğitim verisi eklenmemiş.)",
-      `\nGENEL KURALLAR:
-- Yalnızca yukarıdaki bilgi havuzuna dayanarak yanıt ver.
-- Kesin tıbbi teşhis, ilaç önerisi veya garanti içeren fiyat bilgisi verme.
-- Uygun durumlarda randevu almalarını veya kliniği aramalarını öner.
-- Yanıtların kısa (max 3-4 cümle), nazik ve anlaşılır olsun.
-- Bilgi havuzunda cevap bulamazsan açıkça söyle ve kliniği aramalarını öner.
-- Türkçe sorulara Türkçe, İngilizce sorulara İngilizce yanıt ver.`,
+        ? `\nKLINIK BILGI HAVUZU (cevaplarinda bu bilgileri kullan):\n\n${knowledgeContext}`
+        : "\n(Bu klinik icin henuz egitim verisi eklenmemis.)",
+      `\nRANDEVU AKISI KURALLARI:
+Kullanici randevu almak istediginde asagidaki adimlari takip et:
+
+ADIM 1 - NIYET ALGILAMA:
+Su ifadeler randevu niyeti sayilir: randevu, appointment, saat, tarih, gelmek istiyorum, muayene olmak istiyorum, tedavi icin.
+Niyet algilaninca eksik bilgileri tek tek sor.
+
+ADIM 2 - EKSIK BILGI TOPLAMA:
+Gerekli: (1) Ad Soyad, (2) Telefon, (3) Talep edilen hizmet/tedavi, (4) Tercih edilen tarih, (5) Tercih edilen saat.
+Eksik olan her bilgiyi nazikce sor.
+
+ADIM 3 - ONAY ALMA:
+Tum bilgiler tamamlandiginda MUTLAKA su formatta onay al:
+"Harika! Su bilgilerle randevu talebi olusturayim mi?\n Ad: [isim]\n Telefon: [telefon]\n Hizmet: [hizmet]\n Tarih/Saat: [tarih] saat [saat]\nOnayliyor musunuz? (Evet/Hayir)"
+
+ADIM 4 - KAYIT (SADECE kullanici Evet/onayliyorum/tamam/olur dediginde):
+Yanitin SADECE su JSON olmali, baska hicbir sey ekleme:
+{"action":"CREATE_APPOINTMENT","patientName":"...","patientPhone":"...","requestedService":"...","requestedDate":"...","requestedTime":"...","originalText":"...","confirmMessage":"Randevu talebinizi aldim. [tarih] saat [saat] icin talebiniz klinige iletildi. Klinik ekibimiz size SMS veya telefon ile donus yapacaktir."}
+
+GENEL KURALLAR:
+- Kesin tibbi teshis, ilac onerisi veya garanti iceren fiyat bilgisi verme.
+- Gercek zamanli musaitlik bilgin yok; talep olusturuyorum, klinik teyit edecek de.
+- Yanitlarin kisa (max 4 cumle), nazik ve anlasililir olsun.
+- Turkce sorulara Turkce, Ingilizce sorulara Ingilizce yanit ver.`,
     ].join("");
 
     // ── OpenAI call ───────────────────────────────────────────────────────────
@@ -155,13 +173,38 @@ export async function POST(req: Request) {
       ],
     });
 
-    const reply = completion.choices[0]?.message?.content?.trim()
-      ?? "Üzgünüm, şu an yanıt üretemiyorum.";
+    const rawReply = completion.choices[0]?.message?.content?.trim()
+      ?? "Uzgunum, su an yanit uretemiyorum.";
 
-    debugLog.push(`OK reply="${reply.slice(0, 80)}" ms=${Date.now() - startTime}`);
+    // ── Detect CREATE_APPOINTMENT action from AI ─────────────────────────────
+    let reply = rawReply;
+    let appointmentAction: any = null;
+
+    try {
+      const parsed = JSON.parse(rawReply);
+      if (parsed?.action === "CREATE_APPOINTMENT") {
+        appointmentAction = parsed;
+        reply = parsed.confirmMessage ?? "Randevu talebiniz alindi.";
+      }
+    } catch { /* Not JSON, normal reply */ }
+
+    debugLog.push(`OK reply="${reply.slice(0, 60)}" ms=${Date.now() - startTime}`);
     console.log("[widget-chat]", debugLog.join(" | "));
 
-    return NextResponse.json({ reply }, { headers: CORS });
+    const response: any = { reply };
+    if (appointmentAction) {
+      // Send appointment data to widget so it can call /api/public/appointment
+      response.appointmentAction = {
+        patientName:      appointmentAction.patientName,
+        patientPhone:     appointmentAction.patientPhone,
+        requestedService: appointmentAction.requestedService,
+        requestedDate:    appointmentAction.requestedDate,
+        requestedTime:    appointmentAction.requestedTime,
+        originalText:     appointmentAction.originalText,
+      };
+    }
+
+    return NextResponse.json(response, { headers: CORS });
 
   } catch (err: any) {
     debugLog.push(`ERROR: ${err.message ?? err}`);

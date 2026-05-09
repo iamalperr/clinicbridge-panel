@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import { collection, query, where, orderBy, getDocs } from "firebase/firestore";
+import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useI18n } from "@/lib/i18n-context";
 import { UI_COLORS } from "@/components/ui/ui-shared";
@@ -20,30 +20,21 @@ export default function AppointmentsPage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchAppointments = async () => {
-      try {
-        const appointmentsRef = collection(db, "appointments");
-        const q = query(
-          appointmentsRef,
-          where("clinicId", "==", clinicId),
-          orderBy("createdAt", "desc")
-        );
-        
-        const snapshot = await getDocs(q);
-        const data = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as Appointment[];
-        
-        setAppointments(data);
-      } catch (error) {
-        console.error("Error fetching appointments:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAppointments();
+    const q = query(
+      collection(db, "appointments"),
+      where("clinicId", "==", clinicId),
+      orderBy("createdAt", "desc")
+    );
+    const unsub = onSnapshot(q, (snapshot) => {
+      setAppointments(
+        snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Appointment[]
+      );
+      setLoading(false);
+    }, (error) => {
+      console.error("Error fetching appointments:", error);
+      setLoading(false);
+    });
+    return () => unsub();
   }, [clinicId]);
 
   if (loading) {
@@ -123,51 +114,58 @@ export default function AppointmentsPage({ params }: PageProps) {
                 </tr>
               </thead>
               <tbody>
-                {appointments.map((apt) => (
-                  <tr key={apt.id} style={{ borderBottom: `1px solid ${UI_COLORS.border}`, transition: "background 0.2s" }} onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-page)"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
-                    <td style={{ padding: "16px 24px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(99, 102, 241, 0.1)", color: UI_COLORS.brand, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          <User size={16} />
+                  {appointments.map((apt) => (
+                    <tr key={apt.id} style={{ borderBottom: `1px solid ${UI_COLORS.border}`, transition: "background 0.2s" }} onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-page)"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                      <td style={{ padding: "16px 24px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                          <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(99, 102, 241, 0.1)", color: UI_COLORS.brand, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <User size={16} />
+                          </div>
+                          <div>
+                            <span style={{ fontSize: 14, fontWeight: 600, color: UI_COLORS.textPrimary, display: "block" }}>
+                              {apt.patientName}
+                            </span>
+                            {apt.patientPhone && (
+                              <span style={{ fontSize: 12, color: UI_COLORS.textMuted }}>
+                                {apt.patientPhone}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <span style={{ fontSize: 14, fontWeight: 600, color: UI_COLORS.textPrimary }}>
-                          {apt.patientName}
-                        </span>
-                      </div>
-                    </td>
-                    <td style={{ padding: "16px 24px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: UI_COLORS.textPrimary, fontWeight: 500 }}>
-                        <Stethoscope size={16} color={UI_COLORS.textMuted} />
-                        {apt.service}
-                      </div>
-                    </td>
-                    <td style={{ padding: "16px 24px" }}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.5, color: UI_COLORS.textPrimary, fontWeight: 500 }}>
-                          <Calendar size={14} color={UI_COLORS.textMuted} />
-                          {apt.preferredDate}
+                      </td>
+                      <td style={{ padding: "16px 24px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: UI_COLORS.textPrimary, fontWeight: 500 }}>
+                          <Stethoscope size={16} color={UI_COLORS.textMuted} />
+                          {apt.requestedService || apt.service}
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: UI_COLORS.textSecondary }}>
-                          <Clock size={14} />
-                          {apt.preferredTime}
+                      </td>
+                      <td style={{ padding: "16px 24px" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.5, color: UI_COLORS.textPrimary, fontWeight: 500 }}>
+                            <Calendar size={14} color={UI_COLORS.textMuted} />
+                            {apt.requestedDate || apt.preferredDate}
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: UI_COLORS.textSecondary }}>
+                            <Clock size={14} />
+                            {apt.requestedTime || apt.preferredTime}
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td style={{ padding: "16px 24px" }}>
-                      <Badge variant={apt.status === "confirmed" ? "active" : apt.status === "pending" ? "pending" : "inactive"} />
-                    </td>
-                    <td style={{ padding: "16px 24px" }}>
-                      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", background: "var(--bg-page)", borderRadius: 100, border: `1px solid ${UI_COLORS.border}`, fontSize: 12, fontWeight: 600, color: UI_COLORS.textSecondary }}>
-                        {t(`appointments.source.${apt.source}`) || apt.source}
-                      </div>
-                    </td>
-                    <td style={{ padding: "16px 24px", textAlign: "right" }}>
-                      <button style={{ background: "transparent", border: "none", color: UI_COLORS.textMuted, cursor: "pointer", padding: 4 }}>
-                        <ChevronRight size={18} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td style={{ padding: "16px 24px" }}>
+                        <Badge variant={apt.status === "confirmed" ? "active" : apt.status === "pending" ? "pending" : "inactive"} />
+                      </td>
+                      <td style={{ padding: "16px 24px" }}>
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", background: "var(--bg-page)", borderRadius: 100, border: `1px solid ${UI_COLORS.border}`, fontSize: 12, fontWeight: 600, color: UI_COLORS.textSecondary }}>
+                          {apt.source === "widget" ? "🌐 Widget" : t(`appointments.source.${apt.source}`) || apt.source}
+                        </div>
+                      </td>
+                      <td style={{ padding: "16px 24px", textAlign: "right" }}>
+                        <button style={{ background: "transparent", border: "none", color: UI_COLORS.textMuted, cursor: "pointer", padding: 4 }}>
+                          <ChevronRight size={18} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
