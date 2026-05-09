@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useState, useCallback } from "react";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { UI_COLORS } from "@/components/ui/ui-shared";
@@ -8,10 +8,27 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import SectionCard from "@/components/ui/SectionCard";
-import { Loader2, Save, Layout, Palette, MessageCircle, Sparkles, Plus, Trash2 } from "lucide-react";
+import { Loader2, Save, Layout, Palette, MessageCircle, Sparkles, Plus, Trash2, GripVertical } from "lucide-react";
 import type { WidgetSettings, ShowBubblesConfig } from "@/lib/types";
 import WidgetPreview from "./WidgetPreview";
 import WidgetIntegration from "./WidgetIntegration";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface PageProps {
   params: Promise<{ clinicId: string }>;
@@ -72,6 +89,162 @@ function Toggle({ checked, onChange, label, description }: { checked: boolean; o
       <div>
         <p style={{ fontSize: 14, fontWeight: 600, color: UI_COLORS.textPrimary }}>{label}</p>
         {description && <p style={{ fontSize: 12.5, color: UI_COLORS.textMuted, marginTop: 3, lineHeight: 1.5 }}>{description}</p>}
+      </div>
+    </div>
+  );
+}
+
+/* ── Sortable bubble row ── */
+function SortableBubbleItem({
+  id, value, onChange, onDelete,
+}: {
+  id: string;
+  value: string;
+  onChange: (v: string) => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    background: isDragging ? "rgba(99,102,241,0.08)" : "rgba(255,255,255,0.04)",
+    borderRadius: 8,
+    padding: "8px 12px",
+    border: `1px solid ${isDragging ? UI_COLORS.brand : UI_COLORS.border}`,
+    fontSize: 13.5,
+    color: UI_COLORS.textPrimary,
+    boxShadow: isDragging ? "0 8px 24px rgba(0,0,0,.25)" : "none",
+    opacity: isDragging ? 0.85 : 1,
+    zIndex: isDragging ? 999 : "auto",
+    position: "relative",
+    cursor: "default",
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      {/* Drag handle */}
+      <span
+        {...attributes}
+        {...listeners}
+        title="Sürükle"
+        style={{
+          cursor: "grab",
+          color: UI_COLORS.textMuted,
+          display: "flex",
+          alignItems: "center",
+          flexShrink: 0,
+          touchAction: "none",
+          padding: "2px 0",
+        }}
+      >
+        <GripVertical size={15} />
+      </span>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          background: "none",
+          border: "none",
+          flex: 1,
+          color: UI_COLORS.textPrimary,
+          fontSize: 13.5,
+          outline: "none",
+          minWidth: 0,
+        }}
+      />
+      <button
+        onClick={onDelete}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          color: UI_COLORS.textMuted,
+          display: "flex",
+          flexShrink: 0,
+        }}
+      >
+        <Trash2 size={14} />
+      </button>
+    </div>
+  );
+}
+
+/* ── Sortable bubble list ── */
+function SortableBubbleList({
+  lang, items, onUpdate, onDelete, onReorder,
+  newVal, onNewValChange, onAdd,
+}: {
+  lang: "tr" | "en";
+  items: string[];
+  onUpdate: (idx: number, val: string) => void;
+  onDelete: (idx: number) => void;
+  onReorder: (newItems: string[]) => void;
+  newVal: string;
+  onNewValChange: (v: string) => void;
+  onAdd: () => void;
+}) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  // Stable IDs: index-based prefixed with lang
+  const ids = items.map((_, i) => `${lang}-${i}`);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIdx = ids.indexOf(active.id as string);
+    const newIdx = ids.indexOf(over.id as string);
+    if (oldIdx !== -1 && newIdx !== -1) {
+      onReorder(arrayMove(items, oldIdx, newIdx));
+    }
+  }, [ids, items, onReorder]);
+
+  const inputRowStyle: React.CSSProperties = { display: "flex", gap: 8, marginTop: 4 };
+  const msgInputStyle: React.CSSProperties = {
+    flex: 1, padding: "9px 12px", borderRadius: 10, border: `1px solid ${UI_COLORS.border}`,
+    background: "rgba(255,255,255,0.03)", color: UI_COLORS.textPrimary, fontSize: 13.5, outline: "none",
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+          {items.map((msg, i) => (
+            <SortableBubbleItem
+              key={ids[i]}
+              id={ids[i]}
+              value={msg}
+              onChange={(v) => onUpdate(i, v)}
+              onDelete={() => onDelete(i)}
+            />
+          ))}
+        </SortableContext>
+      </DndContext>
+      <div style={inputRowStyle}>
+        <input
+          value={newVal}
+          onChange={(e) => onNewValChange(e.target.value)}
+          placeholder={lang === "tr" ? "Yeni Türkçe balon ekle…" : "Add new English bubble…"}
+          style={msgInputStyle}
+          onKeyDown={(e) => e.key === "Enter" && onAdd()}
+        />
+        <button
+          onClick={onAdd}
+          style={{ background: UI_COLORS.brand, border: "none", borderRadius: 10, padding: "0 14px", cursor: "pointer", color: "white", display: "flex", alignItems: "center", gap: 4 }}
+        >
+          <Plus size={16} />
+        </button>
       </div>
     </div>
   );
@@ -167,6 +340,9 @@ export default function WidgetPage({ params }: PageProps) {
     const msgs = (bubbles.messages[lang] ?? []).filter((_, i) => i !== idx);
     setBubbles({ messages: { ...bubbles.messages, [lang]: msgs } });
   };
+
+  const reorderMsg = (lang: "tr" | "en", newItems: string[]) =>
+    setBubbles({ messages: { ...bubbles.messages, [lang]: newItems } });
 
   const addMsg = (lang: "tr" | "en") => {
     const val = lang === "tr" ? newBubbleTr.trim() : newBubbleEn.trim();
@@ -341,27 +517,16 @@ export default function WidgetPage({ params }: PageProps) {
                 <p style={{ fontSize: 13, fontWeight: 700, color: UI_COLORS.textSecondary, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 12 }}>
                   Türkçe Balonlar
                 </p>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {bubbles.messages.tr.map((msg, i) => (
-                    <div key={i} style={msgTagStyle}>
-                      <input
-                        value={msg}
-                        onChange={(e) => updateMsg("tr", i, e.target.value)}
-                        style={{ background: "none", border: "none", flex: 1, color: UI_COLORS.textPrimary, fontSize: 13.5, outline: "none" }}
-                      />
-                      <button onClick={() => deleteMsg("tr", i)} style={{ background: "none", border: "none", cursor: "pointer", color: UI_COLORS.textMuted, display: "flex" }}>
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))}
-                  <div style={inputRowStyle}>
-                    <input value={newBubbleTr} onChange={e => setNewBubbleTr(e.target.value)} placeholder="Yeni Türkçe balon ekle…" style={msgInputStyle}
-                      onKeyDown={e => e.key === "Enter" && addMsg("tr")} />
-                    <button onClick={() => addMsg("tr")} style={{ background: UI_COLORS.brand, border: "none", borderRadius: 10, padding: "0 14px", cursor: "pointer", color: "white", display: "flex", alignItems: "center", gap: 4 }}>
-                      <Plus size={16} />
-                    </button>
-                  </div>
-                </div>
+                <SortableBubbleList
+                  lang="tr"
+                  items={bubbles.messages.tr}
+                  onUpdate={(idx, val) => updateMsg("tr", idx, val)}
+                  onDelete={(idx) => deleteMsg("tr", idx)}
+                  onReorder={(items) => reorderMsg("tr", items)}
+                  newVal={newBubbleTr}
+                  onNewValChange={setNewBubbleTr}
+                  onAdd={() => addMsg("tr")}
+                />
               </div>
 
               {/* Messages — English */}
@@ -369,27 +534,16 @@ export default function WidgetPage({ params }: PageProps) {
                 <p style={{ fontSize: 13, fontWeight: 700, color: UI_COLORS.textSecondary, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 12 }}>
                   İngilizce Balonlar
                 </p>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {bubbles.messages.en.map((msg, i) => (
-                    <div key={i} style={msgTagStyle}>
-                      <input
-                        value={msg}
-                        onChange={(e) => updateMsg("en", i, e.target.value)}
-                        style={{ background: "none", border: "none", flex: 1, color: UI_COLORS.textPrimary, fontSize: 13.5, outline: "none" }}
-                      />
-                      <button onClick={() => deleteMsg("en", i)} style={{ background: "none", border: "none", cursor: "pointer", color: UI_COLORS.textMuted, display: "flex" }}>
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))}
-                  <div style={inputRowStyle}>
-                    <input value={newBubbleEn} onChange={e => setNewBubbleEn(e.target.value)} placeholder="Add new English bubble…" style={msgInputStyle}
-                      onKeyDown={e => e.key === "Enter" && addMsg("en")} />
-                    <button onClick={() => addMsg("en")} style={{ background: UI_COLORS.brand, border: "none", borderRadius: 10, padding: "0 14px", cursor: "pointer", color: "white", display: "flex", alignItems: "center", gap: 4 }}>
-                      <Plus size={16} />
-                    </button>
-                  </div>
-                </div>
+                <SortableBubbleList
+                  lang="en"
+                  items={bubbles.messages.en}
+                  onUpdate={(idx, val) => updateMsg("en", idx, val)}
+                  onDelete={(idx) => deleteMsg("en", idx)}
+                  onReorder={(items) => reorderMsg("en", items)}
+                  newVal={newBubbleEn}
+                  onNewValChange={setNewBubbleEn}
+                  onAdd={() => addMsg("en")}
+                />
               </div>
 
               {/* Timing */}
