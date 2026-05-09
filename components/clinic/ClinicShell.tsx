@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { Clinic } from "@/lib/types";
 import Badge from "@/components/ui/Badge";
@@ -52,14 +52,21 @@ export default function ClinicShell({
   ];
 
   useEffect(() => {
-    getDoc(doc(db, "clinics", clinicId))
-      .then((snap) => {
-        if (snap.exists()) setClinic({ id: snap.id, ...(snap.data() as Omit<Clinic, "id">) });
-        else setClinic({ id: clinicId, name: "Clinic Workspace", plan: "pro", status: "active" });
-      })
-      .catch(() => {
+    // onSnapshot — header updates instantly when clinic name is saved
+    const unsub = onSnapshot(
+      doc(db, "clinics", clinicId),
+      (snap) => {
+        if (snap.exists()) {
+          setClinic({ id: snap.id, ...(snap.data() as Omit<Clinic, "id">) });
+        } else {
+          setClinic({ id: clinicId, name: "Clinic Workspace", plan: "pro", status: "active" });
+        }
+      },
+      () => {
         setClinic({ id: clinicId, name: "Clinic Workspace", plan: "pro", status: "active" });
-      });
+      }
+    );
+    return () => unsub();
   }, [clinicId]);
 
   return (
