@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useState, useMemo } from "react";
-import { collection, getDocs, getDoc, doc, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, onSnapshot, doc, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import type { Clinic, Plan, ClinicStatus } from "@/lib/types";
-import { MOCK_CLINICS } from "@/lib/mock-data";
 import Badge from "@/components/ui/Badge";
 import StatCard from "@/components/ui/StatCard";
 import EmptyState from "@/components/ui/EmptyState";
@@ -39,38 +38,50 @@ export default function ClinicsPage() {
     modules: { ai: true, widget: false, voice: false }
   });
 
-  const fetchClinics = async () => {
+  // onSnapshot — clinic list updates instantly when any clinic is modified
+  useEffect(() => {
     setLoading(true);
     setError(null);
-    try {
-      if (isClinicUser && profile?.clinicId) {
-        const docRef = doc(db, "clinics", profile.clinicId);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setClinics([{ id: docSnap.id, ...(docSnap.data() as Omit<Clinic, "id">) }]);
-        } else {
-          setClinics([]);
-        }
-      } else {
-        const snap = await getDocs(collection(db, "clinics"));
-        if (snap.empty) {
-          setClinics([]);
-        } else {
-          setClinics(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Clinic, "id">) })));
-        }
-      }
-    } catch (err) {
-      console.error("Firestore error:", err);
-      setError(t("dashboard.errors.fetch"));
-      setClinics(MOCK_CLINICS);
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  useEffect(() => {
-    fetchClinics();
-  }, []);
+    let unsub: () => void;
+
+    if (isClinicUser && profile?.clinicId) {
+      // Clinic user: listen only to their assigned clinic
+      unsub = onSnapshot(
+        doc(db, "clinics", profile.clinicId),
+        (snap) => {
+          if (snap.exists()) {
+            setClinics([{ id: snap.id, ...(snap.data() as Omit<Clinic, "id">) }]);
+          } else {
+            setClinics([]);
+          }
+          setLoading(false);
+        },
+        (err) => {
+          console.error("Firestore onSnapshot error:", err);
+          setError(t("dashboard.errors.fetch"));
+          setLoading(false);
+        }
+      );
+    } else {
+      // Admin: listen to all clinics
+      unsub = onSnapshot(
+        collection(db, "clinics"),
+        (snap) => {
+          setClinics(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Clinic, "id">) })));
+          setLoading(false);
+        },
+        (err) => {
+          console.error("Firestore onSnapshot error:", err);
+          setError(t("dashboard.errors.fetch"));
+          setLoading(false);
+        }
+      );
+    }
+
+    return () => unsub?.();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isClinicUser, profile?.clinicId]);
 
   const filteredClinics = useMemo(() => {
     return clinics.filter(c => 
@@ -102,16 +113,13 @@ export default function ClinicsPage() {
 
     try {
       await addDoc(collection(db, "clinics"), clinicToSave);
-      await fetchClinics();
+      // onSnapshot will automatically update the list — no manual refetch needed
       setIsSuccess(true);
-      
-      // Auto-close after success feedback
       setTimeout(() => {
         setIsAddModalOpen(false);
         setIsSuccess(false);
         setNewClinic({ name: "", domain: "", plan: "starter", status: "trial", modules: { ai: true, widget: false, voice: false } });
       }, 1800);
-      
     } catch (err) {
       console.error("Failed to add clinic:", err);
       setSubmitError(t("dashboard.errors.saveFailed"));
