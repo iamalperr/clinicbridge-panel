@@ -1,11 +1,20 @@
 /**
- * ClinicBridge AI Widget v4.0 — Live Settings Polling
+ * ClinicBridge AI Widget v4.1 — Live Settings Polling
  * https://widget.clinicbridge-ai.com/widget.js
  * Usage: <script src="..." data-clinic-id="YOUR_ID"></script>
  */
 (function (w, d) {
   'use strict';
   if (w.__cbwLoaded) return;
+
+  // ── Domain guard: block on panel / admin / CDN domains ──
+  var _host = w.location.hostname;
+  var _blocked = ['clinicbridge-ai.com','www.clinicbridge-ai.com',
+    'app.clinicbridge-ai.com','widget.clinicbridge-ai.com',
+    'localhost','127.0.0.1'];
+  if (_blocked.indexOf(_host) !== -1) return;
+  // ────────────────────────────────────────────────────────
+
   w.__cbwLoaded = true;
 
   var scriptEl  = d.currentScript || d.querySelector('script[data-clinic-id]');
