@@ -331,25 +331,33 @@
         msgs.appendChild(typing); msgs.scrollTop = msgs.scrollHeight;
 
         // call real AI API
+        var payload = {
+          clinicId: clinicId,
+          message: text,
+          history: chatHistory.slice(-10),
+        };
+        console.log('[ClinicBridge Widget] sending to API:', API_BASE + '/api/public/chat', payload);
+
         fetch(API_BASE + '/api/public/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            clinicId: clinicId,
-            message: text,
-            history: chatHistory.slice(-10), // last 5 exchanges
-          }),
+          body: JSON.stringify(payload),
         })
-        .then(function(r) { return r.json(); })
+        .then(function(r) {
+          console.log('[ClinicBridge Widget] API status:', r.status);
+          return r.json();
+        })
         .then(function(data) {
+          console.log('[ClinicBridge Widget] API response:', data);
           var t = d.getElementById('cbw-typing'); if (t) t.remove();
-          var reply = data.reply || (lang === 'tr'
+          var reply = (data && data.reply) ? data.reply : (lang === 'tr'
             ? 'Üzgünüm, şu an yanıt üretemiyorum. Lütfen kliniğimizi arayın.'
             : 'Sorry, I cannot respond right now. Please call the clinic.');
           chatHistory.push({ role: 'assistant', content: reply });
           appendMsg(reply, false, msgs, lang, false);
         })
-        .catch(function() {
+        .catch(function(err) {
+          console.error('[ClinicBridge Widget] API error:', err);
           var t = d.getElementById('cbw-typing'); if (t) t.remove();
           var fallback = lang === 'tr'
             ? 'Bağlantı hatası oluştu. Lütfen kliniğimizi doğrudan arayın. 📞'
