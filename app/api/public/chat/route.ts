@@ -41,53 +41,92 @@ function getClientDb() {
   }
 }
 
-/* ── Firestore REST API write (bypasses security rules via API key) ───── */
+/* ── Convert JS object → Firestore REST value format ──────────────────── */
+function toFirestoreValue(val: any): any {
+  if (val === null || val === undefined) return { nullValue: null };
+  if (typeof val === "boolean") return { booleanValue: val };
+  if (typeof val === "number") return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
+  if (typeof val === "string") return { stringValue: val };
+  if (val instanceof Date) return { timestampValue: val.toISOString() };
+  if (Array.isArray(val)) return { arrayValue: { values: val.map(toFirestoreValue) } };
+  if (typeof val === "object") {
+    const fields: Record<string, any> = {};
+    for (const [k, v] of Object.entries(val)) { fields[k] = toFirestoreValue(v); }
+    return { mapValue: { fields } };
+  }
+  return { stringValue: String(val) };
+}
+
+function toFirestoreFields(data: Record<string, any>): Record<string, any> {
+  const fields: Record<string, any> = {};
+  for (const [k, v] of Object.entries(data)) { fields[k] = toFirestoreValue(v); }
+  return fields;
+}
+
+/* ── Firebase Anonymous Auth → get idToken ─────────────────────────────── */
+async function getFirebaseAnonToken(apiKey: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ returnSecureToken: true }),
+      }
+    );
+    const data = await res.json();
+    if (!res.ok) {
+      console.warn(`[firebase-anon] Auth failed ${res.status}:`, data?.error?.message ?? JSON.stringify(data).slice(0, 120));
+      return null;
+    }
+    console.log(`[firebase-anon] ✅ Got anon token uid=${data.localId}`);
+    return data.idToken ?? null;
+  } catch (e: any) {
+    console.warn("[firebase-anon] Network error:", e.message);
+    return null;
+  }
+}
+
+/* ── Firestore REST API write ───────────────────────────────────────────── */
 async function firestoreRestAdd(
   projectId: string,
   apiKey: string,
   collectionPath: string,
-  data: Record<string, any>
+  data: Record<string, any>,
+  idToken?: string | null
 ): Promise<string> {
-  // Convert plain JS object to Firestore REST API format
-  function toFirestoreValue(val: any): any {
-    if (val === null || val === undefined) return { nullValue: null };
-    if (typeof val === "boolean") return { booleanValue: val };
-    if (typeof val === "number") return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
-    if (typeof val === "string") return { stringValue: val };
-    if (val instanceof Date) return { timestampValue: val.toISOString() };
-    if (Array.isArray(val)) return { arrayValue: { values: val.map(toFirestoreValue) } };
-    if (typeof val === "object") {
-      const fields: Record<string, any> = {};
-      for (const [k, v] of Object.entries(val)) {
-        fields[k] = toFirestoreValue(v);
-      }
-      return { mapValue: { fields } };
-    }
-    return { stringValue: String(val) };
+  const fields = toFirestoreFields(data);
+
+  // Strategy 1: use Bearer token (works when rules require auth)
+  // Strategy 2: use API key only (works when rules allow unauthenticated writes)
+  const strategies: Array<{ url: string; headers: Record<string, string> }> = [];
+
+  if (idToken) {
+    strategies.push({
+      url: `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${collectionPath}`,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+    });
   }
-
-  const fields: Record<string, any> = {};
-  for (const [k, v] of Object.entries(data)) {
-    fields[k] = toFirestoreValue(v);
-  }
-
-  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${collectionPath}?key=${apiKey}`;
-
-  const res = await fetch(url, {
-    method: "POST",
+  // Always add API key fallback
+  strategies.push({
+    url: `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${collectionPath}?key=${apiKey}`,
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ fields }),
   });
 
-  if (!res.ok) {
+  let lastError = "";
+  for (const { url, headers } of strategies) {
+    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify({ fields }) });
+    if (res.ok) {
+      const json = await res.json();
+      const parts = (json.name ?? "").split("/");
+      return parts[parts.length - 1] ?? "unknown";
+    }
     const errText = await res.text();
-    throw new Error(`Firestore REST error ${res.status}: ${errText}`);
+    lastError = `HTTP ${res.status}: ${errText.slice(0, 300)}`;
+    console.warn(`[firestore-rest] Strategy failed — ${lastError}`);
   }
 
-  const json = await res.json();
-  // Extract document ID from the name field: "projects/.../documents/appointments/DOC_ID"
-  const parts = json.name?.split("/") ?? [];
-  return parts[parts.length - 1] ?? "unknown";
+  throw new Error(`All Firestore write strategies failed. Last error: ${lastError}`);
 }
 
 /* ── Appointment confirmation detection ──────────────────────────────── */
@@ -211,8 +250,12 @@ async function createAppointmentViaRest(params: {
     updatedAt: now,
   };
 
+  console.log(`[appointment-create] Getting anonymous auth token...`);
+  const idToken = await getFirebaseAnonToken(apiKey);
+  console.log(`[appointment-create] anonToken=${idToken ? "OK" : "FAILED — will try API key fallback"}`);
+
   console.log(`[appointment-create] Writing to Firestore REST API...`);
-  const appointmentId = await firestoreRestAdd(projectId, apiKey, "appointments", apptDoc);
+  const appointmentId = await firestoreRestAdd(projectId, apiKey, "appointments", apptDoc, idToken);
   console.log(`[appointment-create] ✅ appointmentId=${appointmentId} patient="${data.patientName}"`);
 
   /* ── Find clinic email ────────────────────────────── */
