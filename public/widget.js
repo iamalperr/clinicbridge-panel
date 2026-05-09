@@ -288,15 +288,11 @@
       startPolling();
     });
 
+    /* ── conversation history for context ── */
+    var chatHistory = [];
+
     /* ── wire interaction events (once) ── */
     function wireEvents(initSettings) {
-      var BOT = {
-        book:     lang==='tr' ? 'Randevu için iletişim formumuzu doldurabilir veya kliniğimizi arayabilirsiniz. 📅' : 'Fill in our contact form or call us to book. 📅',
-        services: lang==='tr' ? 'Geniş bir tedavi yelpazemiz var. Detaylar için kliniğimize ulaşın. 😊' : 'We offer a wide range of treatments. Contact us for details. 😊',
-        whatsapp: lang==='tr' ? 'WhatsApp üzerinden bize ulaşabilirsiniz. 💬' : 'Reach us on WhatsApp. 💬',
-        def:      lang==='tr' ? 'Yardımcı olmaktan memnuniyet duyarım! Kliniğimizle iletişime geçin. 😊' : "I'm happy to help! Contact our clinic for more information. 😊",
-      };
-
       d.getElementById('cbw-launcher').addEventListener('click', function(){
         isOpen ? closePanel() : openPanel();
       });
@@ -307,31 +303,59 @@
       });
       d.getElementById('cbw-quick').addEventListener('click', function(e){
         var btn = e.target.closest('.cbw-qbtn');
-        if (btn) send(btn.textContent, btn.dataset.key);
+        if (btn) send(btn.textContent);
       });
 
       function sendFromInput() {
         var inp = d.getElementById('cbw-input');
-        var v = inp.value; inp.value = '';
-        send(v, 'def');
+        var v = inp.value.trim(); inp.value = '';
+        if (v) send(v);
       }
 
-      function send(text, key) {
+      function send(text) {
         if (!text.trim()) return;
         var msgs = d.getElementById('cbw-msgs');
         appendMsg(text, true, msgs, lang, false);
-        logMessage(text); // ← log to Firestore
+        logMessage(text); // log to Firestore (fire-and-forget)
+
+        // push to history
+        chatHistory.push({ role: 'user', content: text });
+
         var q = d.getElementById('cbw-quick');
         if (q) q.style.display = 'none';
-        // typing
+
+        // show typing indicator
         var typing = d.createElement('div');
         typing.id = 'cbw-typing'; typing.className = 'cbw-msg cbw-bot cbw-typing';
         typing.innerHTML = '<div class="cbw-bubble-msg"><span class="cbw-tdot"></span><span class="cbw-tdot"></span><span class="cbw-tdot"></span></div>';
         msgs.appendChild(typing); msgs.scrollTop = msgs.scrollHeight;
-        setTimeout(function(){
+
+        // call real AI API
+        fetch(API_BASE + '/api/public/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clinicId: clinicId,
+            message: text,
+            history: chatHistory.slice(-10), // last 5 exchanges
+          }),
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
           var t = d.getElementById('cbw-typing'); if (t) t.remove();
-          appendMsg(BOT[key] || BOT.def, false, msgs, lang, false);
-        }, 900 + Math.random()*400);
+          var reply = data.reply || (lang === 'tr'
+            ? 'Üzgünüm, şu an yanıt üretemiyorum. Lütfen kliniğimizi arayın.'
+            : 'Sorry, I cannot respond right now. Please call the clinic.');
+          chatHistory.push({ role: 'assistant', content: reply });
+          appendMsg(reply, false, msgs, lang, false);
+        })
+        .catch(function() {
+          var t = d.getElementById('cbw-typing'); if (t) t.remove();
+          var fallback = lang === 'tr'
+            ? 'Bağlantı hatası oluştu. Lütfen kliniğimizi doğrudan arayın. 📞'
+            : 'Connection error. Please call the clinic directly. 📞';
+          appendMsg(fallback, false, msgs, lang, false);
+        });
       }
     }
 
