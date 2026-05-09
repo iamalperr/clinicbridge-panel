@@ -20,7 +20,19 @@
   var scriptEl  = d.currentScript || d.querySelector('script[data-clinic-id]');
   var clinicId  = scriptEl && scriptEl.dataset.clinicId || 'demo';
   var API_BASE  = 'https://app.clinicbridge-ai.com';
-  var POLL_MS   = 5000; // poll every 5 seconds
+  var POLL_MS   = 5000;
+
+  /* ── Session ID (unique per page load) ── */
+  var sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
+
+  /* ── Log conversation message to Firestore via API ── */
+  function logMessage(userMessage) {
+    fetch(API_BASE + '/api/public/conversation-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clinicId: clinicId, sessionId: sessionId, userMessage: userMessage }),
+    }).catch(function() {}); // fire-and-forget, never block UI
+  }
 
   /* ─── fetch settings (no-cache) ─── */
   function fetchCfg(cb) {
@@ -308,6 +320,7 @@
         if (!text.trim()) return;
         var msgs = d.getElementById('cbw-msgs');
         appendMsg(text, true, msgs, lang, false);
+        logMessage(text); // ← log to Firestore
         var q = d.getElementById('cbw-quick');
         if (q) q.style.display = 'none';
         // typing
