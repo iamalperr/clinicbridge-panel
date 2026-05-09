@@ -210,8 +210,8 @@ function extractAppointmentFromHistory(history: any[]): AppointmentData | null {
   return { patientName, patientPhone, requestedService, requestedDate, requestedTime, originalText };
 }
 
-/* ── Create appointment via REST API (no auth needed) ─────────────────── */
-async function createAppointmentViaRest(params: {
+/* ── Create appointment — Admin SDK (primary) or REST API (fallback) ──── */
+async function createAppointment(params: {
   clinicId: string;
   clinicName: string;
   data: AppointmentData;
@@ -219,44 +219,57 @@ async function createAppointmentViaRest(params: {
 }): Promise<{ appointmentId: string; emailSent: boolean }> {
   const { clinicId, clinicName, data, conversationId } = params;
 
-  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-  const apiKey    = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
-
-  if (!projectId || !apiKey) {
-    throw new Error("Firebase project config missing");
-  }
-
   const now = new Date().toISOString();
+  // Sanitize: no undefined fields (Firestore rejects them)
   const apptDoc = {
-    clinicId,
-    clinicName,
-    patientName:      data.patientName,
-    patientPhone:     data.patientPhone,
-    service:          data.requestedService,
-    requestedService: data.requestedService,
-    preferredDate:    data.requestedDate,
-    requestedDate:    data.requestedDate,
-    preferredTime:    data.requestedTime,
-    requestedTime:    data.requestedTime,
+    clinicId:         clinicId || "",
+    clinicName:       clinicName || "Klinik",
+    patientName:      data.patientName || "",
+    patientPhone:     data.patientPhone || "",
+    service:          data.requestedService || "Genel Muayene",
+    requestedService: data.requestedService || "Genel Muayene",
+    preferredDate:    data.requestedDate || "",
+    requestedDate:    data.requestedDate || "",
+    preferredTime:    data.requestedTime || "",
+    requestedTime:    data.requestedTime || "",
     status:           "pending",
     source:           "widget",
-    originalText:     data.originalText,
-    conversationId,
-    notificationStatus: {
-      smsToPatient:  "pending",
-      emailToClinic: "pending",
-    },
+    originalText:     data.originalText || "",
+    conversationId:   conversationId || "",
+    notificationStatus: { smsToPatient: "pending", emailToClinic: "pending" },
     createdAt: now,
     updatedAt: now,
   };
 
-  console.log(`[appointment-create] Getting anonymous auth token...`);
-  const idToken = await getFirebaseAnonToken(apiKey);
-  console.log(`[appointment-create] anonToken=${idToken ? "OK" : "FAILED — will try API key fallback"}`);
+  console.log("[APPOINTMENT_CREATE_START]", {
+    clinicId, patientName: data.patientName, patientPhone: data.patientPhone,
+    requestedService: data.requestedService, requestedDate: data.requestedDate, requestedTime: data.requestedTime,
+  });
 
-  console.log(`[appointment-create] Writing to Firestore REST API...`);
-  const appointmentId = await firestoreRestAdd(projectId, apiKey, "appointments", apptDoc, idToken);
-  console.log(`[appointment-create] ✅ appointmentId=${appointmentId} patient="${data.patientName}"`);
+  let appointmentId = "";
+
+  /* ── Strategy 1: Firebase Admin SDK (bypasses security rules entirely) ── */
+  const adminDb = getAdminDb();
+  console.log(`[FIRESTORE_ADMIN] adminDb available: ${!!adminDb}`);
+
+  if (adminDb) {
+    console.log("[FIRESTORE_WRITE_START] Using Admin SDK...");
+    const ref = await adminDb.collection("appointments").add(apptDoc);
+    appointmentId = ref.id;
+    console.log(`[FIRESTORE_WRITE_SUCCESS] appointmentId=${appointmentId}`);
+  } else {
+    /* ── Strategy 2: Firestore REST API with anon token then API key ─────── */
+    console.log("[FIRESTORE_WRITE_START] Admin SDK unavailable — trying REST API...");
+    const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? "";
+    const apiKey    = process.env.NEXT_PUBLIC_FIREBASE_API_KEY    ?? "";
+    if (!projectId || !apiKey) throw new Error("No Firebase config (projectId or apiKey missing)");
+
+    const idToken = await getFirebaseAnonToken(apiKey);
+    console.log(`[FIRESTORE_WRITE_START] anonToken=${idToken ? "OK" : "null — will try API key only"}`);
+    appointmentId = await firestoreRestAdd(projectId, apiKey, "appointments", apptDoc, idToken);
+    console.log(`[FIRESTORE_WRITE_SUCCESS] REST appointmentId=${appointmentId}`);
+  }
+
 
   /* ── Find clinic email ────────────────────────────── */
   let clinicEmail = "";
@@ -357,7 +370,7 @@ export async function POST(req: Request) {
   const debugLog: string[] = [];
 
   try {
-    const { clinicId, message, history = [], conversationId = "" } = await req.json();
+    const { clinicId, message, history = [], conversationId = "", pendingAppointmentData } = await req.json();
     debugLog.push(`clinicId=${clinicId} msg="${message?.slice(0, 60)}"`);
 
     if (!clinicId || !message) {
@@ -418,15 +431,23 @@ export async function POST(req: Request) {
     debugLog.push(`topDocs=[${topDocs.slice(0, 4).map(d => d.title).join(", ")}]`);
 
     /* ── SERVER-SIDE confirmation → appointment creation ──────────────── */
-    if (isConfirmation(message) && history.length > 0) {
+    if (isConfirmation(message)) {
       debugLog.push("CONFIRM_DETECTED");
-      console.log(`[widget-chat] Confirmation detected: "${message}" — extracting appointment...`);
+      console.log(`[widget-chat] Confirmation: "${message}" | pendingAppointmentData=${!!pendingAppointmentData}`);
 
-      const apptData = extractAppointmentFromHistory(history);
+      // Prefer explicit pendingAppointmentData sent from widget, then history parse
+      const apptData: AppointmentData | null =
+        pendingAppointmentData && pendingAppointmentData.patientName && pendingAppointmentData.patientPhone
+          ? (pendingAppointmentData as AppointmentData)
+          : extractAppointmentFromHistory(history);
+
+      console.log("[PARSED_APPOINTMENT_DATA]", apptData
+        ? JSON.stringify({ name: apptData.patientName, phone: apptData.patientPhone, service: apptData.requestedService, date: apptData.requestedDate, time: apptData.requestedTime })
+        : "null — no data found");
 
       if (apptData) {
         try {
-          const { appointmentId, emailSent } = await createAppointmentViaRest({
+          const { appointmentId, emailSent } = await createAppointment({
             clinicId,
             clinicName,
             data: apptData,
@@ -448,7 +469,7 @@ export async function POST(req: Request) {
             { headers: CORS }
           );
         } catch (e: any) {
-          console.error("[appointment-create] ❌ Failed:", e.message);
+          console.error("[FIRESTORE_WRITE_FAILED]", e.message);
           debugLog.push(`appt_failed: ${e.message}`);
           console.log("[widget-chat]", debugLog.join(" | "));
           return NextResponse.json(
@@ -457,8 +478,8 @@ export async function POST(req: Request) {
           );
         }
       } else {
-        debugLog.push("confirm_but_no_summary_found");
-        console.log("[widget-chat] Confirmation but no appointment summary in history — fallback to AI");
+        debugLog.push("confirm_but_no_data");
+        console.log("[widget-chat] Confirmation but no appointment data found — fallback to AI");
       }
     }
 
@@ -516,7 +537,43 @@ GENEL KURALLAR:
     debugLog.push(`OK reply="${reply.slice(0, 60)}" ms=${Date.now() - startTime}`);
     console.log("[widget-chat]", debugLog.join(" | "));
 
-    return NextResponse.json({ reply }, { headers: CORS });
+    // If AI response contains a confirmation summary, extract and return pendingAppointmentData
+    // so the widget can send it back on confirmation — more reliable than history parsing
+    const isConfirmSummary =
+      (reply.includes("Ad:") || reply.includes("Name:")) &&
+      (reply.includes("Telefon:") || reply.includes("Phone:")) &&
+      (reply.includes("Onaylıyor") || reply.includes("Onaylay") || reply.includes("Confirm"));
+
+    const responsePayload: any = { reply };
+
+    if (isConfirmSummary) {
+      // Parse the summary from AI reply and attach as pendingAppointmentData
+      const nameMatch    = reply.match(/(?:Ad|Name|İsim):\s*([^\n\r]+)/i);
+      const phoneMatch   = reply.match(/(?:Telefon|Phone|Tel):\s*([0-9\s+\-().]+)/i);
+      const serviceMatch = reply.match(/(?:Hizmet|Service|Tedavi):\s*([^\n\r]+)/i);
+      const dtMatch      = reply.match(/(?:Tarih\/Saat|Tarih|Date):\s*([^\n\r]+)/i);
+      const timeMatch    = reply.match(/(\d{1,2}:\d{2})/i);
+
+      const dtStr  = dtMatch?.[1]?.trim() ?? "";
+      const timeStr = timeMatch?.[1]?.trim() ?? "";
+      const dateStr = dtStr.replace(timeStr, "").replace(/saat/gi, "").trim();
+
+      const pending: AppointmentData = {
+        patientName:      nameMatch?.[1]?.trim()    ?? "",
+        patientPhone:     phoneMatch?.[1]?.replace(/\s+/g, "").trim() ?? "",
+        requestedService: serviceMatch?.[1]?.trim() ?? "Genel Muayene",
+        requestedDate:    dateStr || dtStr,
+        requestedTime:    timeStr,
+        originalText:     reply,
+      };
+
+      if (pending.patientName && pending.patientPhone) {
+        responsePayload.pendingAppointmentData = pending;
+        console.log("[widget-chat] pendingAppointmentData attached:", JSON.stringify(pending));
+      }
+    }
+
+    return NextResponse.json(responsePayload, { headers: CORS });
 
   } catch (err: any) {
     debugLog.push(`ERROR: ${err.message ?? err}`);

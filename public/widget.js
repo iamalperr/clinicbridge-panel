@@ -290,6 +290,8 @@
 
     /* ── conversation history for context ── */
     var chatHistory = [];
+    /* ── pending appointment data from server (set when AI asks for confirmation) ── */
+    var pendingApptData = null;
 
     /* ── wire interaction events (once) ── */
     function wireEvents(initSettings) {
@@ -336,8 +338,13 @@
           message: text,
           history: chatHistory.slice(-12),
           conversationId: sessionId,
+          pendingAppointmentData: pendingApptData || undefined,
         };
-        console.log('[ClinicBridge Widget] sending to API:', API_BASE + '/api/public/chat', payload);
+        console.log('[ClinicBridge Widget] sending to API:', API_BASE + '/api/public/chat', {
+          clinicId: payload.clinicId,
+          message: payload.message,
+          hasPendingAppt: !!payload.pendingAppointmentData,
+        });
 
         fetch(API_BASE + '/api/public/chat', {
           method: 'POST',
@@ -357,9 +364,16 @@
           chatHistory.push({ role: 'assistant', content: reply });
           appendMsg(reply, false, msgs, lang, false);
 
-          // Log if appointment was created server-side
+          // Store pending appointment data for next confirmation message
+          if (data && data.pendingAppointmentData) {
+            pendingApptData = data.pendingAppointmentData;
+            console.log('[ClinicBridge Widget] Stored pendingApptData:', pendingApptData);
+          }
+
+          // Appointment created server-side → clear pending data
           if (data && data.appointmentCreated) {
-            console.log('[ClinicBridge Widget] ✅ Appointment created on server:', data.appointmentId);
+            console.log('[ClinicBridge Widget] ✅ Appointment created:', data.appointmentId);
+            pendingApptData = null;
           }
         })
         .catch(function(err) {
