@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { getAdminDb } from "@/lib/firebase-admin";
-import { initializeApp, getApps, getApp } from "firebase/app";
+import { initializeApp, getApps } from "firebase/app";
 import {
   getFirestore, collection, query, where, getDocs,
-  doc, getDoc, addDoc, serverTimestamp,
+  doc, getDoc,
 } from "firebase/firestore";
 import {
   sendClinicAppointmentEmail,
@@ -21,7 +21,7 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS });
 }
 
-/* ── Client-side Firebase fallback ──────────────────────────────────────── */
+/* ── Client-side Firebase (for READS only — reads work without auth in most rules) ── */
 function getClientDb() {
   const cfg = {
     apiKey:            process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -32,23 +32,83 @@ function getClientDb() {
     appId:             process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
   };
   if (!cfg.apiKey || !cfg.projectId) return null;
-  const app = getApps().find(a => a.name === "chat-api") ?? initializeApp(cfg, "chat-api");
-  return getFirestore(app);
+  try {
+    const existing = getApps().find(a => a.name === "chat-api");
+    const app = existing ?? initializeApp(cfg, "chat-api");
+    return getFirestore(app);
+  } catch (e) {
+    return null;
+  }
 }
 
-/* ── Appointment confirmation detection ─────────────────────────────────── */
+/* ── Firestore REST API write (bypasses security rules via API key) ───── */
+async function firestoreRestAdd(
+  projectId: string,
+  apiKey: string,
+  collectionPath: string,
+  data: Record<string, any>
+): Promise<string> {
+  // Convert plain JS object to Firestore REST API format
+  function toFirestoreValue(val: any): any {
+    if (val === null || val === undefined) return { nullValue: null };
+    if (typeof val === "boolean") return { booleanValue: val };
+    if (typeof val === "number") return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
+    if (typeof val === "string") return { stringValue: val };
+    if (val instanceof Date) return { timestampValue: val.toISOString() };
+    if (Array.isArray(val)) return { arrayValue: { values: val.map(toFirestoreValue) } };
+    if (typeof val === "object") {
+      const fields: Record<string, any> = {};
+      for (const [k, v] of Object.entries(val)) {
+        fields[k] = toFirestoreValue(v);
+      }
+      return { mapValue: { fields } };
+    }
+    return { stringValue: String(val) };
+  }
+
+  const fields: Record<string, any> = {};
+  for (const [k, v] of Object.entries(data)) {
+    fields[k] = toFirestoreValue(v);
+  }
+
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${collectionPath}?key=${apiKey}`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Firestore REST error ${res.status}: ${errText}`);
+  }
+
+  const json = await res.json();
+  // Extract document ID from the name field: "projects/.../documents/appointments/DOC_ID"
+  const parts = json.name?.split("/") ?? [];
+  return parts[parts.length - 1] ?? "unknown";
+}
+
+/* ── Appointment confirmation detection ──────────────────────────────── */
 const CONFIRM_KEYWORDS = [
   "evet", "yes", "onaylıyorum", "onayliyorum", "tamam", "olur",
   "kabul", "evet lütfen", "evet lutfen", "tamamdır", "tamamdir",
-  "harika", "mükemmel", "mukemmel", "ilerleyelim",
+  "harika", "ilerleyelim", "oluştur", "olustur", "yap",
 ];
 
 function isConfirmation(msg: string): boolean {
   const lower = msg.toLowerCase().trim();
-  return CONFIRM_KEYWORDS.some(k => lower === k || lower.startsWith(k + " ") || lower.startsWith(k + ".") || lower.startsWith(k + "!"));
+  return CONFIRM_KEYWORDS.some(k =>
+    lower === k ||
+    lower.startsWith(k + " ") ||
+    lower.startsWith(k + ".") ||
+    lower.startsWith(k + "!") ||
+    lower.startsWith(k + ",")
+  );
 }
 
-/* ── Extract appointment data from conversation history ─────────────────── */
+/* ── Extract appointment data from conversation history ──────────────── */
 interface AppointmentData {
   patientName: string;
   patientPhone: string;
@@ -59,61 +119,75 @@ interface AppointmentData {
 }
 
 function extractAppointmentFromHistory(history: any[]): AppointmentData | null {
-  // Find the last assistant message that contains an appointment summary
-  // We look for the confirmation message pattern in the last assistant turn
-  const assistantMsgs = history.filter(h => h.role === "assistant").map(h => h.content);
-  const userMsgs = history.filter(h => h.role === "user").map(h => h.content);
+  const assistantMsgs = history.filter(h => h.role === "assistant").map(h => h.content as string);
+  const userMsgs = history.filter(h => h.role === "user").map(h => h.content as string);
 
-  const confirmMsg = assistantMsgs.find(m =>
-    (m.includes("Ad:") || m.includes("ad:") || m.includes("Name:")) &&
-    (m.includes("Telefon:") || m.includes("Phone:")) &&
-    (m.includes("Tarih") || m.includes("Date") || m.includes("Saat") || m.includes("Time"))
+  // Find the last assistant message that contains a summary with Ad: and Telefon:
+  const confirmMsg = [...assistantMsgs].reverse().find(m =>
+    (m.includes("Ad:") || m.includes("ad:") || m.includes("Name:") || m.includes("İsim:")) &&
+    (m.includes("Telefon:") || m.includes("Phone:") || m.includes("Tel:"))
   );
 
   if (!confirmMsg) {
-    console.log("[appointment-extract] No confirmation summary found in history");
+    console.log("[appt-extract] No confirmation summary found in history. msgs:", assistantMsgs.length);
     return null;
   }
 
-  console.log("[appointment-extract] Found confirmation summary:", confirmMsg.slice(0, 200));
+  console.log("[appt-extract] Found summary:", confirmMsg.slice(0, 300));
 
-  // Extract name
-  const nameMatch = confirmMsg.match(/(?:Ad|Name|İsim|Hasta):\s*(.+?)(?:\n|$)/i);
-  // Extract phone
-  const phoneMatch = confirmMsg.match(/(?:Telefon|Phone|Tel):\s*([0-9\s+\-().]+?)(?:\n|$)/i);
-  // Extract service
-  const serviceMatch = confirmMsg.match(/(?:Hizmet|Service|Tedavi|Treatment):\s*(.+?)(?:\n|$)/i);
-  // Extract date/time together
-  const dateTimeMatch = confirmMsg.match(/(?:Tarih\/Saat|Date\/Time|Tarih|Date):\s*(.+?)(?:\n|$)/i);
-  const timeMatch = confirmMsg.match(/(?:Saat|Time):\s*([0-9:]+)/i);
+  // Extract each field with flexible regex
+  const nameMatch    = confirmMsg.match(/(?:Ad|Name|İsim|Hasta):\s*([^\n\r]+)/i);
+  const phoneMatch   = confirmMsg.match(/(?:Telefon|Phone|Tel):\s*([0-9\s+\-().]+)/i);
+  const serviceMatch = confirmMsg.match(/(?:Hizmet|Service|Tedavi|Treatment):\s*([^\n\r]+)/i);
+  const dtMatch      = confirmMsg.match(/(?:Tarih\/Saat|Date\/Time|Tarih|Date|Saat):\s*([^\n\r]+)/i);
 
-  const patientName    = nameMatch?.[1]?.trim() ?? "";
-  const patientPhone   = phoneMatch?.[1]?.replace(/\s/g, "").trim() ?? "";
+  const patientName      = nameMatch?.[1]?.trim() ?? "";
+  const patientPhone     = phoneMatch?.[1]?.replace(/\s+/g, "").trim() ?? "";
   const requestedService = serviceMatch?.[1]?.trim() ?? "Genel Muayene";
-  const dateTimeStr    = dateTimeMatch?.[1]?.trim() ?? "";
-  const requestedTime  = timeMatch?.[1]?.trim() ?? "";
-  const requestedDate  = dateTimeStr.replace(requestedTime, "").trim() || dateTimeStr;
-  const originalText   = userMsgs.join(" | ");
+
+  // Parse date and time from the combined field
+  let requestedDate = "";
+  let requestedTime = "";
+  if (dtMatch) {
+    const dtStr = dtMatch[1].trim();
+    // Look for time pattern HH:MM
+    const timeInStr = dtStr.match(/(\d{1,2}:\d{2})/);
+    if (timeInStr) {
+      requestedTime = timeInStr[1];
+      requestedDate = dtStr.replace(timeInStr[0], "").replace(/saat/gi, "").trim();
+    } else {
+      requestedDate = dtStr;
+    }
+  }
+
+  const originalText = userMsgs.join(" | ");
 
   if (!patientName || !patientPhone) {
-    console.log("[appointment-extract] Missing required fields — name or phone not found");
+    console.log(`[appt-extract] Missing required fields: name="${patientName}" phone="${patientPhone}"`);
     return null;
   }
 
+  console.log(`[appt-extract] ✅ name="${patientName}" phone="${patientPhone}" service="${requestedService}" date="${requestedDate}" time="${requestedTime}"`);
   return { patientName, patientPhone, requestedService, requestedDate, requestedTime, originalText };
 }
 
-/* ── Create appointment in Firestore ────────────────────────────────────── */
-async function createAppointment(params: {
+/* ── Create appointment via REST API (no auth needed) ─────────────────── */
+async function createAppointmentViaRest(params: {
   clinicId: string;
   clinicName: string;
   data: AppointmentData;
   conversationId: string;
-  adminDb: any;
-  clientDb: any;
 }): Promise<{ appointmentId: string; emailSent: boolean }> {
-  const { clinicId, clinicName, data, conversationId, adminDb, clientDb } = params;
+  const { clinicId, clinicName, data, conversationId } = params;
 
+  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  const apiKey    = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+
+  if (!projectId || !apiKey) {
+    throw new Error("Firebase project config missing");
+  }
+
+  const now = new Date().toISOString();
   const apptDoc = {
     clinicId,
     clinicName,
@@ -133,35 +207,27 @@ async function createAppointment(params: {
       smsToPatient:  "pending",
       emailToClinic: "pending",
     },
-    createdAt:  serverTimestamp(),
-    updatedAt:  serverTimestamp(),
+    createdAt: now,
+    updatedAt: now,
   };
 
-  let appointmentId = "";
+  console.log(`[appointment-create] Writing to Firestore REST API...`);
+  const appointmentId = await firestoreRestAdd(projectId, apiKey, "appointments", apptDoc);
+  console.log(`[appointment-create] ✅ appointmentId=${appointmentId} patient="${data.patientName}"`);
 
-  if (adminDb) {
-    const ref = await adminDb.collection("appointments").add(apptDoc);
-    appointmentId = ref.id;
-  } else if (clientDb) {
-    const ref = await addDoc(collection(clientDb, "appointments"), apptDoc);
-    appointmentId = ref.id;
-  } else {
-    throw new Error("No database available");
-  }
-
-  console.log(`[appointment-create] ✅ Created appointmentId=${appointmentId} clinicId=${clinicId} patient="${data.patientName}" phone=${data.patientPhone}`);
-
-  /* ── Find clinic email ────────────────────────────────── */
+  /* ── Find clinic email ────────────────────────────── */
   let clinicEmail = "";
   try {
+    const adminDb = getAdminDb();
+    const clientDb = adminDb ? null : getClientDb();
+
     if (adminDb) {
       const cSnap = await adminDb.collection("clinics").doc(clinicId).get();
       if (cSnap.exists) {
-        clinicEmail = cSnap.data().notificationEmail ?? cSnap.data().email ?? "";
+        clinicEmail = cSnap.data()!.notificationEmail ?? cSnap.data()!.email ?? "";
       }
       if (!clinicEmail) {
-        const uSnap = await adminDb.collection("users")
-          .where("clinicId", "==", clinicId).limit(3).get();
+        const uSnap = await adminDb.collection("users").where("clinicId", "==", clinicId).limit(3).get();
         clinicEmail = uSnap.docs.map((d: any) => d.data().email).filter(Boolean)[0] ?? "";
       }
     } else if (clientDb) {
@@ -174,26 +240,25 @@ async function createAppointment(params: {
         clinicEmail = uSnap.docs.map(d => d.data().email).filter(Boolean)[0] ?? "";
       }
     }
-    console.log(`[appointment-create] clinicEmail=${clinicEmail || "(none)"}`);
+    console.log(`[appointment-create] clinicEmail=${clinicEmail || "(none found)"}`);
   } catch (e: any) {
-    console.warn("[appointment-create] Could not fetch clinic email:", e.message);
+    console.warn("[appointment-create] Email lookup failed:", e.message);
   }
 
-  /* ── SMS (mock/provider-ready) ────────────────────────── */
+  /* ── SMS (mock) ───────────────────────────────────── */
   try {
     await sendPatientSms({
-      phone: data.patientPhone,
+      phone:            data.patientPhone,
       clinicName,
       requestedDate:    data.requestedDate,
       requestedTime:    data.requestedTime,
       requestedService: data.requestedService,
     });
-    console.log(`[appointment-sms] Mock SMS sent to ${data.patientPhone}`);
   } catch (e: any) {
     console.error("[appointment-sms] Error:", e.message);
   }
 
-  /* ── Email to clinic ──────────────────────────────────── */
+  /* ── Email to clinic ──────────────────────────────── */
   let emailSent = false;
   if (clinicEmail) {
     try {
@@ -213,29 +278,37 @@ async function createAppointment(params: {
       console.error("[appointment-email] Error:", e.message);
     }
   } else {
-    console.warn(`[appointment-email] No email found for clinicId=${clinicId} — skipping`);
+    console.warn(`[appointment-email] No email found for clinicId=${clinicId}`);
   }
 
-  /* ── Update notification status ──────────────────────── */
+  /* ── Update notification status via REST ──────────── */
   try {
-    const statusUpdate = {
-      "notificationStatus.smsToPatient":  "sent", // mock always succeeds
-      "notificationStatus.emailToClinic": emailSent ? "sent" : (clinicEmail ? "failed" : "skipped"),
-    };
-    if (adminDb) {
-      await adminDb.collection("appointments").doc(appointmentId).update(statusUpdate);
-    } else if (clientDb) {
-      const { updateDoc, doc: fsDoc } = await import("firebase/firestore");
-      await updateDoc(fsDoc(clientDb, "appointments", appointmentId), statusUpdate);
-    }
+    const updateUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/appointments/${appointmentId}` +
+      `?updateMask.fieldPaths=notificationStatus.smsToPatient&updateMask.fieldPaths=notificationStatus.emailToClinic&key=${apiKey}`;
+    await fetch(updateUrl, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fields: {
+          notificationStatus: {
+            mapValue: {
+              fields: {
+                smsToPatient:  { stringValue: "sent" },
+                emailToClinic: { stringValue: emailSent ? "sent" : (clinicEmail ? "failed" : "skipped") },
+              },
+            },
+          },
+        },
+      }),
+    });
   } catch (e) { /* non-critical */ }
 
   return { appointmentId, emailSent };
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════
    MAIN POST HANDLER
-═══════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════════════ */
 export async function POST(req: Request) {
   const startTime = Date.now();
   const debugLog: string[] = [];
@@ -249,14 +322,13 @@ export async function POST(req: Request) {
     }
 
     if (!process.env.OPENAI_API_KEY) {
-      console.error("[widget-chat] OPENAI_API_KEY missing");
       return NextResponse.json(
         { reply: "Yapay zeka servisi şu an yapılandırılmamış. Lütfen kliniğimizi arayın." },
         { headers: CORS }
       );
     }
 
-    /* ── DB ──────────────────────────────────────────────────────────────── */
+    /* ── DB for reads ──────────────────────────────────────────────────── */
     const adminDb  = getAdminDb();
     const clientDb = adminDb ? null : getClientDb();
     debugLog.push(`db=admin:${!!adminDb} client:${!!clientDb}`);
@@ -287,7 +359,7 @@ export async function POST(req: Request) {
       debugLog.push(`[client] clinic="${clinicName}" docs=${trainingDocs.length}`);
     }
 
-    /* ── Relevance scoring ───────────────────────────────────────────────── */
+    /* ── Relevance scoring ─────────────────────────────────────────────── */
     const msgLower = message.toLowerCase();
     const msgWords = msgLower.split(/\s+/).filter((w: string) => w.length > 2);
     const scored = trainingDocs.map(d => {
@@ -302,53 +374,52 @@ export async function POST(req: Request) {
       : "";
     debugLog.push(`topDocs=[${topDocs.slice(0, 4).map(d => d.title).join(", ")}]`);
 
-    /* ── SERVER-SIDE confirmation detection ─────────────────────────────── */
-    // If user says yes/confirm AND history has a summary → create appointment NOW on server
+    /* ── SERVER-SIDE confirmation → appointment creation ──────────────── */
     if (isConfirmation(message) && history.length > 0) {
-      debugLog.push("CONFIRM_DETECTED — attempting server-side appointment creation");
-      console.log("[widget-chat] Confirmation detected, extracting appointment data from history...");
+      debugLog.push("CONFIRM_DETECTED");
+      console.log(`[widget-chat] Confirmation detected: "${message}" — extracting appointment...`);
 
       const apptData = extractAppointmentFromHistory(history);
 
       if (apptData) {
-        console.log("[appointment-extract] Extracted:", JSON.stringify(apptData));
         try {
-          const { appointmentId, emailSent } = await createAppointment({
+          const { appointmentId, emailSent } = await createAppointmentViaRest({
             clinicId,
             clinicName,
             data: apptData,
             conversationId: conversationId || `session_${Date.now()}`,
-            adminDb,
-            clientDb,
           });
 
-          const confirmReply = `Randevu talebinizi aldım ${apptData.patientName.split(" ")[0]} Bey/Hanım! ` +
-            `${apptData.requestedDate} saat ${apptData.requestedTime} için "${apptData.requestedService}" talebiniz ` +
-            `kliniğimize iletildi. Klinik ekibimiz uygunluğu kontrol ederek size dönüş yapacaktır. 🙏` +
+          const firstName = apptData.patientName.split(" ")[0];
+          const confirmReply =
+            `Randevu talebinizi aldım${firstName ? " " + firstName + " Bey/Hanım" : ""}! ` +
+            `${apptData.requestedDate} saat ${apptData.requestedTime} için ` +
+            `"${apptData.requestedService}" talebiniz kliniğimize iletildi. ` +
+            `Klinik ekibimiz uygunluğu kontrol ederek size dönüş yapacaktır. 🙏` +
             (emailSent ? " Klinik yönetimine e-posta bildirimi gönderildi." : "");
 
-          debugLog.push(`appointment created appointmentId=${appointmentId} email=${emailSent}`);
+          debugLog.push(`appt_created=${appointmentId} email=${emailSent} ms=${Date.now() - startTime}`);
           console.log("[widget-chat]", debugLog.join(" | "));
           return NextResponse.json(
             { reply: confirmReply, appointmentId, appointmentCreated: true },
             { headers: CORS }
           );
         } catch (e: any) {
-          console.error("[appointment-create] Failed:", e.message);
-          debugLog.push(`appt_create_failed: ${e.message}`);
-          // Fall through to normal AI reply with error message
-          const errReply = "Randevu talebinizi şu anda sisteme kaydedemedim. " +
-            "Lütfen kliniğimizi doğrudan arayın veya birkaç dakika sonra tekrar deneyin.";
+          console.error("[appointment-create] ❌ Failed:", e.message);
+          debugLog.push(`appt_failed: ${e.message}`);
           console.log("[widget-chat]", debugLog.join(" | "));
-          return NextResponse.json({ reply: errReply }, { headers: CORS });
+          return NextResponse.json(
+            { reply: "Randevu talebinizi şu anda sisteme kaydedemedim. Lütfen kliniğimizi doğrudan arayın veya birkaç dakika sonra tekrar deneyin." },
+            { headers: CORS }
+          );
         }
       } else {
-        debugLog.push("confirm_detected_but_no_summary");
-        console.log("[widget-chat] Confirmation detected but no appointment summary in history — falling through to AI");
+        debugLog.push("confirm_but_no_summary_found");
+        console.log("[widget-chat] Confirmation but no appointment summary in history — fallback to AI");
       }
     }
 
-    /* ── Normal AI call ──────────────────────────────────────────────────── */
+    /* ── Normal AI call ───────────────────────────────────────────────── */
     const customPrompt = promptSettings?.systemPrompt ?? "";
     const today = new Date().toLocaleDateString("tr-TR", {
       weekday: "long", year: "numeric", month: "long", day: "numeric",
@@ -361,23 +432,21 @@ export async function POST(req: Request) {
         ? `\nKLİNİK BİLGİ HAVUZU:\n\n${knowledgeContext}`
         : "\n(Bu klinik için henüz eğitim verisi eklenmemiş.)",
       `\nRANDEVU AKIŞI:
-Kullanıcı randevu almak istediğinde şu adımları takip et:
-
-1. RANDEVU NİYETİ: "randevu", "appointment", "saat", "gelmek istiyorum" gibi ifadeler niyet sayılır.
-2. EKSİK BİLGİ: Gerekli: Ad Soyad, Telefon, Hizmet/Tedavi, Tarih, Saat. Eksik olanları sırayla sor.
-3. ÖZET VE ONAY: Tüm bilgiler tamamlandığında MUTLAKA şu formatta özet ver ve onay iste:
+Kullanıcı randevu almak istediğinde:
+1. Şu bilgileri topla: Ad Soyad, Telefon, Hizmet/Tedavi, Tarih, Saat.
+2. Tüm bilgiler tamam olunca MUTLAKA şu formatta özet ve onay iste:
    "Harika! Şu bilgilerle randevu talebi oluşturayım mı?
    Ad: [isim]
    Telefon: [telefon]
    Hizmet: [hizmet]
    Tarih/Saat: [tarih] saat [saat]
    Onaylıyor musunuz? (Evet/Hayır)"
-4. ONAY SONRASI: Kullanıcı "Evet" dedikten sonra sistem randevuyu otomatik oluşturacak. Sen sadece bekle.
+3. Kullanıcı Evet dediğinde sistem otomatik randevu oluşturacak.
 
 GENEL KURALLAR:
-- Kesin tıbbi teşhis, ilaç önerisi veya garanti içeren fiyat bilgisi verme.
-- Gerçek zamanlı müsaitlik bilgin yok; "talep kliniğe iletilecek, teyit edilecek" de.
-- Yanıtların kısa (max 4 cümle), nazik ve anlaşılır olsun.
+- Kesin tıbbi teşhis veya fiyat garantisi verme.
+- Gerçek zamanlı müsaitlik bilgin yok.
+- Yanıtların kısa (max 4 cümle), nazik olsun.
 - Türkçe sorulara Türkçe, İngilizce sorulara İngilizce yanıt ver.`,
     ].join("");
 
@@ -410,7 +479,7 @@ GENEL KURALLAR:
     debugLog.push(`ERROR: ${err.message ?? err}`);
     console.error("[widget-chat]", debugLog.join(" | "), err);
     return NextResponse.json(
-      { reply: "Şu an teknik bir sorun yaşıyoruz. Lütfen kliniğimizi doğrudan arayın veya daha sonra tekrar deneyin." },
+      { reply: "Şu an teknik bir sorun yaşıyoruz. Lütfen kliniğimizi doğrudan arayın." },
       { status: 200, headers: CORS }
     );
   }
