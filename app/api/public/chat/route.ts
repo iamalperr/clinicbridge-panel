@@ -219,6 +219,9 @@ async function createAppointment(params: {
 }): Promise<{ appointmentId: string; emailSent: boolean }> {
   const { clinicId, clinicName, data, conversationId } = params;
 
+  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? "";
+  const apiKey    = process.env.NEXT_PUBLIC_FIREBASE_API_KEY    ?? "";
+
   const now = new Date().toISOString();
   // Sanitize: no undefined fields (Firestore rejects them)
   const apptDoc = {
@@ -260,8 +263,6 @@ async function createAppointment(params: {
   } else {
     /* ── Strategy 2: Firestore REST API with anon token then API key ─────── */
     console.log("[FIRESTORE_WRITE_START] Admin SDK unavailable — trying REST API...");
-    const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? "";
-    const apiKey    = process.env.NEXT_PUBLIC_FIREBASE_API_KEY    ?? "";
     if (!projectId || !apiKey) throw new Error("No Firebase config (projectId or apiKey missing)");
 
     const idToken = await getFirebaseAnonToken(apiKey);
@@ -339,6 +340,7 @@ async function createAppointment(params: {
 
   /* ── Update notification status via REST ──────────── */
   try {
+    if (!projectId || !apiKey) throw new Error("Missing projectId or apiKey for notification update");
     const updateUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/appointments/${appointmentId}` +
       `?updateMask.fieldPaths=notificationStatus.smsToPatient&updateMask.fieldPaths=notificationStatus.emailToClinic&key=${apiKey}`;
     await fetch(updateUrl, {
