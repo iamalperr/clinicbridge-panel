@@ -323,7 +323,7 @@
     "status": {
       "pending": "Pending",
       "confirmed": "Confirmed",
-      "cancelled": "Cancelled",
+      "cancelled": "Rejected",
       "completed": "Completed"
     },
     "source": {

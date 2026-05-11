@@ -143,10 +143,10 @@ function ShowcaseContent() {
       setScene(5);
       await moveCursorToRef("chatInput");
       await clickCursor();
-      await typeText("Alper Özgül, 05314629921");
+      await typeText("Mert Kaya, 0555 123 45 67");
       await moveCursorToRef("chatSend");
       await clickCursor();
-      setMessages(prev => [...prev, { role: "user", text: "Alper Özgül, 05314629921" }]);
+      setMessages(prev => [...prev, { role: "user", text: "Mert Kaya, 0555 123 45 67" }]);
       setInputText("");
       await moveCursorToCenter();
 
@@ -195,17 +195,17 @@ function ShowcaseContent() {
   }, [isRecording]);
 
   const overlayTexts: Record<number, string> = {
-    1: "Most clinic websites lose visitors before they book.",
-    2: "ClinicBridge AI welcomes patients instantly.",
-    3: "ClinicBridge AI welcomes patients instantly.",
-    4: "It understands intent and collects the missing details.",
-    5: "It understands intent and collects the missing details.",
-    6: "It understands intent and collects the missing details.",
-    7: "Requests appear directly in your clinic dashboard.",
-    8: "Requests appear directly in your clinic dashboard.",
-    9: "Clinics approve with one click.",
-    10: "Patients are notified automatically by SMS.",
-    11: "ClinicBridge AI\nTurn clinic website traffic into appointment requests."
+    1: "Web siteniz yalnızca bir tanıtım sayfası olmak zorunda değil.",
+    2: "ClinicBridge AI hastaları anında karşılar.",
+    3: "ClinicBridge AI hastaları anında karşılar.",
+    4: "Randevu niyetini anlar ve eksik bilgileri toplar.",
+    5: "Randevu niyetini anlar ve eksik bilgileri toplar.",
+    6: "Randevu niyetini anlar ve eksik bilgileri toplar.",
+    7: "Talepler doğrudan klinik panelinize düşer.",
+    8: "Talepler doğrudan klinik panelinize düşer.",
+    9: "Klinik tek tıkla randevu talebini onaylar.",
+    10: "Hasta otomatik SMS ile bilgilendirilir.",
+    11: "ClinicBridge AI\nModern klinikler için AI destekli hasta dönüşüm altyapısı.\nclinicbridge-ai.com"
   };
 
   const renderTyping = () => (
@@ -278,7 +278,7 @@ function ShowcaseContent() {
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", animation: "fadein 1s" }}>
             <Logo />
             <h1 style={{ fontSize: 40, fontWeight: 800, color: "#0f172a", marginTop: 32, letterSpacing: "-0.02em" }}>ClinicBridge AI</h1>
-            <p style={{ fontSize: 24, color: "#475569", marginTop: 16, fontWeight: 500 }}>Turn clinic website traffic into appointment requests.</p>
+            <p style={{ fontSize: 24, color: "#475569", marginTop: 16, fontWeight: 500 }}>Modern klinikler için AI destekli hasta dönüşüm altyapısı.</p>
             <p style={{ fontSize: 20, color: "#3b82f6", marginTop: 12, fontWeight: 600 }}>clinicbridge-ai.com</p>
           </div>
         )}
@@ -411,8 +411,8 @@ function ShowcaseContent() {
                               <User size={18} />
                             </div>
                             <div>
-                              <div style={{ fontWeight: 600, fontSize: 15 }}>Alper Özgül</div>
-                              <div style={{ fontSize: 13, color: "#64748b", marginTop: 2 }}>05314629921</div>
+                              <div style={{ fontWeight: 600, fontSize: 15 }}>Mert Kaya</div>
+                              <div style={{ fontSize: 13, color: "#64748b", marginTop: 2 }}>0555 123 45 67</div>
                               {((scene >= 10 || showToast) && panelStatus === "confirmed") && (
                                 <div style={{ fontSize: 11, fontWeight: 600, padding: "2px 6px", borderRadius: 4, marginTop: 6, display: "inline-block", backgroundColor: "#dcfce7", color: "#16a34a", animation: "fadein 0.3s" }}>
                                   SMS Gönderildi
@@ -463,6 +463,8 @@ function ShowcaseContent() {
                                 <div style={{ position: "absolute", top: "100%", left: 0, marginTop: 4, background: "white", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)", zIndex: 100, minWidth: 120, overflow: "hidden" }}>
                                   <div style={{ padding: "8px 16px", fontSize: 14, fontWeight: 600, color: "#0f172a" }}>Bekliyor</div>
                                   <div ref={refs.statusOption} style={{ padding: "8px 16px", fontSize: 14, fontWeight: 600, color: "#16a34a", background: "#f0fdf4" }}>Onaylandı</div>
+                                  <div style={{ padding: "8px 16px", fontSize: 14, fontWeight: 600, color: "#0f172a" }}>Reddedildi</div>
+                                  <div style={{ padding: "8px 16px", fontSize: 14, fontWeight: 600, color: "#0f172a" }}>Tamamlandı</div>
                                 </div>
                               )}
                             </div>

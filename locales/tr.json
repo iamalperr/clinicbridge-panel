@@ -323,7 +323,7 @@
     "status": {
       "pending": "Bekliyor",
       "confirmed": "Onaylandı",
-      "cancelled": "İptal Edildi",
+      "cancelled": "Reddedildi",
       "completed": "Tamamlandı"
     },
     "source": {
