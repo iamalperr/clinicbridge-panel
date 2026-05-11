@@ -597,10 +597,19 @@ export async function POST(req: Request) {
             conversationId: conversationId || `session_${Date.now()}`,
           });
 
-          const firstName = apptData.patientName.split(" ")[0];
-          const confirmReply = firstName 
-            ? `${firstName}, randevu talebinizi oluşturdum. "${apptData.requestedService}" işleminiz için talebiniz kliniğimize iletildi. Klinik ekibi en kısa sürede sizinle iletişime geçerek uygunluğu teyit edecektir. 🙏`
-            : `Randevu talebinizi oluşturdum. "${apptData.requestedService}" işleminiz için talebiniz kliniğimize iletildi. Klinik ekibi en kısa sürede sizinle iletişime geçerek uygunluğu teyit edecektir. 🙏`;
+          const isEnglish = /\b(yes|confirm|ok|okay|sure|please|yeah)\b/i.test(message) || 
+                            (history.length > 0 && /\b(english|appointment|date|time|name|phone)\b/i.test(history[history.length - 1].content || ""));
+
+          let confirmReply = "";
+          if (isEnglish) {
+            confirmReply = `Your appointment request has been sent to the clinic. The clinic team will review your preferred date and time. Once your request is approved or an alternative time is suggested, you will be notified by SMS.`;
+          } else {
+            if (apptData.requestedService && apptData.requestedDate && apptData.requestedTime) {
+              confirmReply = `Randevu talebinizi kliniğimize ilettim. ${apptData.requestedService} işleminiz için tercih ettiğiniz ${apptData.requestedDate} ${apptData.requestedTime} bilgisi klinik ekibi tarafından değerlendirilecektir. Talebiniz onaylandığında veya farklı bir saat önerildiğinde SMS üzerinden bilgilendirileceksiniz.`;
+            } else {
+              confirmReply = `Randevu talebinizi kliniğimize ilettim. Klinik ekibi talebinizi değerlendirdikten sonra onay veya uygun saat bilgisi için sizi SMS üzerinden bilgilendirecektir.`;
+            }
+          }
 
           debugLog.push(`appt_created=${appointmentId} email=${emailSent} ms=${Date.now() - startTime}`);
           console.log("[widget-chat]", debugLog.join(" | "));
