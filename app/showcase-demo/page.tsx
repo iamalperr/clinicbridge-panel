@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import Logo from "@/components/ui/Logo";
-import { Send, User, Stethoscope, Calendar, Clock, MessageSquare, Menu, Settings, X, Check, Bell, MousePointer2 } from "lucide-react";
+import { Send, User, Stethoscope, Calendar, Clock, MessageSquare, Menu, Settings, X, Check, Bell, MousePointer2, Sparkles } from "lucide-react";
 
 type View = "website" | "admin" | "outro";
 
@@ -17,6 +17,7 @@ function ShowcaseContent() {
   const [messages, setMessages] = useState<{role: "user" | "ai", text: string}[]>([]);
   const [inputText, setInputText] = useState("");
   const [typing, setTyping] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   
   const [panelStatus, setPanelStatus] = useState("pending");
   const [showToast, setShowToast] = useState(false);
@@ -36,6 +37,7 @@ function ShowcaseContent() {
     statusSelect: useRef<HTMLDivElement>(null),
     statusOption: useRef<HTMLDivElement>(null),
   };
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const getOffset = (ref: React.RefObject<HTMLElement | null>) => {
     if (!ref.current) return null;
@@ -43,14 +45,13 @@ function ShowcaseContent() {
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
   };
 
-  // Move cursor helper
   const moveCursorToRef = async (refName: keyof typeof refs) => {
     return new Promise<void>(resolve => {
       const target = getOffset(refs[refName]);
       if (target) {
         setCursorPos(target);
       }
-      setTimeout(resolve, 800); // Wait for CSS transition
+      setTimeout(resolve, 800);
     });
   };
 
@@ -84,7 +85,7 @@ function ShowcaseContent() {
           clearInterval(interval);
           setTimeout(resolve, 200);
         }
-      }, 40); // 40ms per keystroke (adjustable for realistic speed)
+      }, 35);
     });
   };
 
@@ -100,10 +101,16 @@ function ShowcaseContent() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  // Auto-scroll chat to bottom
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, typing, showSuggestions]);
+
   useEffect(() => {
     if (!isRecording) return;
     
-    // Initial position
     setCursorPos({ x: window.innerWidth / 2 + 300, y: window.innerHeight / 2 });
 
     const runDemo = async () => {
@@ -116,14 +123,20 @@ function ShowcaseContent() {
       await clickCursor();
       setIsWidgetOpen(true);
       await moveCursorToCenter();
+      await wait(800);
+      setMessages([
+        { role: "ai", text: "Merhaba, ben Nova Dental asistanınız. Size randevu, tedaviler veya fiyat bilgisi konusunda yardımcı olabilirim." }
+      ]);
       await wait(1000);
-      setMessages([{ role: "ai", text: "Merhaba! Size nasıl yardımcı olabilirim? Randevu almak ister misiniz?" }]);
+      setMessages(prev => [...prev, { role: "ai", text: "Randevu oluşturmak ister misiniz?" }]);
+      setShowSuggestions(true);
       await wait(1500);
 
       // Scene 3: Patient types
       setScene(3);
       await moveCursorToRef("chatInput");
       await clickCursor();
+      setShowSuggestions(false);
       await typeText("Diş beyazlatma için yarın 14:00'e randevu almak istiyorum.");
       await moveCursorToRef("chatSend");
       await clickCursor();
@@ -155,8 +168,8 @@ function ShowcaseContent() {
       setTyping(true);
       await wait(2000);
       setTyping(false);
-      setMessages(prev => [...prev, { role: "ai", text: "Randevu talebinizi kliniğimize ilettim. Klinik ekibi talebinizi değerlendirdikten sonra onay veya uygun saat bilgisi için sizi SMS üzerinden bilgilendirecektir." }]);
-      await wait(2500);
+      setMessages(prev => [...prev, { role: "ai", text: "Randevu talebinizi kliniğimize ilettim. Tercih ettiğiniz tarih ve saat bilgisi klinik ekibimiz tarafından değerlendirilecektir. Talebiniz onaylandığında veya farklı bir saat önerildiğinde SMS üzerinden bilgilendirileceksiniz." }]);
+      await wait(4500);
 
       // Scene 7: Admin Panel
       setScene(7);
@@ -216,10 +229,11 @@ function ShowcaseContent() {
       padding: "12px 16px",
       borderRadius: 16,
       borderBottomLeftRadius: 4,
-      boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+      boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
       display: "flex",
       gap: 4,
-      alignItems: "center"
+      alignItems: "center",
+      border: "1px solid #f1f5f9"
     }}>
       <div className="dot"></div><div className="dot"></div><div className="dot"></div>
       <style>{`.dot { width: 6px; height: 6px; background: #94a3b8; border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; } .dot:nth-child(1) { animation-delay: -0.32s; } .dot:nth-child(2) { animation-delay: -0.16s; } @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }`}</style>
@@ -241,25 +255,23 @@ function ShowcaseContent() {
           transition: "transform 0.8s cubic-bezier(0.25, 1, 0.5, 1)"
         }}>
           <div style={{ position: "relative" }}>
-            {/* The cursor pointer */}
             <MousePointer2 
-              size={28} 
-              fill="rgba(0,0,0,0.8)" 
+              size={32} 
+              fill="rgba(15,23,42,0.9)" 
               color="white" 
               strokeWidth={1.5}
               style={{
-                filter: "drop-shadow(0 4px 6px rgba(0,0,0,0.3))",
-                transform: "translate(-6px, -2px)" // Adjust so the click point is the tip
+                filter: "drop-shadow(0 6px 12px rgba(0,0,0,0.2))",
+                transform: "translate(-8px, -2px)"
               }}
             />
-            {/* Ripple effect */}
             {cursorClicking && (
               <div style={{
                 position: "absolute",
                 top: 0,
                 left: 0,
-                width: 20,
-                height: 20,
+                width: 24,
+                height: 24,
                 background: "rgba(59, 130, 246, 0.4)",
                 borderRadius: "50%",
                 transform: "translate(-50%, -50%)",
@@ -312,54 +324,87 @@ function ShowcaseContent() {
 
             <div style={{ position: "absolute", bottom: 40, right: 40, zIndex: 50 }}>
               {isWidgetOpen ? (
-                <div style={{ width: 380, height: 600, background: "white", borderRadius: 24, boxShadow: "0 20px 40px rgba(0,0,0,0.1)", display: "flex", flexDirection: "column", overflow: "hidden", border: "1px solid #e2e8f0", animation: "slideup 0.5s cubic-bezier(0.16, 1, 0.3, 1)" }}>
-                  <div style={{ background: "#0f172a", padding: "24px 20px", color: "white", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <div style={{ width: 32, height: 32, background: "white", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <span style={{ color: "#0f172a", fontWeight: "bold" }}>AI</span>
+                <div style={{ width: 380, height: 660, background: "white", borderRadius: 24, boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)", display: "flex", flexDirection: "column", overflow: "hidden", border: "1px solid #e2e8f0", animation: "slideup 0.5s cubic-bezier(0.16, 1, 0.3, 1)" }}>
+                  
+                  {/* Chat Header */}
+                  <div style={{ background: "#0f172a", padding: "20px", color: "white", display: "flex", justifyContent: "space-between", alignItems: "center", position: "relative" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                      <div style={{ width: 40, height: 40, background: "linear-gradient(135deg, #3b82f6, #1d4ed8)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(59, 130, 246, 0.4)" }}>
+                        <Sparkles size={20} color="white" />
                       </div>
                       <div>
-                        <div style={{ fontWeight: 700, fontSize: 16 }}>ClinicBridge AI</div>
-                        <div style={{ fontSize: 12, opacity: 0.8, marginTop: 2 }}>Usually replies instantly</div>
+                        <div style={{ fontWeight: 700, fontSize: 16 }}>Nova Dental Asistan</div>
+                        <div style={{ fontSize: 13, opacity: 0.9, marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ width: 8, height: 8, background: "#10b981", borderRadius: "50%", boxShadow: "0 0 8px rgba(16, 185, 129, 0.8)", animation: "pulse 2s infinite" }}></span>
+                          Online
+                        </div>
                       </div>
                     </div>
                     <X size={20} opacity={0.6} />
                   </div>
                   
+                  {/* Chat Body */}
                   <div style={{ flex: 1, padding: 20, overflowY: "auto", display: "flex", flexDirection: "column", gap: 16, background: "#f8fafc" }}>
                     {messages.map((msg, i) => (
                       <div key={i} style={{
                         alignSelf: msg.role === "ai" ? "flex-start" : "flex-end",
-                        background: msg.role === "ai" ? "white" : "#0f172a",
+                        background: msg.role === "ai" ? "white" : "#3b82f6",
                         color: msg.role === "ai" ? "#0f172a" : "white",
                         padding: "12px 16px",
-                        borderRadius: 16,
-                        borderBottomLeftRadius: msg.role === "ai" ? 4 : 16,
-                        borderBottomRightRadius: msg.role === "user" ? 4 : 16,
+                        borderRadius: 18,
+                        borderBottomLeftRadius: msg.role === "ai" ? 4 : 18,
+                        borderBottomRightRadius: msg.role === "user" ? 4 : 18,
                         maxWidth: "85%",
                         fontSize: 15,
                         lineHeight: 1.5,
-                        boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-                        animation: "fadein 0.3s"
+                        boxShadow: msg.role === "ai" ? "0 4px 12px rgba(0,0,0,0.05)" : "0 4px 12px rgba(59,130,246,0.2)",
+                        border: msg.role === "ai" ? "1px solid #f1f5f9" : "none",
+                        animation: "fadein 0.4s ease-out"
                       }}>
                         {msg.text}
                       </div>
                     ))}
+                    
+                    {/* Suggestions */}
+                    {showSuggestions && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, animation: "fadein 0.5s ease-out" }}>
+                        {["Randevu Al", "Fiyat Sor", "Tedaviler", "İletişim"].map((chip) => (
+                          <div key={chip} style={{ padding: "8px 16px", borderRadius: 100, border: "1px solid #cbd5e1", background: "white", fontSize: 13, fontWeight: 600, color: "#475569", cursor: "pointer" }}>
+                            {chip}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     {typing && renderTyping()}
+                    
+                    <div ref={messagesEndRef} />
                   </div>
 
-                  <div style={{ padding: 16, background: "white", borderTop: "1px solid #e2e8f0", display: "flex", gap: 12, alignItems: "center" }}>
-                    <div ref={refs.chatInput} style={{ flex: 1, height: 44, background: "#f1f5f9", borderRadius: 22, padding: "0 16px", display: "flex", alignItems: "center", color: inputText ? "#0f172a" : "#94a3b8", fontSize: 15 }}>
-                      {inputText || "Type a message..."}
+                  {/* Powered By */}
+                  <div style={{ textAlign: "center", padding: "6px 0", background: "#f8fafc", fontSize: 11, color: "#94a3b8", fontWeight: 500 }}>
+                    Powered by <span style={{ fontWeight: 700 }}>ClinicBridge AI</span>
+                  </div>
+
+                  {/* Input */}
+                  <div style={{ padding: "16px 20px", background: "white", borderTop: "1px solid #e2e8f0", display: "flex", gap: 12, alignItems: "center" }}>
+                    <div ref={refs.chatInput} style={{ flex: 1, height: 48, background: "#f1f5f9", borderRadius: 24, padding: "0 20px", display: "flex", alignItems: "center", color: inputText ? "#0f172a" : "#94a3b8", fontSize: 15, border: "1px solid transparent", transition: "border 0.2s" }}>
+                      {inputText || "Mesajınızı yazın..."}
                     </div>
-                    <div ref={refs.chatSend} style={{ width: 44, height: 44, background: "#0f172a", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "white", flexShrink: 0 }}>
-                      <Send size={18} style={{ marginLeft: 2 }} />
+                    <div ref={refs.chatSend} style={{ width: 48, height: 48, background: "#3b82f6", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "white", flexShrink: 0, boxShadow: "0 4px 12px rgba(59,130,246,0.3)" }}>
+                      <Send size={20} style={{ marginLeft: 2 }} />
                     </div>
                   </div>
                 </div>
               ) : (
-                <div ref={refs.widgetButton} style={{ width: 64, height: 64, background: "#0f172a", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "white", boxShadow: "0 10px 25px rgba(15,23,42,0.3)" }}>
-                  <MessageSquare size={32} />
+                <div style={{ position: "relative", animation: "slideup 0.5s ease-out" }}>
+                  <div style={{ position: "absolute", bottom: "100%", right: 0, marginBottom: 16, background: "white", padding: "12px 20px", borderRadius: 16, borderBottomRightRadius: 4, boxShadow: "0 10px 25px rgba(0,0,0,0.1)", fontSize: 15, fontWeight: 600, color: "#0f172a", whiteSpace: "nowrap" }}>
+                    Size nasıl yardımcı olabilirim?
+                  </div>
+                  <div ref={refs.widgetButton} style={{ width: 68, height: 68, background: "#3b82f6", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "white", boxShadow: "0 10px 25px rgba(59,130,246,0.4)", position: "relative" }}>
+                    <MessageSquare size={32} />
+                    <span style={{ position: "absolute", top: 4, right: 4, width: 14, height: 14, background: "#10b981", borderRadius: "50%", border: "2px solid white" }}></span>
+                  </div>
                 </div>
               )}
             </div>
@@ -434,7 +479,6 @@ function ShowcaseContent() {
                         </td>
                         <td style={{ padding: "20px 24px" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            {/* Custom Fake Dropdown for the click animation target */}
                             <div style={{ position: "relative" }}>
                               <div 
                                 ref={refs.statusSelect}
@@ -514,7 +558,7 @@ function ShowcaseContent() {
         </div>
       )}
 
-      {/* MANUAL CONTROLS (Hidden in recording mode) */}
+      {/* MANUAL CONTROLS */}
       {!isRecording && (
         <div style={{ position: "absolute", bottom: 40, left: "50%", transform: "translateX(-50%)", display: "flex", flexWrap: "wrap", gap: 16, zIndex: 200, justifyContent: "center", maxWidth: 600 }}>
           <div style={{ width: "100%", textAlign: "center", color: "#64748b", fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
@@ -535,6 +579,11 @@ function ShowcaseContent() {
         @keyframes ripple {
           0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
           100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
+        }
+        @keyframes pulse {
+          0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+          70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
         }
       `}</style>
     </div>
