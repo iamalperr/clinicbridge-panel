@@ -254,66 +254,108 @@ export default function LinkedinAssetsPage() {
 
         {/* MOCKUP 4: Admin Panel (AI Training) */}
         {activeMockup === 4 && (
-          <div style={{ width: "100%", height: "100%", background: "#f8fafc", display: "flex", position: "relative" }}>
-            <div style={{ width: 260, background: "white", borderRight: "1px solid #e2e8f0", padding: 24, display: "flex", flexDirection: "column", zIndex: 10 }}>
-              <div style={{ marginBottom: 40, display: "flex", alignItems: "center", gap: 12 }}>
-                <Logo /><span style={{ fontWeight: 800, fontSize: 18 }}>ClinicBridge AI</span>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <div style={{ padding: "12px 16px", borderRadius: 8, color: "#64748b", display: "flex", alignItems: "center", gap: 12, fontWeight: 600 }}><Menu size={20} /> Dashboard</div>
-                <div style={{ padding: "12px 16px", borderRadius: 8, color: "#64748b", display: "flex", alignItems: "center", gap: 12, fontWeight: 600 }}><Calendar size={20} /> Randevular</div>
-                <div style={{ padding: "12px 16px", borderRadius: 8, color: "#3b82f6", background: "#eff6ff", display: "flex", alignItems: "center", gap: 12, fontWeight: 600 }}><MessageSquare size={20} /> Görüşme Kayıtları</div>
-              </div>
-            </div>
+          <div style={{ width: "100%", height: "100%", background: "#f8fafc", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
             
-            <div style={{ flex: 1, padding: "60px 80px", position: "relative" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 40 }}>
-                <div>
-                  <h1 style={{ fontSize: 32, fontWeight: 800, color: "#0f172a", letterSpacing: "-0.5px" }}>AI performansı klinik panelinden takip edilir.</h1>
-                  <p style={{ color: "#475569", marginTop: 8, fontSize: 18, fontWeight: 500 }}>Klinikler, asistanın hangi konularda eğitime ihtiyaç duyduğunu görebilir.</p>
+            <div style={{ position: "absolute", top: 60, left: 0, width: "100%", textAlign: "center" }}>
+              <h2 style={{ fontSize: 40, fontWeight: 800, color: "#0f172a", margin: 0, letterSpacing: "-0.5px" }}>AI sadece cevap vermez, öğrenmesi gereken konuları da gösterir.</h2>
+              <p style={{ fontSize: 20, color: "#475569", marginTop: 12, fontWeight: 500 }}>Klinikler, yanıtlanamayan hasta sorularını panelden takip ederek asistanı sürekli geliştirebilir.</p>
+            </div>
+
+            <div style={{ display: "flex", gap: 40, marginTop: 100, alignItems: "flex-start" }}>
+              {/* Left: Admin Panel Mockup */}
+              <div style={{ width: 800, background: "white", borderRadius: 24, border: "1px solid #e2e8f0", overflow: "hidden", display: "flex", boxShadow: "0 20px 40px rgba(0,0,0,0.08)" }}>
+                <div style={{ width: 220, background: "#f8fafc", borderRight: "1px solid #e2e8f0", padding: 20, display: "flex", flexDirection: "column" }}>
+                  <div style={{ marginBottom: 32, display: "flex", alignItems: "center", gap: 10 }}>
+                    <Logo /><span style={{ fontWeight: 800, fontSize: 16 }}>ClinicBridge AI</span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <div style={{ padding: "10px 14px", borderRadius: 8, color: "#64748b", display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 600 }}><Menu size={18} /> Dashboard</div>
+                    <div style={{ padding: "10px 14px", borderRadius: 8, color: "#64748b", display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 600 }}><Calendar size={18} /> Randevular</div>
+                    <div style={{ padding: "10px 14px", borderRadius: 8, color: "#3b82f6", background: "#eff6ff", display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 600 }}><MessageSquare size={18} /> Görüşme Kayıtları</div>
+                  </div>
+                </div>
+                
+                <div style={{ flex: 1, padding: 32 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 32 }}>
+                    {[
+                      { label: "Toplam Görüşme", value: "124", color: "#3b82f6" },
+                      { label: "Yanıtlanamayan Sorular", value: "7", color: "#ef4444" },
+                      { label: "Eğitim Gereken Konular", value: "5", color: "#f59e0b" },
+                      { label: "Randevuya Dönüşenler", value: "32", color: "#10b981" }
+                    ].map((stat, i) => (
+                      <div key={i} style={{ background: "white", padding: "16px", borderRadius: 12, border: "1px solid #e2e8f0", boxShadow: "0 2px 4px rgba(0,0,0,0.02)" }}>
+                        <div style={{ fontSize: 11, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>{stat.label}</div>
+                        <div style={{ fontSize: 28, fontWeight: 800, color: stat.color, marginTop: 8 }}>{stat.value}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ background: "white", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                      <thead>
+                        <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+                          <th style={{ padding: "16px 20px", color: "#64748b", fontSize: 13, fontWeight: 700 }}>Hasta</th>
+                          <th style={{ padding: "16px 20px", color: "#64748b", fontSize: 13, fontWeight: 700 }}>Görüşme Özeti</th>
+                          <th style={{ padding: "16px 20px", color: "#64748b", fontSize: 13, fontWeight: 700 }}>Durum</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr style={{ borderBottom: "1px solid #e2e8f0", background: "#fef2f2" }}>
+                          <td style={{ padding: "16px 20px", fontWeight: 700, color: "#0f172a", fontSize: 14 }}>Anonim Ziyaretçi</td>
+                          <td style={{ padding: "16px 20px", color: "#475569", fontWeight: 500, fontSize: 14 }}>"İmplant sonrası ne zaman yemek yiyebilirim?"</td>
+                          <td style={{ padding: "16px 20px" }}>
+                            <span style={{ background: "#fee2e2", color: "#dc2626", padding: "4px 10px", borderRadius: 6, fontSize: 12, fontWeight: 700 }}>Eğitim Gerekli</span>
+                          </td>
+                        </tr>
+                        <tr style={{ borderBottom: "1px solid #e2e8f0" }}>
+                          <td style={{ padding: "16px 20px", fontWeight: 700, color: "#0f172a", fontSize: 14 }}>Mert Kaya</td>
+                          <td style={{ padding: "16px 20px", color: "#475569", fontWeight: 500, fontSize: 14 }}>"Diş beyazlatma için randevu talebi oluşturdu."</td>
+                          <td style={{ padding: "16px 20px" }}>
+                            <span style={{ background: "#dcfce7", color: "#16a34a", padding: "4px 10px", borderRadius: 6, fontSize: 12, fontWeight: 700 }}>Randevuya Dönüştü</span>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style={{ padding: "16px 20px", fontWeight: 700, color: "#0f172a", fontSize: 14 }}>Deniz Yılmaz</td>
+                          <td style={{ padding: "16px 20px", color: "#475569", fontWeight: 500, fontSize: 14 }}>"Gece plağı fiyatı hakkında bilgi istedi."</td>
+                          <td style={{ padding: "16px 20px" }}>
+                            <span style={{ background: "#fef3c7", color: "#d97706", padding: "4px 10px", borderRadius: 6, fontSize: 12, fontWeight: 700 }}>Canlı Destek Gerekli</span>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 24, marginBottom: 40 }}>
-                {[
-                  { label: "Toplam Görüşme", value: "124", color: "#3b82f6" },
-                  { label: "Yanıtlanamayan Sorular", value: "7", color: "#ef4444" },
-                  { label: "Canlı Destek Talepleri", value: "18", color: "#f59e0b" },
-                  { label: "Randevuya Dönüşenler", value: "32", color: "#10b981" }
-                ].map((stat, i) => (
-                  <div key={i} style={{ background: "white", padding: 24, borderRadius: 16, border: "1px solid #e2e8f0", boxShadow: "0 4px 6px rgba(0,0,0,0.02)" }}>
-                    <div style={{ fontSize: 14, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>{stat.label}</div>
-                    <div style={{ fontSize: 36, fontWeight: 800, color: stat.color, marginTop: 12 }}>{stat.value}</div>
+              {/* Right: AI Insight Card */}
+              <div style={{ width: 380, background: "white", borderRadius: 24, border: "2px solid #e0e7ff", padding: 32, boxShadow: "0 25px 50px -12px rgba(0,0,0,0.15)", position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: 6, background: "linear-gradient(90deg, #6366f1, #3b82f6)" }}></div>
+                
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+                  <div style={{ width: 44, height: 44, background: "#eef2ff", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Sparkles size={24} color="#6366f1" />
                   </div>
-                ))}
-              </div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a" }}>AI Eğitim Önerisi</div>
+                </div>
 
-              <div style={{ background: "white", borderRadius: 16, border: "1px solid #e2e8f0", overflow: "hidden", boxShadow: "0 10px 25px rgba(0,0,0,0.05)" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
-                  <thead>
-                    <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-                      <th style={{ padding: "20px 32px", color: "#64748b", fontSize: 14, fontWeight: 700 }}>Hasta</th>
-                      <th style={{ padding: "20px 32px", color: "#64748b", fontSize: 14, fontWeight: 700 }}>Özet</th>
-                      <th style={{ padding: "20px 32px", color: "#64748b", fontSize: 14, fontWeight: 700 }}>Durum</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr style={{ borderBottom: "1px solid #e2e8f0" }}>
-                      <td style={{ padding: "20px 32px", fontWeight: 700, color: "#0f172a" }}>Mert Kaya</td>
-                      <td style={{ padding: "20px 32px", color: "#475569", fontWeight: 500 }}>Diş beyazlatma için randevu talebi oluşturdu.</td>
-                      <td style={{ padding: "20px 32px" }}>
-                        <span style={{ background: "#dcfce7", color: "#16a34a", padding: "6px 12px", borderRadius: 6, fontSize: 13, fontWeight: 700 }}>Randevuya Dönüştü</span>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style={{ padding: "20px 32px", fontWeight: 700, color: "#0f172a" }}>Anonim Ziyaretçi</td>
-                      <td style={{ padding: "20px 32px", color: "#475569", fontWeight: 500 }}>İmplant sonrası iyileşme süresini sordu.</td>
-                      <td style={{ padding: "20px 32px" }}>
-                        <span style={{ background: "#fee2e2", color: "#dc2626", padding: "6px 12px", borderRadius: 6, fontSize: 13, fontWeight: 700 }}>Eğitim Gerekli</span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ fontSize: 13, color: "#64748b", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Konu:</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "#0f172a" }}>İmplant sonrası bakım</div>
+                </div>
+
+                <div style={{ marginBottom: 24, padding: 16, background: "#f8fafc", borderRadius: 12, border: "1px solid #e2e8f0" }}>
+                  <div style={{ fontSize: 13, color: "#64748b", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Hasta Sorusu:</div>
+                  <div style={{ fontSize: 15, fontWeight: 500, color: "#334155", fontStyle: "italic" }}>"İmplant sonrası ne zaman yemek yiyebilirim?"</div>
+                </div>
+
+                <div style={{ padding: 16, background: "#f0fdf4", borderRadius: 12, border: "1px solid #bbf7d0" }}>
+                  <div style={{ fontSize: 13, color: "#16a34a", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Önerilen Aksiyon:</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: "#166534" }}>Bu konuda kliniğe özel bilgi ekleyerek AI yanıt kalitesini artırın.</div>
+                </div>
+                
+                <div style={{ marginTop: 24, width: "100%", padding: "14px", background: "#6366f1", color: "white", textAlign: "center", borderRadius: 10, fontWeight: 700, fontSize: 15 }}>
+                  Bilgi Bankasına Ekle
+                </div>
               </div>
             </div>
           </div>
