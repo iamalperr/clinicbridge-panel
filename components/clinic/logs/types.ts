@@ -1,4 +1,4 @@
-export type LogStatus = "answered" | "needs_live_support" | "unanswered" | "converted_to_appointment";
+export type LogStatus = "answered" | "liveSupport" | "unanswered" | "appointment";
 
 export interface ConversationLog {
   id: string;

@@ -1,25 +1,50 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Modal from "@/components/ui/Modal";
 import Badge from "@/components/ui/Badge";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { ConversationLog, ConversationMessage } from "./types";
 import { useI18n } from "@/lib/i18n-context";
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   log: ConversationLog | null;
-  messages: ConversationMessage[];
 }
 
 function formatTime(isoStr: string) {
-  const d = new Date(isoStr);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  try {
+    const d = new Date(isoStr);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return "";
+  }
 }
 
-export default function ConversationLogDetailModal({ isOpen, onClose, log, messages }: Props) {
+export default function ConversationLogDetailModal({ isOpen, onClose, log }: Props) {
   const { t } = useI18n();
+  const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen || !log?.id || !log?.clinicId) return;
+
+    setLoading(true);
+    const q = query(
+      collection(db, "clinics", log.clinicId, "conversationLogs", log.id, "messages"),
+      orderBy("createdAt", "asc")
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() } as ConversationMessage));
+      setMessages(msgs);
+      setLoading(false);
+    });
+
+    return () => unsub();
+  }, [isOpen, log?.id, log?.clinicId]);
 
   if (!log) return null;
 
@@ -39,7 +64,7 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log, messa
               <span style={{ fontSize: 14, color: UI_COLORS.textPrimary }}>{log.patientPhone}</span>
             </div>
           )}
-          <Badge variant={log.status === "answered" ? "resolved" : log.status === "converted_to_appointment" ? "pro" : log.status === "needs_live_support" ? "open" : "failed"} />
+          <Badge variant={log.status === "answered" ? "resolved" : log.status === "appointment" ? "pro" : log.status === "liveSupport" ? "open" : "failed"} />
         </div>
 
         {/* Training Recommendation */}
@@ -82,59 +107,69 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log, messa
           maxHeight: 400,
           overflowY: "auto"
         }}>
-          {messages.map((msg) => {
-            const isPatient = msg.sender === "patient";
-            const isSystem = msg.sender === "system";
+          {loading ? (
+            <div style={{ padding: 40, textAlign: "center", color: UI_COLORS.textMuted }}>
+              <Loader2 size={32} style={{ margin: "0 auto", animation: "spin 1s linear infinite" }} />
+            </div>
+          ) : messages.length === 0 ? (
+            <div style={{ padding: 40, textAlign: "center", color: UI_COLORS.textMuted, fontSize: 13.5 }}>
+              Henüz mesaj yok.
+            </div>
+          ) : (
+            messages.map((msg) => {
+              const isPatient = msg.sender === "patient";
+              const isSystem = msg.sender === "system";
 
-            if (isSystem) {
+              if (isSystem) {
+                return (
+                  <div key={msg.id} style={{ textAlign: "center", margin: "8px 0" }}>
+                    <span style={{ 
+                      fontSize: 11, 
+                      fontWeight: 600, 
+                      color: UI_COLORS.textMuted,
+                      background: UI_COLORS.bgCard,
+                      padding: "4px 12px",
+                      borderRadius: 12,
+                      border: `1px solid ${UI_COLORS.border}`
+                    }}>
+                      {msg.content}
+                    </span>
+                  </div>
+                );
+              }
+
               return (
-                <div key={msg.id} style={{ textAlign: "center", margin: "8px 0" }}>
-                  <span style={{ 
-                    fontSize: 11, 
-                    fontWeight: 600, 
-                    color: UI_COLORS.textMuted,
-                    background: UI_COLORS.bgCard,
-                    padding: "4px 12px",
-                    borderRadius: 12,
-                    border: `1px solid ${UI_COLORS.border}`
+                <div key={msg.id} style={{ 
+                  display: "flex", 
+                  flexDirection: "column",
+                  alignItems: isPatient ? "flex-end" : "flex-start",
+                  gap: 4
+                }}>
+                  <div style={{ 
+                    background: isPatient ? UI_COLORS.brand : UI_COLORS.bgCard,
+                    color: isPatient ? "white" : UI_COLORS.textPrimary,
+                    padding: "10px 14px",
+                    borderRadius: isPatient ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+                    border: isPatient ? "none" : `1px solid ${UI_COLORS.border}`,
+                    maxWidth: "80%",
+                    fontSize: 14,
+                    lineHeight: 1.5,
+                    position: "relative"
                   }}>
                     {msg.content}
-                  </span>
+                    {msg.needsTraining && !isPatient && (
+                      <div style={{ position: "absolute", top: -8, right: -8 }}>
+                        <AlertCircle size={16} fill={UI_COLORS.bgCard} color={UI_COLORS.danger} />
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11, color: UI_COLORS.textMuted, padding: "0 4px" }}>
+                    {isPatient ? (t("logs.patient") || "Hasta") : (t("logs.assistant") || "Asistan")} • {formatTime(msg.createdAt)}
+                  </div>
                 </div>
               );
-            }
-
-            return (
-              <div key={msg.id} style={{ 
-                display: "flex", 
-                flexDirection: "column",
-                alignItems: isPatient ? "flex-end" : "flex-start",
-                gap: 4
-              }}>
-                <div style={{ 
-                  background: isPatient ? UI_COLORS.brand : UI_COLORS.bgCard,
-                  color: isPatient ? "white" : UI_COLORS.textPrimary,
-                  padding: "10px 14px",
-                  borderRadius: isPatient ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
-                  border: isPatient ? "none" : `1px solid ${UI_COLORS.border}`,
-                  maxWidth: "80%",
-                  fontSize: 14,
-                  lineHeight: 1.5,
-                  position: "relative"
-                }}>
-                  {msg.content}
-                  {msg.needsTraining && !isPatient && (
-                    <div style={{ position: "absolute", top: -8, right: -8 }}>
-                      <AlertCircle size={16} fill={UI_COLORS.bgCard} color={UI_COLORS.danger} />
-                    </div>
-                  )}
-                </div>
-                <div style={{ fontSize: 11, color: UI_COLORS.textMuted, padding: "0 4px" }}>
-                  {isPatient ? (t("logs.patient") || "Hasta") : (t("logs.assistant") || "Asistan")} • {formatTime(msg.createdAt)}
-                </div>
-              </div>
-            );
-          })}
+            })
+          )}
         </div>
 
       </div>

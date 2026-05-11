@@ -266,6 +266,47 @@
       }
     }
   },
+  "logs": {
+    "subtitle": "Monitor patient conversations, assistant performance, and topics that require additional training.",
+    "metrics": {
+      "total": "Total Conversations",
+      "unanswered": "Unanswered Questions",
+      "liveSupport": "Live Support Requests",
+      "appointments": "Converted to Appointments"
+    },
+    "searchPlaceholder": "Search patient name, message or topic...",
+    "filterDate": "Date",
+    "filterStatus": "Status",
+    "filterLang": "Language",
+    "date": {
+      "today": "Today",
+      "week": "Last 7 Days",
+      "month": "Last 30 Days"
+    },
+    "table": {
+      "patient": "Patient",
+      "preview": "Conversation Preview",
+      "date": "Date",
+      "status": "Status"
+    },
+    "messages": "messages",
+    "trainingNeeded": "Training needed",
+    "anonymous": "Anonymous Visitor",
+    "status": {
+      "appointment": "Converted to Appointment",
+      "unanswered": "Unanswered",
+      "liveSupport": "Live Support Required",
+      "answered": "Answered Successfully"
+    },
+    "emptyTitle": "No conversations yet",
+    "emptyDesc": "Conversations will appear here once patients start chatting on the widget.",
+    "patient": "Patient",
+    "phone": "Phone",
+    "assistant": "Assistant",
+    "needsTrainingTopic": "Topic needing training",
+    "needsTrainingDesc": "It is recommended to add information for this topic from the AI Rules or Training tab.",
+    "detailTitle": "Conversation Details"
+  },
   "appointments": {
     "title": "Recent Appointments",
     "subtitle": "View recent appointments booked via AI or manually.",

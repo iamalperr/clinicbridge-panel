@@ -266,6 +266,47 @@
       }
     }
   },
+  "logs": {
+    "subtitle": "Sanal asistanın hasta görüşmelerini, yanıt performansını ve eğitim ihtiyacı olan konuları takip edin.",
+    "metrics": {
+      "total": "Toplam Görüşme",
+      "unanswered": "Yanıtlanamayan Sorular",
+      "liveSupport": "Canlı Destek Talepleri",
+      "appointments": "Randevuya Dönüşenler"
+    },
+    "searchPlaceholder": "Hasta adı, mesaj veya konu ara...",
+    "filterDate": "Tarih",
+    "filterStatus": "Durum",
+    "filterLang": "Dil",
+    "date": {
+      "today": "Bugün",
+      "week": "Son 7 Gün",
+      "month": "Son 30 Gün"
+    },
+    "table": {
+      "patient": "Hasta",
+      "preview": "Görüşme Özeti",
+      "date": "Tarih",
+      "status": "Durum"
+    },
+    "messages": "mesaj",
+    "trainingNeeded": "Eğitim gerekli",
+    "anonymous": "Anonim Ziyaretçi",
+    "status": {
+      "appointment": "Randevuya Dönüştü",
+      "unanswered": "Yanıtlanamadı",
+      "liveSupport": "Canlı Destek Gerekli",
+      "answered": "Başarılı Yanıtlandı"
+    },
+    "emptyTitle": "Henüz görüşme kaydı bulunmuyor",
+    "emptyDesc": "Web widget üzerinden hasta görüşmeleri başladığında kayıtlar burada listelenecek.",
+    "patient": "Hasta",
+    "phone": "Telefon",
+    "assistant": "Asistan",
+    "needsTrainingTopic": "Eğitime İhtiyaç Duyulan Konu",
+    "needsTrainingDesc": "Bu soru için AI Kuralları veya Eğitim sekmesinden bilgi eklemeniz önerilir.",
+    "detailTitle": "Görüşme Detayı"
+  },
   "appointments": {
     "title": "Son Randevular",
     "subtitle": "AI veya manuel olarak oluşturulmuş son randevuları görüntüleyin.",

@@ -364,6 +364,96 @@ async function createAppointment(params: {
   return { appointmentId, emailSent };
 }
 
+/* ── Log conversation to Firestore ───────────────────────────────────── */
+async function logConversation(params: {
+  clinicId: string;
+  convId: string;
+  userMessage: string;
+  aiReply: string;
+  historyLength: number;
+  apptData?: AppointmentData | null;
+  appointmentId?: string;
+  isAppointmentCreated?: boolean;
+}) {
+  const adminDb = getAdminDb();
+  if (!adminDb) return;
+
+  try {
+    const logRef = adminDb.collection("clinics").doc(params.clinicId).collection("conversationLogs").doc(params.convId);
+    
+    // Check existing
+    const snap = await logRef.get();
+    const existing = snap.exists ? snap.data() : null;
+
+    let status = existing?.status || "answered";
+    let needsTraining = existing?.needsTraining || false;
+    let trainingTopic = existing?.trainingTopic || "";
+    
+    const replyLower = params.aiReply.toLowerCase();
+
+    if (params.isAppointmentCreated) {
+      status = "appointment";
+    } else if (replyLower.includes("üzgünüm") && (replyLower.includes("yardımcı olamıyorum") || replyLower.includes("anlayamadım") || replyLower.includes("yanıt üretemiyorum") || replyLower.includes("bilgi havuzumda"))) {
+      status = "unanswered";
+      needsTraining = true;
+      if (!trainingTopic) trainingTopic = params.userMessage.slice(0, 60);
+    } else if (replyLower.includes("canlı destek") || replyLower.includes("temsilci") || replyLower.includes("klinik ekibi") || replyLower.includes("iletişime geç") || replyLower.includes("doğrudan arayın") || replyLower.includes("whatsapp")) {
+      status = "liveSupport";
+    }
+
+    const nowStr = new Date().toISOString();
+    
+    const logData: any = {
+      clinicId: params.clinicId,
+      updatedAt: nowStr,
+      totalMessages: params.historyLength + 2,
+      lastMessagePreview: params.userMessage.slice(0, 100),
+      status,
+      needsTraining,
+    };
+
+    if (!existing) {
+      logData.createdAt = nowStr;
+      logData.convertedToAppointment = false;
+      logData.language = "tr"; // default
+    }
+
+    if (trainingTopic) logData.trainingTopic = trainingTopic;
+    if (params.apptData?.patientName) logData.patientName = params.apptData.patientName;
+    if (params.apptData?.patientPhone) logData.patientPhone = params.apptData.patientPhone;
+    if (params.appointmentId) {
+      logData.appointmentId = params.appointmentId;
+      logData.convertedToAppointment = true;
+    }
+
+    // Write log doc
+    await logRef.set(logData, { merge: true });
+
+    // Write user message
+    const userMsgRef = logRef.collection("messages").doc(`msg_${Date.now()}_u`);
+    await userMsgRef.set({
+      sender: "patient",
+      content: params.userMessage,
+      createdAt: nowStr,
+      wasAnswered: true,
+      needsTraining: false,
+    });
+
+    // Write AI message
+    const aiMsgRef = logRef.collection("messages").doc(`msg_${Date.now() + 1}_a`);
+    await aiMsgRef.set({
+      sender: "assistant",
+      content: params.aiReply,
+      createdAt: new Date(Date.now() + 1).toISOString(),
+      wasAnswered: status !== "unanswered",
+      needsTraining: needsTraining && status === "unanswered",
+    });
+
+  } catch (err: any) {
+    console.error("[logConversation] Error:", err.message);
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    MAIN POST HANDLER
 ═══════════════════════════════════════════════════════════════════════ */
@@ -373,6 +463,7 @@ export async function POST(req: Request) {
 
   try {
     const { clinicId, message, history = [], conversationId = "", pendingAppointmentData } = await req.json();
+    const convId = conversationId || `session_${Date.now()}`;
     debugLog.push(`clinicId=${clinicId} msg="${message?.slice(0, 60)}"`);
 
     if (!clinicId || !message) {
@@ -466,8 +557,20 @@ export async function POST(req: Request) {
 
           debugLog.push(`appt_created=${appointmentId} email=${emailSent} ms=${Date.now() - startTime}`);
           console.log("[widget-chat]", debugLog.join(" | "));
+
+          await logConversation({
+            clinicId,
+            convId,
+            userMessage: message,
+            aiReply: confirmReply,
+            historyLength: history.length,
+            apptData,
+            appointmentId,
+            isAppointmentCreated: true,
+          });
+
           return NextResponse.json(
-            { reply: confirmReply, appointmentId, appointmentCreated: true },
+            { reply: confirmReply, appointmentId, appointmentCreated: true, conversationId: convId },
             { headers: CORS }
           );
         } catch (e: any) {
@@ -546,7 +649,7 @@ GENEL KURALLAR:
       (reply.includes("Telefon:") || reply.includes("Phone:")) &&
       (reply.includes("Onaylıyor") || reply.includes("Onaylay") || reply.includes("Confirm"));
 
-    const responsePayload: any = { reply };
+    const responsePayload: any = { reply, conversationId: convId };
 
     if (isConfirmSummary) {
       // Parse the summary from AI reply and attach as pendingAppointmentData
@@ -574,6 +677,15 @@ GENEL KURALLAR:
         console.log("[widget-chat] pendingAppointmentData attached:", JSON.stringify(pending));
       }
     }
+
+    await logConversation({
+      clinicId,
+      convId,
+      userMessage: message,
+      aiReply: reply,
+      historyLength: history.length,
+      apptData: isConfirmSummary ? responsePayload.pendingAppointmentData : null,
+    });
 
     return NextResponse.json(responsePayload, { headers: CORS });
 

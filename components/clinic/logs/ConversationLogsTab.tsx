@@ -10,7 +10,6 @@ import Badge from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 
-import { MOCK_CONVERSATIONS, MOCK_MESSAGES } from "./mock-data";
 import { ConversationLog, LogStatus } from "./types";
 import ConversationLogDetailModal from "./ConversationLogDetailModal";
 
@@ -26,9 +25,29 @@ export default function ConversationLogsTab({ clinicId }: Props) {
   const [dateFilter, setDateFilter] = useState<string>("all");
 
   const [selectedLog, setSelectedLog] = useState<ConversationLog | null>(null);
+  const [logs, setLogs] = useState<ConversationLog[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // In a real app, this would be fetched from Firestore based on clinicId and role
-  const logs = MOCK_CONVERSATIONS;
+  React.useEffect(() => {
+    if (!clinicId) return;
+    
+    import("firebase/firestore").then(({ collection, query, orderBy, onSnapshot }) => {
+      import("@/lib/firebase").then(({ db }) => {
+        const q = query(
+          collection(db, "clinics", clinicId, "conversationLogs"),
+          orderBy("updatedAt", "desc")
+        );
+
+        const unsub = onSnapshot(q, (snap) => {
+          const fetched = snap.docs.map(d => ({ id: d.id, ...d.data() } as ConversationLog));
+          setLogs(fetched);
+          setLoading(false);
+        });
+
+        return () => unsub();
+      });
+    });
+  }, [clinicId]);
 
   const filteredLogs = useMemo(() => {
     return logs.filter((log) => {
@@ -49,12 +68,8 @@ export default function ConversationLogsTab({ clinicId }: Props) {
         const query = search.toLowerCase();
         const patientName = log.patientName?.toLowerCase() || "";
         const preview = log.lastMessagePreview.toLowerCase();
-        
-        // Also check messages
-        const msgs = MOCK_MESSAGES[log.id] || [];
-        const msgMatch = msgs.some(m => m.content.toLowerCase().includes(query));
-
-        if (!patientName.includes(query) && !preview.includes(query) && !msgMatch) {
+        // Since we are not fetching all messages upfront, we only search patientName and preview
+        if (!patientName.includes(query) && !preview.includes(query)) {
           return false;
         }
       }
@@ -66,17 +81,17 @@ export default function ConversationLogsTab({ clinicId }: Props) {
     return {
       total: logs.length,
       unanswered: logs.filter(l => l.status === "unanswered").length,
-      needsLiveSupport: logs.filter(l => l.status === "needs_live_support").length,
-      appointments: logs.filter(l => l.status === "converted_to_appointment").length,
+      needsLiveSupport: logs.filter(l => l.status === "liveSupport").length,
+      appointments: logs.filter(l => l.status === "appointment").length,
     };
   }, [logs]);
 
   const getStatusLabel = (status: LogStatus) => {
     switch (status) {
       case "answered": return t("logs.status.answered") || "Başarılı Yanıtlandı";
-      case "needs_live_support": return t("logs.status.liveSupport") || "Canlı Destek Gerekli";
+      case "liveSupport": return t("logs.status.liveSupport") || "Canlı Destek Gerekli";
       case "unanswered": return t("logs.status.unanswered") || "Yanıtlanamadı";
-      case "converted_to_appointment": return t("logs.status.appointment") || "Randevuya Dönüştü";
+      case "appointment": return t("logs.status.appointment") || "Randevuya Dönüştü";
       default: return status;
     }
   };
@@ -84,8 +99,8 @@ export default function ConversationLogsTab({ clinicId }: Props) {
   const getStatusVariant = (status: LogStatus): any => {
     switch (status) {
       case "answered": return "resolved";
-      case "converted_to_appointment": return "pro";
-      case "needs_live_support": return "open";
+      case "appointment": return "pro";
+      case "liveSupport": return "open";
       case "unanswered": return "failed";
       default: return "inactive";
     }
@@ -94,9 +109,9 @@ export default function ConversationLogsTab({ clinicId }: Props) {
   const statusOptions = [
     { value: "all", label: t("common.all") || "Tümü" },
     { value: "answered", label: getStatusLabel("answered") },
-    { value: "needs_live_support", label: getStatusLabel("needs_live_support") },
+    { value: "liveSupport", label: getStatusLabel("liveSupport") },
     { value: "unanswered", label: getStatusLabel("unanswered") },
-    { value: "converted_to_appointment", label: getStatusLabel("converted_to_appointment") },
+    { value: "appointment", label: getStatusLabel("appointment") },
   ];
 
   const langOptions = [
@@ -190,8 +205,9 @@ export default function ConversationLogsTab({ clinicId }: Props) {
           </div>
         </div>
 
-        {/* List Content */}
-        {filteredLogs.length === 0 ? (
+        {loading ? (
+          <div style={{ padding: 40, textAlign: "center", color: UI_COLORS.textMuted }}>Yükleniyor...</div>
+        ) : filteredLogs.length === 0 ? (
           <div style={{ padding: 40 }}>
             <EmptyState 
               emoji="📭"
@@ -277,7 +293,6 @@ export default function ConversationLogsTab({ clinicId }: Props) {
         isOpen={!!selectedLog} 
         onClose={() => setSelectedLog(null)} 
         log={selectedLog} 
-        messages={selectedLog ? MOCK_MESSAGES[selectedLog.id] || [] : []} 
       />
 
     </div>
