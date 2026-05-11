@@ -323,12 +323,20 @@
     "status": {
       "pending": "Bekliyor",
       "confirmed": "Onaylandı",
-      "cancelled": "İptal"
+      "cancelled": "İptal Edildi",
+      "completed": "Tamamlandı"
     },
     "source": {
-      "ai-chat": "AI Chat",
+      "ai_chat": "AI Chatbot",
       "manual": "Manuel"
-    }
+    },
+    "updateSuccess": "Randevu durumu güncellendi.",
+    "updateError": "Randevu durumu güncellenemedi.",
+    "newAppointmentToast": "Yeni randevu talebi alındı."
+  },
+  "notifications": {
+    "newAppointmentTitle": "Yeni randevu talebi",
+    "newAppointmentMessage": "Yeni bir AI randevu talebi oluşturuldu."
   },
   "aiSkills": {
     "title": "AI Yetenekleri ve Becerileri",

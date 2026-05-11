@@ -598,10 +598,9 @@ export async function POST(req: Request) {
           });
 
           const firstName = apptData.patientName.split(" ")[0];
-          const confirmReply =
-            `Randevu talebinizi oluşturdum${firstName ? " " + firstName + " Bey/Hanım" : ""}! ` +
-            `"${apptData.requestedService}" işleminiz için talebiniz kliniğimize iletildi. ` +
-            `Klinik ekibi en kısa sürede sizinle iletişime geçerek uygunluğu teyit edecektir. 🙏`;
+          const confirmReply = firstName 
+            ? `${firstName}, randevu talebinizi oluşturdum. "${apptData.requestedService}" işleminiz için talebiniz kliniğimize iletildi. Klinik ekibi en kısa sürede sizinle iletişime geçerek uygunluğu teyit edecektir. 🙏`
+            : `Randevu talebinizi oluşturdum. "${apptData.requestedService}" işleminiz için talebiniz kliniğimize iletildi. Klinik ekibi en kısa sürede sizinle iletişime geçerek uygunluğu teyit edecektir. 🙏`;
 
           debugLog.push(`appt_created=${appointmentId} email=${emailSent} ms=${Date.now() - startTime}`);
           console.log("[widget-chat]", debugLog.join(" | "));

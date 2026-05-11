@@ -323,12 +323,20 @@
     "status": {
       "pending": "Pending",
       "confirmed": "Confirmed",
-      "cancelled": "Cancelled"
+      "cancelled": "Cancelled",
+      "completed": "Completed"
     },
     "source": {
-      "ai-chat": "AI Chat",
+      "ai_chat": "AI Chatbot",
       "manual": "Manual"
-    }
+    },
+    "updateSuccess": "Appointment status updated.",
+    "updateError": "Appointment status could not be updated.",
+    "newAppointmentToast": "New appointment request received."
+  },
+  "notifications": {
+    "newAppointmentTitle": "New appointment request",
+    "newAppointmentMessage": "A new AI appointment request has been created."
   },
   "aiSkills": {
     "title": "AI Skills & Capabilities",

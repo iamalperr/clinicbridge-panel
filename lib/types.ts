@@ -143,21 +143,28 @@ export interface Appointment {
   patientId?: string;
   patientName: string;
   patientPhone?: string;
-  service: string;
+  patientEmail?: string;
+  service?: string;
   requestedService?: string;
-  preferredDate: string;
+  treatmentType?: string;
+  reason?: string;
+  preferredDate?: string;
   requestedDate?: string;
-  preferredTime: string;
+  preferredTime?: string;
   requestedTime?: string;
+  appointmentDateTime?: string;
   status: "pending" | "confirmed" | "cancelled" | "completed";
-  source: "ai-chat" | "manual" | "widget";
+  source: "ai_chat" | "manual" | "widget" | string;
   notes?: string;
   originalText?: string;
+  rawConversationSummary?: string;
   conversationId?: string;
   notificationStatus?: {
     smsToPatient: "pending" | "sent" | "failed" | "skipped";
     emailToClinic: "pending" | "sent" | "failed" | "skipped";
   };
+  createdBy?: string;
+  language?: string;
   createdAt: any;
   updatedAt?: any;
 }

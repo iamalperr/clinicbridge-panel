@@ -30,24 +30,26 @@ export async function sendClinicAppointmentEmail(
   }
 
   const html = `
-    <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
-      <h2 style="color:#6366f1">Yeni Randevu Talebi</h2>
+    <div style="font-family:sans-serif;max-width:560px;margin:0 auto;line-height:1.6;">
+      <h2 style="color:#6366f1">Yeni Randevu Talebi - ClinicBridge AI</h2>
       <p>Merhaba,</p>
-      <p><strong>${payload.clinicName}</strong> için yeni bir randevu talebi oluşturuldu.</p>
+      <p>ClinicBridge AI üzerinden yeni bir randevu talebi oluşturuldu.</p>
       <table style="width:100%;border-collapse:collapse;margin:24px 0">
-        <tr><td style="padding:10px;background:#f8fafc;font-weight:600;width:170px">Hasta Adı</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.patientName}</td></tr>
+        <tr><td style="padding:10px;background:#f8fafc;font-weight:600;width:170px">Klinik</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.clinicName}</td></tr>
+        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Hasta</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.patientName}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Telefon</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.patientPhone}</td></tr>
-        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Talep Edilen Hizmet</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedService}</td></tr>
-        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Tarih</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedDate}</td></tr>
-        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Saat</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedTime}</td></tr>
-        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Kaynak</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">Web Widget</td></tr>
-        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Durum</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">Beklemede</td></tr>
+        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">E-posta</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">-</td></tr>
+        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Hizmet / İşlem</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedService}</td></tr>
+        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Tercih Edilen Tarih</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedDate}</td></tr>
+        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Tercih Edilen Saat</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedTime}</td></tr>
+        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Kaynak</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">AI Chatbot</td></tr>
+        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Durum</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">Bekliyor</td></tr>
       </table>
       <p style="color:#64748b;font-size:14px">
-        Lütfen <a href="https://app.clinicbridge-ai.com" style="color:#6366f1">ClinicBridge panelinden</a> randevu talebini inceleyin ve onaylayın.
+        Lütfen <a href="https://app.clinicbridge-ai.com" style="color:#6366f1">ClinicBridge panelinizden</a> randevu talebini kontrol ediniz.
       </p>
       <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0"/>
-      <p style="color:#94a3b8;font-size:12px">Bu mesaj ClinicBridge AI tarafından otomatik gönderilmiştir. Randevu ID: ${payload.appointmentId}</p>
+      <p style="color:#94a3b8;font-size:12px">ClinicBridge AI</p>
     </div>
   `;
 

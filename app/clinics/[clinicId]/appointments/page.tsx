@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
+import { collection, query, where, orderBy, onSnapshot, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useI18n } from "@/lib/i18n-context";
 import { UI_COLORS } from "@/components/ui/ui-shared";
@@ -18,6 +18,8 @@ export default function AppointmentsPage({ params }: PageProps) {
   const { t } = useI18n();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const q = query(
@@ -25,9 +27,30 @@ export default function AppointmentsPage({ params }: PageProps) {
       orderBy("createdAt", "desc")
     );
     const unsub = onSnapshot(q, (snapshot) => {
-      setAppointments(
-        snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Appointment[]
-      );
+      const newData = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as Appointment[];
+      
+      setAppointments(prev => {
+        if (!loading && prev.length > 0 && newData.length > prev.length) {
+          setToastMsg(t("appointments.newAppointmentToast") || "Yeni randevu talebi alındı.");
+          setTimeout(() => setToastMsg(null), 4000);
+          try {
+            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(600, audioCtx.currentTime);
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.15);
+          } catch (e) {
+            console.warn("Audio autoplay blocked or not supported", e);
+          }
+        }
+        return newData;
+      });
+      setLoading(false);
       setLoading(false);
     }, (error) => {
       console.error("Error fetching appointments:", error);
@@ -35,6 +58,34 @@ export default function AppointmentsPage({ params }: PageProps) {
     });
     return () => unsub();
   }, [clinicId]);
+
+  const updateStatus = async (id: string, newStatus: string, convId?: string) => {
+    setUpdatingId(id);
+    try {
+      const nowStr = new Date().toISOString();
+      const docRef = doc(db, "clinics", clinicId, "appointments", id);
+      await updateDoc(docRef, {
+        status: newStatus,
+        updatedAt: nowStr
+      });
+      
+      if (convId) {
+        const logRef = doc(db, "clinics", clinicId, "conversationLogs", convId);
+        await updateDoc(logRef, {
+          appointmentStatus: newStatus,
+          updatedAt: nowStr
+        }).catch(e => console.warn("Could not update conversation log status:", e));
+      }
+
+      setToastMsg(t("appointments.updateSuccess") || "Randevu durumu güncellendi.");
+    } catch (e) {
+      console.error(e);
+      setToastMsg(t("appointments.updateError") || "Randevu durumu güncellenemedi.");
+    } finally {
+      setUpdatingId(null);
+      setTimeout(() => setToastMsg(null), 3000);
+    }
+  };
 
   if (loading) {
     return (
@@ -46,7 +97,27 @@ export default function AppointmentsPage({ params }: PageProps) {
   }
 
   return (
-    <div style={{ padding: "8px 0" }}>
+    <div style={{ padding: "8px 0", position: "relative" }}>
+      {/* Simple Toast */}
+      {toastMsg && (
+        <div style={{
+          position: "fixed",
+          bottom: 24,
+          right: 24,
+          background: UI_COLORS.textPrimary,
+          color: "white",
+          padding: "12px 24px",
+          borderRadius: 8,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+          zIndex: 9999,
+          fontSize: 14,
+          fontWeight: 500,
+          animation: "fadein 0.3s"
+        }}>
+          {toastMsg}
+        </div>
+      )}
+
       <div style={{ marginBottom: 32 }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.6px" }}>
           {t("appointments.title") || "Recent Appointments"}
@@ -109,62 +180,85 @@ export default function AppointmentsPage({ params }: PageProps) {
                   <th style={{ padding: "16px 24px", fontSize: 12, fontWeight: 700, color: UI_COLORS.textSecondary, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     {t("appointments.columns.source") || "Source"}
                   </th>
-                  <th style={{ padding: "16px 24px", width: 40 }}></th>
                 </tr>
               </thead>
               <tbody>
-                  {appointments.map((apt) => (
-                    <tr key={apt.id} style={{ borderBottom: `1px solid ${UI_COLORS.border}`, transition: "background 0.2s" }} onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-page)"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
-                      <td style={{ padding: "16px 24px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                          <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(99, 102, 241, 0.1)", color: UI_COLORS.brand, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <User size={16} />
-                          </div>
-                          <div>
-                            <span style={{ fontSize: 14, fontWeight: 600, color: UI_COLORS.textPrimary, display: "block" }}>
-                              {apt.patientName}
-                            </span>
-                            {apt.patientPhone && (
-                              <span style={{ fontSize: 12, color: UI_COLORS.textMuted }}>
-                                {apt.patientPhone}
+                  {appointments.map((apt) => {
+                    const displayPhone = apt.patientPhone ? apt.patientPhone.replace(/-+$/, "") : "";
+                    const displayService = apt.treatmentType || apt.requestedService || apt.service || apt.reason || "Belirtilmedi";
+                    
+                    return (
+                      <tr key={apt.id} style={{ borderBottom: `1px solid ${UI_COLORS.border}`, transition: "background 0.2s" }} onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-page)"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                        <td style={{ padding: "16px 24px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                            <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(99, 102, 241, 0.1)", color: UI_COLORS.brand, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              <User size={16} />
+                            </div>
+                            <div>
+                              <span style={{ fontSize: 14, fontWeight: 600, color: UI_COLORS.textPrimary, display: "block" }}>
+                                {apt.patientName}
                               </span>
-                            )}
+                              {displayPhone && (
+                                <span style={{ fontSize: 12, color: UI_COLORS.textMuted }}>
+                                  {displayPhone}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td style={{ padding: "16px 24px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: UI_COLORS.textPrimary, fontWeight: 500 }}>
-                          <Stethoscope size={16} color={UI_COLORS.textMuted} />
-                          {apt.requestedService || apt.service}
-                        </div>
-                      </td>
-                      <td style={{ padding: "16px 24px" }}>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.5, color: UI_COLORS.textPrimary, fontWeight: 500 }}>
-                            <Calendar size={14} color={UI_COLORS.textMuted} />
-                            {apt.requestedDate || apt.preferredDate}
+                        </td>
+                        <td style={{ padding: "16px 24px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: UI_COLORS.textPrimary, fontWeight: 500 }}>
+                            <Stethoscope size={16} color={UI_COLORS.textMuted} />
+                            {displayService}
                           </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: UI_COLORS.textSecondary }}>
-                            <Clock size={14} />
-                            {apt.requestedTime || apt.preferredTime}
+                        </td>
+                        <td style={{ padding: "16px 24px" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.5, color: UI_COLORS.textPrimary, fontWeight: 500 }}>
+                              <Calendar size={14} color={UI_COLORS.textMuted} />
+                              {apt.requestedDate || apt.preferredDate}
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: UI_COLORS.textSecondary }}>
+                              <Clock size={14} />
+                              {apt.requestedTime || apt.preferredTime}
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td style={{ padding: "16px 24px" }}>
-                        <Badge variant={apt.status === "confirmed" ? "active" : apt.status === "pending" ? "pending" : "inactive"} />
-                      </td>
-                      <td style={{ padding: "16px 24px" }}>
-                        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", background: "var(--bg-page)", borderRadius: 100, border: `1px solid ${UI_COLORS.border}`, fontSize: 12, fontWeight: 600, color: UI_COLORS.textSecondary }}>
-                          {apt.source === "widget" ? "🌐 Widget" : t(`appointments.source.${apt.source}`) || apt.source}
-                        </div>
-                      </td>
-                      <td style={{ padding: "16px 24px", textAlign: "right" }}>
-                        <button style={{ background: "transparent", border: "none", color: UI_COLORS.textMuted, cursor: "pointer", padding: 4 }}>
-                          <ChevronRight size={18} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td style={{ padding: "16px 24px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <select 
+                              value={apt.status || "pending"}
+                              onChange={(e) => updateStatus(apt.id!, e.target.value, apt.conversationId)}
+                              disabled={updatingId === apt.id}
+                              style={{
+                                padding: "6px 12px",
+                                borderRadius: 8,
+                                border: `1px solid ${UI_COLORS.border}`,
+                                background: UI_COLORS.bgCard,
+                                fontSize: 13,
+                                fontWeight: 500,
+                                color: UI_COLORS.textPrimary,
+                                cursor: updatingId === apt.id ? "not-allowed" : "pointer",
+                                opacity: updatingId === apt.id ? 0.6 : 1,
+                                outline: "none"
+                              }}
+                            >
+                              <option value="pending">{t("appointments.status.pending") || "Bekliyor"}</option>
+                              <option value="confirmed">{t("appointments.status.confirmed") || "Onaylandı"}</option>
+                              <option value="completed">{t("appointments.status.completed") || "Tamamlandı"}</option>
+                              <option value="cancelled">{t("appointments.status.cancelled") || "İptal Edildi"}</option>
+                            </select>
+                            {updatingId === apt.id && <Loader2 size={14} className="animate-spin" color={UI_COLORS.textMuted} />}
+                          </div>
+                        </td>
+                        <td style={{ padding: "16px 24px" }}>
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", background: "var(--bg-page)", borderRadius: 100, border: `1px solid ${UI_COLORS.border}`, fontSize: 12, fontWeight: 600, color: UI_COLORS.textSecondary }}>
+                            {apt.source === "ai_chat" || apt.source === "widget" ? "🌐 " + (t("appointments.source.ai_chat") || "AI Chatbot") : (t(`appointments.source.${apt.source}`) || apt.source)}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>
@@ -174,6 +268,7 @@ export default function AppointmentsPage({ params }: PageProps) {
       <style>{`
         .animate-spin { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes fadein { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
     </div>
   );
