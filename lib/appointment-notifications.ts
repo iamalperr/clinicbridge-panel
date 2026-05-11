@@ -110,6 +110,6 @@ export async function sendPatientSms(
   // if (NETGSM_USER && NETGSM_PASS) { ... }
 
   // ── Mock mode ──────────────────────────────────────────────────────────
-  console.log(`[appointment-sms] MOCK SMS → ${payload.phone}: ${message}`);
-  return { success: true };
+  console.info(`[appointment-sms] SMS provider not configured, skipping patient SMS.`);
+  return { success: false, error: "SMS provider not configured" };
 }

@@ -223,23 +223,22 @@ async function createAppointment(params: {
   const apiKey    = process.env.NEXT_PUBLIC_FIREBASE_API_KEY    ?? "";
 
   const now = new Date().toISOString();
-  // Sanitize: no undefined fields (Firestore rejects them)
   const apptDoc = {
     clinicId:         clinicId || "",
-    clinicName:       clinicName || "Klinik",
+    conversationId:   conversationId || "",
     patientName:      data.patientName || "",
     patientPhone:     data.patientPhone || "",
-    service:          data.requestedService || "Genel Muayene",
-    requestedService: data.requestedService || "Genel Muayene",
+    patientEmail:     "", // optional
+    treatmentType:    data.requestedService || "Genel Muayene",
     preferredDate:    data.requestedDate || "",
-    requestedDate:    data.requestedDate || "",
     preferredTime:    data.requestedTime || "",
-    requestedTime:    data.requestedTime || "",
+    appointmentDateTime: "",
+    notes:            "",
+    source:           "ai_chat",
     status:           "pending",
-    source:           "widget",
-    originalText:     data.originalText || "",
-    conversationId:   conversationId || "",
-    notificationStatus: { smsToPatient: "pending", emailToClinic: "pending" },
+    createdBy:        "ai_assistant",
+    language:         "tr",
+    rawConversationSummary: data.originalText || "",
     createdAt: now,
     updatedAt: now,
   };
@@ -257,7 +256,7 @@ async function createAppointment(params: {
 
   if (adminDb) {
     console.log("[FIRESTORE_WRITE_START] Using Admin SDK...");
-    const ref = await adminDb.collection("appointments").add(apptDoc);
+    const ref = await adminDb.collection("clinics").doc(clinicId).collection("appointments").add(apptDoc);
     appointmentId = ref.id;
     console.log(`[FIRESTORE_WRITE_SUCCESS] appointmentId=${appointmentId}`);
   } else {
@@ -266,9 +265,28 @@ async function createAppointment(params: {
     if (!projectId || !apiKey) throw new Error("No Firebase config (projectId or apiKey missing)");
 
     const idToken = await getFirebaseAnonToken(apiKey);
+    const collectionPath = `clinics/${clinicId}/appointments`;
     console.log(`[FIRESTORE_WRITE_START] anonToken=${idToken ? "OK" : "null — will try API key only"}`);
-    appointmentId = await firestoreRestAdd(projectId, apiKey, "appointments", apptDoc, idToken);
+    appointmentId = await firestoreRestAdd(projectId, apiKey, collectionPath, apptDoc, idToken);
     console.log(`[FIRESTORE_WRITE_SUCCESS] REST appointmentId=${appointmentId}`);
+  }
+
+  /* ── Notification to clinic ────────────────────────────── */
+  if (adminDb && appointmentId) {
+    try {
+      await adminDb.collection("clinics").doc(clinicId).collection("notifications").add({
+        type: "appointment_request",
+        title: "Yeni randevu talebi",
+        message: `${data.patientName} (${data.patientPhone}) adlı hasta ${data.requestedService} için randevu talebinde bulundu.`,
+        appointmentId,
+        conversationId,
+        read: false,
+        createdAt: now,
+      });
+      console.log(`[appointment-notification] Created notification for clinicId=${clinicId}`);
+    } catch (e: any) {
+      console.error("[appointment-notification] Error:", e.message);
+    }
   }
 
 
@@ -421,10 +439,42 @@ async function logConversation(params: {
     if (trainingTopic) logData.trainingTopic = trainingTopic;
     if (params.apptData?.patientName) logData.patientName = params.apptData.patientName;
     if (params.apptData?.patientPhone) logData.patientPhone = params.apptData.patientPhone;
-    if (params.appointmentId) {
-      logData.appointmentId = params.appointmentId;
-      logData.convertedToAppointment = true;
+    let activeIntent = existing?.activeIntent || "";
+    let appointmentStatus = existing?.appointmentStatus || "";
+
+    const userMessageLower = params.userMessage.toLowerCase();
+    const intentKeywords = ["randevu", "görüşme almak", "doktora görünmek", "appointment", "consultation"];
+    if (intentKeywords.some(k => userMessageLower.includes(k) || replyLower.includes(k))) {
+      activeIntent = "appointment";
+      if (!existing?.convertedToAppointment && appointmentStatus !== "readyToCreate") {
+        appointmentStatus = "collecting";
+      }
     }
+
+    if (params.apptData) {
+      logData.pendingAppointmentData = {
+        patientName: params.apptData.patientName || "",
+        patientPhone: params.apptData.patientPhone || "",
+        patientEmail: "",
+        treatmentType: params.apptData.requestedService || "",
+        preferredDate: params.apptData.requestedDate || "",
+        preferredTime: params.apptData.requestedTime || "",
+        notes: ""
+      };
+      activeIntent = "appointment";
+      appointmentStatus = "readyToCreate";
+    }
+
+    if (params.isAppointmentCreated) {
+      status = "appointment";
+      activeIntent = "appointment";
+      appointmentStatus = "created";
+      logData.convertedToAppointment = true;
+      logData.appointmentId = params.appointmentId;
+    }
+
+    logData.activeIntent = activeIntent;
+    logData.appointmentStatus = appointmentStatus;
 
     // Write log doc
     await logRef.set(logData, { merge: true });
@@ -549,11 +599,9 @@ export async function POST(req: Request) {
 
           const firstName = apptData.patientName.split(" ")[0];
           const confirmReply =
-            `Randevu talebinizi aldım${firstName ? " " + firstName + " Bey/Hanım" : ""}! ` +
-            `${apptData.requestedDate} saat ${apptData.requestedTime} için ` +
-            `"${apptData.requestedService}" talebiniz kliniğimize iletildi. ` +
-            `Klinik ekibimiz uygunluğu kontrol ederek size dönüş yapacaktır. 🙏` +
-            (emailSent ? " Klinik yönetimine e-posta bildirimi gönderildi." : "");
+            `Randevu talebinizi oluşturdum${firstName ? " " + firstName + " Bey/Hanım" : ""}! ` +
+            `"${apptData.requestedService}" işleminiz için talebiniz kliniğimize iletildi. ` +
+            `Klinik ekibi en kısa sürede sizinle iletişime geçerek uygunluğu teyit edecektir. 🙏`;
 
           debugLog.push(`appt_created=${appointmentId} email=${emailSent} ms=${Date.now() - startTime}`);
           console.log("[widget-chat]", debugLog.join(" | "));
@@ -601,20 +649,26 @@ export async function POST(req: Request) {
         ? `\nKLİNİK BİLGİ HAVUZU:\n\n${knowledgeContext}`
         : "\n(Bu klinik için henüz eğitim verisi eklenmemiş.)",
       `\nRANDEVU AKIŞI:
-Kullanıcı randevu almak istediğinde:
-1. Şu bilgileri topla: Ad Soyad, Telefon, Hizmet/Tedavi, Tarih, Saat.
-2. Tüm bilgiler tamam olunca MUTLAKA şu formatta özet ve onay iste:
+Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın diş beyazlatma", "Doktora görünmek istiyorum", vb.):
+1. Şu bilgileri adım adım, tek tek ve DOĞAL bir dille topla:
+   - Ad ve Soyad
+   - Telefon Numarası
+   - Tedavi/İşlem Türü
+   - Tercih edilen Tarih
+   - Tercih edilen Saat
+2. Eğer bir bilgi eksikse sadece o bilgiyi sor (Örn: "Randevunuzu oluşturabilmem için adınızı ve soyadınızı paylaşabilir misiniz?").
+3. Tüm bilgiler tamam olunca MUTLAKA şu formatta özet ve onay iste:
    "Harika! Şu bilgilerle randevu talebi oluşturayım mı?
    Ad: [isim]
    Telefon: [telefon]
    Hizmet: [hizmet]
-   Tarih/Saat: [tarih] saat [saat]
+   Tarih: [tarih]
+   Saat: [saat]
    Onaylıyor musunuz? (Evet/Hayır)"
-3. Kullanıcı Evet dediğinde sistem otomatik randevu oluşturacak.
+4. Kullanıcı "Evet" dediğinde sistem otomatik randevu oluşturacak.
 
 GENEL KURALLAR:
-- Kesin tıbbi teşhis veya fiyat garantisi verme.
-- Gerçek zamanlı müsaitlik bilgin yok.
+- Kesin randevu onayı veya kesin müsaitlik garantisi VERME. (Örn: Yanlış: "Randevunuz kesinleşti." Doğru: "Randevu talebiniz kliniğe iletilecek.")
 - Yanıtların kısa (max 4 cümle), nazik olsun.
 - Türkçe sorulara Türkçe, İngilizce sorulara İngilizce yanıt ver.`,
     ].join("");

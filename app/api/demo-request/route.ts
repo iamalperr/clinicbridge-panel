@@ -111,35 +111,50 @@ export async function POST(req: Request) {
     }
 
 
-    /* ─── Notification e-mail (best-effort) ────────────────── */
-    try {
-      if (process.env.RESEND_API_KEY) {
-        const notifyTo = process.env.DEMO_NOTIFY_EMAIL || "info@clinicbridge-ai.com";
+    /* ─── Notification e-mail ──────────────────────────────── */
+    if (!process.env.RESEND_API_KEY) {
+      console.error("[DemoRequest API] RESEND_API_KEY eksik.");
+      throw new Error("Email configuration is missing.");
+    }
 
-        await resend.emails.send({
-          from: process.env.EMAIL_FROM || "no-reply@clinicbridge-ai.com",
-          to: [notifyTo],
-          subject: `Yeni Demo Talebi: ${clinicName}`,
-          html: `
-            <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b">
-              <h2 style="color:#6366f1;margin-bottom:24px">Yeni Demo Talebi</h2>
-              <table style="width:100%;border-collapse:collapse">
-                <tr><td style="padding:8px 12px;font-weight:600;color:#475569">Ad Soyad</td><td style="padding:8px 12px">${fullName}</td></tr>
-                <tr style="background:#f8fafc"><td style="padding:8px 12px;font-weight:600;color:#475569">Klinik Adı</td><td style="padding:8px 12px">${clinicName}</td></tr>
-                <tr><td style="padding:8px 12px;font-weight:600;color:#475569">Telefon</td><td style="padding:8px 12px">${phone || "—"}</td></tr>
-                <tr style="background:#f8fafc"><td style="padding:8px 12px;font-weight:600;color:#475569">E-posta</td><td style="padding:8px 12px">${email || "—"}</td></tr>
-                <tr><td style="padding:8px 12px;font-weight:600;color:#475569">Web Sitesi</td><td style="padding:8px 12px">${website || "—"}</td></tr>
-                <tr style="background:#f8fafc"><td style="padding:8px 12px;font-weight:600;color:#475569">Mesaj</td><td style="padding:8px 12px">${message || "—"}</td></tr>
-              </table>
-              <p style="margin-top:24px;font-size:12px;color:#94a3b8">&copy; ${new Date().getFullYear()} ClinicBridge AI</p>
-            </div>
-          `,
-        });
-        console.log("[DemoRequest API] Notification email sent.");
+    try {
+      const notifyTo = process.env.DEMO_NOTIFY_EMAIL || "info@clinicbridge-ai.com";
+      const fromEmail = process.env.EMAIL_FROM || "ClinicBridge AI <info@clinicbridge-ai.com>";
+      const requestDate = new Date().toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" });
+
+      const emailText = `Yeni bir demo talebi alındı.
+
+Ad Soyad: ${sanitised.fullName}
+Klinik Adı: ${sanitised.clinicName}
+Telefon: ${sanitised.phone || "-"}
+E-posta: ${sanitised.email || "-"}
+Web Sitesi: ${sanitised.website || "-"}
+Mesaj: ${sanitised.message || "-"}
+
+Talep Tarihi: ${requestDate}`;
+
+      const emailPayload: any = {
+        from: fromEmail,
+        to: [notifyTo],
+        subject: `Yeni Demo Talebi - ${sanitised.clinicName}`,
+        text: emailText,
+      };
+
+      if (sanitised.email) {
+        emailPayload.reply_to = sanitised.email;
       }
+
+      const { data, error } = await resend.emails.send(emailPayload);
+
+      if (error) {
+        console.error("[DemoRequest API] Resend email error:", error);
+        throw new Error(`Email send failed: ${error.message}`);
+      }
+
+      console.log("[DemoRequest API] Notification email sent:", data?.id);
     } catch (emailErr) {
-      // E-mail failure is non-blocking — the demo request is already saved.
-      console.error("[DemoRequest API] Notification email failed (non-blocking):", emailErr);
+      console.error("[DemoRequest API] Notification email failed:", emailErr);
+      throw emailErr; // Bloğu durdur ve catch (error) bloğuna düşerek 500 dön.
     }
 
     return NextResponse.json({ success: true, id: docId });

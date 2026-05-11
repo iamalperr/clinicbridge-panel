@@ -21,8 +21,7 @@ export default function AppointmentsPage({ params }: PageProps) {
 
   useEffect(() => {
     const q = query(
-      collection(db, "appointments"),
-      where("clinicId", "==", clinicId),
+      collection(db, "clinics", clinicId, "appointments"),
       orderBy("createdAt", "desc")
     );
     const unsub = onSnapshot(q, (snapshot) => {
