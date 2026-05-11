@@ -1,25 +1,95 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { UI_COLORS } from "@/components/ui/ui-shared";
 import Logo from "@/components/ui/Logo";
-import { Send, User, Stethoscope, Calendar, Clock, MessageSquare, Menu, Settings, X, Check, Bell } from "lucide-react";
+import { Send, User, Stethoscope, Calendar, Clock, MessageSquare, Menu, Settings, X, Check, Bell, MousePointer2 } from "lucide-react";
 
-type Scene = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
+type View = "website" | "admin" | "outro";
 
 function ShowcaseContent() {
   const searchParams = useSearchParams();
   const isRecording = searchParams.get("mode") === "recording";
-  const [scene, setScene] = useState<Scene>(1);
   
+  const [scene, setScene] = useState<number>(1);
+  const [view, setView] = useState<View>("website");
   const [isWidgetOpen, setIsWidgetOpen] = useState(false);
   const [messages, setMessages] = useState<{role: "user" | "ai", text: string}[]>([]);
+  const [inputText, setInputText] = useState("");
+  const [typing, setTyping] = useState(false);
+  
   const [panelStatus, setPanelStatus] = useState("pending");
   const [showToast, setShowToast] = useState(false);
-  const [typing, setTyping] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-  // Keybindings for replay
+  // Virtual Cursor State
+  const [cursorPos, setCursorPos] = useState({ x: -100, y: -100 });
+  const [cursorClicking, setCursorClicking] = useState(false);
+  const [cursorVisible, setCursorVisible] = useState(isRecording);
+
+  // Refs for tracking elements
+  const refs = {
+    widgetButton: useRef<HTMLDivElement>(null),
+    chatInput: useRef<HTMLDivElement>(null),
+    chatSend: useRef<HTMLDivElement>(null),
+    adminRow: useRef<HTMLTableRowElement>(null),
+    statusSelect: useRef<HTMLDivElement>(null),
+    statusOption: useRef<HTMLDivElement>(null),
+  };
+
+  const getOffset = (ref: React.RefObject<HTMLElement | null>) => {
+    if (!ref.current) return null;
+    const rect = ref.current.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  };
+
+  // Move cursor helper
+  const moveCursorToRef = async (refName: keyof typeof refs) => {
+    return new Promise<void>(resolve => {
+      const target = getOffset(refs[refName]);
+      if (target) {
+        setCursorPos(target);
+      }
+      setTimeout(resolve, 800); // Wait for CSS transition
+    });
+  };
+
+  const moveCursorToCenter = async () => {
+    return new Promise<void>(resolve => {
+      setCursorPos({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+      setTimeout(resolve, 800);
+    });
+  };
+
+  const clickCursor = async () => {
+    return new Promise<void>(resolve => {
+      setCursorClicking(true);
+      setTimeout(() => {
+        setCursorClicking(false);
+        setTimeout(resolve, 300);
+      }, 150);
+    });
+  };
+
+  const typeText = async (text: string) => {
+    return new Promise<void>(resolve => {
+      let currentText = "";
+      let i = 0;
+      const interval = setInterval(() => {
+        if (i < text.length) {
+          currentText += text.charAt(i);
+          setInputText(currentText);
+          i++;
+        } else {
+          clearInterval(interval);
+          setTimeout(resolve, 200);
+        }
+      }, 40); // 40ms per keystroke (adjustable for realistic speed)
+    });
+  };
+
+  const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === "r") {
@@ -30,97 +100,113 @@ function ShowcaseContent() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Automatic timeline for recording mode
   useEffect(() => {
     if (!isRecording) return;
     
-    const timeouts: NodeJS.Timeout[] = [];
-    let cumulativeTime = 0;
+    // Initial position
+    setCursorPos({ x: window.innerWidth / 2 + 300, y: window.innerHeight / 2 });
 
-    const timings = [
-      { s: 2, t: 4000 },
-      { s: 3, t: 5000 },
-      { s: 4, t: 6000 },
-      { s: 5, t: 6000 },
-      { s: 6, t: 5000 },
-      { s: 7, t: 7000 },
-      { s: 8, t: 5000 },
-      { s: 9, t: 5000 },
-      { s: 10, t: 5000 },
-      { s: 11, t: 5000 },
-    ];
+    const runDemo = async () => {
+      // Scene 1
+      await wait(2000);
+      setScene(2);
 
-    timings.forEach(({ s, t }) => {
-      cumulativeTime += t;
-      timeouts.push(setTimeout(() => setScene(s as Scene), cumulativeTime));
-    });
+      // Scene 2: Open widget
+      await moveCursorToRef("widgetButton");
+      await clickCursor();
+      setIsWidgetOpen(true);
+      await moveCursorToCenter();
+      await wait(1000);
+      setMessages([{ role: "ai", text: "Merhaba! Size nasıl yardımcı olabilirim? Randevu almak ister misiniz?" }]);
+      await wait(1500);
 
-    return () => timeouts.forEach(clearTimeout);
+      // Scene 3: Patient types
+      setScene(3);
+      await moveCursorToRef("chatInput");
+      await clickCursor();
+      await typeText("Diş beyazlatma için yarın 14:00'e randevu almak istiyorum.");
+      await moveCursorToRef("chatSend");
+      await clickCursor();
+      setMessages(prev => [...prev, { role: "user", text: "Diş beyazlatma için yarın 14:00'e randevu almak istiyorum." }]);
+      setInputText("");
+      await moveCursorToCenter();
+      
+      // Scene 4: AI response
+      setScene(4);
+      setTyping(true);
+      await wait(2000);
+      setTyping(false);
+      setMessages(prev => [...prev, { role: "ai", text: "Randevu talebinizi oluşturabilmem için adınızı ve telefon numaranızı paylaşabilir misiniz?" }]);
+      await wait(1500);
+
+      // Scene 5: Patient types details
+      setScene(5);
+      await moveCursorToRef("chatInput");
+      await clickCursor();
+      await typeText("Alper Özgül, 05314629921");
+      await moveCursorToRef("chatSend");
+      await clickCursor();
+      setMessages(prev => [...prev, { role: "user", text: "Alper Özgül, 05314629921" }]);
+      setInputText("");
+      await moveCursorToCenter();
+
+      // Scene 6: AI confirms
+      setScene(6);
+      setTyping(true);
+      await wait(2000);
+      setTyping(false);
+      setMessages(prev => [...prev, { role: "ai", text: "Randevu talebinizi kliniğimize ilettim. Klinik ekibi talebinizi değerlendirdikten sonra onay veya uygun saat bilgisi için sizi SMS üzerinden bilgilendirecektir." }]);
+      await wait(2500);
+
+      // Scene 7: Admin Panel
+      setScene(7);
+      setView("admin");
+      await wait(2500);
+
+      // Scene 8: Cursor to row
+      setScene(8);
+      await moveCursorToRef("adminRow");
+      await wait(1500);
+
+      // Scene 9: Approve dropdown
+      setScene(9);
+      await moveCursorToRef("statusSelect");
+      await clickCursor();
+      setIsDropdownOpen(true);
+      await wait(500);
+      await moveCursorToRef("statusOption");
+      await clickCursor();
+      setIsDropdownOpen(false);
+      setPanelStatus("confirmed");
+      await wait(1000);
+
+      // Scene 10: SMS Toast
+      setScene(10);
+      await moveCursorToCenter();
+      setShowToast(true);
+      await wait(4000);
+
+      // Scene 11: Outro
+      setScene(11);
+      setView("outro");
+    };
+
+    runDemo();
   }, [isRecording]);
 
-  // Scene triggers
-  useEffect(() => {
-    let t1: any, t2: any;
-    
-    if (scene === 2) {
-      t1 = setTimeout(() => setIsWidgetOpen(true), 800);
-      t2 = setTimeout(() => {
-        setMessages([{ role: "ai", text: "Merhaba! Size nasıl yardımcı olabilirim? Randevu almak ister misiniz?" }]);
-      }, 1500);
-    } else if (scene === 3) {
-      setTyping(true);
-      t1 = setTimeout(() => {
-        setTyping(false);
-        setMessages(prev => [...prev, { role: "user", text: "Diş beyazlatma için yarın 14:00'e randevu almak istiyorum." }]);
-      }, 1500);
-    } else if (scene === 4) {
-      t1 = setTimeout(() => setTyping(true), 500);
-      t2 = setTimeout(() => {
-        setTyping(false);
-        setMessages(prev => [...prev, { role: "ai", text: "Randevu talebinizi oluşturabilmem için adınızı ve telefon numaranızı paylaşabilir misiniz?" }]);
-      }, 2000);
-    } else if (scene === 5) {
-      setTyping(true);
-      t1 = setTimeout(() => {
-        setTyping(false);
-        setMessages(prev => [...prev, { role: "user", text: "Alper Özgül, 05314629921" }]);
-      }, 1500);
-    } else if (scene === 6) {
-      t1 = setTimeout(() => setTyping(true), 500);
-      t2 = setTimeout(() => {
-        setTyping(false);
-        setMessages(prev => [...prev, { role: "ai", text: "Randevu talebinizi kliniğimize ilettim. Klinik ekibi talebinizi değerlendirdikten sonra onay veya uygun saat bilgisi için sizi SMS üzerinden bilgilendirecektir." }]);
-      }, 2000);
-    } else if (scene === 9) {
-      t1 = setTimeout(() => {
-        setPanelStatus("confirmed");
-      }, 1500);
-    } else if (scene === 10) {
-      t1 = setTimeout(() => setShowToast(true), 500);
-    }
-
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
-  }, [scene]);
-
   const overlayTexts: Record<number, string> = {
-    1: "Your clinic website is more than a brochure.",
+    1: "Most clinic websites lose visitors before they book.",
     2: "ClinicBridge AI welcomes patients instantly.",
     3: "ClinicBridge AI welcomes patients instantly.",
-    4: "It understands intent and collects appointment details.",
-    5: "It understands intent and collects appointment details.",
-    6: "It understands intent and collects appointment details.",
+    4: "It understands intent and collects the missing details.",
+    5: "It understands intent and collects the missing details.",
+    6: "It understands intent and collects the missing details.",
     7: "Requests appear directly in your clinic dashboard.",
     8: "Requests appear directly in your clinic dashboard.",
-    9: "Approve appointments and notify patients by SMS.",
-    10: "Approve appointments and notify patients by SMS.",
-    11: "ClinicBridge AI\nAI-powered patient conversion for modern clinics."
+    9: "Clinics approve with one click.",
+    10: "Patients are notified automatically by SMS.",
+    11: "ClinicBridge AI\nTurn clinic website traffic into appointment requests."
   };
-
-  const nextScene = () => { if (scene < 11) setScene((scene + 1) as Scene); };
-  const prevScene = () => { if (scene > 1) setScene((scene - 1) as Scene); };
 
   const renderTyping = () => (
     <div style={{
@@ -141,13 +227,54 @@ function ShowcaseContent() {
   );
 
   return (
-    <div style={{ width: "100vw", height: "100vh", overflow: "hidden", position: "relative", background: "#f8fafc", fontFamily: "sans-serif" }}>
+    <div style={{ width: "100vw", height: "100vh", overflow: "hidden", position: "relative", background: "#f8fafc", fontFamily: "sans-serif", cursor: isRecording ? "none" : "default" }}>
       
+      {/* VIRTUAL CURSOR */}
+      {cursorVisible && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          pointerEvents: "none",
+          zIndex: 9999,
+          transform: `translate(${cursorPos.x}px, ${cursorPos.y}px)`,
+          transition: "transform 0.8s cubic-bezier(0.25, 1, 0.5, 1)"
+        }}>
+          <div style={{ position: "relative" }}>
+            {/* The cursor pointer */}
+            <MousePointer2 
+              size={28} 
+              fill="rgba(0,0,0,0.8)" 
+              color="white" 
+              strokeWidth={1.5}
+              style={{
+                filter: "drop-shadow(0 4px 6px rgba(0,0,0,0.3))",
+                transform: "translate(-6px, -2px)" // Adjust so the click point is the tip
+              }}
+            />
+            {/* Ripple effect */}
+            {cursorClicking && (
+              <div style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: 20,
+                height: 20,
+                background: "rgba(59, 130, 246, 0.4)",
+                borderRadius: "50%",
+                transform: "translate(-50%, -50%)",
+                animation: "ripple 0.4s ease-out forwards"
+              }} />
+            )}
+          </div>
+        </div>
+      )}
+
       {/* SCENES */}
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", justifyContent: "center", alignItems: "center" }}>
         
         {/* Outro */}
-        {scene === 11 && (
+        {view === "outro" && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", animation: "fadein 1s" }}>
             <Logo />
             <h1 style={{ fontSize: 40, fontWeight: 800, color: "#0f172a", marginTop: 32, letterSpacing: "-0.02em" }}>ClinicBridge AI</h1>
@@ -157,7 +284,7 @@ function ShowcaseContent() {
         )}
 
         {/* Website & Chat */}
-        {scene >= 1 && scene <= 6 && (
+        {view === "website" && (
           <div style={{ width: "100%", height: "100%", background: "#ffffff", position: "relative", animation: "fadein 1s" }}>
             <div style={{ height: 80, borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", padding: "0 60px", justifyContent: "space-between" }}>
               <div style={{ fontSize: 24, fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: 12 }}>
@@ -222,16 +349,16 @@ function ShowcaseContent() {
                   </div>
 
                   <div style={{ padding: 16, background: "white", borderTop: "1px solid #e2e8f0", display: "flex", gap: 12, alignItems: "center" }}>
-                    <div style={{ flex: 1, height: 44, background: "#f1f5f9", borderRadius: 22, padding: "0 16px", display: "flex", alignItems: "center", color: "#94a3b8", fontSize: 15 }}>
-                      Type a message...
+                    <div ref={refs.chatInput} style={{ flex: 1, height: 44, background: "#f1f5f9", borderRadius: 22, padding: "0 16px", display: "flex", alignItems: "center", color: inputText ? "#0f172a" : "#94a3b8", fontSize: 15 }}>
+                      {inputText || "Type a message..."}
                     </div>
-                    <div style={{ width: 44, height: 44, background: "#0f172a", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "white" }}>
+                    <div ref={refs.chatSend} style={{ width: 44, height: 44, background: "#0f172a", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "white", flexShrink: 0 }}>
                       <Send size={18} style={{ marginLeft: 2 }} />
                     </div>
                   </div>
                 </div>
               ) : (
-                <div style={{ width: 64, height: 64, background: "#0f172a", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "white", boxShadow: "0 10px 25px rgba(15,23,42,0.3)" }}>
+                <div ref={refs.widgetButton} style={{ width: 64, height: 64, background: "#0f172a", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "white", boxShadow: "0 10px 25px rgba(15,23,42,0.3)" }}>
                   <MessageSquare size={32} />
                 </div>
               )}
@@ -240,7 +367,7 @@ function ShowcaseContent() {
         )}
 
         {/* Admin Panel */}
-        {scene >= 7 && scene <= 10 && (
+        {view === "admin" && (
           <div style={{ width: "100%", height: "100%", background: "#f8fafc", display: "flex", color: "#0f172a", animation: "fadein 0.5s" }}>
             <div style={{ width: 260, background: "white", borderRight: "1px solid #e2e8f0", padding: 24, display: "flex", flexDirection: "column" }}>
               <div style={{ marginBottom: 40 }}><Logo /></div>
@@ -265,7 +392,7 @@ function ShowcaseContent() {
               </div>
 
               {scene >= 8 && (
-                <div style={{ background: "white", borderRadius: 16, border: "1px solid #e2e8f0", overflow: "hidden", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.05)", animation: "slideup 0.5s ease-out" }}>
+                <div style={{ background: "white", borderRadius: 16, border: "1px solid #e2e8f0", overflow: "visible", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.05)", animation: "slideup 0.5s ease-out" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
                     <thead>
                       <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
@@ -277,7 +404,7 @@ function ShowcaseContent() {
                       </tr>
                     </thead>
                     <tbody>
-                      <tr>
+                      <tr ref={refs.adminRow} style={{ background: "white", transition: "background 0.2s" }}>
                         <td style={{ padding: "20px 24px" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                             <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#eff6ff", color: "#3b82f6", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -307,26 +434,38 @@ function ShowcaseContent() {
                         </td>
                         <td style={{ padding: "20px 24px" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <select 
-                              value={panelStatus}
-                              disabled
-                              style={{
-                                padding: "8px 16px",
-                                borderRadius: 8,
-                                border: "1px solid #e2e8f0",
-                                background: panelStatus === "confirmed" ? "#f0fdf4" : "white",
-                                color: panelStatus === "confirmed" ? "#16a34a" : "#0f172a",
-                                fontSize: 14,
-                                fontWeight: 600,
-                                outline: "none",
-                                appearance: "none",
-                                WebkitAppearance: "none",
-                                transition: "all 0.3s"
-                              }}
-                            >
-                              <option value="pending">Bekliyor</option>
-                              <option value="confirmed">Onaylandı</option>
-                            </select>
+                            {/* Custom Fake Dropdown for the click animation target */}
+                            <div style={{ position: "relative" }}>
+                              <div 
+                                ref={refs.statusSelect}
+                                style={{
+                                  padding: "8px 16px",
+                                  borderRadius: 8,
+                                  border: "1px solid #e2e8f0",
+                                  background: panelStatus === "confirmed" ? "#f0fdf4" : "white",
+                                  color: panelStatus === "confirmed" ? "#16a34a" : "#0f172a",
+                                  fontSize: 14,
+                                  fontWeight: 600,
+                                  minWidth: 120,
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  transition: "all 0.3s"
+                                }}
+                              >
+                                {panelStatus === "pending" ? "Bekliyor" : "Onaylandı"}
+                                <div style={{ transform: isDropdownOpen ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.2s" }}>
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                </div>
+                              </div>
+
+                              {isDropdownOpen && (
+                                <div style={{ position: "absolute", top: "100%", left: 0, marginTop: 4, background: "white", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)", zIndex: 100, minWidth: 120, overflow: "hidden" }}>
+                                  <div style={{ padding: "8px 16px", fontSize: 14, fontWeight: 600, color: "#0f172a" }}>Bekliyor</div>
+                                  <div ref={refs.statusOption} style={{ padding: "8px 16px", fontSize: 14, fontWeight: 600, color: "#16a34a", background: "#f0fdf4" }}>Onaylandı</div>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </td>
                         <td style={{ padding: "20px 24px" }}>
@@ -373,15 +512,12 @@ function ShowcaseContent() {
         </div>
       )}
 
-      {/* CONTROLS (Hidden in recording mode) */}
+      {/* MANUAL CONTROLS (Hidden in recording mode) */}
       {!isRecording && (
-        <div style={{ position: "absolute", bottom: 40, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 16, zIndex: 200 }}>
-          <button onClick={prevScene} disabled={scene === 1} style={{ padding: "12px 24px", borderRadius: 100, border: "1px solid #e2e8f0", background: "white", color: "#0f172a", fontWeight: 600, cursor: scene === 1 ? "not-allowed" : "pointer" }}>
-            Prev
-          </button>
-          <button onClick={nextScene} disabled={scene === 11} style={{ padding: "12px 32px", borderRadius: 100, border: "none", background: "#0f172a", color: "white", fontWeight: 600, cursor: scene === 11 ? "not-allowed" : "pointer", boxShadow: "0 4px 12px rgba(15,23,42,0.2)" }}>
-            Next Scene ({scene}/11)
-          </button>
+        <div style={{ position: "absolute", bottom: 40, left: "50%", transform: "translateX(-50%)", display: "flex", flexWrap: "wrap", gap: 16, zIndex: 200, justifyContent: "center", maxWidth: 600 }}>
+          <div style={{ width: "100%", textAlign: "center", color: "#64748b", fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
+            Manual Mode (Recording URL: ?mode=recording)
+          </div>
         </div>
       )}
 
@@ -393,6 +529,10 @@ function ShowcaseContent() {
         @keyframes fadein {
           from { opacity: 0; }
           to { opacity: 1; }
+        }
+        @keyframes ripple {
+          0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
+          100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
         }
       `}</style>
     </div>
