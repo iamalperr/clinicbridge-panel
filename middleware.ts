@@ -93,6 +93,9 @@ export function middleware(req: NextRequest) {
       return NextResponse.next();
     }
 
+    // Allow LinkedIn showcase demo
+    if (pathname === "/showcase-demo") return NextResponse.next();
+
     // Block everything else → back to landing
     return NextResponse.redirect(new URL("/", req.url));
   }
