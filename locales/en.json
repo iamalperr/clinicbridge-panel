@@ -332,7 +332,18 @@
     },
     "updateSuccess": "Appointment status updated.",
     "updateError": "Appointment status could not be updated.",
-    "newAppointmentToast": "New appointment request received."
+    "newAppointmentToast": "New appointment request received.",
+    "sms": {
+      "sent": "SMS sent",
+      "failed": "SMS failed",
+      "skipped": "SMS provider not configured",
+      "invalidPhone": "Invalid phone number",
+      "notRequired": "SMS not required"
+    },
+    "statusUpdateSmsSent": "Appointment status updated and SMS sent to the patient.",
+    "statusUpdateSmsSkipped": "Appointment status updated. SMS was not sent because the SMS provider is not configured.",
+    "statusUpdateSmsInvalidPhone": "Appointment status updated but SMS could not be sent because the patient phone number is invalid.",
+    "statusUpdateSmsFailed": "Appointment status updated but SMS delivery failed."
   },
   "notifications": {
     "newAppointmentTitle": "New appointment request",

@@ -332,7 +332,18 @@
     },
     "updateSuccess": "Randevu durumu güncellendi.",
     "updateError": "Randevu durumu güncellenemedi.",
-    "newAppointmentToast": "Yeni randevu talebi alındı."
+    "newAppointmentToast": "Yeni randevu talebi alındı.",
+    "sms": {
+      "sent": "SMS gönderildi",
+      "failed": "SMS gönderilemedi",
+      "skipped": "SMS sağlayıcısı yok",
+      "invalidPhone": "Telefon geçersiz",
+      "notRequired": "SMS beklemiyor"
+    },
+    "statusUpdateSmsSent": "Randevu durumu güncellendi ve hastaya SMS gönderildi.",
+    "statusUpdateSmsSkipped": "Randevu durumu güncellendi. SMS sağlayıcısı yapılandırılmadığı için SMS gönderilmedi.",
+    "statusUpdateSmsInvalidPhone": "Randevu durumu güncellendi ancak hasta telefon numarası geçersiz olduğu için SMS gönderilemedi.",
+    "statusUpdateSmsFailed": "Randevu durumu güncellendi ancak SMS gönderimi başarısız oldu."
   },
   "notifications": {
     "newAppointmentTitle": "Yeni randevu talebi",

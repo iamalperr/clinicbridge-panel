@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import { collection, query, where, orderBy, onSnapshot, doc, updateDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { db, auth } from "@/lib/firebase";
 import { useI18n } from "@/lib/i18n-context";
 import { UI_COLORS } from "@/components/ui/ui-shared";
 import { Loader2, Calendar, Clock, User, Stethoscope, ChevronRight, Inbox } from "lucide-react";
@@ -62,28 +62,43 @@ export default function AppointmentsPage({ params }: PageProps) {
   const updateStatus = async (id: string, newStatus: string, convId?: string) => {
     setUpdatingId(id);
     try {
-      const nowStr = new Date().toISOString();
-      const docRef = doc(db, "clinics", clinicId, "appointments", id);
-      await updateDoc(docRef, {
-        status: newStatus,
-        updatedAt: nowStr
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Unauthorized");
+
+      const res = await fetch(`/api/clinics/${clinicId}/appointments/${id}/status`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ newStatus })
       });
+
+      const data = await res.json();
       
-      if (convId) {
-        const logRef = doc(db, "clinics", clinicId, "conversationLogs", convId);
-        await updateDoc(logRef, {
-          appointmentStatus: newStatus,
-          updatedAt: nowStr
-        }).catch(e => console.warn("Could not update conversation log status:", e));
+      if (!res.ok) {
+        throw new Error(data.error || "Güncelleme başarısız");
       }
 
-      setToastMsg(t("appointments.updateSuccess") || "Randevu durumu güncellendi.");
+      if (data.sms) {
+        if (data.sms.success) {
+          setToastMsg(t("appointments.statusUpdateSmsSent") || "Randevu durumu güncellendi ve hastaya SMS gönderildi.");
+        } else if (data.sms.skipped) {
+          setToastMsg(t("appointments.statusUpdateSmsSkipped") || "Randevu durumu güncellendi. SMS sağlayıcısı yapılandırılmadığı için SMS gönderilmedi.");
+        } else if (data.sms.reason === "invalid_phone") {
+          setToastMsg(t("appointments.statusUpdateSmsInvalidPhone") || "Randevu durumu güncellendi ancak hasta telefon numarası geçersiz olduğu için SMS gönderilemedi.");
+        } else {
+          setToastMsg(t("appointments.statusUpdateSmsFailed") || "Randevu durumu güncellendi ancak SMS gönderimi başarısız oldu.");
+        }
+      } else {
+        setToastMsg(t("appointments.updateSuccess") || "Randevu durumu güncellendi.");
+      }
     } catch (e) {
       console.error(e);
       setToastMsg(t("appointments.updateError") || "Randevu durumu güncellenemedi.");
     } finally {
       setUpdatingId(null);
-      setTimeout(() => setToastMsg(null), 3000);
+      setTimeout(() => setToastMsg(null), 4000);
     }
   };
 
@@ -199,8 +214,27 @@ export default function AppointmentsPage({ params }: PageProps) {
                                 {apt.patientName}
                               </span>
                               {displayPhone && (
-                                <span style={{ fontSize: 12, color: UI_COLORS.textMuted }}>
+                                <span style={{ fontSize: 12, color: UI_COLORS.textMuted, display: "block" }}>
                                   {displayPhone}
+                                </span>
+                              )}
+                              {apt.smsNotificationStatus && (
+                                <span style={{ 
+                                  fontSize: 10, 
+                                  fontWeight: 600, 
+                                  padding: "2px 6px", 
+                                  borderRadius: 4, 
+                                  marginTop: 4, 
+                                  display: "inline-block",
+                                  backgroundColor: apt.smsNotificationStatus === "sent" ? "rgba(34, 197, 94, 0.1)" : 
+                                                   apt.smsNotificationStatus === "failed" ? "rgba(239, 68, 68, 0.1)" : "rgba(100, 116, 139, 0.1)",
+                                  color: apt.smsNotificationStatus === "sent" ? "#16a34a" : 
+                                         apt.smsNotificationStatus === "failed" ? "#dc2626" : "#475569"
+                                }}>
+                                  {apt.smsNotificationStatus === "sent" ? (t("appointments.sms.sent") || "SMS Gönderildi") : 
+                                   apt.smsNotificationStatus === "failed" ? (t("appointments.sms.failed") || "SMS Gönderilemedi") : 
+                                   apt.smsNotificationStatus === "invalid_phone" ? (t("appointments.sms.invalidPhone") || "Telefon Geçersiz") : 
+                                   (t("appointments.sms.skipped") || "SMS Sağlayıcısı Yok")}
                                 </span>
                               )}
                             </div>

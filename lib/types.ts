@@ -163,6 +163,11 @@ export interface Appointment {
     smsToPatient: "pending" | "sent" | "failed" | "skipped";
     emailToClinic: "pending" | "sent" | "failed" | "skipped";
   };
+  smsNotificationStatus?: "sent" | "failed" | "skipped" | "invalid_phone";
+  smsNotificationLastSentAt?: string;
+  smsNotificationLastType?: string;
+  smsNotificationError?: string;
+  smsNotificationMessagePreview?: string;
   createdBy?: string;
   language?: string;
   createdAt: any;
