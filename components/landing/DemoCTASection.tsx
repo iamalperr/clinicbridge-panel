@@ -4,6 +4,7 @@ import { useState, FormEvent } from "react";
 import { useLandingLang } from "@/lib/landing-translations";
 import { CheckCircle, ArrowRight, Loader2, AlertCircle } from "lucide-react";
 import { submitDemoRequest } from "@/lib/services/demoRequestService";
+import { useRouter } from "next/navigation";
 
 const EMPTY_FORM = {
   fullName: "",
@@ -39,6 +40,7 @@ function validate(form: FormState, lang: "tr" | "en"): string | null {
 
 export default function DemoCTASection() {
   const { t, lang } = useLandingLang();
+  const router = useRouter();
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -65,6 +67,7 @@ export default function DemoCTASection() {
       await submitDemoRequest(form);
       setSubmitState("success");
       setForm(EMPTY_FORM);
+      router.push("/thank-you");
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : "";
       console.error("[DemoForm] Submit failed:", errMsg, err);
