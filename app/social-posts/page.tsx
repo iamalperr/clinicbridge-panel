@@ -3,117 +3,117 @@ import { Bot, MessageSquare, Clock, ShieldCheck, ArrowRight, Calendar, Layout, S
 
 export default function SocialPostsPage() {
   return (
-    <div className="bg-slate-200 min-h-screen p-10 flex flex-col items-center gap-16 font-sans">
+    <div className="bg-slate-100 min-h-screen p-10 flex flex-col items-center gap-16 font-sans">
       
       {/* POST 1: Broşür Olmayan Web Sitesi - EXACT TOP-DOWN PRODUCT STYLE */}
-      <div id="post-1" className="w-[1200px] h-[1200px] shrink-0 bg-[#f8fafc] relative flex flex-col items-center pt-[100px] rounded-3xl overflow-hidden shadow-2xl box-border">
+      <div id="post-1" className="w-[1200px] h-[1200px] shrink-0 bg-[#f8fafc] relative flex flex-col items-center pt-24 rounded-3xl overflow-hidden shadow-2xl box-border">
         
         {/* TOP: Header & Subtitle */}
         <div className="flex flex-col items-center text-center px-20 z-10 w-full max-w-[1000px] shrink-0">
-          <h1 className="text-[#0f172a] text-[52px] font-[800] leading-[1.15] tracking-[-1px] mb-6">
+          <h1 className="text-slate-900 text-6xl font-extrabold leading-tight tracking-tight mb-6">
             Klinik web siteleri neden sadece <br/> broşür gibi kalmamalı?
           </h1>
-          <p className="text-[#475569] text-[24px] font-[500] leading-[1.5] max-w-[850px]">
-            Web siteniz yalnızca bilgi sunmamalı; hastayı karşılamalı, doğru yönlendirmeli ve <span className="font-[700] text-[#0f172a]">aktif bir dönüşüm kanalına</span> evrilmeli.
+          <p className="text-slate-600 text-2xl font-medium leading-relaxed max-w-[850px]">
+            Web siteniz yalnızca bilgi sunmamalı; hastayı karşılamalı, doğru yönlendirmeli ve <span className="font-bold text-slate-900">aktif bir dönüşüm kanalına</span> evrilmeli.
           </p>
         </div>
 
         {/* BOTTOM: Realistic Product UI Mockups */}
-        <div className="mt-[80px] w-full flex-1 relative flex justify-center items-start shrink-0">
+        <div className="mt-20 w-full flex-1 relative flex justify-center items-start shrink-0">
           
           {/* Main Website Mockup */}
-          <div className="w-[1000px] h-[750px] bg-white rounded-t-[24px] border border-[#e2e8f0] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] flex flex-col relative overflow-hidden box-border">
+          <div className="w-[960px] h-[700px] bg-white rounded-t-3xl border border-slate-200 shadow-2xl flex flex-col relative overflow-hidden box-border">
             
             {/* Browser Header */}
-            <div className="h-[60px] bg-[#f8fafc] border-b border-[#e2e8f0] flex items-center px-[24px] gap-[16px] shrink-0 box-border">
-              <div className="flex gap-[8px]">
-                <div className="w-[12px] h-[12px] rounded-full bg-[#cbd5e1]"></div>
-                <div className="w-[12px] h-[12px] rounded-full bg-[#cbd5e1]"></div>
-                <div className="w-[12px] h-[12px] rounded-full bg-[#cbd5e1]"></div>
+            <div className="h-16 bg-slate-50 border-b border-slate-200 flex items-center px-6 gap-4 shrink-0 box-border">
+              <div className="flex gap-2">
+                <div className="w-3 h-3 rounded-full bg-slate-300"></div>
+                <div className="w-3 h-3 rounded-full bg-slate-300"></div>
+                <div className="w-3 h-3 rounded-full bg-slate-300"></div>
               </div>
-              <div className="flex-1 max-w-[400px] bg-white border border-[#e2e8f0] h-[32px] rounded-[6px] flex items-center px-[16px] box-border">
-                <span className="text-[#94a3b8] text-[13px] font-[500] flex items-center gap-[6px]">
-                  <Globe className="w-[14px] h-[14px]"/> novadental.com
+              <div className="flex-1 max-w-sm bg-white border border-slate-200 h-8 rounded-md flex items-center px-4 box-border">
+                <span className="text-slate-400 text-sm font-medium flex items-center gap-2">
+                  <Globe className="w-4 h-4"/> novadental.com
                 </span>
               </div>
             </div>
 
             {/* Faint Website Content Background */}
-            <div className="flex-1 p-[40px] flex flex-col gap-[30px] opacity-[0.4] box-border">
-              <div className="flex justify-between items-center pb-[20px] border-b border-[#cbd5e1]">
-                <div className="w-[160px] h-[24px] bg-[#cbd5e1] rounded-[4px]"></div>
-                <div className="flex gap-[24px]">
-                  <div className="w-[60px] h-[12px] bg-[#cbd5e1] rounded-full"></div>
-                  <div className="w-[60px] h-[12px] bg-[#cbd5e1] rounded-full"></div>
-                  <div className="w-[60px] h-[12px] bg-[#cbd5e1] rounded-full"></div>
+            <div className="flex-1 p-10 flex flex-col gap-8 opacity-40 box-border pointer-events-none">
+              <div className="flex justify-between items-center pb-6 border-b border-slate-200">
+                <div className="w-40 h-6 bg-slate-200 rounded-md"></div>
+                <div className="flex gap-6">
+                  <div className="w-16 h-3 bg-slate-200 rounded-full"></div>
+                  <div className="w-16 h-3 bg-slate-200 rounded-full"></div>
+                  <div className="w-16 h-3 bg-slate-200 rounded-full"></div>
                 </div>
               </div>
-              <div className="w-full h-[240px] bg-[#e2e8f0] rounded-[16px]"></div>
-              <div className="flex gap-[20px]">
-                <div className="flex-1 h-[160px] bg-[#e2e8f0] rounded-[16px]"></div>
-                <div className="flex-1 h-[160px] bg-[#e2e8f0] rounded-[16px]"></div>
+              <div className="w-full h-56 bg-slate-100 rounded-2xl"></div>
+              <div className="flex gap-6">
+                <div className="flex-1 h-40 bg-slate-100 rounded-2xl"></div>
+                <div className="flex-1 h-40 bg-slate-100 rounded-2xl"></div>
               </div>
             </div>
 
             {/* THE AI LAYER (Realistic ClinicBridge Widget) */}
-            <div className="absolute right-[60px] bottom-0 w-[420px] bg-white rounded-t-[24px] shadow-[0_0_60px_rgba(0,0,0,0.15)] border border-[#e2e8f0] border-b-0 flex flex-col z-20 box-border" style={{ height: '620px' }}>
+            <div className="absolute right-12 bottom-0 w-[420px] bg-white rounded-t-3xl shadow-[0_0_60px_rgba(0,0,0,0.2)] border border-slate-200 border-b-0 flex flex-col z-20 box-border" style={{ height: '640px' }}>
               
               {/* Widget Header */}
-              <div className="bg-[#0f172a] p-[24px] flex items-center justify-between shrink-0 box-border">
-                <div className="flex items-center gap-[16px]">
-                  <div className="w-[48px] h-[48px] bg-[linear-gradient(135deg,#3b82f6,#1d4ed8)] rounded-full flex items-center justify-center shadow-lg shrink-0">
-                    <Sparkles className="w-[24px] h-[24px] text-white" />
+              <div className="bg-slate-900 p-5 flex items-center justify-between shrink-0 box-border">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center shadow-lg shrink-0">
+                    <Sparkles className="w-6 h-6 text-white" />
                   </div>
                   <div className="flex flex-col justify-center">
-                    <h3 className="text-white font-[700] text-[18px] leading-tight m-0">Nova Dental Asistan</h3>
-                    <p className="text-white/80 text-[13px] flex items-center gap-[6px] mt-[4px] font-[500] m-0">
-                      <span className="w-[8px] h-[8px] bg-[#10b981] rounded-full inline-block"></span>
+                    <h3 className="text-white font-bold text-lg leading-tight m-0">Nova Dental Asistan</h3>
+                    <p className="text-white/80 text-sm flex items-center gap-2 mt-1 font-medium m-0">
+                      <span className="w-2 h-2 bg-green-500 rounded-full inline-block shadow-[0_0_8px_rgba(34,197,94,0.8)]"></span>
                       Çevrimiçi
                     </p>
                   </div>
                 </div>
-                <X className="w-[24px] h-[24px] text-white/60 shrink-0" />
+                <X className="w-6 h-6 text-slate-400 shrink-0" />
               </div>
 
               {/* Chat Body */}
-              <div className="flex-1 bg-[#f8fafc] p-[24px] flex flex-col gap-[20px] overflow-hidden box-border">
+              <div className="flex-1 bg-slate-50 p-5 flex flex-col gap-5 overflow-hidden box-border">
                 
                 {/* AI Welcome Message */}
-                <div className="flex gap-[12px] shrink-0 w-full box-border">
-                  <div className="w-[32px] h-[32px] rounded-full bg-white border border-[#e2e8f0] flex items-center justify-center shrink-0 shadow-sm mt-1">
-                    <Bot className="w-[16px] h-[16px] text-[#3b82f6]" />
+                <div className="flex gap-3 shrink-0 w-full box-border items-start">
+                  <div className="w-8 h-8 rounded-full bg-white border border-slate-200 flex items-center justify-center shrink-0 shadow-sm mt-1">
+                    <Bot className="w-4 h-4 text-blue-500" />
                   </div>
-                  <div className="bg-white border border-[#e2e8f0] p-[16px] rounded-[18px] rounded-tl-[4px] text-[#0f172a] text-[15px] shadow-sm leading-[1.5] max-w-[85%] font-[500] box-border break-words">
+                  <div className="bg-white border border-slate-200 px-4 py-3 rounded-2xl rounded-tl-sm text-slate-700 text-[15px] shadow-sm leading-relaxed max-w-[85%] font-medium box-border break-words">
                     Merhaba, kliniğimize hoş geldiniz! Randevu almak veya tedaviler hakkında bilgi almak ister misiniz?
                   </div>
                 </div>
 
                 {/* Patient Question */}
-                <div className="flex gap-[12px] self-end max-w-[85%] shrink-0 box-border">
-                  <div className="bg-[#3b82f6] p-[16px] rounded-[18px] rounded-tr-[4px] text-white text-[15px] shadow-sm leading-[1.5] font-[500] box-border break-words">
+                <div className="flex gap-3 self-end max-w-[85%] shrink-0 box-border items-start">
+                  <div className="bg-blue-500 px-4 py-3 rounded-2xl rounded-tr-sm text-white text-[15px] shadow-sm leading-relaxed font-medium box-border break-words">
                     İmplant tedavisi ne kadar sürüyor?
                   </div>
                 </div>
 
                 {/* AI Response & Action */}
-                <div className="flex gap-[12px] shrink-0 w-full box-border">
-                  <div className="w-[32px] h-[32px] rounded-full bg-white border border-[#e2e8f0] flex items-center justify-center shrink-0 shadow-sm mt-1">
-                    <Bot className="w-[16px] h-[16px] text-[#3b82f6]" />
+                <div className="flex gap-3 shrink-0 w-full box-border items-start">
+                  <div className="w-8 h-8 rounded-full bg-white border border-slate-200 flex items-center justify-center shrink-0 shadow-sm mt-1">
+                    <Bot className="w-4 h-4 text-blue-500" />
                   </div>
-                  <div className="flex flex-col gap-[12px] max-w-[85%] shrink-0 box-border">
-                    <div className="bg-white border border-[#e2e8f0] p-[16px] rounded-[18px] rounded-tl-[4px] text-[#0f172a] text-[15px] shadow-sm leading-[1.5] font-[500] box-border break-words">
+                  <div className="flex flex-col gap-3 max-w-[85%] shrink-0 box-border">
+                    <div className="bg-white border border-slate-200 px-4 py-3 rounded-2xl rounded-tl-sm text-slate-700 text-[15px] shadow-sm leading-relaxed font-medium box-border break-words">
                       İmplant tedavisi genellikle 3-6 ay süren iki aşamalı bir süreçtir. Sizin durumunuzu uzman hekimimizle değerlendirmemiz en doğrusu olacaktır.
                       <br/><br/>
                       Dilerseniz hemen ücretsiz bir ön muayene planlayabilirim.
                     </div>
                     
                     {/* Interactive CTA Buttons inside chat */}
-                    <div className="flex flex-col gap-[8px] shrink-0 box-border w-full">
-                      <div className="bg-white border border-[#3b82f6] text-[#3b82f6] p-[16px] rounded-[12px] text-[14px] font-[700] shadow-sm flex items-center justify-between hover:bg-[#eff6ff] transition-colors cursor-pointer box-border h-[52px]">
-                        Hemen Randevu Al <ChevronRight className="w-[18px] h-[18px] shrink-0"/>
+                    <div className="flex flex-col gap-2 shrink-0 box-border w-full">
+                      <div className="bg-white border border-blue-500 text-blue-600 px-4 py-3 rounded-xl text-[14px] font-bold shadow-sm flex items-center justify-between box-border">
+                        Hemen Randevu Al <ChevronRight className="w-5 h-5 shrink-0"/>
                       </div>
-                      <div className="bg-white border border-[#e2e8f0] text-[#475569] p-[16px] rounded-[12px] text-[14px] font-[600] shadow-sm flex items-center justify-between hover:bg-[#f8fafc] transition-colors cursor-pointer box-border h-[52px]">
-                        WhatsApp'a Bağlan <ChevronRight className="w-[18px] h-[18px] shrink-0"/>
+                      <div className="bg-white border border-slate-200 text-slate-600 px-4 py-3 rounded-xl text-[14px] font-bold shadow-sm flex items-center justify-between box-border">
+                        WhatsApp'a Bağlan <ChevronRight className="w-5 h-5 shrink-0"/>
                       </div>
                     </div>
                   </div>
@@ -122,25 +122,25 @@ export default function SocialPostsPage() {
               </div>
 
               {/* Input Area */}
-              <div className="p-[20px] border-t border-[#e2e8f0] bg-white flex items-center gap-[12px] shrink-0 box-border h-[88px]">
-                <div className="flex-1 bg-[#f1f5f9] rounded-full h-[48px] px-[20px] flex items-center text-[#94a3b8] text-[15px] font-[500] box-border">
+              <div className="p-4 border-t border-slate-200 bg-white flex items-center gap-3 shrink-0 box-border">
+                <div className="flex-1 bg-slate-100 rounded-full h-12 px-5 flex items-center text-slate-400 text-[15px] font-medium box-border">
                   Mesajınızı yazın...
                 </div>
-                <div className="w-[48px] h-[48px] bg-[#3b82f6] rounded-full flex items-center justify-center shrink-0 shadow-md box-border">
-                  <Send className="w-[20px] h-[20px] text-white ml-[2px] shrink-0" />
+                <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center shrink-0 shadow-md box-border">
+                  <Send className="w-5 h-5 text-white ml-1 shrink-0" />
                 </div>
               </div>
 
             </div>
 
             {/* "ClinicBridge AI Katmanı" floating label to explain the context */}
-            <div className="absolute right-[520px] bottom-[260px] z-30 shrink-0">
-               <div className="bg-white px-[20px] py-[12px] rounded-full shadow-[0_10px_25px_rgba(0,0,0,0.1)] border border-[#e2e8f0] flex items-center gap-[10px] box-border">
-                 <div className="w-[10px] h-[10px] bg-[#10b981] rounded-full animate-pulse shrink-0"></div>
-                 <span className="text-[#0f172a] font-[700] text-[15px] whitespace-nowrap">Aktif Dönüşüm Katmanı</span>
+            <div className="absolute right-[460px] bottom-[260px] z-30 shrink-0">
+               <div className="bg-white px-5 py-3 rounded-full shadow-[0_10px_25px_rgba(0,0,0,0.1)] border border-slate-200 flex items-center gap-3 box-border">
+                 <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse shrink-0"></div>
+                 <span className="text-slate-900 font-bold text-[15px] whitespace-nowrap">Aktif Dönüşüm Katmanı</span>
                </div>
                {/* Line pointing to widget */}
-               <div className="absolute right-[-60px] top-[24px] w-[60px] border-t-[3px] border-dashed border-[#94a3b8]"></div>
+               <div className="absolute right-[-50px] top-[24px] w-[50px] border-t-[3px] border-dashed border-slate-300"></div>
             </div>
 
           </div>
@@ -148,9 +148,9 @@ export default function SocialPostsPage() {
         </div>
 
         {/* Minimal Footer Logo */}
-        <div className="absolute bottom-[30px] left-1/2 -translate-x-1/2 flex items-center gap-[8px] opacity-[0.6] shrink-0">
-          <Bot className="w-[20px] h-[20px] text-[#0f172a]" />
-          <span className="text-[#0f172a] font-[700] text-[16px] tracking-tight">ClinicBridge AI</span>
+        <div className="absolute bottom-[40px] left-1/2 -translate-x-1/2 flex items-center gap-2 opacity-50 shrink-0">
+          <Bot className="w-6 h-6 text-slate-900" />
+          <span className="text-slate-900 font-bold text-lg tracking-tight">ClinicBridge AI</span>
         </div>
 
       </div>
