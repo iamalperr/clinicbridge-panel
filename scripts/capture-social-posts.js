@@ -24,11 +24,7 @@ async function capture() {
   }
 
   const posts = [
-    { id: 'post-1', name: 'clinicbridge-post-01-brosur-olmayan-web-sitesi.png' },
-    { id: 'post-2', name: 'clinicbridge-post-02-ilk-30-saniye.png' },
-    { id: 'post-3', name: 'clinicbridge-post-03-whatsapp-yonlendirme.png' },
-    { id: 'post-4', name: 'clinicbridge-post-04-ekip-yuku-azaltma.png' },
-    { id: 'post-5', name: 'clinicbridge-post-05-dijital-temas-noktalari.png' }
+    { id: 'post-1', name: 'clinicbridge-post-01-brosur-olmayan-web-sitesi.png' }
   ];
 
   for (const post of posts) {
