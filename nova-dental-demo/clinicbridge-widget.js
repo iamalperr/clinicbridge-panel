@@ -28,33 +28,29 @@
 
   const QUICK = {
     en: [
-      { label: '📅 Book an appointment', msg: 'book' },
-      { label: '🦷 Which treatment suits me?', msg: 'treatment' },
-      { label: '🔩 Implant information', msg: 'implant' },
-      { label: '💬 Contact on WhatsApp', msg: 'whatsapp' },
+      { label: '📅 Create appointment request', msg: 'book' },
+      { label: '🦷 Learn about treatments',     msg: 'treatment' },
+      { label: '💬 Describe my concern',        msg: 'concern' },
     ],
     tr: [
-      { label: '📅 Randevu almak istiyorum', msg: 'book' },
-      { label: '🦷 Hangi tedavi uygun?', msg: 'treatment' },
-      { label: '🔩 İmplant bilgisi', msg: 'implant' },
-      { label: '💬 WhatsApp ile iletişim', msg: 'whatsapp' },
+      { label: '📅 Randevu talebi oluştur',           msg: 'book' },
+      { label: '🦷 Tedaviler hakkında bilgi al',       msg: 'treatment' },
+      { label: '💬 Şikayetimi anlatmak istiyorum',    msg: 'concern' },
     ],
   };
 
   const RESPONSES = {
     en: {
-      book: "Of course! You can book via our <a href='#contact' style='color:#3B82F6;font-weight:600'>appointment form</a> or call <strong>+1 (800) 668-2536</strong>. We'll confirm within 24 hours. 📅",
-      treatment: "The right treatment depends on your needs. A <strong>Dental Check-up</strong> is the ideal starting point. Interested in aesthetics? A <strong>Smile Design</strong> consultation with Dr. Vasquez is perfect. Shall I help schedule one? 😊",
-      implant: "Implants at Nova Dental are performed by <strong>Dr. Marcus Reid</strong>, our specialist with 18+ years experience. It's a permanent, natural-looking solution done under local anesthesia in 1–2 visits. Would you like a free consultation? 🦷",
-      whatsapp: "Reach our team on WhatsApp: <a href='https://wa.me/18006682536' target='_blank' style='color:#3B82F6;font-weight:600'>+1 (800) 668-2536</a> 💬<br>Available Mon–Sat, 8 AM – 7 PM.",
-      default: ["Thank you! I recommend booking a <a href='#contact' style='color:#3B82F6;font-weight:600'>free consultation</a> for personalized guidance. 😊", "Great question! Call us at <strong>+1 (800) 668-2536</strong> or email <strong>hello@novadentalclinic.com</strong> — we'd love to help.", "Happy to help! Speaking with our patient coordinators directly would give you the most accurate answer. Shall I connect you?"],
+      book:      "Great! Let's get your appointment started. Could you tell me your full name and phone number so we can set it up? 📅",
+      treatment: "Of course! We offer a range of treatments — from routine check-ups and teeth whitening to implants and smile design. Which area are you most interested in? 🦷",
+      concern:   "I'm here to help. Please describe your concern or symptom in as much detail as you'd like — I'll do my best to guide you. 💬",
+      default:   ["Happy to help! Could you share a bit more detail so I can assist you better? 😊", "That's a great question — let me look into that for you.", "I want to make sure I give you the right guidance. Could you tell me a bit more?"],
     },
     tr: {
-      book: "Tabii ki! <a href='#contact' style='color:#3B82F6;font-weight:600'>Randevu formumuzu</a> doldurabilir veya <strong>+1 (800) 668-2536</strong> numaralı hattı arayabilirsiniz. 24 saat içinde dönüş yapılır. 📅",
-      treatment: "Doğru tedavi kişisel ihtiyaçlarınıza bağlıdır. <strong>Diş Kontrolü</strong> harika bir başlangıç noktasıdır. Estetikle ilgileniyorsanız <strong>Gülüş Tasarımı</strong> danışmanlığı idealdir. Randevu ayarlamamı ister misiniz? 😊",
-      implant: "Nova Diş'te implant tedavisi, 18+ yıl deneyimli uzmanımız <strong>Dr. Marcus Reid</strong> tarafından yapılır. Lokal anestezi altında 1-2 seansta uygulanan kalıcı bir çözümdür. Ücretsiz konsültasyon ister misiniz? 🦷",
-      whatsapp: "Ekibimize WhatsApp üzerinden ulaşın: <a href='https://wa.me/18006682536' target='_blank' style='color:#3B82F6;font-weight:600'>+1 (800) 668-2536</a> 💬<br>Pzt–Cmt, 08:00–19:00.",
-      default: ["Mesajınız için teşekkürler! <a href='#contact' style='color:#3B82F6;font-weight:600'>Ücretsiz konsültasyon</a> randevusu almanızı öneririm. 😊", "Hasta koordinatörlerimiz size yardımcı olmaktan mutluluk duyar. <strong>+1 (800) 668-2536</strong> numaralı hattı arayabilirsiniz.", "Yardımcı olmaktan memnuniyet duyarım! Uzmanlarımızla görüşmenizi öneririm."],
+      book:      "Harika! Randevunuzu oluşturmaya başlayalım. Ad ve soyadınızı ile telefon numaranızı paylaşabilir misiniz? 📅",
+      treatment: "Tabii! Rutin diş kontrolünden implanta, diş beyazlatmadan gülüş tasarımına kadar geniş bir tedavi yelpazesi sunuyoruz. Hangi konuyla ilgileniyorsunuz? 🦷",
+      concern:   "Dinliyorum. Şikayetinizi veya belirtinizi dilediğiniz gibi anlatabilirsiniz — size en doğru yönlendirmeyi yapmaya çalışacağım. 💬",
+      default:   ["Yardımcı olmaktan memnuniyet duyarım! Biraz daha detay paylaşabilir misiniz? 😊", "Güzel bir soru — hemen bakıyorum.", "Size doğru bilgiyi verebilmek için biraz daha anlatır mısınız?"],
     },
   };
 
@@ -651,6 +647,39 @@
       if (intentDetected) {
         console.log('[ClinicBridge Widget] Action: showHandoff → short-circuiting API call');
         showHandoff(text);
+        return;
+      }
+
+      /* ── EMERGENCY DETECTION ── */
+      const EMERGENCY_TR = [
+        'çok şiddetli ağrı', 'dayanılmaz ağrı', 'kanıyor', 'kan geliyor',
+        'nefes alamıyorum', 'nefes darlığı', 'bayılıyorum', 'bayıldım',
+        'çene kilitlendi', 'yüzüm şişti', 'şiddetli şişlik',
+        'acil', 'ambulans', '112', 'çok kötüyüm', 'hastaneye',
+        'diş düştü', 'diş kırıldı çok', 'ateşim var şişlik',
+      ];
+      const EMERGENCY_EN = [
+        'severe pain', 'unbearable pain', 'bleeding heavily', 'can\'t breathe',
+        'facial swelling', 'jaw locked', 'passed out', 'fainted',
+        'emergency', 'ambulance', 'tooth fell out', 'very bad swelling',
+        'can\'t open mouth', 'swelling spreading',
+      ];
+      function isEmergencyIntent(t) {
+        const lower = t.toLowerCase();
+        return EMERGENCY_TR.some(k => lower.includes(k)) || EMERGENCY_EN.some(k => lower.includes(k));
+      }
+
+      if (isEmergencyIntent(text)) {
+        const msgLang = detectLang(text);
+        const name = clinicCtx.clinicName || 'Nova Dental Clinic';
+        console.log('[ClinicBridge Widget] Intent: 🚨 EMERGENCY_DETECTED');
+        const emergencyMsg = msgLang === 'tr'
+          ? `Bu durum acil değerlendirme gerektirebilir. Lütfen vakit kaybetmeden kliniğinizle veya en yakın sağlık kuruluşuyla iletişime geçin. Dilerseniz sizi WhatsApp üzerinden ${name} ekibine yönlendirebilirim.`
+          : `This may require urgent evaluation. Please contact the clinic or the nearest healthcare provider as soon as possible. If you wish, I can direct you to the ${name} team via WhatsApp.`;
+        appendMsg(emergencyMsg, false, msgs, false);
+        conversationHistory.push({ role: 'assistant', content: emergencyMsg });
+        appendLiveSupportButtons(clinicCtx.whatsapp, clinicCtx.telegram, { ...clinicCtx, lastUserMsg: text, lang: msgLang });
+        liveSupportShown = true;
         return;
       }
 
