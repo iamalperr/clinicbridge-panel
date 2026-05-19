@@ -707,6 +707,69 @@ export async function POST(req: Request) {
       }
     }
 
+    /* ── PRE-FLIGHT: detect live support intent BEFORE calling OpenAI ────── */
+    const LIVE_SUPPORT_KEYWORDS = [
+      // Turkish — explicit
+      "canlı destek", "canli destek",
+      "canlı birine", "canli birine",
+      "canlı biriyle", "canli biriyle",
+      "insana bağla", "insana bagla",
+      "insan ile görüş", "insan ile goruş",
+      "gerçek kişi", "gercek kisi",
+      "biriyle görüşmek", "biriyle gorusmek",
+      "klinikle iletişime", "klinikle iletisime",
+      "sizinle görüşmek", "sizinle gorusmek",
+      "ekiple görüşmek", "ekiple gorusmek",
+      "yetkili", "müşteri temsilci", "musteri temsilci",
+      "operatöre bağla", "operatore bagla",
+      // Turkish — channel names
+      "whatsapp", "telegram",
+      // English
+      "live support", "live chat", "real person", "human agent",
+      "talk to someone", "speak to someone", "connect me",
+      "contact clinic", "reach clinic",
+    ];
+    const msgLowerPre = message.toLowerCase();
+    const userWantsLive = LIVE_SUPPORT_KEYWORDS.some(k => msgLowerPre.includes(k));
+
+    if (userWantsLive) {
+      debugLog.push("LIVE_SUPPORT_SHORT_CIRCUIT");
+
+      // Detect conversation language from the message
+      const isTurkish = /[ğüşıöçĞÜŞİÖÇ]/.test(message)
+        || /\b(istiyorum|misin|mısın|mısınız|lütfen|teşekkür|merhaba|tamam|evet|hayır|bağla|destek|görüşmek|iletişim)\b/i.test(message);
+      const lang = isTurkish ? "tr" : (clinicLanguage === "tr" ? "tr" : "en");
+
+      const handoffMsg = lang === "tr"
+        ? `Sizi canlı destek ekibimize yönlendirebilirim. Aşağıdaki kanallardan biriyle ${clinicName} ekibine ulaşabilirsiniz.`
+        : `I can direct you to our live support team. You can contact ${clinicName} through one of the channels below.`;
+
+      const handoffPayload: any = {
+        reply: handoffMsg,
+        conversationId: convId,
+        liveSupportRequired: true,
+        clinicName,
+        detectedLanguage: lang,
+      };
+      if (clinicWhatsapp) handoffPayload.whatsappNumber = clinicWhatsapp;
+      if (clinicTelegram) handoffPayload.telegramLink   = clinicTelegram;
+
+      debugLog.push(`liveSupport=short-circuit wa=${!!clinicWhatsapp} tg=${!!clinicTelegram} lang=${lang}`);
+      console.log("[widget-chat]", debugLog.join(" | "));
+
+      // Log the handoff event
+      await logConversation({
+        clinicId,
+        convId,
+        userMessage: message,
+        aiReply: handoffMsg,
+        historyLength: history.length,
+        isLiveSupport: true,
+      });
+
+      return NextResponse.json(handoffPayload, { headers: CORS });
+    }
+
     /* ── Normal AI call ───────────────────────────────────────────────── */
     const customPrompt = promptSettings?.systemPrompt ?? "";
     const today = new Date().toLocaleDateString("tr-TR", {
@@ -738,10 +801,6 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
    Onaylıyor musunuz? (Evet/Hayır)"
 4. Kullanıcı "Evet" dediğinde sistem otomatik randevu oluşturacak.
 
-CANLI DESTEK AKIŞI:
-Eğer kullanıcı canlı destek, gerçek kişi, insan, whatsapp veya telegram talep ederse:
-- Kullanıcıya kısa ve nazik bir mesaj yaz, ardından SADECe "LIVE_SUPPORT_NEEDED" yaz (başka hiçbir şey ekleme).
-
 GENEL KURALLAR:
 - Kesin randevu onayı veya kesin müsaitlik garantisi VERME. (Örn: Yanlış: "Randevunuz kesinleşti." Doğru: "Randevu talebiniz kliniğe iletilecek.")
 - Yanıtların kısa (max 4 cümle), nazik olsun.
@@ -765,52 +824,13 @@ GENEL KURALLAR:
       ],
     });
 
-    const rawReply = completion.choices[0]?.message?.content?.trim()
+    const reply = completion.choices[0]?.message?.content?.trim()
       ?? "Üzgünüm, şu an yanıt üretemiyorum.";
-
-    /* ── Detect LIVE_SUPPORT_NEEDED sentinel from AI ─────────────────────── */
-    const LIVE_SUPPORT_SENTINEL = "LIVE_SUPPORT_NEEDED";
-    const liveSupportTriggered  = rawReply.includes(LIVE_SUPPORT_SENTINEL);
-
-    // Also detect it directly from user message (keywords)
-    const LIVE_SUPPORT_KEYWORDS = [
-      "canlı destek", "canli destek", "insan", "gerçek kişi", "gercek kisi",
-      "insana bağla", "insana bagla", "whatsapp", "telegram",
-      "live support", "human", "agent", "real person",
-    ];
-    const userWantsLive = LIVE_SUPPORT_KEYWORDS.some(k => message.toLowerCase().includes(k));
-
-    // Strip sentinel from the raw reply text
-    const reply = rawReply.replace(LIVE_SUPPORT_SENTINEL, "").trim();
 
     debugLog.push(`OK reply="${reply.slice(0, 60)}" ms=${Date.now() - startTime}`);
     console.log("[widget-chat]", debugLog.join(" | "));
 
     const responsePayload: any = { reply, conversationId: convId };
-
-    /* ── Live-support payload: include contact channels ──────────────────── */
-    const isLiveSupport = liveSupportTriggered || userWantsLive;
-    if (isLiveSupport) {
-      // Build the displayed message (keep the AI's preamble before the sentinel,
-      // or fall back to the default localized message).
-      const isEnglish = /\b(hello|help|please|support|need|can|want|yes|no)\b/i.test(message)
-        || (history.length > 0 && /\b(english|appointment|date|time|name|phone)\b/i.test((history[history.length - 1]?.content ?? "")));
-
-      const liveMsg = isEnglish
-        ? "To guide you more accurately, I recommend contacting our live support team. You can reach us via WhatsApp or Telegram, or create an appointment request."
-        : "Bu konuda sizi daha doğru yönlendirebilmemiz için canlı destek ekibimizle iletişime geçmenizi öneriyorum. Dilerseniz WhatsApp veya Telegram üzerinden bizimle iletişime geçebilir ya da randevu talebi oluşturabilirsiniz.";
-
-      // Override/append the live-support message if the AI reply doesn't already contain useful text
-      responsePayload.reply = (reply && !liveSupportTriggered) ? reply : liveMsg;
-
-      responsePayload.liveSupportRequired = true;
-      if (clinicWhatsapp) responsePayload.whatsappNumber = clinicWhatsapp;
-      if (clinicTelegram) responsePayload.telegramLink   = clinicTelegram;
-      responsePayload.clinicName = clinicName;
-      responsePayload.detectedLanguage = clinicLanguage;
-
-      debugLog.push(`liveSupport=true wa=${!!clinicWhatsapp} tg=${!!clinicTelegram}`);
-    }
 
     // If AI response contains a confirmation summary, extract and return pendingAppointmentData
     // so the widget can send it back on confirmation — more reliable than history parsing
@@ -853,7 +873,6 @@ GENEL KURALLAR:
       aiReply: responsePayload.reply,
       historyLength: history.length,
       apptData: isConfirmSummary ? responsePayload.pendingAppointmentData : null,
-      isLiveSupport,
     });
 
     return NextResponse.json(responsePayload, { headers: CORS });
