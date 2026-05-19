@@ -407,6 +407,13 @@
         if (data.whatsappNumber) clinicCtx.whatsapp  = data.whatsappNumber;
         if (data.telegramLink)  clinicCtx.telegram   = data.telegramLink;
         if (data.clinicLanguage && !cfg.lang) clinicCtx.lang = data.clinicLanguage;
+
+        console.group('[ClinicBridge Widget] Clinic config loaded');
+        console.log('Clinic:', clinicCtx.clinicName);
+        console.log('WhatsApp:', clinicCtx.whatsapp || '(not set)');
+        console.log('Telegram:', clinicCtx.telegram || '(not set)');
+        console.log('Language:', clinicCtx.lang);
+        console.groupEnd();
       })
       .catch(() => {});
 
@@ -502,7 +509,12 @@
       quickEl.style.display = 'none';
 
       /* ── CLIENT-SIDE LIVE SUPPORT SHORT-CIRCUIT ── */
-      if (isLiveSupportIntent(text)) {
+      const intentDetected = isLiveSupportIntent(text);
+      console.log(`[ClinicBridge Widget] Message: "${text.slice(0,60)}"`);
+      console.log(`[ClinicBridge Widget] Intent: ${intentDetected ? '🚨 LIVE_SUPPORT_DETECTED' : '✅ normal'} | Lang: ${detectLang(text)}`);
+
+      if (intentDetected) {
+        console.log('[ClinicBridge Widget] Action: showHandoff → short-circuiting API call');
         showHandoff(text);
         return;
       }
@@ -512,6 +524,14 @@
       try {
         const data = await callApi(text);
         removeTyping();
+
+        console.log('[ClinicBridge Widget] API response:', {
+          conversationId: data.conversationId,
+          liveSupportRequired: data.liveSupportRequired,
+          hasWhatsapp: !!data.whatsappNumber,
+          hasTelegram: !!data.telegramLink,
+          replyPreview: (data.reply || '').slice(0,60),
+        });
 
         if (data.conversationId) { currentConvId = data.conversationId; clinicCtx.convId = data.conversationId; }
         if (data.pendingAppointmentData) pendingApptData = data.pendingAppointmentData;
@@ -523,6 +543,7 @@
 
         // If API also signals live support (e.g. from AI reply), show handoff
         if (data.liveSupportRequired && !liveSupportShown) {
+          console.log('[ClinicBridge Widget] Action: API-triggered live support handoff');
           const replyText = data.reply || '';
           if (replyText) appendMsg(replyText, false, msgs, false);
           appendLiveSupportButtons(

@@ -792,18 +792,22 @@ export async function POST(req: Request) {
     }
 
     /* ── Normal AI call ───────────────────────────────────────────────── */
-    const customPrompt = promptSettings?.systemPrompt ?? "";
+    const customPrompt  = promptSettings?.systemPrompt ?? "";
+    const aiSkills      = (promptSettings?.aiSkills    ?? {}) as Record<string, boolean>;
+    const guardrails    = (promptSettings?.guardrails   ?? {}) as Record<string, { enabled: boolean; text: string }>;
     const today = new Date().toLocaleDateString("tr-TR", {
       weekday: "long", year: "numeric", month: "long", day: "numeric",
     });
 
-    const systemPrompt = [
-      `Sen ${clinicName}'nin dijital hasta asistanısın. Bugünün tarihi: ${today}.`,
-      customPrompt ? `\nKLİNİĞE ÖZEL TALİMATLAR:\n${customPrompt}` : "",
-      knowledgeContext
-        ? `\nKLİNİK BİLGİ HAVUZU:\n\n${knowledgeContext}`
-        : "\n(Bu klinik için henüz eğitim verisi eklenmemiş.)",
-      `\nRANDEVU AKIŞI:
+    /* Helper: skill is enabled when aiSkills entry is true OR not set (default on) */
+    const skillOn = (id: string) => aiSkills[id] !== false;
+
+    /* ── Capability-driven instruction blocks ── */
+    const skillBlocks: string[] = [];
+
+    // create_appointment_request — always injected if enabled (core UX)
+    if (skillOn("create_appointment_request")) {
+      skillBlocks.push(`\nRANDEVU AKIŞI:
 Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın diş beyazlatma", "Doktora görünmek istiyorum", vb.):
 1. Şu bilgileri adım adım, tek tek ve DOĞAL bir dille topla:
    - Ad ve Soyad
@@ -811,7 +815,7 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
    - Tedavi/İşlem Türü
    - Tercih edilen Tarih
    - Tercih edilen Saat
-2. Eğer bir bilgi eksikse sadece o bilgiyi sor (Örn: "Randevunuzu oluşturabilmem için adınızı ve soyadınızı paylaşabilir misiniz?").
+2. Eğer bir bilgi eksikse sadece o bilgiyi sor.
 3. Tüm bilgiler tamam olunca MUTLAKA şu formatta özet ve onay iste:
    "Harika! Şu bilgilerle randevu talebi oluşturayım mı?
    Ad: [isim]
@@ -820,15 +824,70 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
    Tarih: [tarih]
    Saat: [saat]
    Onaylıyor musunuz? (Evet/Hayır)"
-4. Kullanıcı "Evet" dediğinde sistem otomatik randevu oluşturacak.
+4. Kullanıcı "Evet" dediğinde sistem otomatik randevu oluşturacak.`);
+    } else {
+      skillBlocks.push("\nNot: Randevu oluşturma özelliği bu klinik için şu an devre dışıdır. Randevu talepleri için kullanıcıyı kliniği doğrudan aramaya yönlendir.");
+    }
 
-GENEL KURALLAR:
-- Kesin randevu onayı veya kesin müsaitlik garantisi VERME. (Örn: Yanlış: "Randevunuz kesinleşti." Doğru: "Randevu talebiniz kliniğe iletilecek.")
+    // send_patient_satisfaction_survey
+    if (skillOn("send_patient_satisfaction_survey")) {
+      skillBlocks.push("\nHASTA MEMNUNİYET ANKETİ: Randevu veya AI görüşmesi sonrasında uygun bir noktada kısa bir memnuniyet sorusu sor (örn: 'Görüşmemizden memnun kaldınız mı? 1-5 arası puan verebilir misiniz?'). Tıbbi sorular sırasında sorma.");
+    }
+
+    // collect_appointment_feedback
+    if (skillOn("collect_appointment_feedback")) {
+      skillBlocks.push("\nRANDEVU GERİ BİLDİRİMİ: Kullanıcı geçmiş randevusundan bahsederse deneyimi, doktor iletişimini ve hizmet kalitesini sorabilirsin.");
+    }
+
+    // follow_up_treatment_interest
+    if (skillOn("follow_up_treatment_interest")) {
+      skillBlocks.push("\nTEDAVİ İLGİSİ TAKİBİ: Kullanıcı bir tedaviye ilgi gösterip randevu almadan konuyu değiştirirse nazikçe hatırlat: 'Bu tedavi hakkında size daha fazla bilgi vermemi veya randevu ayarlamamı ister misiniz?'");
+    }
+
+    // clinic_policy_lookup
+    if (skillOn("clinic_policy_lookup")) {
+      skillBlocks.push("\nKLİNİK POLİTİKASI: Çalışma saatleri, iptal politikası, fiyatlandırma ve randevu kuralları hakkındaki sorularda önce bilgi havuzuna bak. Bulamazsan kliniği doğrudan aramalarını öner.");
+    }
+
+    // emergency_guidance — always active regardless of toggle
+    skillBlocks.push("\nACİL DURUM: Hasta acil semptomlar tarif ederse (şiddetli ağrı, kanama, nefes darlığı vb.) TEŞHİS KOYMA. Doğrudan kliniği veya 112'yi aramasını söyle.");
+
+    // knowledge_lookup — always active
+    if (knowledgeContext) {
+      skillBlocks.push(`\nKLİNİK BİLGİ HAVUZU:\n\n${knowledgeContext}`);
+    } else {
+      skillBlocks.push("\n(Bu klinik için henüz eğitim verisi eklenmemiş.)");
+    }
+
+    /* ── Guardrail blocks ── */
+    const guardrailBlocks: string[] = [];
+    if (guardrails?.noDiagnosis?.enabled !== false) {
+      guardrailBlocks.push("- Kesinlikle tıbbi teşhis veya tedavi tavsiyesi verme.");
+    }
+    if (guardrails?.noAssumptions?.enabled !== false) {
+      guardrailBlocks.push("- Hasta durumu hakkında net bilgi olmadan varsayımda bulunma.");
+    }
+    if (guardrails?.dataPrivacy?.enabled !== false) {
+      guardrailBlocks.push("- Kişisel veya hassas sağlık verilerini paylaşma.");
+    }
+
+    const systemPrompt = [
+      `Sen ${clinicName}'nin dijital hasta asistanısın. Bugünün tarihi: ${today}.`,
+      customPrompt ? `\nKLİNİĞE ÖZEL TALİMATLAR:\n${customPrompt}` : "",
+      ...skillBlocks,
+      guardrailBlocks.length > 0 ? `\nKESİN KURALLAR:\n${guardrailBlocks.join("\n")}` : "",
+      `\nGENEL KURALLAR:
+- Kesin randevu onayı veya kesin müsaitlik garantisi VERME.
 - Yanıtların kısa (max 4 cümle), nazik olsun.
 - Türkçe sorulara Türkçe, İngilizce sorulara İngilizce yanıt ver.`,
     ].join("");
 
     debugLog.push("calling OpenAI...");
+    console.log("[widget-chat] capabilities:", {
+      skills: Object.fromEntries(Object.entries(aiSkills).map(([k,v]) => [k, v ? "ON" : "OFF"])),
+      guardrails: Object.fromEntries(Object.entries(guardrails).map(([k,v]: any) => [k, v?.enabled ? "ON" : "OFF"])),
+      skillBlockCount: skillBlocks.length,
+    });
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const completion = await openai.chat.completions.create({

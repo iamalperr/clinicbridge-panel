@@ -124,6 +124,8 @@ export interface PromptSettings {
     emergencyRouting: { enabled: boolean; text: string };
     dataPrivacy: { enabled: boolean; text: string };
   };
+  /** Per-skill enabled/disabled state — stored in Firestore, read by chat API */
+  aiSkills?: Record<string, boolean>;
   updatedAt?: any;
 }
 
