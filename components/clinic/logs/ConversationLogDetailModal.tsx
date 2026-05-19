@@ -145,39 +145,49 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
               const isSystem = msg.sender === "system";
 
               if (isSystem) {
-                const isWhatsAppAction = msg.content.includes("WhatsApp");
-                const isTelegramAction = msg.content.includes("Telegram");
+                const isWhatsAppAction  = msg.content.includes("WhatsApp");
+                const isTelegramAction  = msg.content.includes("Telegram");
+                const isSurveyDisplayed = msg.content.includes("Memnuniyet Anketi Gösterildi");
+                const isSurveySubmitted = msg.content.includes("Memnuniyet Anketi Yanıtlandı");
                 const isLiveSupportGeneric =
-                  !isWhatsAppAction && !isTelegramAction &&
+                  !isWhatsAppAction && !isTelegramAction && !isSurveyDisplayed && !isSurveySubmitted &&
                   (msg.content.includes("Canlı Destek") ||
                    msg.content.includes("Yönlendirme") ||
                    msg.content.includes("Yönlendirildi"));
 
-                const badgeColor = isWhatsAppAction ? "#25D366"
-                  : isTelegramAction ? "#26A5E4"
+                const badgeColor = isWhatsAppAction  ? "#25D366"
+                  : isTelegramAction  ? "#26A5E4"
+                  : isSurveySubmitted ? "#F59E0B"
+                  : isSurveyDisplayed ? "#D97706"
                   : isLiveSupportGeneric ? "#10b981"
                   : UI_COLORS.textMuted;
 
-                const badgeBg = isWhatsAppAction ? "rgba(37,211,102,0.08)"
-                  : isTelegramAction ? "rgba(38,165,228,0.08)"
+                const badgeBg = isWhatsAppAction  ? "rgba(37,211,102,0.08)"
+                  : isTelegramAction  ? "rgba(38,165,228,0.08)"
+                  : isSurveySubmitted ? "rgba(245,158,11,0.1)"
+                  : isSurveyDisplayed ? "rgba(217,119,6,0.08)"
                   : isLiveSupportGeneric ? "rgba(16,185,129,0.08)"
                   : UI_COLORS.bgCard;
 
-                const badgeBorder = isWhatsAppAction ? "rgba(37,211,102,0.25)"
-                  : isTelegramAction ? "rgba(38,165,228,0.25)"
+                const badgeBorder = isWhatsAppAction  ? "rgba(37,211,102,0.25)"
+                  : isTelegramAction  ? "rgba(38,165,228,0.25)"
+                  : isSurveySubmitted ? "rgba(245,158,11,0.35)"
+                  : isSurveyDisplayed ? "rgba(217,119,6,0.25)"
                   : isLiveSupportGeneric ? "rgba(16,185,129,0.25)"
                   : UI_COLORS.border;
 
-                const icon = isWhatsAppAction ? "📱"
-                  : isTelegramAction ? "✈️"
+                const icon = isWhatsAppAction  ? "📱"
+                  : isTelegramAction  ? "✈️"
+                  : isSurveySubmitted ? "⭐"
+                  : isSurveyDisplayed ? "📋"
                   : isLiveSupportGeneric ? "📡"
                   : "⚙️";
 
                 return (
                   <div key={msg.id} style={{ textAlign: "center", margin: "8px 0" }}>
-                    <span style={{ 
-                      fontSize: 11, 
-                      fontWeight: 600, 
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 600,
                       color: badgeColor,
                       background: badgeBg,
                       padding: "4px 12px",
@@ -192,8 +202,6 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
                   </div>
                 );
               }
-
-
               return (
                 <div key={msg.id} style={{ 
                   display: "flex", 

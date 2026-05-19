@@ -546,21 +546,15 @@ export async function POST(req: Request) {
           const logRef = adminDb.collection("clinics").doc(clinicId).collection("conversationLogs").doc(conversationId);
 
           if (_systemAction.type === "liveSupportHandoffDisplayed") {
-            // Log that handoff was shown + set conversation status
             await logRef.set({
-              status: "liveSupport",
-              updatedAt: now,
-              clinicId,
+              status: "liveSupport", updatedAt: now, clinicId,
               lastMessagePreview: message?.slice(0, 100) ?? "",
             }, { merge: true });
             const sysRef = logRef.collection("messages").doc(`msg_${Date.now()}_sys_handoff`);
             await sysRef.set({
-              sender: "system",
-              content: "Canlı Destek Yönlendirmesi Gösterildi",
+              sender: "system", content: "Canlı Destek Yönlendirmesi Gösterildi",
               action: "live_support_handoff_displayed",
-              createdAt: now,
-              wasAnswered: true,
-              needsTraining: false,
+              createdAt: now, wasAnswered: true, needsTraining: false,
             });
             console.log(`[handoff] Logged handoff displayed convId=${conversationId}`);
 
@@ -570,16 +564,38 @@ export async function POST(req: Request) {
             const label   = isWhatsapp ? "WhatsApp'a Yönlendirildi" : "Telegram'a Yönlendirildi";
             const sysRef  = logRef.collection("messages").doc(`msg_${Date.now()}_sys_click`);
             await sysRef.set({
-              sender: "system",
-              content: label,
-              action,
-              channel: _systemAction.channel,
-              createdAt: now,
-              wasAnswered: true,
-              needsTraining: false,
+              sender: "system", content: label, action, channel: _systemAction.channel,
+              createdAt: now, wasAnswered: true, needsTraining: false,
             });
             await logRef.set({ lastRedirectAction: action, lastRedirectAt: now }, { merge: true });
             console.log(`[channel-click] Logged: ${label} convId=${conversationId}`);
+
+          } else if (_systemAction.type === "satisfaction_survey_displayed") {
+            await logRef.set({
+              surveyDisplayed: true, surveyDisplayedAt: now, updatedAt: now, clinicId,
+            }, { merge: true });
+            const sysRef = logRef.collection("messages").doc(`msg_${Date.now()}_sys_survey`);
+            await sysRef.set({
+              sender: "system", content: "Memnuniyet Anketi Gösterildi",
+              action: "satisfaction_survey_displayed",
+              createdAt: now, wasAnswered: true, needsTraining: false,
+            });
+            console.log(`[survey] Displayed convId=${conversationId}`);
+
+          } else if (_systemAction.type === "satisfaction_survey_submitted") {
+            const rating = typeof _systemAction.rating === "number" ? _systemAction.rating : 0;
+            await logRef.set({
+              surveySubmitted: true, surveyRating: rating, surveySubmittedAt: now, updatedAt: now,
+            }, { merge: true });
+            const sysRef = logRef.collection("messages").doc(`msg_${Date.now()}_sys_rating`);
+            await sysRef.set({
+              sender: "system",
+              content: `Memnuniyet Anketi Yanıtlandı — ${rating}/5 ⭐`,
+              action: "satisfaction_survey_submitted",
+              rating,
+              createdAt: now, wasAnswered: true, needsTraining: false,
+            });
+            console.log(`[survey] Submitted rating=${rating} convId=${conversationId}`);
           }
         } catch (e: any) {
           console.warn("[system-action] Log error:", e.message);

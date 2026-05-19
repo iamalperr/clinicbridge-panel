@@ -46,28 +46,41 @@ export async function GET(req: Request) {
   let whatsappNumber  = "";
   let telegramLink    = "";
   let clinicLanguage  = "tr";
+  let aiSkills: Record<string, boolean> = {};
 
   try {
     const adminDb = getAdminDb();
     const clientDb = adminDb ? null : getClientDb();
 
     if (adminDb) {
-      const snap = await adminDb.collection("clinics").doc(clinicId).get();
-      if (snap.exists) {
-        const d = snap.data()!;
+      const [clinicSnap, promptSnap] = await Promise.all([
+        adminDb.collection("clinics").doc(clinicId).get(),
+        adminDb.collection("promptSettings").doc(clinicId).get(),
+      ]);
+      if (clinicSnap.exists) {
+        const d = clinicSnap.data()!;
         clinicName     = d.name             ?? "";
         whatsappNumber = d.whatsappNumber   ?? "";
         telegramLink   = d.telegramUsername ?? "";
         clinicLanguage = d.language         ?? "tr";
       }
+      if (promptSnap.exists) {
+        aiSkills = promptSnap.data()?.aiSkills ?? {};
+      }
     } else if (clientDb) {
-      const snap = await getDoc(doc(clientDb, "clinics", clinicId));
-      if (snap.exists()) {
-        const d = snap.data()!;
+      const [clinicSnap, promptSnap] = await Promise.all([
+        getDoc(doc(clientDb, "clinics", clinicId)),
+        getDoc(doc(clientDb, "promptSettings", clinicId)),
+      ]);
+      if (clinicSnap.exists()) {
+        const d = clinicSnap.data()!;
         clinicName     = d.name             ?? "";
         whatsappNumber = d.whatsappNumber   ?? "";
         telegramLink   = d.telegramUsername ?? "";
         clinicLanguage = d.language         ?? "tr";
+      }
+      if (promptSnap.exists()) {
+        aiSkills = promptSnap.data()?.aiSkills ?? {};
       }
     }
   } catch (err: any) {
@@ -75,7 +88,7 @@ export async function GET(req: Request) {
   }
 
   return NextResponse.json(
-    { clinicName, whatsappNumber, telegramLink, clinicLanguage },
+    { clinicName, whatsappNumber, telegramLink, clinicLanguage, aiSkills },
     { headers: CORS }
   );
 }

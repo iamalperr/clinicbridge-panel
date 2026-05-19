@@ -386,8 +386,9 @@
     let currentConvId = '';
     let pendingApptData = null;
     let liveSupportShown = false;
+    let surveyShown = false;
 
-    /** Shared context for live-support buttons */
+    /** Shared context — updated on every API response and prefetch */
     const clinicCtx = {
       clinicName:  '',
       patientName: '',
@@ -396,6 +397,7 @@
       convId:      '',
       whatsapp:    '',
       telegram:    '',
+      aiSkills:    /** @type {Record<string,boolean>} */ ({}),
     };
 
     /* ── PREFETCH CLINIC CONFIG ── */
@@ -403,19 +405,152 @@
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data) return;
-        if (data.clinicName)    clinicCtx.clinicName = data.clinicName;
-        if (data.whatsappNumber) clinicCtx.whatsapp  = data.whatsappNumber;
-        if (data.telegramLink)  clinicCtx.telegram   = data.telegramLink;
+        if (data.clinicName)     clinicCtx.clinicName = data.clinicName;
+        if (data.whatsappNumber) clinicCtx.whatsapp   = data.whatsappNumber;
+        if (data.telegramLink)   clinicCtx.telegram   = data.telegramLink;
         if (data.clinicLanguage && !cfg.lang) clinicCtx.lang = data.clinicLanguage;
+        if (data.aiSkills)       clinicCtx.aiSkills   = data.aiSkills;
 
         console.group('[ClinicBridge Widget] Clinic config loaded');
         console.log('Clinic:', clinicCtx.clinicName);
         console.log('WhatsApp:', clinicCtx.whatsapp || '(not set)');
         console.log('Telegram:', clinicCtx.telegram || '(not set)');
         console.log('Language:', clinicCtx.lang);
+        console.log('AI Skills:', data.aiSkills);
         console.groupEnd();
       })
       .catch(() => {});
+
+    /* ── SKILL HELPER ── */
+    function skillEnabled(id) {
+      // Default ON if not explicitly set to false
+      return clinicCtx.aiSkills[id] !== false;
+    }
+
+    /* ── CLOSING INTENT DETECTION ── */
+    const CLOSING_TR = [
+      'teşekkür ederim', 'teşekkürler', 'tesekkur ederim', 'tesekkurler',
+      'sağ olun', 'sag olun', 'eyvallah', 'tamamdır', 'tamam teşekkür',
+      'başka sorum yok', 'başka bir şeyim yok', 'yardımcı oldunuz',
+      'anladım teşekkür', 'iyi günler', 'güle güle', 'görüşürüz',
+    ];
+    const CLOSING_EN = [
+      'thank you', 'thanks', 'thank you so much', 'many thanks',
+      'that\'s all', 'no more questions', 'i\'m good', 'got it thanks',
+      'all good', 'perfect thanks', 'great thanks', 'goodbye', 'bye',
+    ];
+    function isClosingIntent(text) {
+      const t = text.toLowerCase().trim();
+      return CLOSING_TR.some(k => t.includes(k)) || CLOSING_EN.some(k => t.includes(k));
+    }
+
+    /* ── SURVEY CARD ── */
+    function appendSurveyCard(lang, convId) {
+      const isTr = lang === 'tr';
+      const prompt = isTr
+        ? 'Sizi yeterince yardımcı olabildik mi? Deneyiminizi değerlendirmek ister misiniz?'
+        : 'Would you like to rate your experience with us today?';
+      const labels = isTr
+        ? ['Çok Kötü', 'Kötü', 'Orta', 'İyi', 'Mükemmel']
+        : ['Very Bad', 'Bad', 'OK', 'Good', 'Excellent'];
+      const submitLabel = isTr ? 'Değerlendir' : 'Submit';
+      const thankLabel  = isTr ? 'Teşekkürler! Geri bildiriminiz alındı. 🙏' : 'Thank you for your feedback! 🙏';
+
+      const wrapper = d.createElement('div');
+      wrapper.className = 'cbw-msg cbw-bot';
+
+      const card = d.createElement('div');
+      card.style.cssText = [
+        'background:#F8FAFC;border:1px solid #E2E8F0',
+        'border-radius:16px;padding:16px 18px;margin-top:4px',
+        'display:flex;flex-direction:column;gap:12px',
+        'max-width:92%',
+      ].join(';');
+
+      // Prompt
+      const promptEl = d.createElement('p');
+      promptEl.style.cssText = 'font-size:13.5px;color:#334155;line-height:1.55;margin:0';
+      promptEl.textContent = prompt;
+      card.appendChild(promptEl);
+
+      // Stars row
+      const starsRow = d.createElement('div');
+      starsRow.style.cssText = 'display:flex;gap:6px;align-items:center';
+      let selectedRating = 0;
+      const starBtns = [];
+
+      function updateStars(hovered) {
+        starBtns.forEach((btn, i) => {
+          const active = i < (hovered || selectedRating);
+          btn.style.color  = active ? '#F59E0B' : '#CBD5E1';
+          btn.style.filter = active ? 'drop-shadow(0 0 3px rgba(245,158,11,0.4))' : 'none';
+        });
+      }
+
+      for (let i = 1; i <= 5; i++) {
+        const btn = d.createElement('button');
+        btn.type = 'button';
+        btn.setAttribute('aria-label', labels[i - 1]);
+        btn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:26px;padding:2px;transition:transform 0.15s;color:#CBD5E1';
+        btn.textContent = '★';
+        const idx = i;
+        btn.addEventListener('click',      () => { selectedRating = idx; updateStars(0); });
+        btn.addEventListener('mouseenter', () => updateStars(idx));
+        btn.addEventListener('mouseleave', () => updateStars(0));
+        btn.addEventListener('mousedown',  () => { btn.style.transform = 'scale(1.3)'; });
+        btn.addEventListener('mouseup',    () => { btn.style.transform = 'scale(1)'; });
+        starsRow.appendChild(btn);
+        starBtns.push(btn);
+      }
+      card.appendChild(starsRow);
+
+      // Submit button
+      const submitBtn = d.createElement('button');
+      submitBtn.type = 'button';
+      submitBtn.textContent = submitLabel;
+      submitBtn.style.cssText = [
+        'align-self:flex-start;padding:8px 20px',
+        'border-radius:10px;border:none;cursor:pointer',
+        'background:#6366F1;color:#fff',
+        'font-size:13px;font-weight:600;font-family:inherit',
+        'transition:opacity 0.2s',
+      ].join(';');
+      submitBtn.addEventListener('mouseenter', () => submitBtn.style.opacity = '0.85');
+      submitBtn.addEventListener('mouseleave', () => submitBtn.style.opacity = '1');
+      submitBtn.addEventListener('click', () => {
+        if (!selectedRating) return;
+        // Replace card content with thank-you
+        card.innerHTML = `<p style="font-size:13.5px;color:#10b981;font-weight:600;margin:0">${thankLabel}</p>`;
+        logSurveyEvent('satisfaction_survey_submitted', selectedRating, convId);
+        console.log('[ClinicBridge Widget] Survey submitted — rating:', selectedRating);
+      });
+      card.appendChild(submitBtn);
+
+      wrapper.appendChild(card);
+      msgs.appendChild(wrapper);
+      msgs.scrollTop = msgs.scrollHeight;
+
+      console.log('[ClinicBridge Widget] Triggered action: satisfaction_survey_displayed');
+      logSurveyEvent('satisfaction_survey_displayed', 0, convId);
+    }
+
+    /* ── LOG SURVEY EVENT ── */
+    function logSurveyEvent(action, rating, convId) {
+      if (!convId) return;
+      try {
+        fetch(`${cfg.apiBase}/api/public/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clinicId: cfg.clinicId,
+            message: `[SYS:${action}]`,
+            conversationId: convId,
+            history: [],
+            _systemAction: { type: action, rating: rating || undefined },
+          }),
+        }).catch(() => {});
+      } catch(e) {}
+    }
 
     /* ── LANGUAGE DETECTION (from actual message, not cfg.lang) ── */
     function detectLang(text) {
@@ -561,6 +696,23 @@
           conversationHistory.push({ role: 'assistant', content: replyText });
         }
         liveSupportShown = false;
+
+        /* ── POST-REPLY: check survey trigger ── */
+        const surveyEnabled     = skillEnabled('send_patient_satisfaction_survey');
+        const enoughExchanges   = conversationHistory.length >= 4; // ≥2 user + 2 assistant turns
+        const closingMsg        = isClosingIntent(text);
+        console.log('[ClinicBridge Widget] Survey check:', {
+          skillEnabled: surveyEnabled, enoughExchanges, isClosingIntent: closingMsg, surveyShown
+        });
+        if (surveyEnabled && enoughExchanges && closingMsg && !surveyShown && !liveSupportShown) {
+          console.log('[ClinicBridge Widget] Detected intent: conversation_closing');
+          console.log('[ClinicBridge Widget] Matched capability: Hasta Memnuniyet Anketi');
+          const survLang = detectLang(text);
+          const survConvId = data.conversationId || currentConvId || `session_${Date.now()}`;
+          if (!currentConvId) { currentConvId = survConvId; clinicCtx.convId = survConvId; }
+          surveyShown = true;
+          setTimeout(() => appendSurveyCard(survLang, survConvId), 400);
+        }
       } catch (err) {
         removeTyping();
         console.warn('[cbw] API error, using local fallback:', err.message);
