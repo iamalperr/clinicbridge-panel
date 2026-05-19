@@ -10,8 +10,22 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { UI_COLORS } from "@/components/ui/ui-shared";
-import { Loader2 } from "lucide-react";
+import { Loader2, MessageCircle, Phone } from "lucide-react";
 import type { Clinic } from "@/lib/types";
+
+/** Normalises any Telegram input to a canonical https://t.me/… link */
+function normalizeTelegram(raw: string): string {
+  const v = raw.trim();
+  if (!v) return "";
+  // Already a full URL
+  if (v.startsWith("https://t.me/") || v.startsWith("http://t.me/")) {
+    const handle = v.replace(/^https?:\/\/t\.me\//, "").replace(/\/+$/, "");
+    return `https://t.me/${handle}`;
+  }
+  // @handle or plain handle
+  const handle = v.replace(/^@/, "").replace(/\/+$/, "");
+  return `https://t.me/${handle}`;
+}
 
 interface PageProps {
   params: Promise<{ clinicId: string }>;
@@ -88,6 +102,7 @@ export default function ClinicSettingsPage({ params }: PageProps) {
     setSaveStatus("idle");
     setErrorMsg("");
     try {
+      const normalizedTelegram = normalizeTelegram(form.telegramUsername);
       const payload: Partial<Clinic> = {
         name: form.name.trim(),
         domain: form.domain.trim(),
@@ -97,8 +112,10 @@ export default function ClinicSettingsPage({ params }: PageProps) {
         kvkkRequired: form.kvkkRequired,
         enableHumanHandoff: form.enableHumanHandoff,
         whatsappNumber: form.whatsappNumber.trim(),
-        telegramUsername: form.telegramUsername.trim(),
+        telegramUsername: normalizedTelegram,
       };
+      // Also update local form so the preview reflects the normalised value
+      setForm(prev => ({ ...prev, telegramUsername: normalizedTelegram }));
       await updateDoc(doc(db, "clinics", clinicId), {
         ...payload,
         updatedAt: serverTimestamp(),
@@ -231,19 +248,87 @@ export default function ClinicSettingsPage({ params }: PageProps) {
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 20, opacity: form.enableHumanHandoff ? 1 : 0.45, pointerEvents: form.enableHumanHandoff ? "auto" : "none", transition: "opacity .2s" }}>
-            <Input
-              label="WhatsApp Numarası"
-              value={form.whatsappNumber}
-              onChange={field("whatsappNumber")}
-              placeholder="+90 555 123 45 67"
-            />
-            <Input
-              label="Telegram Kullanıcı Adı veya Linki"
-              value={form.telegramUsername}
-              onChange={field("telegramUsername")}
-              placeholder="örn: @clinicbridge"
-            />
+            {/* WhatsApp */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Phone size={15} color="#25D366" />
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: UI_COLORS.textSecondary }}>WhatsApp Numarası</span>
+              </div>
+              <Input
+                value={form.whatsappNumber}
+                onChange={field("whatsappNumber")}
+                placeholder="+90 555 123 45 67"
+              />
+              {form.whatsappNumber.trim() && (
+                <div style={{ fontSize: 12, color: "#25D366", display: "flex", alignItems: "center", gap: 6, fontWeight: 500 }}>
+                  <span>✓</span>
+                  <span>Bağlantı: wa.me/{form.whatsappNumber.trim().replace(/[^0-9]/g, "")}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Telegram */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <MessageCircle size={15} color="#26A5E4" />
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: UI_COLORS.textSecondary }}>Telegram Kullanıcı Adı veya Linki</span>
+              </div>
+              <Input
+                value={form.telegramUsername}
+                onChange={field("telegramUsername")}
+                placeholder="@clinicbridge · clinicbridge · https://t.me/clinicbridge"
+              />
+              <p style={{ fontSize: 11.5, color: UI_COLORS.textMuted, lineHeight: 1.5 }}>
+                Desteklenen formatlar: <code style={{ background: "rgba(38,165,228,.08)", padding: "1px 5px", borderRadius: 4 }}>@clinicbridge</code>&nbsp;
+                <code style={{ background: "rgba(38,165,228,.08)", padding: "1px 5px", borderRadius: 4 }}>clinicbridge</code>&nbsp;
+                <code style={{ background: "rgba(38,165,228,.08)", padding: "1px 5px", borderRadius: 4 }}>https://t.me/clinicbridge</code><br />
+                Kaydettiğinizde sistem otomatik olarak t.me linkine dönüştürür.
+              </p>
+              {form.telegramUsername.trim() && (
+                <div style={{ fontSize: 12, color: "#26A5E4", display: "flex", alignItems: "center", gap: 6, fontWeight: 500 }}>
+                  <span>✓</span>
+                  <span>Normalize edilecek link: {normalizeTelegram(form.telegramUsername)}</span>
+                </div>
+              )}
+            </div>
           </div>
+
+          {/* Channel preview */}
+          {form.enableHumanHandoff && (form.whatsappNumber.trim() || form.telegramUsername.trim()) && (
+            <div style={{
+              padding: "14px 18px",
+              borderRadius: 10,
+              background: "rgba(99,102,241,0.04)",
+              border: `1px solid rgba(99,102,241,0.15)`,
+              display: "flex",
+              flexDirection: "column",
+              gap: 10
+            }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 2 }}>Kullanıcıya gösterilecek butonlar:</p>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                {form.whatsappNumber.trim() && (
+                  <div style={{
+                    display: "inline-flex", alignItems: "center", gap: 7,
+                    padding: "8px 16px", borderRadius: 8,
+                    background: "#25D366", color: "white",
+                    fontSize: 13, fontWeight: 600
+                  }}>
+                    <Phone size={14} /> WhatsApp ile İletişime Geç
+                  </div>
+                )}
+                {form.telegramUsername.trim() && (
+                  <div style={{
+                    display: "inline-flex", alignItems: "center", gap: 7,
+                    padding: "8px 16px", borderRadius: 8,
+                    background: "#26A5E4", color: "white",
+                    fontSize: 13, fontWeight: 600
+                  }}>
+                    <MessageCircle size={14} /> Telegram ile İletişime Geç
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </SectionCard>
 

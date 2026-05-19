@@ -95,6 +95,30 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
           </div>
         )}
 
+        {/* Live Support Banner */}
+        {log.status === "liveSupport" && (
+          <div style={{ 
+            background: "rgba(59, 130, 246, 0.05)", 
+            border: `1px solid rgba(59, 130, 246, 0.2)`, 
+            borderRadius: UI_COMMON_STYLES.radius,
+            padding: 14,
+            display: "flex",
+            gap: 12,
+            alignItems: "center"
+          }}>
+            <span style={{ fontSize: 20 }}>📡</span>
+            <div>
+              <p style={{ fontSize: 13.5, fontWeight: 600, color: "#3b82f6", marginBottom: 2 }}>
+                Canlı Destek Gerekli
+              </p>
+              <p style={{ fontSize: 12.5, color: UI_COLORS.textSecondary, lineHeight: 1.5 }}>
+                Bu görüşmede kullanıcıya canlı destek yönlendirmesi gösterildi. Mesaj geçmişinde eylem loglarını inceleyebilirsiniz.
+              </p>
+            </div>
+          </div>
+        )}
+
+
         {/* Chat Area */}
         <div style={{ 
           background: "var(--bg-app)", 
@@ -121,17 +145,25 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
               const isSystem = msg.sender === "system";
 
               if (isSystem) {
+                const isLiveSupportAction =
+                  msg.content.includes("Canlı Destek") ||
+                  msg.content.includes("Yönlendirme") ||
+                  msg.content.includes("Yönlendirildi");
                 return (
                   <div key={msg.id} style={{ textAlign: "center", margin: "8px 0" }}>
                     <span style={{ 
                       fontSize: 11, 
                       fontWeight: 600, 
-                      color: UI_COLORS.textMuted,
-                      background: UI_COLORS.bgCard,
+                      color: isLiveSupportAction ? "#10b981" : UI_COLORS.textMuted,
+                      background: isLiveSupportAction ? "rgba(16,185,129,0.08)" : UI_COLORS.bgCard,
                       padding: "4px 12px",
                       borderRadius: 12,
-                      border: `1px solid ${UI_COLORS.border}`
+                      border: `1px solid ${isLiveSupportAction ? "rgba(16,185,129,0.25)" : UI_COLORS.border}`,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
                     }}>
+                      {isLiveSupportAction && "📡 "}
                       {msg.content}
                     </span>
                   </div>
