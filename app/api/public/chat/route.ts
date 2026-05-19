@@ -13,7 +13,7 @@ import {
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
@@ -537,31 +537,52 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "clinicId and message required" }, { status: 400, headers: CORS });
     }
 
-    /* ── Handle channel click system actions (no OpenAI needed) ── */
-    if (_systemAction?.type === "liveSupportChannelClick" && conversationId) {
+    /* ── Handle system actions (no OpenAI needed) ── */
+    if (_systemAction && conversationId) {
       const adminDb = getAdminDb();
       if (adminDb) {
         try {
-          const isWhatsapp = _systemAction.channel === "whatsapp";
-          const action  = isWhatsapp ? "whatsapp_redirect_clicked" : "telegram_redirect_clicked";
-          const label   = isWhatsapp ? "WhatsApp'a Yönlendirildi" : "Telegram'a Yönlendirildi";
           const now = new Date().toISOString();
-          const logRef  = adminDb.collection("clinics").doc(clinicId).collection("conversationLogs").doc(conversationId);
-          const sysRef  = logRef.collection("messages").doc(`msg_${Date.now()}_sys_click`);
-          await sysRef.set({
-            sender:       "system",
-            content:      label,
-            action,
-            channel:      _systemAction.channel,
-            createdAt:    now,
-            wasAnswered:  true,
-            needsTraining: false,
-          });
-          // Also update the conversation log doc with last redirect action
-          await logRef.set({ lastRedirectAction: action, lastRedirectAt: now }, { merge: true });
-          console.log(`[channel-click] Logged: ${label} convId=${conversationId}`);
+          const logRef = adminDb.collection("clinics").doc(clinicId).collection("conversationLogs").doc(conversationId);
+
+          if (_systemAction.type === "liveSupportHandoffDisplayed") {
+            // Log that handoff was shown + set conversation status
+            await logRef.set({
+              status: "liveSupport",
+              updatedAt: now,
+              clinicId,
+              lastMessagePreview: message?.slice(0, 100) ?? "",
+            }, { merge: true });
+            const sysRef = logRef.collection("messages").doc(`msg_${Date.now()}_sys_handoff`);
+            await sysRef.set({
+              sender: "system",
+              content: "Canlı Destek Yönlendirmesi Gösterildi",
+              action: "live_support_handoff_displayed",
+              createdAt: now,
+              wasAnswered: true,
+              needsTraining: false,
+            });
+            console.log(`[handoff] Logged handoff displayed convId=${conversationId}`);
+
+          } else if (_systemAction.type === "liveSupportChannelClick") {
+            const isWhatsapp = _systemAction.channel === "whatsapp";
+            const action  = isWhatsapp ? "whatsapp_redirect_clicked" : "telegram_redirect_clicked";
+            const label   = isWhatsapp ? "WhatsApp'a Yönlendirildi" : "Telegram'a Yönlendirildi";
+            const sysRef  = logRef.collection("messages").doc(`msg_${Date.now()}_sys_click`);
+            await sysRef.set({
+              sender: "system",
+              content: label,
+              action,
+              channel: _systemAction.channel,
+              createdAt: now,
+              wasAnswered: true,
+              needsTraining: false,
+            });
+            await logRef.set({ lastRedirectAction: action, lastRedirectAt: now }, { merge: true });
+            console.log(`[channel-click] Logged: ${label} convId=${conversationId}`);
+          }
         } catch (e: any) {
-          console.warn("[channel-click] Log error:", e.message);
+          console.warn("[system-action] Log error:", e.message);
         }
       }
       return NextResponse.json({ ok: true }, { headers: CORS });

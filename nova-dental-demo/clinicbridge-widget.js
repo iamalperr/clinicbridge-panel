@@ -83,7 +83,7 @@
     .cbw-sdot{width:7px;height:7px;border-radius:50%;background:#86EFAC;display:inline-block}
     #cbw-close{background:rgba(255,255,255,.18);border:none;border-radius:8px;cursor:pointer;padding:7px;display:flex;transition:background .2s;color:#fff}
     #cbw-close:hover{background:rgba(255,255,255,.3)}
-    #cbw-msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;min-height:180px;max-height:260px;scroll-behavior:smooth}
+    #cbw-msgs{flex:1;overflow-y:auto;padding:16px 16px 20px;display:flex;flex-direction:column;gap:12px;min-height:180px;max-height:260px;scroll-behavior:smooth}
     .cbw-msg{display:flex;flex-direction:column;gap:3px}
     .cbw-bubble-msg{padding:11px 15px;font-size:14px;line-height:1.65;max-width:86%;color:#1e293b}
     .cbw-bot .cbw-bubble-msg{background:#F1F5F9;border-radius:4px 16px 16px 16px}
@@ -385,16 +385,97 @@
     let conversationHistory = [];
     let currentConvId = '';
     let pendingApptData = null;
+    let liveSupportShown = false;
 
-    /** Shared context for live-support buttons — updated on every API response */
+    /** Shared context for live-support buttons */
     const clinicCtx = {
       clinicName:  '',
       patientName: '',
       lastUserMsg: '',
       lang:        cfg.lang,
       convId:      '',
+      whatsapp:    '',
+      telegram:    '',
     };
 
+    /* ── PREFETCH CLINIC CONFIG ── */
+    fetch(`${cfg.apiBase}/api/public/clinic-config?clinicId=${encodeURIComponent(cfg.clinicId)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return;
+        if (data.clinicName)    clinicCtx.clinicName = data.clinicName;
+        if (data.whatsappNumber) clinicCtx.whatsapp  = data.whatsappNumber;
+        if (data.telegramLink)  clinicCtx.telegram   = data.telegramLink;
+        if (data.clinicLanguage && !cfg.lang) clinicCtx.lang = data.clinicLanguage;
+      })
+      .catch(() => {});
+
+    /* ── LANGUAGE DETECTION (from actual message, not cfg.lang) ── */
+    function detectLang(text) {
+      if (/[\u011f\u00fc\u015f\u0131\u00f6\u00e7\u011e\u00dc\u015e\u0130\u00d6\u00c7]/.test(text)) return 'tr';
+      if (/\b(istiyorum|misin|m[iı]s[iı]n[iı]z|lütfen|te[sş]ekkür|merhaba|tamam|evet|hay[iı]r|ba[gğ]la|destek|görü[sş]mek|ileti[sş]im|biri|birine|biriyle|aras[iı]n|arayabilir|klinik|sizi|beni)\b/i.test(text)) return 'tr';
+      return cfg.lang || 'tr';
+    }
+
+    /* ── LIVE SUPPORT INTENT DETECTION ── */
+    const LIVE_INTENT_TR = [
+      'canlı destek', 'canli destek',
+      'canlı birine', 'canli birine',
+      'canlı biriyle', 'canli biriyle',
+      'insana bağla', 'insana bagla',
+      'insan ile', 'gerçek kişi', 'gercek kisi',
+      'biriyle görüşmek', 'biriyle gorusmek',
+      'biri beni arasın', 'biri beni arasin',
+      'sizi arayabilir', 'telefon',
+      'klinikle görüşmek', 'klinikle iletişime',
+      'sizinle görüşmek', 'ekiple görüşmek',
+      'yetkili', 'müşteri temsilci',
+      'operatöre bağla',
+      'whatsapp', 'telegram',
+    ];
+    const LIVE_INTENT_EN = [
+      'live support', 'live chat', 'real person', 'human agent',
+      'talk to someone', 'speak to someone', 'connect me',
+      'contact the clinic', 'phone call', 'call me',
+      'whatsapp', 'telegram',
+    ];
+    function isLiveSupportIntent(text) {
+      const t = text.toLowerCase();
+      return LIVE_INTENT_TR.some(k => t.includes(k)) || LIVE_INTENT_EN.some(k => t.includes(k));
+    }
+
+    /* ── HANDOFF ── */
+    function showHandoff(text) {
+      const msgLang = detectLang(text);
+      clinicCtx.lang = msgLang;
+      clinicCtx.lastUserMsg = text;
+
+      const name = clinicCtx.clinicName || 'Nova Dental Clinic';
+      const handoffMsg = msgLang === 'tr'
+        ? `Sizi canlı destek ekibimize yönlendirebilirim. Aşağıdaki kanallardan biriyle ${name} ekibine ulaşabilirsiniz.`
+        : `I can direct you to our live support team. You can contact ${name} through one of the channels below.`;
+
+      appendMsg(handoffMsg, false, msgs, false);
+      conversationHistory.push({ role: 'assistant', content: handoffMsg });
+      appendLiveSupportButtons(clinicCtx.whatsapp, clinicCtx.telegram, { ...clinicCtx });
+      liveSupportShown = true;
+
+      // Background log
+      const convId = currentConvId || `session_${Date.now()}`;
+      if (!currentConvId) currentConvId = convId;
+      clinicCtx.convId = convId;
+      fetch(`${cfg.apiBase}/api/public/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clinicId: cfg.clinicId,
+          message: text,
+          history: conversationHistory.slice(-12),
+          conversationId: convId,
+          _systemAction: { type: 'liveSupportHandoffDisplayed', lang: msgLang },
+        }),
+      }).catch(() => {});
+    }
 
     /* ── API CALL ── */
     async function callApi(userText) {
@@ -414,24 +495,19 @@
       return res.json();
     }
 
-    function botReply(key) {
-      showTyping();
-      setTimeout(() => {
-        removeTyping();
-        // Local fallback for quick-reply keys
-        const reply = resp[key] || resp.default[Math.floor(Math.random() * resp.default.length)];
-        appendMsg(reply, false, msgs, false);
-      }, 900 + Math.random() * 500);
-    }
-
     async function send(text, key) {
       if (!text.trim()) return;
       appendMsg(text, true, msgs, false);
       conversationHistory.push({ role: 'user', content: text });
-      clinicCtx.lastUserMsg = text; // capture for WhatsApp pre-fill
       quickEl.style.display = 'none';
 
-      // Try real API first; fall back to local responses
+      /* ── CLIENT-SIDE LIVE SUPPORT SHORT-CIRCUIT ── */
+      if (isLiveSupportIntent(text)) {
+        showHandoff(text);
+        return;
+      }
+
+      /* ── NORMAL API CALL ── */
       showTyping();
       try {
         const data = await callApi(text);
@@ -439,24 +515,34 @@
 
         if (data.conversationId) { currentConvId = data.conversationId; clinicCtx.convId = data.conversationId; }
         if (data.pendingAppointmentData) pendingApptData = data.pendingAppointmentData;
-        if (data.clinicName)       clinicCtx.clinicName  = data.clinicName;
-        if (data.detectedLanguage) clinicCtx.lang        = data.detectedLanguage;
+        if (data.clinicName)       clinicCtx.clinicName = data.clinicName;
+        if (data.detectedLanguage) clinicCtx.lang       = data.detectedLanguage;
+        if (data.whatsappNumber)   clinicCtx.whatsapp   = data.whatsappNumber;
+        if (data.telegramLink)     clinicCtx.telegram   = data.telegramLink;
         if (data.pendingAppointmentData?.patientName) clinicCtx.patientName = data.pendingAppointmentData.patientName;
+
+        // If API also signals live support (e.g. from AI reply), show handoff
+        if (data.liveSupportRequired && !liveSupportShown) {
+          const replyText = data.reply || '';
+          if (replyText) appendMsg(replyText, false, msgs, false);
+          appendLiveSupportButtons(
+            data.whatsappNumber || clinicCtx.whatsapp,
+            data.telegramLink   || clinicCtx.telegram,
+            { ...clinicCtx, lastUserMsg: text }
+          );
+          liveSupportShown = true;
+          return;
+        }
 
         const replyText = data.reply || '';
         if (replyText) {
           appendMsg(replyText, false, msgs, false);
           conversationHistory.push({ role: 'assistant', content: replyText });
         }
-
-        // Show live support channel buttons if needed
-        if (data.liveSupportRequired) {
-          appendLiveSupportButtons(data.whatsappNumber || '', data.telegramLink || '', { ...clinicCtx });
-        }
+        liveSupportShown = false;
       } catch (err) {
         removeTyping();
         console.warn('[cbw] API error, using local fallback:', err.message);
-        // Local static fallback
         const reply = resp[key] || resp.default[Math.floor(Math.random() * resp.default.length)];
         appendMsg(reply, false, msgs, false);
         conversationHistory.push({ role: 'assistant', content: reply });
