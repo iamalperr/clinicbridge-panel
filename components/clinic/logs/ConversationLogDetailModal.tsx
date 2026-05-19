@@ -145,30 +145,54 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
               const isSystem = msg.sender === "system";
 
               if (isSystem) {
-                const isLiveSupportAction =
-                  msg.content.includes("Canlı Destek") ||
-                  msg.content.includes("Yönlendirme") ||
-                  msg.content.includes("Yönlendirildi");
+                const isWhatsAppAction = msg.content.includes("WhatsApp");
+                const isTelegramAction = msg.content.includes("Telegram");
+                const isLiveSupportGeneric =
+                  !isWhatsAppAction && !isTelegramAction &&
+                  (msg.content.includes("Canlı Destek") ||
+                   msg.content.includes("Yönlendirme") ||
+                   msg.content.includes("Yönlendirildi"));
+
+                const badgeColor = isWhatsAppAction ? "#25D366"
+                  : isTelegramAction ? "#26A5E4"
+                  : isLiveSupportGeneric ? "#10b981"
+                  : UI_COLORS.textMuted;
+
+                const badgeBg = isWhatsAppAction ? "rgba(37,211,102,0.08)"
+                  : isTelegramAction ? "rgba(38,165,228,0.08)"
+                  : isLiveSupportGeneric ? "rgba(16,185,129,0.08)"
+                  : UI_COLORS.bgCard;
+
+                const badgeBorder = isWhatsAppAction ? "rgba(37,211,102,0.25)"
+                  : isTelegramAction ? "rgba(38,165,228,0.25)"
+                  : isLiveSupportGeneric ? "rgba(16,185,129,0.25)"
+                  : UI_COLORS.border;
+
+                const icon = isWhatsAppAction ? "📱"
+                  : isTelegramAction ? "✈️"
+                  : isLiveSupportGeneric ? "📡"
+                  : "⚙️";
+
                 return (
                   <div key={msg.id} style={{ textAlign: "center", margin: "8px 0" }}>
                     <span style={{ 
                       fontSize: 11, 
                       fontWeight: 600, 
-                      color: isLiveSupportAction ? "#10b981" : UI_COLORS.textMuted,
-                      background: isLiveSupportAction ? "rgba(16,185,129,0.08)" : UI_COLORS.bgCard,
+                      color: badgeColor,
+                      background: badgeBg,
                       padding: "4px 12px",
                       borderRadius: 12,
-                      border: `1px solid ${isLiveSupportAction ? "rgba(16,185,129,0.25)" : UI_COLORS.border}`,
+                      border: `1px solid ${badgeBorder}`,
                       display: "inline-flex",
                       alignItems: "center",
                       gap: 5,
                     }}>
-                      {isLiveSupportAction && "📡 "}
-                      {msg.content}
+                      {icon} {msg.content}
                     </span>
                   </div>
                 );
               }
+
 
               return (
                 <div key={msg.id} style={{ 

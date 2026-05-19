@@ -542,18 +542,23 @@ export async function POST(req: Request) {
       const adminDb = getAdminDb();
       if (adminDb) {
         try {
-          const label = _systemAction.channel === "whatsapp"
-            ? "Canlı Destek Kanalına Yönlendirildi (WhatsApp)"
-            : "Canlı Destek Kanalına Yönlendirildi (Telegram)";
-          const logRef = adminDb.collection("clinics").doc(clinicId).collection("conversationLogs").doc(conversationId);
-          const sysRef = logRef.collection("messages").doc(`msg_${Date.now()}_sys_click`);
+          const isWhatsapp = _systemAction.channel === "whatsapp";
+          const action  = isWhatsapp ? "whatsapp_redirect_clicked" : "telegram_redirect_clicked";
+          const label   = isWhatsapp ? "WhatsApp'a Yönlendirildi" : "Telegram'a Yönlendirildi";
+          const now = new Date().toISOString();
+          const logRef  = adminDb.collection("clinics").doc(clinicId).collection("conversationLogs").doc(conversationId);
+          const sysRef  = logRef.collection("messages").doc(`msg_${Date.now()}_sys_click`);
           await sysRef.set({
-            sender: "system",
-            content: label,
-            createdAt: new Date().toISOString(),
-            wasAnswered: true,
+            sender:       "system",
+            content:      label,
+            action,
+            channel:      _systemAction.channel,
+            createdAt:    now,
+            wasAnswered:  true,
             needsTraining: false,
           });
+          // Also update the conversation log doc with last redirect action
+          await logRef.set({ lastRedirectAction: action, lastRedirectAt: now }, { merge: true });
           console.log(`[channel-click] Logged: ${label} convId=${conversationId}`);
         } catch (e: any) {
           console.warn("[channel-click] Log error:", e.message);
@@ -801,6 +806,8 @@ GENEL KURALLAR:
       responsePayload.liveSupportRequired = true;
       if (clinicWhatsapp) responsePayload.whatsappNumber = clinicWhatsapp;
       if (clinicTelegram) responsePayload.telegramLink   = clinicTelegram;
+      responsePayload.clinicName = clinicName;
+      responsePayload.detectedLanguage = clinicLanguage;
 
       debugLog.push(`liveSupport=true wa=${!!clinicWhatsapp} tg=${!!clinicTelegram}`);
     }

@@ -260,13 +260,47 @@
     function removeTyping() { const t = d.getElementById('cbw-typing'); if (t) t.remove(); }
 
     /* ── LIVE SUPPORT BUTTONS ── */
-    function appendLiveSupportButtons(waNum, tgLink, convId) {
+    function normalizePhone(num) {
+      return (num || '').replace(/[^0-9]/g, '');
+    }
+
+    function buildWhatsAppUrl(waNum, ctx) {
+      const phone = normalizePhone(waNum);
+      if (!phone) return '';
+
+      const lang    = ctx.lang || cfg.lang || 'en';
+      const clinic  = ctx.clinicName || 'Klinik';
+      const patient = ctx.patientName || (lang === 'tr' ? 'Anonim Ziyaretçi' : 'Anonymous Visitor');
+      const topic   = ctx.lastUserMsg || '';
+      const convId  = ctx.convId || '';
+
+      let msgText;
+      if (lang === 'tr') {
+        msgText =
+          `Merhaba, ${clinic} web sitesi üzerinden destek almak istiyorum.\n\n` +
+          `Hasta: ${patient}\n` +
+          (topic ? `Konu: ${topic}\n` : '') +
+          `Dil: TR\n` +
+          (convId ? `Görüşme ID: ${convId}` : '');
+      } else {
+        msgText =
+          `Hello, I need support from ${clinic}.\n\n` +
+          `Patient: ${patient}\n` +
+          (topic ? `Topic: ${topic}\n` : '') +
+          `Language: EN\n` +
+          (convId ? `Conversation ID: ${convId}` : '');
+      }
+      return `https://wa.me/${phone}?text=${encodeURIComponent(msgText.trim())}`;
+    }
+
+    function appendLiveSupportButtons(waNum, tgLink, ctx) {
       const hasWa = !!waNum;
       const hasTg = !!tgLink;
       if (!hasWa && !hasTg) return;
 
-      const waHref = waNum ? `https://wa.me/${waNum.replace(/[^0-9]/g, '')}` : '';
+      const waHref = waNum ? buildWhatsAppUrl(waNum, ctx) : '';
       const tgHref = tgLink || '';
+      const convId = ctx.convId || '';
 
       const wrapper = d.createElement('div');
       wrapper.className = 'cbw-msg cbw-bot';
@@ -290,7 +324,7 @@
         ].join(';');
         btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>`;
         btn.innerHTML += ' WhatsApp ile İletişime Geç';
-        btn.addEventListener('click', () => logChannelClick('whatsapp', convId));
+        btn.addEventListener('click', () => logChannelClick('whatsapp', convId, ctx));
         btn.addEventListener('mouseover', () => btn.style.opacity = '0.88');
         btn.addEventListener('mouseout', () => btn.style.opacity = '1');
         btnWrap.appendChild(btn);
@@ -311,7 +345,7 @@
         ].join(';');
         btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>`;
         btn.innerHTML += ' Telegram ile İletişime Geç';
-        btn.addEventListener('click', () => logChannelClick('telegram', convId));
+        btn.addEventListener('click', () => logChannelClick('telegram', convId, ctx));
         btn.addEventListener('mouseover', () => btn.style.opacity = '0.88');
         btn.addEventListener('mouseout', () => btn.style.opacity = '1');
         btnWrap.appendChild(btn);
@@ -323,11 +357,9 @@
     }
 
     /* ── LOG CHANNEL CLICK ── */
-    function logChannelClick(channel, convId) {
+    function logChannelClick(channel, convId, ctx) {
       if (!convId) return;
       try {
-        const label = channel === 'whatsapp' ? 'Canlı Destek Kanalına Yönlendirildi (WhatsApp)'
-                                             : 'Canlı Destek Kanalına Yönlendirildi (Telegram)';
         fetch(`${cfg.apiBase}/api/public/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -336,16 +368,33 @@
             message: `[SYS:channel_click:${channel}]`,
             conversationId: convId,
             history: [],
-            _systemAction: { type: 'liveSupportChannelClick', channel, label },
+            _systemAction: {
+              type:        'liveSupportChannelClick',
+              channel,
+              patientName: (ctx && ctx.patientName) || null,
+              lastUserMsg: (ctx && ctx.lastUserMsg) || null,
+              lang:        (ctx && ctx.lang) || cfg.lang,
+            },
           }),
         }).catch(() => {});
       } catch(e) {}
     }
 
+
     /* ── CONVERSATION STATE ── */
     let conversationHistory = [];
     let currentConvId = '';
     let pendingApptData = null;
+
+    /** Shared context for live-support buttons — updated on every API response */
+    const clinicCtx = {
+      clinicName:  '',
+      patientName: '',
+      lastUserMsg: '',
+      lang:        cfg.lang,
+      convId:      '',
+    };
+
 
     /* ── API CALL ── */
     async function callApi(userText) {
@@ -379,6 +428,7 @@
       if (!text.trim()) return;
       appendMsg(text, true, msgs, false);
       conversationHistory.push({ role: 'user', content: text });
+      clinicCtx.lastUserMsg = text; // capture for WhatsApp pre-fill
       quickEl.style.display = 'none';
 
       // Try real API first; fall back to local responses
@@ -387,8 +437,11 @@
         const data = await callApi(text);
         removeTyping();
 
-        if (data.conversationId) currentConvId = data.conversationId;
+        if (data.conversationId) { currentConvId = data.conversationId; clinicCtx.convId = data.conversationId; }
         if (data.pendingAppointmentData) pendingApptData = data.pendingAppointmentData;
+        if (data.clinicName)       clinicCtx.clinicName  = data.clinicName;
+        if (data.detectedLanguage) clinicCtx.lang        = data.detectedLanguage;
+        if (data.pendingAppointmentData?.patientName) clinicCtx.patientName = data.pendingAppointmentData.patientName;
 
         const replyText = data.reply || '';
         if (replyText) {
@@ -398,7 +451,7 @@
 
         // Show live support channel buttons if needed
         if (data.liveSupportRequired) {
-          appendLiveSupportButtons(data.whatsappNumber || '', data.telegramLink || '', data.conversationId || currentConvId);
+          appendLiveSupportButtons(data.whatsappNumber || '', data.telegramLink || '', { ...clinicCtx });
         }
       } catch (err) {
         removeTyping();
@@ -409,6 +462,7 @@
         conversationHistory.push({ role: 'assistant', content: reply });
       }
     }
+
 
     /* ── QUICK REPLIES ── */
     quickEl.querySelectorAll('.cbw-qbtn').forEach(btn => {
