@@ -26,16 +26,12 @@
     tr: ['Hangi tedavinin size uygun olduğunu merak mı ediyorsunuz?', 'İmplant seçenekleri hakkında bilgi alabilirsiniz', 'Randevu almak ister misiniz?', 'Nereden başlayacağınızı bilmiyor musunuz?'],
   };
 
-  const QUICK = {
-    en: [
-      { label: '📅 Create appointment request', msg: 'book' },
-      { label: '🦷 Learn about treatments',     msg: 'treatment' },
-      { label: '💬 Describe my concern',        msg: 'concern' },
-    ],
+  /* ── DEFAULT FALLBACK QUICK ACTIONS (used when clinic has none configured) ── */
+  const DEFAULT_QUICK_ACTIONS = {
     tr: [
-      { label: '📅 Randevu talebi oluştur',           msg: 'book' },
-      { label: '🦷 Tedaviler hakkında bilgi al',       msg: 'treatment' },
-      { label: '💬 Şikayetimi anlatmak istiyorum',    msg: 'concern' },
+      { emoji: '📅', labelTR: 'Randevu talebi oluştur',        labelEN: 'Create appointment request', actionType: 'appointment_request' },
+      { emoji: '🦷', labelTR: 'Tedaviler hakkında bilgi al',   labelEN: 'Learn about treatments',      actionType: 'treatment_info' },
+      { emoji: '💬', labelTR: 'Şikayetimi anlatmak istiyorum', labelEN: 'Describe my concern',         actionType: 'describe_complaint' },
     ],
   };
 
@@ -44,12 +40,18 @@
       book:      "Great! Let's get your appointment started. Could you tell me your full name and phone number so we can set it up? 📅",
       treatment: "Of course! We offer a range of treatments — from routine check-ups and teeth whitening to implants and smile design. Which area are you most interested in? 🦷",
       concern:   "I'm here to help. Please describe your concern or symptom in as much detail as you'd like — I'll do my best to guide you. 💬",
+      clinic_services: "We offer a comprehensive range of dental services. Could you tell me more about what you're looking for?",
+      pricing_info: "For accurate pricing, I'll need to understand your specific needs first. What treatment are you considering?",
+      contact_request: "I'll connect you with our team right away.",
       default:   ["Happy to help! Could you share a bit more detail so I can assist you better? 😊", "That's a great question — let me look into that for you.", "I want to make sure I give you the right guidance. Could you tell me a bit more?"],
     },
     tr: {
       book:      "Harika! Randevunuzu oluşturmaya başlayalım. Ad ve soyadınızı ile telefon numaranızı paylaşabilir misiniz? 📅",
       treatment: "Tabii! Rutin diş kontrolünden implanta, diş beyazlatmadan gülüş tasarımına kadar geniş bir tedavi yelpazesi sunuyoruz. Hangi konuyla ilgileniyorsunuz? 🦷",
       concern:   "Dinliyorum. Şikayetinizi veya belirtinizi dilediğiniz gibi anlatabilirsiniz — size en doğru yönlendirmeyi yapmaya çalışacağım. 💬",
+      clinic_services: "Kliniklerimizde sunulan hizmetler hakkında bilgi vermekten memnuniyet duyarım. Hangi tedaviyi merak ediyorsunuz?",
+      pricing_info: "Doğru fiyat bilgisi için önce ihtiyacınızı anlamam gerekiyor. Hangi tedaviyi düşünüyorsunuz?",
+      contact_request: "Sizi hemen ekibimize bağlayacağım.",
       default:   ["Yardımcı olmaktan memnuniyet duyarım! Biraz daha detay paylaşabilir misiniz? 😊", "Güzel bir soru — hemen bakıyorum.", "Size doğru bilgiyi verebilmek için biraz daha anlatır mısınız?"],
     },
   };
@@ -122,9 +124,25 @@
     style.textContent = CSS;
     d.head.appendChild(style);
 
-    const lang = cfg.lang in BUBBLES ? cfg.lang : 'en';
-    const qItems = QUICK[lang];
+    const lang = cfg.lang in BUBBLES ? cfg.lang : 'tr';
     const resp = RESPONSES[lang];
+
+    /* Build initial quick buttons from defaults — will be replaced after prefetch */
+    function buildQuickButtons(actions, activeLang) {
+      const active = actions
+        .filter(a => a.isActive !== false)
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+      const isTr = activeLang === 'tr';
+      return active.map(a =>
+        `<button class="cbw-qbtn"
+          data-type="${a.actionType}"
+          data-label-tr="${(a.labelTR || '').replace(/"/g, '&quot;')}"
+          data-label-en="${(a.labelEN || '').replace(/"/g, '&quot;')}"
+        >${a.emoji || ''} ${isTr ? a.labelTR : a.labelEN}</button>`
+      ).join('');
+    }
+
+    const initialActions = DEFAULT_QUICK_ACTIONS.tr;
 
     // Root
     const root = d.createElement('div');
@@ -150,7 +168,7 @@
         </div>
         <div id="cbw-msgs"></div>
         <div id="cbw-quick">
-          ${qItems.map(q => `<button class="cbw-qbtn" data-key="${q.msg}">${q.label}</button>`).join('')}
+          ${buildQuickButtons(initialActions, lang)}
         </div>
         <div id="cbw-inputrow">
           <input id="cbw-input" type="text" placeholder="Type your message…" autocomplete="off"/>
@@ -407,15 +425,25 @@
         if (data.clinicLanguage && !cfg.lang) clinicCtx.lang = data.clinicLanguage;
         if (data.aiSkills)       clinicCtx.aiSkills   = data.aiSkills;
 
+        // Re-render quick action buttons from Firestore config
+        const configuredActions = (data.quickActions || []).filter(a => a.isActive !== false);
+        if (configuredActions.length > 0 && quickEl) {
+          quickEl.innerHTML = buildQuickButtons(configuredActions, clinicCtx.lang || lang);
+          attachQuickBtnListeners();
+          console.log('[ClinicBridge Widget] Quick actions loaded from config:', configuredActions.length);
+        }
+
         console.group('[ClinicBridge Widget] Clinic config loaded');
         console.log('Clinic:', clinicCtx.clinicName);
         console.log('WhatsApp:', clinicCtx.whatsapp || '(not set)');
         console.log('Telegram:', clinicCtx.telegram || '(not set)');
         console.log('Language:', clinicCtx.lang);
         console.log('AI Skills:', data.aiSkills);
+        console.log('Quick Actions:', configuredActions.length > 0 ? configuredActions.map(a => a.labelTR).join(', ') : '(using defaults)');
         console.groupEnd();
       })
       .catch(() => {});
+
 
     /* ── SKILL HELPER ── */
     function skillEnabled(id) {
@@ -753,13 +781,64 @@
 
 
     /* ── QUICK REPLIES ── */
-    quickEl.querySelectorAll('.cbw-qbtn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const k = btn.dataset.key;
-        const label = btn.textContent;
-        send(label, k);
+    const ACTION_PROMPTS = {
+      appointment_request: { tr: 'Randevu talebi oluşturmak istiyorum.', en: 'I would like to create an appointment request.' },
+      treatment_info:      { tr: 'Tedaviler hakkında bilgi almak istiyorum.', en: 'I would like to learn about your treatments.' },
+      describe_complaint:  { tr: 'Şikayetimi anlatmak istiyorum.', en: 'I would like to describe my concern.' },
+      clinic_services:     { tr: 'Klinik hizmetleriniz neler?', en: 'What services does the clinic offer?' },
+      pricing_info:        { tr: 'Tedavi fiyatları hakkında bilgi alabilir miyim?', en: 'Can I get information about treatment pricing?' },
+      contact_request:     { tr: 'Bir yetkiliyle görüşmek istiyorum.', en: 'I would like to speak with someone.' },
+    };
+
+    function attachQuickBtnListeners() {
+      quickEl.querySelectorAll('.cbw-qbtn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const actionType = btn.dataset.type;
+          const activeLang = detectLang ? detectLang('') : (clinicCtx.lang || lang);
+          const isTr = activeLang === 'tr';
+          const labelTR = btn.dataset.labelTr || btn.textContent.trim();
+          const labelEN = btn.dataset.labelEn || btn.textContent.trim();
+          const displayLabel = isTr ? labelTR : labelEN;
+
+          console.log(`[ClinicBridge Widget] Quick action clicked: ${actionType} | "${displayLabel}"`);
+
+          // Log analytics
+          const logConvId = currentConvId || `session_${Date.now()}`;
+          fetch(`${cfg.apiBase}/api/public/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              clinicId: cfg.clinicId,
+              conversationId: logConvId,
+              message: `[SYS:quick_action_clicked]`,
+              history: [],
+              _systemAction: { type: 'quick_action_clicked', actionType, label: displayLabel },
+            }),
+          }).catch(() => {});
+
+          // contact_request → immediate handoff, no API
+          if (actionType === 'contact_request') {
+            showHandoff(displayLabel);
+            return;
+          }
+
+          // custom_prompt → use the label text directly
+          if (actionType === 'custom_prompt') {
+            send(displayLabel, 'default');
+            return;
+          }
+
+          // All other types → resolved prompt text
+          const prompts = ACTION_PROMPTS[actionType];
+          const msgText = prompts
+            ? (isTr ? prompts.tr : prompts.en)
+            : displayLabel;
+          send(msgText, actionType);
+        });
       });
-    });
+    }
+
+    attachQuickBtnListeners();
 
     /* ── INPUT ── */
     sendBtn.addEventListener('click', () => { send(input.value); input.value = ''; });

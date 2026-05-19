@@ -47,15 +47,17 @@ export async function GET(req: Request) {
   let telegramLink    = "";
   let clinicLanguage  = "tr";
   let aiSkills: Record<string, boolean> = {};
+  let quickActions: any[] = [];
 
   try {
     const adminDb = getAdminDb();
     const clientDb = adminDb ? null : getClientDb();
 
     if (adminDb) {
-      const [clinicSnap, promptSnap] = await Promise.all([
+      const [clinicSnap, promptSnap, widgetSnap] = await Promise.all([
         adminDb.collection("clinics").doc(clinicId).get(),
         adminDb.collection("promptSettings").doc(clinicId).get(),
+        adminDb.collection("widgetSettings").doc(clinicId).get(),
       ]);
       if (clinicSnap.exists) {
         const d = clinicSnap.data()!;
@@ -64,13 +66,13 @@ export async function GET(req: Request) {
         telegramLink   = d.telegramUsername ?? "";
         clinicLanguage = d.language         ?? "tr";
       }
-      if (promptSnap.exists) {
-        aiSkills = promptSnap.data()?.aiSkills ?? {};
-      }
+      if (promptSnap.exists)  { aiSkills    = promptSnap.data()?.aiSkills    ?? {}; }
+      if (widgetSnap.exists)  { quickActions = widgetSnap.data()?.quickActions ?? []; }
     } else if (clientDb) {
-      const [clinicSnap, promptSnap] = await Promise.all([
+      const [clinicSnap, promptSnap, widgetSnap] = await Promise.all([
         getDoc(doc(clientDb, "clinics", clinicId)),
         getDoc(doc(clientDb, "promptSettings", clinicId)),
+        getDoc(doc(clientDb, "widgetSettings", clinicId)),
       ]);
       if (clinicSnap.exists()) {
         const d = clinicSnap.data()!;
@@ -79,16 +81,15 @@ export async function GET(req: Request) {
         telegramLink   = d.telegramUsername ?? "";
         clinicLanguage = d.language         ?? "tr";
       }
-      if (promptSnap.exists()) {
-        aiSkills = promptSnap.data()?.aiSkills ?? {};
-      }
+      if (promptSnap.exists())  { aiSkills    = promptSnap.data()?.aiSkills    ?? {}; }
+      if (widgetSnap.exists())  { quickActions = widgetSnap.data()?.quickActions ?? []; }
     }
   } catch (err: any) {
     console.error("[clinic-config] Error:", err.message);
   }
 
   return NextResponse.json(
-    { clinicName, whatsappNumber, telegramLink, clinicLanguage, aiSkills },
+    { clinicName, whatsappNumber, telegramLink, clinicLanguage, aiSkills, quickActions },
     { headers: CORS }
   );
 }

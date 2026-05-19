@@ -92,6 +92,26 @@ export interface ShowBubblesConfig {
   };
 }
 
+export type QuickActionType =
+  | "appointment_request"
+  | "treatment_info"
+  | "describe_complaint"
+  | "clinic_services"
+  | "pricing_info"
+  | "contact_request"
+  | "custom_prompt";
+
+export interface QuickAction {
+  id: string;
+  labelTR: string;
+  labelEN: string;
+  emoji: string;
+  actionType: QuickActionType;
+  isActive: boolean;
+  sortOrder: number;
+  customPrompt?: string; // used when actionType === 'custom_prompt'
+}
+
 export interface WidgetSettings {
   title: string;
   welcomeMessage: string;
@@ -101,6 +121,7 @@ export interface WidgetSettings {
   showOnlineStatus: boolean;
   placeholder: string;
   showBubbles?: ShowBubblesConfig;
+  quickActions?: QuickAction[];
   updatedAt?: any;
 }
 

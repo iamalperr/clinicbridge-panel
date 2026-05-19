@@ -596,7 +596,21 @@ export async function POST(req: Request) {
               createdAt: now, wasAnswered: true, needsTraining: false,
             });
             console.log(`[survey] Submitted rating=${rating} convId=${conversationId}`);
+
+          } else if (_systemAction.type === "quick_action_clicked") {
+            const { actionType, label } = _systemAction as any;
+            const sysRef = logRef.collection("messages").doc(`msg_${Date.now()}_sys_qa`);
+            await sysRef.set({
+              sender: "system",
+              content: `Hızlı Komut Tıklandı — ${label} (${actionType})`,
+              action: "quick_action_clicked",
+              actionType: actionType ?? "",
+              label: label ?? "",
+              createdAt: now, wasAnswered: true, needsTraining: false,
+            });
+            console.log(`[quick-action] clicked type=${actionType} label=${label} convId=${conversationId}`);
           }
+
         } catch (e: any) {
           console.warn("[system-action] Log error:", e.message);
         }

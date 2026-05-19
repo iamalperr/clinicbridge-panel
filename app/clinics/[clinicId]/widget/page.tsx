@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import SectionCard from "@/components/ui/SectionCard";
 import { Loader2, Save, Layout, Palette, MessageCircle, Sparkles, Plus, Trash2, GripVertical } from "lucide-react";
-import type { WidgetSettings, ShowBubblesConfig } from "@/lib/types";
+import type { WidgetSettings, ShowBubblesConfig, QuickAction, QuickActionType } from "@/lib/types";
 import WidgetPreview from "./WidgetPreview";
 import WidgetIntegration from "./WidgetIntegration";
 import {
@@ -65,6 +65,133 @@ const DEFAULT_SETTINGS: WidgetSettings = {
   placeholder: "Bir mesaj yazın...",
   showBubbles: DEFAULT_BUBBLES,
 };
+
+const ACTION_TYPE_OPTIONS: { value: QuickActionType; label: string }[] = [
+  { value: "appointment_request",  label: "📅 Randevu Talebi" },
+  { value: "treatment_info",       label: "🦷 Tedavi Bilgisi" },
+  { value: "describe_complaint",   label: "💬 Şikayet/Belirti" },
+  { value: "clinic_services",      label: "🏥 Klinik Hizmetleri" },
+  { value: "pricing_info",         label: "💰 Fiyat Bilgisi" },
+  { value: "contact_request",      label: "📞 İletişim / Destek" },
+  { value: "custom_prompt",        label: "✏️ Özel Mesaj" },
+];
+
+const DEFAULT_QUICK_ACTIONS: QuickAction[] = [
+  { id: "qa_1", emoji: "📅", labelTR: "Randevu talebi oluştur",        labelEN: "Create appointment request", actionType: "appointment_request", isActive: true, sortOrder: 0 },
+  { id: "qa_2", emoji: "🦷", labelTR: "Tedaviler hakkında bilgi al",   labelEN: "Learn about treatments",      actionType: "treatment_info",       isActive: true, sortOrder: 1 },
+  { id: "qa_3", emoji: "💬", labelTR: "Şikayetimi anlatmak istiyorum", labelEN: "Describe my concern",         actionType: "describe_complaint",   isActive: true, sortOrder: 2 },
+];
+
+/* ── Sortable Quick Action Row ── */
+function SortableQuickActionItem({
+  action, onUpdate, onDelete, actionTypeOptions,
+}: {
+  action: QuickAction;
+  onUpdate: (updated: QuickAction) => void;
+  onDelete: () => void;
+  actionTypeOptions: { value: QuickActionType; label: string }[];
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: action.id });
+
+  const containerStyle: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    background: isDragging ? "rgba(99,102,241,0.08)" : "rgba(255,255,255,0.03)",
+    border: `1px solid ${isDragging ? UI_COLORS.brand : action.isActive ? "rgba(99,102,241,0.3)" : UI_COLORS.border}`,
+    borderRadius: 12,
+    padding: "12px 14px",
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+    opacity: isDragging ? 0.85 : action.isActive ? 1 : 0.55,
+    boxShadow: isDragging ? "0 8px 24px rgba(0,0,0,.2)" : "none",
+    zIndex: isDragging ? 999 : "auto",
+    position: "relative",
+  };
+
+  const inpStyle: React.CSSProperties = {
+    flex: 1, padding: "8px 10px", borderRadius: 8,
+    border: `1px solid ${UI_COLORS.border}`,
+    background: "rgba(255,255,255,0.03)",
+    color: UI_COLORS.textPrimary, fontSize: 13, outline: "none",
+  };
+
+  return (
+    <div ref={setNodeRef} style={containerStyle}>
+      {/* Row 1: drag + emoji + labels + delete */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span {...attributes} {...listeners}
+          style={{ cursor: "grab", color: UI_COLORS.textMuted, flexShrink: 0, touchAction: "none" }}>
+          <GripVertical size={15} />
+        </span>
+        <input
+          value={action.emoji}
+          onChange={e => onUpdate({ ...action, emoji: e.target.value })}
+          style={{ ...inpStyle, flex: "0 0 44px", textAlign: "center", fontSize: 18 }}
+          placeholder="📅"
+        />
+        <input
+          value={action.labelTR}
+          onChange={e => onUpdate({ ...action, labelTR: e.target.value })}
+          style={inpStyle}
+          placeholder="Türkçe etiket"
+        />
+        <input
+          value={action.labelEN}
+          onChange={e => onUpdate({ ...action, labelEN: e.target.value })}
+          style={inpStyle}
+          placeholder="English label"
+        />
+        {/* Active toggle */}
+        <button
+          onClick={() => onUpdate({ ...action, isActive: !action.isActive })}
+          title={action.isActive ? "Devre dışı bırak" : "Etkinleştir"}
+          style={{
+            width: 34, height: 20, borderRadius: 99, border: "none", cursor: "pointer", flexShrink: 0,
+            background: action.isActive ? UI_COLORS.brand : "rgba(255,255,255,0.1)",
+            position: "relative", transition: "background .2s",
+          }}
+        >
+          <span style={{
+            position: "absolute", top: 3, left: action.isActive ? 17 : 3,
+            width: 14, height: 14, borderRadius: "50%", background: "white",
+            transition: "left .2s", boxShadow: "0 1px 3px rgba(0,0,0,.25)",
+          }} />
+        </button>
+        <button
+          onClick={onDelete}
+          style={{ background: "none", border: "none", cursor: "pointer", color: UI_COLORS.textMuted, flexShrink: 0 }}
+        >
+          <Trash2 size={14} />
+        </button>
+      </div>
+      {/* Row 2: action type + optional custom prompt */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", paddingLeft: 26 }}>
+        <select
+          value={action.actionType}
+          onChange={e => onUpdate({ ...action, actionType: e.target.value as QuickActionType })}
+          style={{
+            flex: "0 0 220px", padding: "7px 10px", borderRadius: 8,
+            border: `1px solid ${UI_COLORS.border}`, background: "rgba(255,255,255,0.03)",
+            color: UI_COLORS.textPrimary, fontSize: 13, outline: "none", cursor: "pointer",
+          }}
+        >
+          {actionTypeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        {action.actionType === "custom_prompt" && (
+          <input
+            value={action.customPrompt ?? ""}
+            onChange={e => onUpdate({ ...action, customPrompt: e.target.value })}
+            placeholder="Özel mesaj metni…"
+            style={{ ...inpStyle }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 
 /* ── Toggle helper ── */
 function Toggle({ checked, onChange, label, description }: { checked: boolean; onChange: (v: boolean) => void; label: string; description?: string }) {
@@ -298,6 +425,9 @@ export default function WidgetPage({ params }: PageProps) {
               behavior: { ...DEFAULT_BUBBLES.behavior, ...data.showBubbles?.behavior },
             },
           });
+          if (data.quickActions && data.quickActions.length > 0) {
+            setQuickActions(data.quickActions);
+          }
         }
       } catch (err) { console.error("Widget settings fetch error:", err); }
       finally { setLoading(false); }
@@ -309,7 +439,7 @@ export default function WidgetPage({ params }: PageProps) {
     setSaveStatus("idle");
     setErrMsg("");
     try {
-      await setDoc(doc(db, "widgetSettings", clinicId), { ...settings, updatedAt: serverTimestamp() });
+      await setDoc(doc(db, "widgetSettings", clinicId), { ...settings, quickActions, updatedAt: serverTimestamp() });
       setSaveStatus("success");
       setTimeout(() => setSaveStatus("idle"), 3000);
     } catch (err: any) {
@@ -318,7 +448,43 @@ export default function WidgetPage({ params }: PageProps) {
     } finally { setIsSaving(false); }
   };
 
-  /* ── Bubble helpers ── */
+  /* ── Quick actions state ── */
+  const [quickActions, setQuickActions] = useState<QuickAction[]>(DEFAULT_QUICK_ACTIONS);
+
+  const qaIds = quickActions.map(a => a.id);
+  const qaSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleQaDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIdx = qaIds.indexOf(active.id as string);
+    const newIdx = qaIds.indexOf(over.id as string);
+    if (oldIdx !== -1 && newIdx !== -1) {
+      setQuickActions(qs => arrayMove(qs, oldIdx, newIdx).map((q, i) => ({ ...q, sortOrder: i })));
+    }
+  }, [qaIds]);
+
+  const addQuickAction = () => {
+    const newAction: QuickAction = {
+      id: `qa_${Date.now()}`,
+      emoji: "💬",
+      labelTR: "",
+      labelEN: "",
+      actionType: "custom_prompt",
+      isActive: true,
+      sortOrder: quickActions.length,
+    };
+    setQuickActions(qs => [...qs, newAction]);
+  };
+
+  const updateQuickAction = (id: string, updated: QuickAction) =>
+    setQuickActions(qs => qs.map(q => q.id === id ? updated : q));
+
+  const deleteQuickAction = (id: string) =>
+    setQuickActions(qs => qs.filter(q => q.id !== id).map((q, i) => ({ ...q, sortOrder: i })));
   const bubbles = settings.showBubbles ?? DEFAULT_BUBBLES;
 
   const setBubbles = (partial: Partial<ShowBubblesConfig>) =>
@@ -583,6 +749,55 @@ export default function WidgetPage({ params }: PageProps) {
                     description="Mobil cihazlarda balonlar gösterilmez."
                   />
                 </div>
+              </div>
+            </div>
+          </SectionCard>
+
+          {/* ── Quick Actions Section ── */}
+          <SectionCard
+            title="Başlangıç Hızlı Komutları"
+            subtitle="Ziyaretçilere widgetin açılışında sunulan hazır aksiyonlar."
+            icon={<Sparkles size={18} />}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <p style={{ fontSize: 12.5, color: UI_COLORS.textMuted, lineHeight: 1.6, marginBottom: 4 }}>
+                Her klinik için başlangıç hızlı aksiyon butonlarını özelleştirin. WhatsApp, canlı destek talebi veya acil semptom durumlarında görünür — başlangıç listesine eklemeyin.
+              </p>
+
+              <DndContext sensors={qaSensors} collisionDetection={closestCenter} onDragEnd={handleQaDragEnd}>
+                <SortableContext items={qaIds} strategy={verticalListSortingStrategy}>
+                  {quickActions.map(action => (
+                    <SortableQuickActionItem
+                      key={action.id}
+                      action={action}
+                      onUpdate={(updated) => updateQuickAction(action.id, updated)}
+                      onDelete={() => deleteQuickAction(action.id)}
+                      actionTypeOptions={ACTION_TYPE_OPTIONS}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
+
+              <button
+                onClick={addQuickAction}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "10px 16px", borderRadius: 10, border: `1.5px dashed ${UI_COLORS.border}`,
+                  background: "none", color: UI_COLORS.textMuted, fontSize: 13, fontWeight: 600,
+                  cursor: "pointer", transition: "border-color .2s, color .2s", alignSelf: "flex-start",
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = UI_COLORS.brand; (e.currentTarget as HTMLButtonElement).style.borderColor = UI_COLORS.brand; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = UI_COLORS.textMuted; (e.currentTarget as HTMLButtonElement).style.borderColor = UI_COLORS.border; }}
+              >
+                <Plus size={16} /> Yeni Hızlı Komut Ekle
+              </button>
+
+              {/* Column headers */}
+              <div style={{ display: "flex", gap: 8, paddingLeft: 26, fontSize: 11, fontWeight: 700, color: UI_COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                <span style={{ flex: "0 0 44px", textAlign: "center" }}>Emoji</span>
+                <span style={{ flex: 1 }}>Türkçe</span>
+                <span style={{ flex: 1 }}>İngilizce</span>
+                <span style={{ flex: "0 0 60px" }}>Aktif</span>
               </div>
             </div>
           </SectionCard>
