@@ -83,18 +83,18 @@ export async function POST(req: Request, { params }: RouteParams) {
         smsType = "appointment_confirmed";
         if (treatment && date && time) {
           smsMessage = isEn
-            ? `ClinicBridge AI: Your appointment request at ${clinicName} has been approved for ${treatment} on ${date} ${time}.`
-            : `ClinicBridge AI: ${clinicName} randevu talebinizi onayladı. ${treatment} için ${date} ${time} randevu talebiniz uygun görülmüştür. Sağlıklı günler dileriz.`;
+            ? `ClinicBridge AI Tech: Your appointment request at ${clinicName} has been approved for ${treatment} on ${date} ${time}.`
+            : `ClinicBridge AI Tech: ${clinicName} randevu talebinizi onayladı. ${treatment} için ${date} ${time} randevu talebiniz uygun görülmüştür. Sağlıklı günler dileriz.`;
         } else {
           smsMessage = isEn
-            ? `ClinicBridge AI: Your appointment request at ${clinicName} has been approved. The clinic may contact you for details.`
-            : `ClinicBridge AI: ${clinicName} randevu talebinizi onayladı. Detaylar için kliniğiniz sizinle iletişime geçebilir. Sağlıklı günler dileriz.`;
+            ? `ClinicBridge AI Tech: Your appointment request at ${clinicName} has been approved. The clinic may contact you for details.`
+            : `ClinicBridge AI Tech: ${clinicName} randevu talebinizi onayladı. Detaylar için kliniğiniz sizinle iletişime geçebilir. Sağlıklı günler dileriz.`;
         }
       } else if (newStatus === "cancelled") {
         smsType = "appointment_cancelled";
         smsMessage = isEn
-          ? `ClinicBridge AI: Your appointment request at ${clinicName} could not be approved at this time. The clinic may contact you for alternative options.`
-          : `ClinicBridge AI: ${clinicName} randevu talebiniz şu an için onaylanamadı. Uygun alternatif saatler için kliniğiniz sizinle iletişime geçebilir. Sağlıklı günler dileriz.`;
+          ? `ClinicBridge AI Tech: Your appointment request at ${clinicName} could not be approved at this time. The clinic may contact you for alternative options.`
+          : `ClinicBridge AI Tech: ${clinicName} randevu talebiniz şu an için onaylanamadı. Uygun alternatif saatler için kliniğiniz sizinle iletişime geçebilir. Sağlıklı günler dileriz.`;
       }
 
       // Send SMS

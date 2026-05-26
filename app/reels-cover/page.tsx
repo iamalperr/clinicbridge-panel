@@ -66,7 +66,7 @@ export default function ReelsCoverPage() {
             {/* Top Logo Area */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 24, marginTop: 40 }}>
               <CBIcon size={96} />
-              <span style={{ color: "white", fontSize: 56, fontWeight: 800, letterSpacing: "-1.5px" }}>ClinicBridge <span style={{ color: "#38bdf8" }}>AI</span></span>
+              <span style={{ color: "white", fontSize: 56, fontWeight: 800, letterSpacing: "-1.5px" }}>ClinicBridge <span style={{ color: "#38bdf8" }}>AI Tech</span></span>
             </div>
 
             {/* Main Content (Centered) */}
@@ -75,7 +75,7 @@ export default function ReelsCoverPage() {
                 Yurt dışı hasta<br/>taleplerine yetişmek <span style={{ color: "#38bdf8" }}>zorunda değilsiniz.</span>
               </h1>
               <p style={{ color: "rgba(255,255,255,0.7)", fontSize: 40, fontWeight: 500, marginTop: 60, lineHeight: 1.5, letterSpacing: "-0.5px" }}>
-                ClinicBridge AI, hasta iletişimini 7/24 yönetmenize yardımcı olur.
+                ClinicBridge AI Tech, hasta iletişimini 7/24 yönetmenize yardımcı olur.
               </p>
             </div>
 

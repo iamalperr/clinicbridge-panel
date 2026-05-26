@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "ClinicBridge AI — Instagram Post Preview",
-  description: "1080×1350 Instagram post design preview for ClinicBridge AI.",
+  title: "ClinicBridge AI Tech — Instagram Post Preview",
+  description: "1080×1350 Instagram post design preview for ClinicBridge AI Tech.",
 };
 
 /**

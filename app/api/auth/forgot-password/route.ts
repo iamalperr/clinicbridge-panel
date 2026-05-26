@@ -66,7 +66,7 @@ export async function POST(req: Request) {
           </div>
           
           <div style="text-align: center; margin-top: 24px; font-size: 12px; color: #94a3b8;">
-            &copy; ${new Date().getFullYear()} ClinicBridge AI. Tüm hakları saklıdır.
+            &copy; ${new Date().getFullYear()} ClinicBridge AI Tech. Tüm hakları saklıdır.
           </div>
         </div>
       `

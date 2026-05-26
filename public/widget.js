@@ -1,5 +1,5 @@
 /**
- * ClinicBridge AI Widget v4.1 — Live Settings Polling
+ * ClinicBridge AI Tech Widget v4.1 — Live Settings Polling
  * https://widget.clinicbridge-ai.com/widget.js
  * Usage: <script src="..." data-clinic-id="YOUR_ID"></script>
  */
@@ -113,9 +113,9 @@
           '<input id="cbw-input" type="text" autocomplete="off"/>',
           '<button id="cbw-send" aria-label="Send">' + SND + '</button>',
         '</div>',
-        '<div id="cbw-powered">Powered by <a href="https://clinicbridge-ai.com" target="_blank" rel="noopener">ClinicBridge AI</a></div>',
+        '<div id="cbw-powered">Powered by <a href="https://clinicbridge-ai.com" target="_blank" rel="noopener">ClinicBridge AI Tech</a></div>',
       '</div>',
-      '<button id="cbw-launcher" aria-label="Open ClinicBridge AI">' + ICON + '<span id="cbw-online"></span></button>',
+      '<button id="cbw-launcher" aria-label="Open ClinicBridge AI Tech">' + ICON + '<span id="cbw-online"></span></button>',
     ].join('');
 
     d.body.appendChild(root);

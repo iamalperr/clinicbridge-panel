@@ -60,7 +60,7 @@ export function middleware(req: NextRequest) {
 
     // Block everything else — this domain is widget-script-only
     return new NextResponse(
-      '// ClinicBridge AI Widget\n// Use: <script src="https://widget.clinicbridge-ai.com/widget.js" data-clinic-id="YOUR_ID"></script>',
+      '// ClinicBridge AI Tech Widget\n// Use: <script src="https://widget.clinicbridge-ai.com/widget.js" data-clinic-id="YOUR_ID"></script>',
       { status: 200, headers: { "Content-Type": "application/javascript; charset=utf-8" } }
     );
   }

@@ -61,7 +61,7 @@ function ReviewCard({ show, delay }: { show: boolean, delay: string }) {
         <div style={{ color: "#6b7280", fontSize: 24, fontWeight: 600 }}>1 gün önce</div>
       </div>
       <div style={{ color: "#111827", fontSize: 32, fontWeight: 700, lineHeight: 1.4 }}>
-        "ClinicBridge AI kliniğimizin hayatını kurtardı! Yurt dışı hastalarımızın randevuya dönüşme oranı %40 arttı ve ekibimizin rutin mesaj yükü inanılmaz derecede hafifledi."
+        "ClinicBridge AI Tech kliniğimizin hayatını kurtardı! Yurt dışı hastalarımızın randevuya dönüşme oranı %40 arttı ve ekibimizin rutin mesaj yükü inanılmaz derecede hafifledi."
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 12 }}>
         <div style={{ width: 64, height: 64, borderRadius: "50%", background: "#0ea5e9", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 28, fontWeight: 700 }}>N</div>

@@ -31,9 +31,9 @@ export async function sendClinicAppointmentEmail(
 
   const html = `
     <div style="font-family:sans-serif;max-width:560px;margin:0 auto;line-height:1.6;">
-      <h2 style="color:#6366f1">Yeni Randevu Talebi - ClinicBridge AI</h2>
+      <h2 style="color:#6366f1">Yeni Randevu Talebi - ClinicBridge AI Tech</h2>
       <p>Merhaba,</p>
-      <p>ClinicBridge AI üzerinden yeni bir randevu talebi oluşturuldu.</p>
+      <p>ClinicBridge AI Tech üzerinden yeni bir randevu talebi oluşturuldu.</p>
       <table style="width:100%;border-collapse:collapse;margin:24px 0">
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600;width:170px">Klinik</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.clinicName}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Hasta</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.patientName}</td></tr>
@@ -49,7 +49,7 @@ export async function sendClinicAppointmentEmail(
         Lütfen <a href="https://app.clinicbridge-ai.com" style="color:#6366f1">ClinicBridge panelinizden</a> randevu talebini kontrol ediniz.
       </p>
       <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0"/>
-      <p style="color:#94a3b8;font-size:12px">ClinicBridge AI</p>
+      <p style="color:#94a3b8;font-size:12px">ClinicBridge AI Tech</p>
     </div>
   `;
 

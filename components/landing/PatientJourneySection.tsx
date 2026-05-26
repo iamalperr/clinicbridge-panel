@@ -38,7 +38,7 @@ export default function PatientJourneySection() {
               </svg>
             </div>
 
-            <div className="lp-journey-highlight-badge">ClinicBridge AI</div>
+            <div className="lp-journey-highlight-badge">ClinicBridge AI Tech</div>
 
             <h3 className="lp-journey-highlight-title">
               {t.journey.highlightCard.title}

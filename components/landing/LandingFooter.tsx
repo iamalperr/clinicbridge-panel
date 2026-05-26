@@ -24,7 +24,7 @@ export default function LandingFooter() {
           </div>
         </div>
         <div className="lp-footer-copy">
-          © {year} ClinicBridge AI. {t.footer.rights}
+          © {year} ClinicBridge AI Tech. {t.footer.rights}
         </div>
       </div>
     </footer>
