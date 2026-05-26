@@ -2,24 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 
 // ─── Domain Configuration ───────────────────────────────────────────────────
 //
-// clinicbridge-ai.com     → Landing page only (public marketing site)
-// app.clinicbridge-ai.com → Full app: login, dashboard, all admin routes
+// clinicbridge-one.com     → Landing page only (public marketing site)
+// app.clinicbridge-one.com → Full app: login, dashboard, all admin routes
 //
 // In local development both resolve to localhost:3000.
 // Use ?_domain=app or ?_domain=landing in dev to simulate different domains.
 // ---------------------------------------------------------------------------
 
 const LANDING_HOSTNAMES = new Set([
-  "clinicbridge-ai.com",
-  "www.clinicbridge-ai.com",
+  "clinicbridge-one.com",
+  "www.clinicbridge-one.com",
 ]);
 
 const APP_HOSTNAMES = new Set([
-  "app.clinicbridge-ai.com",
+  "app.clinicbridge-one.com",
 ]);
 
 const WIDGET_HOSTNAMES = new Set([
-  "widget.clinicbridge-ai.com",
+  "widget.clinicbridge-one.com",
 ]);
 
 // Routes that belong exclusively to the app subdomain
@@ -47,7 +47,7 @@ export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const context = getDomainContext(req);
 
-  // ── widget.clinicbridge-ai.com → serve only /widget.js ───────────────────
+  // ── widget.clinicbridge-one.com → serve only /widget.js ───────────────────
   if (context === "widget") {
     // Allow /widget.js (the main widget script — served from public/widget.js)
     if (pathname === "/widget.js") return NextResponse.next();
@@ -60,12 +60,12 @@ export function middleware(req: NextRequest) {
 
     // Block everything else — this domain is widget-script-only
     return new NextResponse(
-      '// ClinicBridge AI Widget\n// Use: <script src="https://widget.clinicbridge-ai.com/widget.js" data-clinic-id="YOUR_ID"></script>',
+      '// ClinicBridge One Widget\n// Use: <script src="https://widget.clinicbridge-one.com/widget.js" data-clinic-id="YOUR_ID"></script>',
       { status: 200, headers: { "Content-Type": "application/javascript; charset=utf-8" } }
     );
   }
 
-  // ── clinicbridge-ai.com (landing domain) ──────────────────────────────────
+  // ── clinicbridge-one.com (landing domain) ──────────────────────────────────
   if (context === "landing") {
     // Allow "/" (landing page itself)
     if (pathname === "/") return NextResponse.next();
@@ -105,7 +105,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL("/", req.url));
   }
 
-  // ── app.clinicbridge-ai.com (app domain) ──────────────────────────────────
+  // ── app.clinicbridge-one.com (app domain) ──────────────────────────────────
   if (context === "app") {
     // Redirect "/" to "/login" on the app subdomain (no landing page here)
     if (pathname === "/" || pathname === "/landing") {

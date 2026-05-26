@@ -63,7 +63,7 @@ export default function LinkedinAssetsPage() {
             <div style={{ position: "absolute", top: 80, left: 0, width: "100%", display: "flex", justifyContent: "center", zIndex: 100 }}>
               <div style={{ background: "white", padding: "24px 48px", borderRadius: 20, boxShadow: "0 20px 40px rgba(0,0,0,0.08)", textAlign: "center" }}>
                 <h2 style={{ fontSize: 32, fontWeight: 800, color: "#0f172a", margin: 0, letterSpacing: "-0.5px" }}>Web siteniz sadece tanıtım sayfası olmak zorunda değil.</h2>
-                <p style={{ fontSize: 18, color: "#475569", marginTop: 8, fontWeight: 500 }}>ClinicBridge AI ziyaretçileri hasta talebine dönüştürür.</p>
+                <p style={{ fontSize: 18, color: "#475569", marginTop: 8, fontWeight: 500 }}>ClinicBridge One ziyaretçileri hasta talebine dönüştürür.</p>
               </div>
             </div>
 
@@ -124,7 +124,7 @@ export default function LinkedinAssetsPage() {
               <p style={{ fontSize: 20, color: "#475569", marginTop: 16, fontWeight: 500, lineHeight: 1.5 }}>Form doldurmadan, doğal sohbet akışıyla randevu talebi başlar.</p>
               <div style={{ marginTop: 40, display: "flex", gap: 16, alignItems: "center" }}>
                 <Logo />
-                <span style={{ fontSize: 18, fontWeight: 700, color: "#0f172a" }}>ClinicBridge AI</span>
+                <span style={{ fontSize: 18, fontWeight: 700, color: "#0f172a" }}>ClinicBridge One</span>
               </div>
             </div>
 
@@ -159,7 +159,7 @@ export default function LinkedinAssetsPage() {
                 </div>
 
                 <div style={{ textAlign: "center", padding: "6px 0", background: "#f8fafc", fontSize: 11, color: "#94a3b8", fontWeight: 500 }}>
-                  Powered by <span style={{ fontWeight: 700 }}>ClinicBridge AI</span>
+                  Powered by <span style={{ fontWeight: 700 }}>ClinicBridge One</span>
                 </div>
 
                 <div style={{ padding: "16px 20px", background: "white", borderTop: "1px solid #e2e8f0", display: "flex", gap: 12, alignItems: "center" }}>
@@ -180,7 +180,7 @@ export default function LinkedinAssetsPage() {
           <div style={{ width: "100%", height: "100%", background: "#f8fafc", display: "flex", position: "relative" }}>
             <div style={{ width: 260, background: "white", borderRight: "1px solid #e2e8f0", padding: 24, display: "flex", flexDirection: "column", zIndex: 10 }}>
               <div style={{ marginBottom: 40, display: "flex", alignItems: "center", gap: 12 }}>
-                <Logo /><span style={{ fontWeight: 800, fontSize: 18 }}>ClinicBridge AI</span>
+                <Logo /><span style={{ fontWeight: 800, fontSize: 18 }}>ClinicBridge One</span>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ padding: "12px 16px", borderRadius: 8, color: "#64748b", display: "flex", alignItems: "center", gap: 12, fontWeight: 600 }}><Menu size={20} /> Dashboard</div>
@@ -266,7 +266,7 @@ export default function LinkedinAssetsPage() {
               <div style={{ width: 800, background: "white", borderRadius: 24, border: "1px solid #e2e8f0", overflow: "hidden", display: "flex", boxShadow: "0 20px 40px rgba(0,0,0,0.08)" }}>
                 <div style={{ width: 220, background: "#f8fafc", borderRight: "1px solid #e2e8f0", padding: 20, display: "flex", flexDirection: "column" }}>
                   <div style={{ marginBottom: 32, display: "flex", alignItems: "center", gap: 10 }}>
-                    <Logo /><span style={{ fontWeight: 800, fontSize: 16 }}>ClinicBridge AI</span>
+                    <Logo /><span style={{ fontWeight: 800, fontSize: 16 }}>ClinicBridge One</span>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     <div style={{ padding: "10px 14px", borderRadius: 8, color: "#64748b", display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 600 }}><Menu size={18} /> Dashboard</div>

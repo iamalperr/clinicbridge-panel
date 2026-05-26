@@ -20,11 +20,11 @@ export default function LandingFooter() {
               {t.footer.requestDemo}
             </a>
             <Link href="/privacy">{t.footer.privacy}</Link>
-            <a href="mailto:info@clinicbridge-ai.com">{t.footer.contact}</a>
+            <a href="mailto:info@clinicbridge-one.com">{t.footer.contact}</a>
           </div>
         </div>
         <div className="lp-footer-copy">
-          © {year} ClinicBridge AI. {t.footer.rights}
+          © {year} ClinicBridge One. {t.footer.rights}
         </div>
       </div>
     </footer>

@@ -42,7 +42,7 @@ export default function ThankYouPage() {
             </h1>
             
             <p className="lp-section-subtitle" style={{ marginBottom: "2.5rem" }}>
-              ClinicBridge AI ekibi en kısa sürede sizinle iletişime geçecektir.
+              ClinicBridge One ekibi en kısa sürede sizinle iletişime geçecektir.
             </p>
             
             <div style={{ display: "flex", justifyContent: "center" }}>

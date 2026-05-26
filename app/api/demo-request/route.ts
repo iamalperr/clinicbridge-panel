@@ -118,8 +118,8 @@ export async function POST(req: Request) {
     }
 
     try {
-      const notifyTo = process.env.DEMO_NOTIFY_EMAIL || "info@clinicbridge-ai.com";
-      const fromEmail = process.env.EMAIL_FROM || "ClinicBridge AI <info@clinicbridge-ai.com>";
+      const notifyTo = process.env.DEMO_NOTIFY_EMAIL || "info@clinicbridge-one.com";
+      const fromEmail = process.env.EMAIL_FROM || "ClinicBridge One <info@clinicbridge-one.com>";
       const requestDate = new Date().toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" });
 
       const emailText = `Yeni bir demo talebi alındı.

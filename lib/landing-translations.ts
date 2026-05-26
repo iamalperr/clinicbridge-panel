@@ -12,7 +12,7 @@ const tr = {
   },
   hero: {
     title: "Klinik Web Sitenizi 7/24 Hasta Karşılayan Akıllı Bir Asistana Dönüştürün",
-    subtitle: "ClinicBridge AI, kliniğinizin web sitesine entegre edilen yapay zekâ destekli asistan ile hasta sorularını anında yanıtlar, hizmetlerinizi açıklar ve randevu taleplerini doğru şekilde yönlendirir.",
+    subtitle: "ClinicBridge One, kliniğinizin web sitesine entegre edilen yapay zekâ destekli asistan ile hasta sorularını anında yanıtlar, hizmetlerinizi açıklar ve randevu taleplerini doğru şekilde yönlendirir.",
     ctaPrimary: "Demo Talep Et",
     ctaSecondary: "Nasıl Çalışır?",
     chatMessages: [
@@ -36,7 +36,7 @@ const tr = {
     ],
   },
   solution: {
-    title: "ClinicBridge AI Bu Süreci Otomatikleştirir",
+    title: "ClinicBridge One Bu Süreci Otomatikleştirir",
     subtitle: "Yapay zekâ asistanınız, hastaların en çok sorduğu soruları yanıtlar, tedavi süreçlerini sade şekilde açıklar ve uygun noktada hastayı randevuya yönlendirir.",
     features: [
       { icon: "clock-24", title: "7/24 Hasta Karşılama", desc: "Gece gündüz fark etmez, her ziyaretçi anında karşılanır ve bilgilendirilir." },
@@ -49,7 +49,7 @@ const tr = {
   },
   journey: {
     title: "Hastanın Web Sitesindeki Yolculuğunu Akıllı Hale Getirin",
-    subtitle: "ClinicBridge AI, kliniğinizin tonu, hizmetleri ve hasta karşılama yaklaşımına göre eğitilir. Böylece ziyaretçiler standart bir chatbot ile değil, kliniğinize özel dijital hasta asistanı ile iletişim kurar.",
+    subtitle: "ClinicBridge One, kliniğinizin tonu, hizmetleri ve hasta karşılama yaklaşımına göre eğitilir. Böylece ziyaretçiler standart bir chatbot ile değil, kliniğinize özel dijital hasta asistanı ile iletişim kurar.",
     steps: [
       { title: "Web Sitesine Giriş", desc: "Hasta kliniğinizin web sitesini ziyaret eder ve ilk temas noktasına ulaşır." },
       { title: "Kliniğe Özel Asistanla Etkileşim", desc: "Ziyaretçi, kliniğinizin iletişim tonuna ve hizmet yapısına göre eğitilmiş yapay zekâ asistanıyla konuşur." },
@@ -76,7 +76,7 @@ const tr = {
   },
   clinicTypes: {
     title: "Farklı Klinik Türleri İçin Akıllı Hasta Karşılama",
-    subtitle: "ClinicBridge AI; diş, estetik, saç ekimi, psikoloji, dermatoloji ve sağlık turizmi odaklı kliniklerde hasta sorularını yanıtlamak ve randevu taleplerini yönlendirmek için kullanılabilir.",
+    subtitle: "ClinicBridge One; diş, estetik, saç ekimi, psikoloji, dermatoloji ve sağlık turizmi odaklı kliniklerde hasta sorularını yanıtlamak ve randevu taleplerini yönlendirmek için kullanılabilir.",
     cards: [
       { icon: "tooth",    title: "Diş Klinikleri",                         desc: "İmplant, ortodonti, diş beyazlatma ve randevu sorularını otomatik yanıtlayın." },
       { icon: "sparkles", title: "Estetik & Plastik Cerrahi Klinikleri",   desc: "Operasyon süreçleri, ön görüşme talepleri ve fiyat aralığı sorularını profesyonel şekilde yönlendirin." },
@@ -98,7 +98,7 @@ const tr = {
     ],
   },
   demo: {
-    title: "ClinicBridge AI'ı Kliniğinizde Deneyin",
+    title: "ClinicBridge One'ı Kliniğinizde Deneyin",
     subtitle: "Web sitenize özel yapay zekâ asistanınızı birlikte kurgulayalım.",
     form: {
       name: "Ad Soyad", clinic: "Klinik Adı", phone: "Telefon", email: "E-posta",
@@ -110,7 +110,7 @@ const tr = {
     },
   },
   footer: {
-    brand: "ClinicBridge AI", tagline: "Yapay zekâ destekli klinik asistanı",
+    brand: "ClinicBridge One", tagline: "Yapay zekâ destekli klinik asistanı",
     contact: "İletişim", privacy: "Gizlilik Politikası", requestDemo: "Demo Talep Et",
     rights: "Tüm hakları saklıdır.",
   },
@@ -126,7 +126,7 @@ const en = {
   },
   hero: {
     title: "Turn Your Clinic Website into a 24/7 AI Patient Assistant",
-    subtitle: "ClinicBridge AI helps clinics answer patient questions instantly, explain treatments clearly, and guide visitors toward appointments through an AI-powered assistant integrated into your website.",
+    subtitle: "ClinicBridge One helps clinics answer patient questions instantly, explain treatments clearly, and guide visitors toward appointments through an AI-powered assistant integrated into your website.",
     ctaPrimary: "Request a Demo",
     ctaSecondary: "How It Works",
     chatMessages: [
@@ -150,7 +150,7 @@ const en = {
     ],
   },
   solution: {
-    title: "ClinicBridge AI Automates This Entire Process",
+    title: "ClinicBridge One Automates This Entire Process",
     subtitle: "Your AI assistant answers frequently asked patient questions, explains treatment procedures clearly, and guides patients toward booking an appointment at the right moment.",
     features: [
       { icon: "clock-24", title: "24/7 Patient Reception", desc: "Every visitor is greeted and informed instantly, day or night." },
@@ -163,7 +163,7 @@ const en = {
   },
   journey: {
     title: "Make Every Patient's Website Journey Intelligent",
-    subtitle: "ClinicBridge AI is trained on your clinic's tone, services, and patient welcome approach — so visitors interact with a dedicated digital patient assistant, not a generic chatbot.",
+    subtitle: "ClinicBridge One is trained on your clinic's tone, services, and patient welcome approach — so visitors interact with a dedicated digital patient assistant, not a generic chatbot.",
     steps: [
       { title: "Website Visit", desc: "The patient visits your clinic's website and reaches the first point of contact." },
       { title: "Clinic-Tailored AI Interaction", desc: "The visitor chats with an AI assistant trained on your clinic's tone and service structure." },
@@ -190,7 +190,7 @@ const en = {
   },
   clinicTypes: {
     title: "Built for Different Types of Clinics",
-    subtitle: "ClinicBridge AI can be used by dental, aesthetic, hair transplant, dermatology, psychology, and medical tourism clinics to answer patient questions and guide appointment requests.",
+    subtitle: "ClinicBridge One can be used by dental, aesthetic, hair transplant, dermatology, psychology, and medical tourism clinics to answer patient questions and guide appointment requests.",
     cards: [
       { icon: "tooth",     title: "Dental Clinics",                          desc: "Automatically answer questions about implants, orthodontics, teeth whitening, and appointment availability." },
       { icon: "sparkles",  title: "Aesthetic & Plastic Surgery Clinics",    desc: "Guide patients through procedure details, consultation requests, and pricing-related questions professionally." },
@@ -211,7 +211,7 @@ const en = {
     ],
   },
   demo: {
-    title: "Try ClinicBridge AI for Your Clinic",
+    title: "Try ClinicBridge One for Your Clinic",
     subtitle: "Let's build your custom AI assistant together.",
     form: {
       name: "Full Name", clinic: "Clinic Name", phone: "Phone", email: "Email",
@@ -223,7 +223,7 @@ const en = {
     },
   },
   footer: {
-    brand: "ClinicBridge AI", tagline: "AI-powered clinic assistant",
+    brand: "ClinicBridge One", tagline: "AI-powered clinic assistant",
     contact: "Contact", privacy: "Privacy Policy", requestDemo: "Request a Demo",
     rights: "All rights reserved.",
   },

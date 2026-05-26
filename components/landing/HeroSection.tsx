@@ -38,7 +38,7 @@ export default function HeroSection() {
             <div className="lp-chat-header">
               <div className="lp-chat-avatar"><Bot size={18} /></div>
               <div className="lp-chat-info">
-                <h4>ClinicBridge AI</h4>
+                <h4>ClinicBridge One</h4>
                 <span>Online</span>
               </div>
             </div>

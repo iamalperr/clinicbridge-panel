@@ -1,5 +1,5 @@
 /**
- * ClinicBridge AI Widget v2.0
+ * ClinicBridge One Widget v2.0
  * Injectable standalone assistant widget for clinic websites.
  * Usage: <script src="clinicbridge-widget.js" data-clinic-id="nova-dental" data-lang="en"></script>
  * Public API: window.ClinicBridgeWidget.open() / .close() / .sendMessage(text)
@@ -155,12 +155,12 @@
 
     // Panel
     root.innerHTML += `
-      <div id="cbw-panel" role="dialog" aria-label="ClinicBridge AI Assistant" aria-hidden="true">
+      <div id="cbw-panel" role="dialog" aria-label="ClinicBridge One Assistant" aria-hidden="true">
         <div id="cbw-head">
           <div class="cbw-hleft">
             <div class="cbw-avatar">${AVATAR_SVG}</div>
             <div>
-              <span class="cbw-hname">ClinicBridge AI Assistant</span>
+              <span class="cbw-hname">ClinicBridge One Assistant</span>
               <div class="cbw-hstatus"><span class="cbw-sdot"></span>Online</div>
             </div>
           </div>
@@ -175,7 +175,7 @@
           <button id="cbw-send" aria-label="Send">${SEND_SVG}</button>
         </div>
       </div>
-      <button id="cbw-launcher" aria-label="Open ClinicBridge AI Assistant">
+      <button id="cbw-launcher" aria-label="Open ClinicBridge One Assistant">
         ${ICON_SVG}
         <span id="cbw-online"></span>
       </button>
