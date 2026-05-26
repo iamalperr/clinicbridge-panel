@@ -34,7 +34,7 @@ const CONV: { user: string; ai: string }[] = [
 
 const OVERLAYS: Record<number, string> = {
   1: "Hastalar web sitenize sadece randevu için gelmez.",
-  2: "ClinicBridge One hastaları anında karşılar.",
+  2: "ClinicBridge AI hastaları anında karşılar.",
   3: "Hasta şikayetlerini güvenli şekilde yönlendirir.",
   4: "Tedavi sorularına kliniğe özel yanıtlar verir.",
   5: "Klinik bilgilerini hızlıca paylaşır.",
@@ -186,9 +186,9 @@ function Content() {
           <div style={{ width: 72, height: 72, background: "linear-gradient(135deg,#3b82f6,#1d4ed8)", borderRadius: 20, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 40px rgba(59,130,246,0.4)", marginBottom: 32 }}>
             <Sparkles size={36} color="white" />
           </div>
-          <h1 style={{ fontSize: 48, fontWeight: 800, color: "white", letterSpacing: "-1px", margin: 0 }}>ClinicBridge One</h1>
+          <h1 style={{ fontSize: 48, fontWeight: 800, color: "white", letterSpacing: "-1px", margin: 0 }}>ClinicBridge AI</h1>
           <p style={{ fontSize: 22, color: "rgba(255,255,255,0.7)", marginTop: 16, fontWeight: 500, textAlign: "center" }}>Modern klinikler için AI destekli hasta iletişim altyapısı.</p>
-          <p style={{ fontSize: 18, color: "#60a5fa", marginTop: 12, fontWeight: 600 }}>clinicbridge-one.com</p>
+          <p style={{ fontSize: 18, color: "#60a5fa", marginTop: 12, fontWeight: 600 }}>clinicbridge-ai.com</p>
         </div>
       )}
 
@@ -289,7 +289,7 @@ function Content() {
                   <X size={18} style={{ opacity: 0.5 }} />
                 </div>
                 <div style={{ textAlign: "center", padding: "4px 0", background: "#f8fafc", fontSize: 10, color: "#94a3b8", fontWeight: 600, letterSpacing: "0.04em" }}>
-                  Powered by <span style={{ fontWeight: 800 }}>ClinicBridge One</span>
+                  Powered by <span style={{ fontWeight: 800 }}>ClinicBridge AI</span>
                 </div>
 
                 {/* Messages */}

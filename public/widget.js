@@ -1,6 +1,6 @@
 /**
- * ClinicBridge One Widget v4.1 — Live Settings Polling
- * https://widget.clinicbridge-one.com/widget.js
+ * ClinicBridge AI Widget v4.1 — Live Settings Polling
+ * https://widget.clinicbridge-ai.com/widget.js
  * Usage: <script src="..." data-clinic-id="YOUR_ID"></script>
  */
 (function (w, d) {
@@ -9,8 +9,8 @@
 
   // ── Domain guard: block on panel / admin / CDN domains ──
   var _host = w.location.hostname;
-  var _blocked = ['clinicbridge-one.com','www.clinicbridge-one.com',
-    'app.clinicbridge-one.com','widget.clinicbridge-one.com',
+  var _blocked = ['clinicbridge-ai.com','www.clinicbridge-ai.com',
+    'app.clinicbridge-ai.com','widget.clinicbridge-ai.com',
     'localhost','127.0.0.1'];
   if (_blocked.indexOf(_host) !== -1) return;
   // ────────────────────────────────────────────────────────
@@ -19,7 +19,7 @@
 
   var scriptEl  = d.currentScript || d.querySelector('script[data-clinic-id]');
   var clinicId  = scriptEl && scriptEl.dataset.clinicId || 'demo';
-  var API_BASE  = 'https://app.clinicbridge-one.com';
+  var API_BASE  = 'https://app.clinicbridge-ai.com';
   var POLL_MS   = 5000;
 
   /* ── Session ID (unique per page load) ── */
@@ -113,9 +113,9 @@
           '<input id="cbw-input" type="text" autocomplete="off"/>',
           '<button id="cbw-send" aria-label="Send">' + SND + '</button>',
         '</div>',
-        '<div id="cbw-powered">Powered by <a href="https://clinicbridge-one.com" target="_blank" rel="noopener">ClinicBridge One</a></div>',
+        '<div id="cbw-powered">Powered by <a href="https://clinicbridge-ai.com" target="_blank" rel="noopener">ClinicBridge AI</a></div>',
       '</div>',
-      '<button id="cbw-launcher" aria-label="Open ClinicBridge One">' + ICON + '<span id="cbw-online"></span></button>',
+      '<button id="cbw-launcher" aria-label="Open ClinicBridge AI">' + ICON + '<span id="cbw-online"></span></button>',
     ].join('');
 
     d.body.appendChild(root);

@@ -75,7 +75,7 @@ export default function ReelsCoverPage() {
                 Yurt dışı hasta<br/>taleplerine yetişmek <span style={{ color: "#38bdf8" }}>zorunda değilsiniz.</span>
               </h1>
               <p style={{ color: "rgba(255,255,255,0.7)", fontSize: 40, fontWeight: 500, marginTop: 60, lineHeight: 1.5, letterSpacing: "-0.5px" }}>
-                ClinicBridge One, hasta iletişimini 7/24 yönetmenize yardımcı olur.
+                ClinicBridge AI, hasta iletişimini 7/24 yönetmenize yardımcı olur.
               </p>
             </div>
 

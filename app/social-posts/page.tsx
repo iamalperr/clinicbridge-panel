@@ -133,7 +133,7 @@ export default function SocialPostsPage() {
 
             </div>
 
-            {/* "ClinicBridge One Katmanı" floating label to explain the context */}
+            {/* "ClinicBridge AI Katmanı" floating label to explain the context */}
             <div className="absolute right-[460px] bottom-[260px] z-30 shrink-0">
                <div className="bg-white px-5 py-3 rounded-full shadow-[0_10px_25px_rgba(0,0,0,0.1)] border border-slate-200 flex items-center gap-3 box-border">
                  <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse shrink-0"></div>
@@ -150,7 +150,7 @@ export default function SocialPostsPage() {
         {/* Minimal Footer Logo */}
         <div className="absolute bottom-[40px] left-1/2 -translate-x-1/2 flex items-center gap-2 opacity-50 shrink-0">
           <Bot className="w-6 h-6 text-slate-900" />
-          <span className="text-slate-900 font-bold text-lg tracking-tight">ClinicBridge One</span>
+          <span className="text-slate-900 font-bold text-lg tracking-tight">ClinicBridge AI</span>
         </div>
 
       </div>

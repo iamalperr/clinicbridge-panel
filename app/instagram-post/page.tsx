@@ -111,7 +111,7 @@ export default function InstagramPostPage() {
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <CBIcon size={26} />
-          <span style={{ color: "rgba(255,255,255,0.9)", fontWeight: 700, fontSize: 14 }}>ClinicBridge One</span>
+          <span style={{ color: "rgba(255,255,255,0.9)", fontWeight: 700, fontSize: 14 }}>ClinicBridge AI</span>
           <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 13 }}>·</span>
           <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 12, fontWeight: 500 }}>Instagram Post Preview</span>
         </div>
@@ -194,7 +194,7 @@ export default function InstagramPostPage() {
                     <span style={{ color: "#38bdf8", fontWeight: 800, fontSize: 22, letterSpacing: "-0.4px" }}>Bridge</span>
                     <span style={{ color: "rgba(255,255,255,0.55)", fontWeight: 600, fontSize: 15, marginLeft: 6, letterSpacing: "0.02em" }}>AI</span>
                   </div>
-                  <div style={{ color: "rgba(56,189,248,0.7)", fontSize: 11, fontWeight: 500, marginTop: 3, letterSpacing: "0.02em" }}>clinicbridge-one.com</div>
+                  <div style={{ color: "rgba(56,189,248,0.7)", fontSize: 11, fontWeight: 500, marginTop: 3, letterSpacing: "0.02em" }}>clinicbridge-ai.com</div>
                 </div>
               </div>
 
@@ -219,7 +219,7 @@ export default function InstagramPostPage() {
                 </span>
               </h1>
               <p style={{ color: "rgba(186,230,253,0.8)", fontSize: 18, fontWeight: 500, marginTop: 20, lineHeight: 1.6, maxWidth: 500 }}>
-                ClinicBridge One, kliniğinizin hizmetlerine ve iletişim diline göre yanıt verir.
+                ClinicBridge AI, kliniğinizin hizmetlerine ve iletişim diline göre yanıt verir.
               </p>
             </div>
 
@@ -375,7 +375,7 @@ export default function InstagramPostPage() {
                 {/* Powered by */}
                 <div style={{ background: "#f8fafc", textAlign: "center", padding: "7px", borderTop: "1px solid #f1f5f9", color: "#94a3b8", fontSize: 10, fontWeight: 600, letterSpacing: "0.04em", flexShrink: 0 }}>
                   Powered by{" "}
-                  <span style={{ fontWeight: 700 }}>ClinicBridge One</span>
+                  <span style={{ fontWeight: 700 }}>ClinicBridge AI</span>
                 </div>
               </div>
             </div>

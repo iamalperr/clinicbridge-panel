@@ -21,7 +21,7 @@ export async function sendClinicAppointmentEmail(
   payload: AppointmentEmailPayload
 ): Promise<{ success: boolean; error?: string }> {
   const RESEND_KEY = process.env.RESEND_API_KEY;
-  const FROM       = process.env.EMAIL_FROM ?? "no-reply@clinicbridge-one.com";
+  const FROM       = process.env.EMAIL_FROM ?? "no-reply@clinicbridge-ai.com";
 
   if (!RESEND_KEY) {
     console.warn("[appointment-email] RESEND_API_KEY not set — logging to console only");
@@ -31,9 +31,9 @@ export async function sendClinicAppointmentEmail(
 
   const html = `
     <div style="font-family:sans-serif;max-width:560px;margin:0 auto;line-height:1.6;">
-      <h2 style="color:#6366f1">Yeni Randevu Talebi - ClinicBridge One</h2>
+      <h2 style="color:#6366f1">Yeni Randevu Talebi - ClinicBridge AI</h2>
       <p>Merhaba,</p>
-      <p>ClinicBridge One üzerinden yeni bir randevu talebi oluşturuldu.</p>
+      <p>ClinicBridge AI üzerinden yeni bir randevu talebi oluşturuldu.</p>
       <table style="width:100%;border-collapse:collapse;margin:24px 0">
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600;width:170px">Klinik</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.clinicName}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Hasta</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.patientName}</td></tr>
@@ -46,10 +46,10 @@ export async function sendClinicAppointmentEmail(
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Durum</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">Bekliyor</td></tr>
       </table>
       <p style="color:#64748b;font-size:14px">
-        Lütfen <a href="https://app.clinicbridge-one.com" style="color:#6366f1">ClinicBridge panelinizden</a> randevu talebini kontrol ediniz.
+        Lütfen <a href="https://app.clinicbridge-ai.com" style="color:#6366f1">ClinicBridge panelinizden</a> randevu talebini kontrol ediniz.
       </p>
       <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0"/>
-      <p style="color:#94a3b8;font-size:12px">ClinicBridge One</p>
+      <p style="color:#94a3b8;font-size:12px">ClinicBridge AI</p>
     </div>
   `;
 

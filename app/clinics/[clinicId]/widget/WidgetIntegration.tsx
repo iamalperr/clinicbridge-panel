@@ -15,10 +15,10 @@ export default function WidgetIntegration({ clinicId }: WidgetIntegrationProps) 
   // Widget script URL — managed centrally via NEXT_PUBLIC_WIDGET_SCRIPT_URL
   const WIDGET_SCRIPT_URL =
     process.env.NEXT_PUBLIC_WIDGET_SCRIPT_URL ||
-    "https://widget.clinicbridge-one.com/widget.js";
+    "https://widget.clinicbridge-ai.com/widget.js";
 
   const embedCode = `<script src="${WIDGET_SCRIPT_URL}" data-clinic-id="${clinicId}"></script>`;
-  const shareableLink = `https://app.clinicbridge-one.com/widget/${clinicId}`;
+  const shareableLink = `https://app.clinicbridge-ai.com/widget/${clinicId}`;
 
   const handleCopyCode = async () => {
     try {

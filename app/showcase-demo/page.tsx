@@ -209,8 +209,8 @@ function ShowcaseContent() {
 
   const overlayTexts: Record<number, string> = {
     1: "Web siteniz yalnızca bir tanıtım sayfası olmak zorunda değil.",
-    2: "ClinicBridge One hastaları anında karşılar.",
-    3: "ClinicBridge One hastaları anında karşılar.",
+    2: "ClinicBridge AI hastaları anında karşılar.",
+    3: "ClinicBridge AI hastaları anında karşılar.",
     4: "Randevu niyetini anlar ve eksik bilgileri toplar.",
     5: "Randevu niyetini anlar ve eksik bilgileri toplar.",
     6: "Randevu niyetini anlar ve eksik bilgileri toplar.",
@@ -218,7 +218,7 @@ function ShowcaseContent() {
     8: "Talepler doğrudan klinik panelinize düşer.",
     9: "Klinik tek tıkla randevu talebini onaylar.",
     10: "Hasta otomatik SMS ile bilgilendirilir.",
-    11: "ClinicBridge One\nModern klinikler için AI destekli hasta dönüşüm altyapısı.\nclinicbridge-one.com"
+    11: "ClinicBridge AI\nModern klinikler için AI destekli hasta dönüşüm altyapısı.\nclinicbridge-ai.com"
   };
 
   const renderTyping = () => (
@@ -289,9 +289,9 @@ function ShowcaseContent() {
         {view === "outro" && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", animation: "fadein 1s" }}>
             <Logo />
-            <h1 style={{ fontSize: 40, fontWeight: 800, color: "#0f172a", marginTop: 32, letterSpacing: "-0.02em" }}>ClinicBridge One</h1>
+            <h1 style={{ fontSize: 40, fontWeight: 800, color: "#0f172a", marginTop: 32, letterSpacing: "-0.02em" }}>ClinicBridge AI</h1>
             <p style={{ fontSize: 24, color: "#475569", marginTop: 16, fontWeight: 500 }}>Modern klinikler için AI destekli hasta dönüşüm altyapısı.</p>
-            <p style={{ fontSize: 20, color: "#3b82f6", marginTop: 12, fontWeight: 600 }}>clinicbridge-one.com</p>
+            <p style={{ fontSize: 20, color: "#3b82f6", marginTop: 12, fontWeight: 600 }}>clinicbridge-ai.com</p>
           </div>
         )}
 
@@ -383,7 +383,7 @@ function ShowcaseContent() {
 
                   {/* Powered By */}
                   <div style={{ textAlign: "center", padding: "6px 0", background: "#f8fafc", fontSize: 11, color: "#94a3b8", fontWeight: 500 }}>
-                    Powered by <span style={{ fontWeight: 700 }}>ClinicBridge One</span>
+                    Powered by <span style={{ fontWeight: 700 }}>ClinicBridge AI</span>
                   </div>
 
                   {/* Input */}

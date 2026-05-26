@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "ClinicBridge One — Promo Video Preview",
-  description: "9:16 vertical video animation preview for ClinicBridge One.",
+  title: "ClinicBridge AI — Promo Video Preview",
+  description: "9:16 vertical video animation preview for ClinicBridge AI.",
 };
 
 export default function PromoVideoLayout({

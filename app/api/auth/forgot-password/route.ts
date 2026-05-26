@@ -34,11 +34,11 @@ export async function POST(req: Request) {
       expiresAt
     });
 
-    const origin = req.headers.get("origin") || process.env.NEXT_PUBLIC_APP_URL || "https://clinicbridge-one.com";
+    const origin = req.headers.get("origin") || process.env.NEXT_PUBLIC_APP_URL || "https://clinicbridge-ai.com";
     const resetLink = `${origin}/reset-password?token=${token}`;
 
     const { data, error } = await resend.emails.send({
-      from: process.env.EMAIL_FROM || "no-reply@clinicbridge-one.com",
+      from: process.env.EMAIL_FROM || "no-reply@clinicbridge-ai.com",
       to: [email],
       subject: "ClinicBridge - Şifre Sıfırlama Talebi",
       html: `
@@ -66,7 +66,7 @@ export async function POST(req: Request) {
           </div>
           
           <div style="text-align: center; margin-top: 24px; font-size: 12px; color: #94a3b8;">
-            &copy; ${new Date().getFullYear()} ClinicBridge One. Tüm hakları saklıdır.
+            &copy; ${new Date().getFullYear()} ClinicBridge AI. Tüm hakları saklıdır.
           </div>
         </div>
       `
