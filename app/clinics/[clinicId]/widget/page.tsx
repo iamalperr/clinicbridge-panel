@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import SectionCard from "@/components/ui/SectionCard";
-import { Loader2, Save, Layout, Palette, MessageCircle, Sparkles, Plus, Trash2, GripVertical } from "lucide-react";
+import { Loader2, Save, Layout, Palette, MessageCircle, Sparkles, Plus, Trash2, GripVertical, User } from "lucide-react";
 import type { WidgetSettings, ShowBubblesConfig, QuickAction, QuickActionType } from "@/lib/types";
 import WidgetPreview from "./WidgetPreview";
 import WidgetIntegration from "./WidgetIntegration";
@@ -74,6 +74,15 @@ const ACTION_TYPE_OPTIONS: { value: QuickActionType; label: string }[] = [
   { value: "pricing_info",         label: "💰 Fiyat Bilgisi" },
   { value: "contact_request",      label: "📞 İletişim / Destek" },
   { value: "custom_prompt",        label: "✏️ Özel Mesaj" },
+];
+
+const AVATAR_OPTIONS: { value: WidgetSettings["avatarType"]; label: string; icon: string }[] = [
+  { value: "default", label: "Varsayılan", icon: "👤" },
+  { value: "female_doctor", label: "Kadın Doktor", icon: "👩‍⚕️" },
+  { value: "male_doctor", label: "Erkek Doktor", icon: "👨‍⚕️" },
+  { value: "clinic_assistant", label: "Asistan", icon: "🧑‍💼" },
+  { value: "minimal", label: "Minimal", icon: "✨" },
+  { value: "custom", label: "Özel Yükle", icon: "🖼️" },
 ];
 
 const DEFAULT_QUICK_ACTIONS: QuickAction[] = [
@@ -448,6 +457,26 @@ export default function WidgetPage({ params }: PageProps) {
     } finally { setIsSaving(false); }
   };
 
+  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      setErrMsg("Dosya boyutu 2MB'den büyük olamaz.");
+      setSaveStatus("error");
+      setTimeout(() => setSaveStatus("idle"), 3000);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      if (ev.target?.result) {
+        setSettings({ ...settings, avatarType: "custom", customAvatarUrl: ev.target.result as string });
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   /* ── Quick actions state ── */
   const [quickActions, setQuickActions] = useState<QuickAction[]>(DEFAULT_QUICK_ACTIONS);
 
@@ -583,9 +612,15 @@ export default function WidgetPage({ params }: PageProps) {
                 label="Widget Başlığı"
                 value={settings.title}
                 onChange={(e) => setSettings({ ...settings, title: e.target.value })}
-                placeholder="örn: Klinik Asistanı"
+                placeholder="örn: Nova Dental Clinic"
               />
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <Input
+                label="Asistan Adı (İsteğe Bağlı)"
+                value={settings.assistantName ?? ""}
+                onChange={(e) => setSettings({ ...settings, assistantName: e.target.value })}
+                placeholder="örn: Clinic Assistant"
+              />
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, gridColumn: "1 / -1" }}>
                 <label style={{ fontSize: 13, fontWeight: 700, color: UI_COLORS.textSecondary, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                   Ana Renk
                 </label>
@@ -604,6 +639,60 @@ export default function WidgetPage({ params }: PageProps) {
                   />
                 </div>
               </div>
+            </div>
+          </SectionCard>
+
+          {/* Avatar Ayarları */}
+          <SectionCard title="Avatar Ayarları" icon={<User size={18} />}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 12 }}>
+                {AVATAR_OPTIONS.map((opt) => {
+                  const isSelected = (settings.avatarType || "default") === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      onClick={() => setSettings({ ...settings, avatarType: opt.value })}
+                      style={{
+                        background: isSelected ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.02)",
+                        border: `1px solid ${isSelected ? UI_COLORS.brand : UI_COLORS.border}`,
+                        borderRadius: 12,
+                        padding: "16px 12px",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 8,
+                        cursor: "pointer",
+                        transition: "all 0.2s",
+                        color: UI_COLORS.textPrimary,
+                      }}
+                      onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = "rgba(255,255,255,0.05)" }}
+                      onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = "rgba(255,255,255,0.02)" }}
+                    >
+                      <span style={{ fontSize: 24, lineHeight: 1 }}>{opt.icon}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600 }}>{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {settings.avatarType === "custom" && (
+                <div style={{ padding: "16px", borderRadius: 12, border: `1px dashed ${UI_COLORS.border}`, background: "rgba(255,255,255,0.02)", display: "flex", alignItems: "center", gap: 16 }}>
+                  {settings.customAvatarUrl ? (
+                    <img src={settings.customAvatarUrl} alt="Custom Avatar" style={{ width: 48, height: 48, borderRadius: "50%", objectFit: "cover" }} />
+                  ) : (
+                    <div style={{ width: 48, height: 48, borderRadius: "50%", background: "rgba(255,255,255,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: UI_COLORS.textMuted }}>
+                      <User size={20} />
+                    </div>
+                  )}
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+                    <p style={{ fontSize: 13, color: UI_COLORS.textSecondary }}>Kendi klinik ikonunuzu veya asistan resminizi yükleyin. (Maks. 2MB, JPG/PNG)</p>
+                    <label style={{ alignSelf: "flex-start", background: "rgba(255,255,255,0.05)", padding: "8px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600, color: UI_COLORS.textPrimary, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${UI_COLORS.border}` }}>
+                      Görsel Seç
+                      <input type="file" accept="image/png, image/jpeg, image/webp" onChange={handleAvatarUpload} style={{ display: "none" }} />
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
           </SectionCard>
 

@@ -113,12 +113,23 @@ export interface QuickAction {
   customPrompt?: string; // used when actionType === 'custom_prompt'
 }
 
+export type WidgetAvatarType = 
+  | "default" 
+  | "female_doctor" 
+  | "male_doctor" 
+  | "clinic_assistant" 
+  | "minimal" 
+  | "custom";
+
 export interface WidgetSettings {
   title: string;
+  assistantName?: string;
   welcomeMessage: string;
   primaryColor: string;
   position: "bottom-right" | "bottom-left";
   showAvatar: boolean;
+  avatarType?: WidgetAvatarType;
+  customAvatarUrl?: string;
   showOnlineStatus: boolean;
   placeholder: string;
   showBubbles?: ShowBubblesConfig;

@@ -181,6 +181,19 @@ function FloatingCTAButton({ side, active, primaryColor }: FloatingCTAProps) {
     </div>
   );
 }
+
+function getAvatarContent(settings: WidgetSettings) {
+  if (settings.avatarType === "custom" && settings.customAvatarUrl) {
+    return <img src={settings.customAvatarUrl} alt="Avatar" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" }} />;
+  }
+  switch (settings.avatarType) {
+    case "female_doctor": return <span style={{ fontSize: 22, lineHeight: 1 }}>👩‍⚕️</span>;
+    case "male_doctor": return <span style={{ fontSize: 22, lineHeight: 1 }}>👨‍⚕️</span>;
+    case "clinic_assistant": return <span style={{ fontSize: 22, lineHeight: 1 }}>🧑‍💼</span>;
+    case "minimal": return <Sparkles size={18} />;
+    default: return <User size={20} />;
+  }
+}
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function WidgetPreview({ settings, clinicContact = { enableHumanHandoff: true, whatsappNumber: "905551234567", telegramUsername: "clinicbridge" } }: WidgetPreviewProps) {
@@ -361,7 +374,7 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             {settings.showAvatar && (
               <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <User size={20} />
+                {getAvatarContent(settings)}
               </div>
             )}
             <div>
@@ -369,7 +382,9 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
               {settings.showOnlineStatus && (
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }} />
-                  <span style={{ fontSize: 11, opacity: 0.8 }}>Online</span>
+                  <span style={{ fontSize: 11, opacity: 0.8 }}>
+                    {settings.assistantName ? `Online • ${settings.assistantName}` : "Online"}
+                  </span>
                 </div>
               )}
             </div>
