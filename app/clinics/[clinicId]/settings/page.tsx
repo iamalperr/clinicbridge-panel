@@ -10,8 +10,8 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { UI_COLORS } from "@/components/ui/ui-shared";
-import { Loader2, MessageCircle, Phone } from "lucide-react";
-import type { Clinic } from "@/lib/types";
+import { Loader2, MessageCircle, Phone, Sparkles, Layout, Mic, Bell } from "lucide-react";
+import type { Clinic, Plan } from "@/lib/types";
 
 /** Normalises any Telegram input to a canonical https://t.me/… link */
 function normalizeTelegram(raw: string): string {
@@ -41,6 +41,9 @@ interface SettingsForm {
   enableHumanHandoff: boolean;
   whatsappNumber: string;
   telegramUsername: string;
+  // Paket & Modül
+  plan: Plan | "starter";
+  modules: { ai: boolean; widget: boolean; voice: boolean; sms?: boolean };
 }
 
 const DEFAULT_FORM: SettingsForm = {
@@ -53,6 +56,8 @@ const DEFAULT_FORM: SettingsForm = {
   enableHumanHandoff: false,
   whatsappNumber: "",
   telegramUsername: "",
+  plan: "trial",
+  modules: { ai: true, widget: true, voice: false },
 };
 
 export default function ClinicSettingsPage({ params }: PageProps) {
@@ -81,6 +86,9 @@ export default function ClinicSettingsPage({ params }: PageProps) {
           enableHumanHandoff: data.enableHumanHandoff ?? false,
           whatsappNumber: data.whatsappNumber ?? "",
           telegramUsername: data.telegramUsername ?? "",
+          // Paket & Modül — fallback: trial + AI+Widget aktif
+          plan: (data.plan as Plan | "starter") ?? "trial",
+          modules: data.modules ?? { ai: true, widget: true, voice: false },
         });
       }
     } catch (err) {
@@ -113,6 +121,9 @@ export default function ClinicSettingsPage({ params }: PageProps) {
         enableHumanHandoff: form.enableHumanHandoff,
         whatsappNumber: form.whatsappNumber.trim(),
         telegramUsername: normalizedTelegram,
+        // Paket & Modül
+        plan: form.plan as Plan,
+        modules: form.modules,
       };
       // Also update local form so the preview reflects the normalised value
       setForm(prev => ({ ...prev, telegramUsername: normalizedTelegram }));
@@ -222,6 +233,114 @@ export default function ClinicSettingsPage({ params }: PageProps) {
             <p style={{ fontSize: 13, color: UI_COLORS.textSecondary, marginTop: 4, lineHeight: 1.5 }}>
               Hastalar AI asistanıyla sohbet etmeye başlamadan önce KVKK aydınlatma metnini onaylamak zorundadır.
             </p>
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* ── Paket ve Modül Ayarları ── */}
+      <SectionCard
+        title="Paket ve Modül Ayarları"
+        subtitle="Kliniğin abonelik paketi ve aktif modülleri buradan yönetilebilir."
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+
+          {/* Paket Seçimi */}
+          <Select
+            label="Abonelik Paketi"
+            value={form.plan}
+            onChange={(e) => setForm((prev) => ({ ...prev, plan: e.target.value as Plan | "starter" }))}
+            options={[
+              { label: "Trial", value: "trial" },
+              { label: "Pro", value: "pro" },
+              { label: "Enterprise", value: "enterprise" },
+            ]}
+          />
+
+          {/* Modüller */}
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 700, color: UI_COLORS.textSecondary, display: "block", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Aktif Modüller
+            </label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              {([
+                { id: "ai",     label: "AI Assistant",    icon: <Sparkles size={18} />,  disabled: false },
+                { id: "widget", label: "Web Widget",      icon: <Layout size={18} />,    disabled: false },
+                { id: "voice",  label: "Voice Agent",     icon: <Mic size={18} />,       disabled: false },
+                { id: "sms",    label: "SMS / Bildirim",  icon: <Bell size={18} />,      disabled: true  },
+              ] as const).map((m) => {
+                const isChecked = m.disabled
+                  ? false
+                  : !!(form.modules as Record<string, boolean>)[m.id];
+                return (
+                  <div
+                    key={m.id}
+                    onClick={() => {
+                      if (m.disabled) return;
+                      setForm((prev) => ({
+                        ...prev,
+                        modules: { ...prev.modules, [m.id]: !isChecked },
+                      }));
+                    }}
+                    style={{
+                      padding: "14px 16px",
+                      borderRadius: 12,
+                      border: `1px solid ${
+                        m.disabled
+                          ? UI_COLORS.border
+                          : isChecked
+                          ? "var(--brand)"
+                          : UI_COLORS.border
+                      }`,
+                      background: m.disabled
+                        ? "rgba(255,255,255,0.01)"
+                        : isChecked
+                        ? "rgba(99,102,241,0.06)"
+                        : "rgba(255,255,255,0.01)",
+                      cursor: m.disabled ? "not-allowed" : "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      opacity: m.disabled ? 0.45 : 1,
+                      transition: "all 0.2s ease",
+                      color: m.disabled
+                        ? UI_COLORS.textMuted
+                        : isChecked
+                        ? "var(--brand)"
+                        : UI_COLORS.textSecondary,
+                    }}
+                  >
+                    {m.icon}
+                    <div style={{ flex: 1 }}>
+                      <span style={{ fontSize: 13.5, fontWeight: 600, display: "block" }}>{m.label}</span>
+                      {m.disabled && (
+                        <span style={{ fontSize: 11, color: UI_COLORS.textMuted, marginTop: 2, display: "block" }}>
+                          Yakında
+                        </span>
+                      )}
+                    </div>
+                    {/* Toggle switch */}
+                    {!m.disabled && (
+                      <div style={{
+                        width: 36, height: 20, borderRadius: 99,
+                        background: isChecked ? "var(--brand)" : UI_COLORS.border,
+                        position: "relative",
+                        transition: "background 0.2s ease",
+                        flexShrink: 0,
+                      }}>
+                        <div style={{
+                          position: "absolute",
+                          top: 3, left: isChecked ? 18 : 3,
+                          width: 14, height: 14, borderRadius: "50%",
+                          background: "white",
+                          transition: "left 0.2s ease",
+                          boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
+                        }} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </SectionCard>
@@ -339,7 +458,7 @@ export default function ClinicSettingsPage({ params }: PageProps) {
         </Button>
         {saveStatus === "success" && (
           <span style={{ color: "#10b981", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
-            ✓ Başarıyla kaydedildi!
+            ✓ Klinik ayarları güncellendi. Paket ve modül değişiklikleri anında yansıtıldı.
           </span>
         )}
         {saveStatus === "error" && (

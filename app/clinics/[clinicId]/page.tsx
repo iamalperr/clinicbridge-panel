@@ -2,10 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import {
-  collection, doc, onSnapshot, getDoc,
-  query, where, orderBy, limit,
-} from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import StatCard from "@/components/ui/StatCard";
 import SectionCard from "@/components/ui/SectionCard";
@@ -15,14 +12,11 @@ import { formatNumber } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n-context";
 import { Loader2 } from "lucide-react";
 import type { WidgetSettings, Plan } from "@/lib/types";
-
-interface LiveStats {
-  totalConversations: number;
-  totalMessages: number;
-  resolvedRate: number | null;   // null = not enough data
-  avgResponseTime: number | null; // null = not tracked
-  lastActive: string | null;
-}
+import {
+  subscribeToClinicMetrics,
+  type ClinicMetrics,
+  EMPTY_METRICS,
+} from "@/lib/services/clinicMetricsService";
 
 interface ClinicMeta {
   aiEnabled?: "active" | "inactive";
@@ -44,13 +38,7 @@ export default function ClinicOverviewPage() {
   const { t } = useI18n();
 
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<LiveStats>({
-    totalConversations: 0,
-    totalMessages: 0,
-    resolvedRate: null,
-    avgResponseTime: null,
-    lastActive: null,
-  });
+  const [metrics, setMetrics] = useState<ClinicMetrics>(EMPTY_METRICS);
   const [clinicMeta, setClinicMeta] = useState<ClinicMeta>({});
   const [widgetSettings, setWidgetSettings] = useState<Partial<WidgetSettings>>({});
 
@@ -65,34 +53,12 @@ export default function ClinicOverviewPage() {
     }).catch(() => {});
   }, [clinicId]);
 
-  /* ── Realtime listener: clinics/{clinicId}/conversations ── */
+  /* ── Realtime listener: conversationLogs via central metrics service ── */
   useEffect(() => {
-    const convRef = collection(db, "clinics", clinicId, "conversations");
-
-    const unsub = onSnapshot(convRef, (snap) => {
-      const docs = snap.docs.map((d) => d.data());
-
-      const total = docs.length;
-      const totalMessages = docs.reduce((sum, d) => sum + (d.messageCount ?? 0), 0);
-
-      // Resolution rate
-      const resolved = docs.filter((d) => d.status === "resolved").length;
-      const resolvedRate = total > 0 ? Math.round((resolved / total) * 100) : null;
-
-      // Last active: find most recent updatedAt
-      const times = docs
-        .map((d) => d.updatedAt ?? d.createdAt)
-        .filter(Boolean)
-        .sort()
-        .reverse();
-      const lastActive = times[0] ? formatRelativeTime(times[0]) : null;
-
-      setStats({ totalConversations: total, totalMessages, resolvedRate, avgResponseTime: null, lastActive });
-      setLoading(false);
-    }, () => {
+    const unsub = subscribeToClinicMetrics(clinicId, (m) => {
+      setMetrics(m);
       setLoading(false);
     });
-
     return () => unsub();
   }, [clinicId]);
 
@@ -141,7 +107,7 @@ export default function ClinicOverviewPage() {
     );
   }
 
-  const noData = stats.totalConversations === 0;
+  const noData = metrics.totalConversations === 0;
 
   return (
     <>
@@ -149,18 +115,22 @@ export default function ClinicOverviewPage() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 18, marginBottom: 28 }}>
         <StatCard
           label={t("clinics.stats.totalMessages")}
-          value={noData ? "—" : formatNumber(stats.totalMessages)}
+          value={noData ? "—" : formatNumber(metrics.totalMessages)}
           subtext={noData ? "Henüz mesaj yok" : "All time"}
         />
         <StatCard
           label={t("clinics.stats.conversations")}
-          value={noData ? "—" : formatNumber(stats.totalConversations)}
+          value={noData ? "—" : formatNumber(metrics.totalConversations)}
           subtext={noData ? "Henüz görüşme yok" : "All time"}
         />
         <StatCard
           label={t("clinics.stats.resolveRate")}
-          value={stats.resolvedRate !== null ? `${stats.resolvedRate}%` : "—"}
-          subtext={stats.resolvedRate !== null ? "Son görüşmeler" : "Veri yok"}
+          value={metrics.resolvedRate !== null ? `${metrics.resolvedRate}%` : "—"}
+          subtext={
+            metrics.resolvedRate !== null
+              ? `${metrics.resolvedCount} / ${metrics.totalConversations} görüşme`
+              : "Veri yok"
+          }
         />
         <StatCard
           label={t("clinics.stats.avgResponse")}
@@ -219,6 +189,7 @@ export default function ClinicOverviewPage() {
             </div>
           </div>
 
+          {/* Conversation stats */}
           {noData ? (
             <div style={{ gridColumn: "1 / -1" }}>
               <p style={{ fontSize: 13.5, color: UI_COLORS.textMuted, padding: "8px 0" }}>
@@ -229,9 +200,9 @@ export default function ClinicOverviewPage() {
             <>
               {[
                 ["Clinic ID", clinicId],
-                [t("clinics.overview.lastActive"), stats.lastActive ?? "—"],
                 [t("clinics.overview.language"), clinicMeta.language ?? "—"],
                 [t("clinics.overview.timezone"), clinicMeta.timezone ?? "Europe/Istanbul"],
+                ["Çözüm Oranı", metrics.resolvedRate !== null ? `%${metrics.resolvedRate}` : "—"],
               ].map(([k, v]) => (
                 <div key={k}>
                   <p style={{ fontSize: 11.5, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{k}</p>
@@ -246,22 +217,4 @@ export default function ClinicOverviewPage() {
       <style>{`.animate-spin{animation:spin 1s linear infinite}@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
     </>
   );
-}
-
-/* ── Helper: format ISO timestamp to relative string ── */
-function formatRelativeTime(isoOrTimestamp: string): string {
-  try {
-    const date = new Date(isoOrTimestamp);
-    if (isNaN(date.getTime())) return isoOrTimestamp;
-    const diff = Date.now() - date.getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return "Az önce";
-    if (mins < 60) return `${mins} dk önce`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs} saat önce`;
-    const days = Math.floor(hrs / 24);
-    return `${days} gün önce`;
-  } catch {
-    return "—";
-  }
 }

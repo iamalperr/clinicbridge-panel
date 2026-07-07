@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { collection, onSnapshot, doc, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
@@ -17,6 +17,7 @@ import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 import { formatNumber } from "@/lib/utils";
 import { CheckCircle2, Loader2, Sparkles, Layout, Mic } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
+import { subscribeToClinicMetrics, type ClinicMetrics, EMPTY_METRICS } from "@/lib/services/clinicMetricsService";
 
 export default function ClinicsPage() {
   const { profile } = useAuth();
@@ -28,6 +29,10 @@ export default function ClinicsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Gerçek zamanlı metrikler: clinicId → ClinicMetrics
+  const [metricsMap, setMetricsMap] = useState<Record<string, ClinicMetrics>>({});
+  const metricsUnsubsRef = useRef<Record<string, () => void>>({});
   
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -83,8 +88,45 @@ export default function ClinicsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isClinicUser, profile?.clinicId]);
 
+  // Her klinik için conversationLogs'dan gerçek zamanlı metrik subscriptions
+  useEffect(() => {
+    const currentUnsubs = metricsUnsubsRef.current;
+    const currentIds = new Set(Object.keys(currentUnsubs));
+    const newIds = new Set(clinics.map((c) => c.id));
+
+    // Yeni klinikler için subscribe et
+    clinics.forEach((clinic) => {
+      if (!currentIds.has(clinic.id)) {
+        const unsub = subscribeToClinicMetrics(clinic.id, (metrics) => {
+          setMetricsMap((prev) => ({ ...prev, [clinic.id]: metrics }));
+        });
+        metricsUnsubsRef.current[clinic.id] = unsub;
+      }
+    });
+
+    // Listeden kaldırılan klinikler için unsubscribe et
+    currentIds.forEach((id) => {
+      if (!newIds.has(id)) {
+        currentUnsubs[id]?.();
+        delete metricsUnsubsRef.current[id];
+        setMetricsMap((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      }
+    });
+  }, [clinics]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(metricsUnsubsRef.current).forEach((unsub) => unsub());
+    };
+  }, []);
+
   const filteredClinics = useMemo(() => {
-    return clinics.filter(c => 
+    return clinics.filter(c =>
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.domain?.toLowerCase().includes(searchQuery.toLowerCase())
     );
@@ -129,7 +171,8 @@ export default function ClinicsPage() {
   };
 
   const active = clinics.filter((c) => c.status === "active").length;
-  const totalMsgs = clinics.reduce((s, c) => s + (c.messages ?? 0), 0);
+  // Toplam mesaj: tüm kliniklerin gerçek conversationLogs metriklerinden
+  const totalMsgs = Object.values(metricsMap).reduce((s, m) => s + m.totalMessages, 0);
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "32px 40px" }}>
@@ -235,15 +278,19 @@ export default function ClinicsPage() {
                 <div style={{ marginBottom: 20 }} />
               )}
 
-              {/* Mini stats */}
+              {/* Mini stats — conversationLogs'dan gerçek veri */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "16px 0", borderTop: `1px solid ${UI_COLORS.border}`, borderBottom: `1px solid ${UI_COLORS.border}`, marginBottom: 20 }}>
                 <div>
                   <p style={{ fontSize: 11, color: UI_COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{t("dashboard.cards.messages")}</p>
-                  <p style={{ fontSize: 18, fontWeight: 700, color: UI_COLORS.textPrimary }}>{formatNumber(clinic.messages ?? 0)}</p>
+                  <p style={{ fontSize: 18, fontWeight: 700, color: UI_COLORS.textPrimary }}>
+                    {formatNumber((metricsMap[clinic.id] ?? EMPTY_METRICS).totalMessages)}
+                  </p>
                 </div>
                 <div>
                   <p style={{ fontSize: 11, color: UI_COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{t("dashboard.cards.conversations")}</p>
-                  <p style={{ fontSize: 18, fontWeight: 700, color: UI_COLORS.textPrimary }}>{formatNumber(clinic.conversations ?? 0)}</p>
+                  <p style={{ fontSize: 18, fontWeight: 700, color: UI_COLORS.textPrimary }}>
+                    {formatNumber((metricsMap[clinic.id] ?? EMPTY_METRICS).totalConversations)}
+                  </p>
                 </div>
               </div>
 
