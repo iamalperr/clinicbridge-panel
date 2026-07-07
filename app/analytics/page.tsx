@@ -10,6 +10,7 @@ import StatCard from "@/components/ui/StatCard";
 import SectionCard from "@/components/ui/SectionCard";
 import Badge from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
+import BackToDashboard from "@/components/ui/BackToDashboard";
 import { Select } from "@/components/ui/Select";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 import { formatNumber } from "@/lib/utils";
@@ -297,38 +298,42 @@ export default function AnalyticsPage() {
     <div style={{ flex: 1, overflowY: "auto", padding: "32px 40px" }}>
 
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 20, marginBottom: 32 }}>
-        <div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.6px" }}>
-            Analizler
-          </h1>
-          <p style={{ color: UI_COLORS.textSecondary, marginTop: 6, fontSize: 15, fontWeight: 500 }}>
-            {isGlobal ? "Tüm kliniklerin performans özeti" : `${selectedClinicName} — performans verileri`}
-          </p>
-        </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 32 }}>
+        <BackToDashboard href="/clinics" label="Kliniklere Dön" />
+        
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 20 }}>
+          <div>
+            <h1 style={{ fontSize: 28, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.6px" }}>
+              Analizler
+            </h1>
+            <p style={{ color: UI_COLORS.textSecondary, marginTop: 6, fontSize: 15, fontWeight: 500 }}>
+              {isGlobal ? "Tüm kliniklerin performans özeti" : `${selectedClinicName} — performans verileri`}
+            </p>
+          </div>
 
-        {/* Filters */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          {/* Clinic filter — admin only */}
-          {!isClinicUser && (
-            <div style={{ width: 220 }}>
+          {/* Filters */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            {/* Clinic filter — admin only */}
+            {!isClinicUser && (
+              <div style={{ width: 220 }}>
+                <Select
+                  value={selectedClinicId}
+                  onChange={(e) => setSelectedClinicId(e.target.value)}
+                  options={[
+                    { label: "Tüm Klinikler", value: "all" },
+                    ...clinics.map((c) => ({ label: c.name, value: c.id })),
+                  ]}
+                />
+              </div>
+            )}
+            {/* Date filter */}
+            <div style={{ width: 160 }}>
               <Select
-                value={selectedClinicId}
-                onChange={(e) => setSelectedClinicId(e.target.value)}
-                options={[
-                  { label: "Tüm Klinikler", value: "all" },
-                  ...clinics.map((c) => ({ label: c.name, value: c.id })),
-                ]}
+                value={dateRange}
+                onChange={(e) => setDateRange(e.target.value as DateRange)}
+                options={DATE_OPTIONS}
               />
             </div>
-          )}
-          {/* Date filter */}
-          <div style={{ width: 160 }}>
-            <Select
-              value={dateRange}
-              onChange={(e) => setDateRange(e.target.value as DateRange)}
-              options={DATE_OPTIONS}
-            />
           </div>
         </div>
       </div>
