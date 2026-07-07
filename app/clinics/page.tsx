@@ -33,9 +33,9 @@ export default function ClinicsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [newClinic, setNewClinic] = useState<Partial<Clinic>>({ 
-    name: "", domain: "", plan: "starter", status: "trial", 
-    modules: { ai: true, widget: false, voice: false }
+  const [newClinic, setNewClinic] = useState<Partial<Clinic>>({
+    name: "", domain: "", plan: "trial", status: "trial",
+    modules: { ai: true, widget: true, voice: false }
   });
 
   // onSnapshot — clinic list updates instantly when any clinic is modified
@@ -118,7 +118,7 @@ export default function ClinicsPage() {
       setTimeout(() => {
         setIsAddModalOpen(false);
         setIsSuccess(false);
-        setNewClinic({ name: "", domain: "", plan: "starter", status: "trial", modules: { ai: true, widget: false, voice: false } });
+        setNewClinic({ name: "", domain: "", plan: "trial", status: "trial", modules: { ai: true, widget: true, voice: false } });
       }, 1800);
     } catch (err) {
       console.error("Failed to add clinic:", err);
@@ -214,13 +214,26 @@ export default function ClinicsPage() {
                 {clinic.status && <Badge variant={clinic.status} dot />}
               </div>
 
-              {/* Feature tags */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 20 }}>
-                {clinic.plan && <Badge variant={clinic.plan} />}
-                {clinic.modules?.ai && <Badge variant="active" label="AI" />}
-                {clinic.modules?.widget && <Badge variant="indexed" label="Widget" />}
-                {clinic.modules?.voice && <Badge variant="trial" label="Voice" />}
+              {/* Package badge */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", flexShrink: 0 }}>Paket</span>
+                {clinic.plan
+                  ? <Badge variant={clinic.plan as "trial" | "pro" | "enterprise" | "starter"} />
+                  : <Badge variant="trial" label="Trial" />}
               </div>
+
+              {/* Module badges */}
+              {(clinic.modules?.ai || clinic.modules?.widget || clinic.modules?.voice) && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", flexShrink: 0 }}>Modüller</span>
+                  {clinic.modules?.ai && <Badge variant="module-ai" />}
+                  {clinic.modules?.widget && <Badge variant="module-widget" />}
+                  {clinic.modules?.voice && <Badge variant="module-voice" />}
+                </div>
+              )}
+              {!clinic.modules?.ai && !clinic.modules?.widget && !clinic.modules?.voice && (
+                <div style={{ marginBottom: 20 }} />
+              )}
 
               {/* Mini stats */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "16px 0", borderTop: `1px solid ${UI_COLORS.border}`, borderBottom: `1px solid ${UI_COLORS.border}`, marginBottom: 20 }}>
@@ -302,12 +315,12 @@ export default function ClinicsPage() {
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
-              <Select 
-                label={t("dashboard.modal.plan")} 
+              <Select
+                label={t("dashboard.modal.plan")}
                 value={newClinic.plan}
                 onChange={(e) => setNewClinic({ ...newClinic, plan: e.target.value as Plan })}
                 options={[
-                  { label: "Starter", value: "starter" },
+                  { label: "Trial", value: "trial" },
                   { label: "Pro", value: "pro" },
                   { label: "Enterprise", value: "enterprise" },
                 ]}

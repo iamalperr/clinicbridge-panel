@@ -1,4 +1,4 @@
-export type Plan = "starter" | "pro" | "enterprise";
+export type Plan = "trial" | "pro" | "enterprise";
 export type ClinicStatus = "active" | "inactive" | "trial";
 
 export type UserRole = "admin" | "clinicUser";
@@ -36,6 +36,7 @@ export interface Clinic {
     ai: boolean;
     widget: boolean;
     voice: boolean;
+    sms?: boolean; // ileride SMS / Notifications için
   };
   messages?: number;
   conversations?: number;

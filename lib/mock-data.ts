@@ -30,7 +30,7 @@ export const MOCK_CLINICS: Clinic[] = [
   {
     id: "clinic-003",
     name: "Nova Psychology Clinic",
-    plan: "starter",
+    plan: "trial",
     status: "trial",
     language: "tr",
     domain: "novapsi.com",

@@ -9,11 +9,12 @@ import {
 import { db } from "@/lib/firebase";
 import StatCard from "@/components/ui/StatCard";
 import SectionCard from "@/components/ui/SectionCard";
+import Badge from "@/components/ui/Badge";
 import { UI_COLORS } from "@/components/ui/ui-shared";
 import { formatNumber } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n-context";
 import { Loader2 } from "lucide-react";
-import type { WidgetSettings } from "@/lib/types";
+import type { WidgetSettings, Plan } from "@/lib/types";
 
 interface LiveStats {
   totalConversations: number;
@@ -29,6 +30,13 @@ interface ClinicMeta {
   language?: string;
   timezone?: string;
   createdAt?: string;
+  plan?: Plan | "starter"; // "starter" legacy fallback
+  modules?: {
+    ai: boolean;
+    widget: boolean;
+    voice: boolean;
+    sms?: boolean;
+  };
 }
 
 export default function ClinicOverviewPage() {
@@ -46,7 +54,7 @@ export default function ClinicOverviewPage() {
   const [clinicMeta, setClinicMeta] = useState<ClinicMeta>({});
   const [widgetSettings, setWidgetSettings] = useState<Partial<WidgetSettings>>({});
 
-  /* ── Fetch clinic meta (aiEnabled, domain, language, etc.) ── */
+  /* ── Fetch clinic meta (plan, modules, aiEnabled, domain, language, etc.) ── */
   useEffect(() => {
     getDoc(doc(db, "clinics", clinicId)).then((snap) => {
       if (snap.exists()) setClinicMeta(snap.data() as ClinicMeta);
@@ -88,24 +96,40 @@ export default function ClinicOverviewPage() {
     return () => unsub();
   }, [clinicId]);
 
-  /* ── Module status derived from real settings ── */
+  /* ── Module status: prefer clinicMeta.modules, fallback to aiEnabled ── */
   const modules = [
     {
       label: "AI Assistant",
-      enabled: clinicMeta.aiEnabled === "active" || clinicMeta.aiEnabled === undefined,
-      note: clinicMeta.aiEnabled === "inactive" ? "Devre dışı" : "Aktif · GPT-4o",
+      enabled: clinicMeta.modules
+        ? clinicMeta.modules.ai
+        : (clinicMeta.aiEnabled === "active" || clinicMeta.aiEnabled === undefined),
+      note: clinicMeta.modules
+        ? (clinicMeta.modules.ai ? "Aktif · GPT-4o" : "Devre dışı")
+        : (clinicMeta.aiEnabled === "inactive" ? "Devre dışı" : "Aktif · GPT-4o"),
     },
     {
       label: "Chat Widget",
-      enabled: !!widgetSettings.title, // widget settings exist → configured
-      note: widgetSettings.title ? `"${widgetSettings.title}" — ${widgetSettings.position ?? "bottom-right"}` : "Yapılandırılmamış",
+      enabled: clinicMeta.modules
+        ? clinicMeta.modules.widget
+        : !!widgetSettings.title,
+      note: clinicMeta.modules
+        ? (clinicMeta.modules.widget
+            ? (widgetSettings.title ? `"${widgetSettings.title}" — ${widgetSettings.position ?? "bottom-right"}` : "Aktif")
+            : "Devre dışı")
+        : (widgetSettings.title ? `"${widgetSettings.title}" — ${widgetSettings.position ?? "bottom-right"}` : "Yapılandırılmamış"),
     },
     {
       label: "Voice",
-      enabled: false,
-      note: "Henüz yapılandırılmadı",
+      enabled: clinicMeta.modules ? clinicMeta.modules.voice : false,
+      note: clinicMeta.modules?.voice ? "Aktif" : "Henüz yapılandırılmadı",
     },
   ];
+
+  /* ── Plan label helper ── */
+  const planLabel = clinicMeta.plan
+    ? (clinicMeta.plan === "starter" ? "Trial" : clinicMeta.plan.charAt(0).toUpperCase() + clinicMeta.plan.slice(1))
+    : "—";
+  const planVariant = (clinicMeta.plan === "starter" ? "trial" : (clinicMeta.plan ?? "trial")) as "trial" | "pro" | "enterprise";
 
   if (loading) {
     return (
@@ -176,25 +200,47 @@ export default function ClinicOverviewPage() {
 
       {/* Quick info */}
       <SectionCard title={t("clinics.overview.quickInfo")}>
-        {noData ? (
-          <p style={{ fontSize: 13.5, color: UI_COLORS.textMuted, padding: "8px 0" }}>
-            Bu klinik için henüz görüşme kaydı bulunmuyor. Widget embed edildiğinde veriler burada görünecek.
-          </p>
-        ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            {[
-              ["Clinic ID", clinicId],
-              [t("clinics.overview.lastActive"), stats.lastActive ?? "—"],
-              [t("clinics.overview.language"), clinicMeta.language ?? "—"],
-              [t("clinics.overview.timezone"), clinicMeta.timezone ?? "Europe/Istanbul"],
-            ].map(([k, v]) => (
-              <div key={k}>
-                <p style={{ fontSize: 11.5, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{k}</p>
-                <p style={{ fontSize: 13.5, color: "var(--text-primary)", fontWeight: 500 }}>{v}</p>
-              </div>
-            ))}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          {/* Plan — always shown */}
+          <div>
+            <p style={{ fontSize: 11.5, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Paket</p>
+            <Badge variant={planVariant} label={planLabel} />
           </div>
-        )}
+          {/* Active Modules */}
+          <div>
+            <p style={{ fontSize: 11.5, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Aktif Modüller</p>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {clinicMeta.modules?.ai && <Badge variant="module-ai" />}
+              {clinicMeta.modules?.widget && <Badge variant="module-widget" />}
+              {clinicMeta.modules?.voice && <Badge variant="module-voice" />}
+              {!clinicMeta.modules?.ai && !clinicMeta.modules?.widget && !clinicMeta.modules?.voice && (
+                <span style={{ fontSize: 13, color: UI_COLORS.textMuted }}>—</span>
+              )}
+            </div>
+          </div>
+
+          {noData ? (
+            <div style={{ gridColumn: "1 / -1" }}>
+              <p style={{ fontSize: 13.5, color: UI_COLORS.textMuted, padding: "8px 0" }}>
+                Bu klinik için henüz görüşme kaydı bulunmuyor. Widget embed edildiğinde veriler burada görünecek.
+              </p>
+            </div>
+          ) : (
+            <>
+              {[
+                ["Clinic ID", clinicId],
+                [t("clinics.overview.lastActive"), stats.lastActive ?? "—"],
+                [t("clinics.overview.language"), clinicMeta.language ?? "—"],
+                [t("clinics.overview.timezone"), clinicMeta.timezone ?? "Europe/Istanbul"],
+              ].map(([k, v]) => (
+                <div key={k}>
+                  <p style={{ fontSize: 11.5, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{k}</p>
+                  <p style={{ fontSize: 13.5, color: "var(--text-primary)", fontWeight: 500 }}>{v}</p>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
       </SectionCard>
 
       <style>{`.animate-spin{animation:spin 1s linear infinite}@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>

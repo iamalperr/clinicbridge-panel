@@ -92,10 +92,20 @@ export default function ClinicShell({
             <h1 style={{ fontSize: 19, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.5px", lineHeight: 1.2 }}>
               {clinic?.name ?? t("common.loading")}
             </h1>
+            {/* Row 1: Plan + Status */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-              {clinic?.plan && <Badge variant={clinic.plan} />}
+              {clinic?.plan && <Badge variant={clinic.plan as "trial" | "pro" | "enterprise" | "starter"} />}
               {clinic?.status && <Badge variant={clinic.status} dot />}
             </div>
+            {/* Row 2: Active Modules */}
+            {(clinic?.modules?.ai || clinic?.modules?.widget || clinic?.modules?.voice) && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Modüller</span>
+                {clinic?.modules?.ai && <Badge variant="module-ai" />}
+                {clinic?.modules?.widget && <Badge variant="module-widget" />}
+                {clinic?.modules?.voice && <Badge variant="module-voice" />}
+              </div>
+            )}
           </div>
         </div>
 
