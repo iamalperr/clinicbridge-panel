@@ -329,3 +329,80 @@ export function formatRelativeTime(iso: string | null): string {
     return "—";
   }
 }
+
+// ─── Package Limits ───────────────────────────────────────────────────────────
+
+export interface PackageLimit {
+  maxConversations: number | "unlimited";
+  maxMessages: number | "unlimited";
+  aiActive: boolean;
+  widgetActive: boolean;
+  voiceActive: boolean;
+  voiceOptional?: boolean;
+}
+
+export const PACKAGE_LIMITS: Record<string, PackageLimit> = {
+  trial: {
+    maxConversations: 100,
+    maxMessages: 1000,
+    aiActive: true,
+    widgetActive: true,
+    voiceActive: false,
+  },
+  starter: {
+    maxConversations: 100,
+    maxMessages: 1000,
+    aiActive: true,
+    widgetActive: true,
+    voiceActive: false,
+  },
+  pro: {
+    maxConversations: 1000,
+    maxMessages: 10000,
+    aiActive: true,
+    widgetActive: true,
+    voiceActive: false,
+    voiceOptional: true,
+  },
+  enterprise: {
+    maxConversations: "unlimited",
+    maxMessages: "unlimited",
+    aiActive: true,
+    widgetActive: true,
+    voiceActive: true,
+    voiceOptional: true,
+  }
+};
+
+export function getUsageWarnings(usagePercentage: number): {
+  level: "normal" | "warning" | "critical";
+  message: string | null;
+  color: string;
+} {
+  if (usagePercentage >= 100) {
+    return {
+      level: "critical",
+      message: "Bu klinik mevcut paket limitini aştı.",
+      color: "#ef4444" // red
+    };
+  }
+  if (usagePercentage >= 90) {
+    return {
+      level: "critical",
+      message: "Bu klinik aylık kullanım limitine yaklaştı. Paket yükseltme önerilebilir.",
+      color: "#ef4444" // red
+    };
+  }
+  if (usagePercentage >= 70) {
+    return {
+      level: "warning",
+      message: `Bu klinik aylık kullanım limitinin %${usagePercentage}'sini geçti.`,
+      color: "#fb923c" // orange
+    };
+  }
+  return {
+    level: "normal",
+    message: null,
+    color: "#10b981" // green
+  };
+}
