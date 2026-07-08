@@ -724,28 +724,28 @@ export default function WidgetPage({ params }: PageProps) {
               { value: "square", label: "Kare", preview: <div style={{ width: 32, height: 32, borderRadius: 4, background: settings.primaryColor || "#6366f1" }} /> },
               { value: "pill", label: "Pill", preview: <div style={{ width: 52, height: 28, borderRadius: 999, background: settings.primaryColor || "#6366f1" }} /> },
               { value: "minimal", label: "Minimal", preview: <div style={{ width: 32, height: 32, borderRadius: "50%", border: `2px solid ${settings.primaryColor || "#6366f1"}`, background: "transparent" }} /> },
-              { value: "chat_bubble", label: "Balo\u015f", preview: <div style={{ width: 36, height: 30, borderRadius: "12px 12px 2px 12px", background: settings.primaryColor || "#6366f1" }} /> },
+              { value: "chat_bubble", label: "Balon", preview: <div style={{ width: 36, height: 30, borderRadius: "12px 12px 2px 12px", background: settings.primaryColor || "#6366f1" }} /> },
             ];
 
             const ICON_OPTIONS: { value: WidgetLauncherConfig["icon"]; label: string; icon: string }[] = [
               { value: "sparkle", label: "Sparkle", icon: "\u2728" },
               { value: "chat", label: "Mesaj", icon: "\ud83d\udcac" },
-              { value: "tooth", label: "Di\u015f", icon: "\ud83e\uddb7" },
-              { value: "medical_plus", label: "Sa\u011fl\u0131k", icon: "\u2764\ufe0f" },
+              { value: "tooth", label: "Diş", icon: "\ud83e\uddb7" },
+              { value: "medical_plus", label: "Sağlık", icon: "\u2764\ufe0f" },
               { value: "assistant", label: "Asistan", icon: "\ud83e\udd16" },
             ];
 
             const POS_OPTIONS: { value: WidgetLauncherConfig["position"]; label: string }[] = [
-              { value: "bottom_right", label: "Sa\u011f Alt" },
+              { value: "bottom_right", label: "Sağ Alt" },
               { value: "bottom_left", label: "Sol Alt" },
-              { value: "middle_right", label: "Sa\u011f Orta" },
+              { value: "middle_right", label: "Sağ Orta" },
               { value: "middle_left", label: "Sol Orta" },
             ];
 
             const SIZE_OPTIONS: { value: WidgetLauncherConfig["size"]; label: string }[] = [
-              { value: "small", label: "K\u00fc\u00e7\u00fck" },
+              { value: "small", label: "Küçük" },
               { value: "medium", label: "Orta" },
-              { value: "large", label: "B\u00fcy\u00fck" },
+              { value: "large", label: "Büyük" },
             ];
 
             const rCard = (selected: boolean): React.CSSProperties => ({
@@ -807,12 +807,12 @@ export default function WidgetPage({ params }: PageProps) {
                       label="Buton Metni"
                       value={launcher.text}
                       onChange={(e) => setLauncher({ text: e.target.value })}
-                      placeholder="Asistan ile konu\u015f"
+                      placeholder="Asistan ile konuş"
                     />
                     <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 24 }}>
-                      <Toggle checked={launcher.showText} onChange={(v) => setLauncher({ showText: v })} label="Metni G\u00f6ster" />
-                      <Toggle checked={launcher.showOnlineIndicator} onChange={(v) => setLauncher({ showOnlineIndicator: v })} label="Online G\u00f6stergesi" />
-                      <Toggle checked={launcher.showNotificationDot} onChange={(v) => setLauncher({ showNotificationDot: v })} label="Bildirim Noktas\u0131" />
+                      <Toggle checked={launcher.showText} onChange={(v) => setLauncher({ showText: v })} label="Metni Göster" />
+                      <Toggle checked={launcher.showOnlineIndicator} onChange={(v) => setLauncher({ showOnlineIndicator: v })} label="Online Göstergesi" />
+                      <Toggle checked={launcher.showNotificationDot} onChange={(v) => setLauncher({ showNotificationDot: v })} label="Bildirim Noktası" />
                     </div>
                   </div>
 
@@ -845,16 +845,16 @@ export default function WidgetPage({ params }: PageProps) {
                     <Toggle
                       checked={launcher.tooltipEnabled}
                       onChange={(v) => setLauncher({ tooltipEnabled: v })}
-                      label="A\u00e7\u0131l\u0131\u015f Mesaj Balonu"
-                      description='Widget butonunun \u00fczerinde k\u0131sa bir kar\u015f\u0131lama mesaj\u0131 g\u00f6sterir.'
+                      label="Açılış Mesaj Balonu"
+                      description="Widget butonunun üzerinde kısa bir karşılama mesajı gösterir."
                     />
                     {launcher.tooltipEnabled && (
                       <>
                         <Input
-                          label="Tooltip Mesaj\u0131"
+                          label="Tooltip Mesajı"
                           value={launcher.tooltipMessage}
                           onChange={(e) => setLauncher({ tooltipMessage: e.target.value })}
-                          placeholder="Merhaba, size nas\u0131l yard\u0131mc\u0131 olabiliriz?"
+                          placeholder="Merhaba, size nasıl yardımcı olabiliriz?"
                         />
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
