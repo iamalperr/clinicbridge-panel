@@ -520,6 +520,7 @@
     }
 
     /* Bubble texts */
+    var sb = s.showBubbles || DEF.showBubbles || DEF_BUBBLES;
     var bubLang = (sb.messages && sb.messages[lang] && sb.messages[lang].length) ? lang : 'en';
     var texts = sb.messages[bubLang] ? sb.messages[bubLang].slice() : [];
     if (s.launcher.tooltipEnabled && locale.tooltipMessage) {
