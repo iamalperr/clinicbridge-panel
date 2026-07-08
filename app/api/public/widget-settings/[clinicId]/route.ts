@@ -133,6 +133,11 @@ export async function GET(
           disableOnMobile:    raw.showBubbles?.behavior?.disableOnMobile    ?? false,
         },
       },
+      privacy: {
+        enabled:        raw.privacy?.enabled        ?? true,
+        privacyUrl:     raw.privacy?.privacyUrl     ?? "https://app.clinicbridge-ai.com/kvkk",
+        requireConsent: raw.privacy?.requireConsent ?? true,
+      },
     };
 
     return NextResponse.json(publicSettings, { headers: CORS_HEADERS });
@@ -202,6 +207,11 @@ function buildDefaults(clinicId: string) {
       },
       timing: { initialDelaySeconds: 3, rotationIntervalSeconds: 6, autoHideSeconds: 12 },
       behavior: { hideAfterOpen: true, showOncePerSession: false, disableOnMobile: false },
+    },
+    privacy: {
+      enabled: true,
+      privacyUrl: "https://app.clinicbridge-ai.com/kvkk",
+      requireConsent: true,
     },
   };
 }

@@ -153,11 +153,18 @@ export interface WidgetLauncherConfig {
   tooltipAutoHide: boolean;
 }
 
+export interface WidgetPrivacyConfig {
+  enabled: boolean;
+  privacyUrl: string;
+  requireConsent: boolean;
+}
+
 export interface WidgetSettings {
   title: string;
   assistantName?: string;
   welcomeMessage: string;
   primaryColor: string;
+  privacy?: WidgetPrivacyConfig;
   position: "bottom-right" | "bottom-left";
   showAvatar: boolean;
   avatarType?: WidgetAvatarType;
