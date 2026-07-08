@@ -28,7 +28,7 @@ export async function POST(req: Request) {
     // 2. Verify Admin Role
     console.log(`[AdminAuth] Validating user UID: ${decodedToken.uid}, Email: ${decodedToken.email}`);
     
-    let callerDoc = await adminDb.collection("users").where("uid", "==", decodedToken.uid).limit(1).get();
+    const callerDoc = await adminDb.collection("users").where("uid", "==", decodedToken.uid).limit(1).get();
     let callerData = callerDoc.empty ? null : callerDoc.docs[0].data();
 
     // If Firestore document is missing by UID, try to find by Email (legacy users often have uid: "")

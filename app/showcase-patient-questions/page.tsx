@@ -5,6 +5,14 @@ import { Send, X, Sparkles, MousePointer2, Star, Check } from "lucide-react";
 
 type Msg = { role: "user" | "ai"; text: string };
 
+const Typing = () => (
+  <div style={{ alignSelf: "flex-start", background: "white", padding: "12px 16px", borderRadius: 16, borderBottomLeftRadius: 4, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #f1f5f9", display: "flex", gap: 4, alignItems: "center" }}>
+    {[0, 1, 2].map(i => (
+      <span key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: "#94a3b8", display: "inline-block", animation: `tdot 1.2s ${i * 0.15}s infinite ease-in-out` }} />
+    ))}
+  </div>
+);
+
 const CONV: { user: string; ai: string }[] = [
   {
     user: "Merhaba, dişlerimde hassasiyet var ve son zamanlarda renklenme fark ettim. Ne yapmalıyım?",
@@ -160,14 +168,6 @@ function Content() {
       setView("outro");
     })();
   }, [rec]);
-
-  const Typing = () => (
-    <div style={{ alignSelf: "flex-start", background: "white", padding: "12px 16px", borderRadius: 16, borderBottomLeftRadius: 4, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #f1f5f9", display: "flex", gap: 4, alignItems: "center" }}>
-      {[0, 1, 2].map(i => (
-        <span key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: "#94a3b8", display: "inline-block", animation: `tdot 1.2s ${i * 0.15}s infinite ease-in-out` }} />
-      ))}
-    </div>
-  );
 
   return (
     <div style={{ width: "100vw", height: "100vh", overflow: "hidden", position: "relative", background: "#f8fafc", fontFamily: "'Inter', -apple-system, sans-serif", cursor: rec ? "none" : "default" }}>

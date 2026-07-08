@@ -5,7 +5,7 @@ import { getAdminDb } from "@/lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resend = new Resend(process.env.RESEND_API_KEY || "dummy-resend-key");
 
 /* ─── Firestore REST API fallback ─────────────────────────────────────── */
 async function writeViaRestApi(docData: Record<string, string>): Promise<string> {
