@@ -154,7 +154,7 @@ export default function WidgetIntegration({ clinicId }: WidgetIntegrationProps) 
             </p>
           </div>
           <a
-            href="/widget-guide"
+            href="https://clinicbridge-ai.com/widget-guide"
             target="_blank"
             rel="noopener noreferrer"
             style={{
