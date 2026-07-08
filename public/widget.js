@@ -36,7 +36,7 @@
   var debugMode = scriptEl && scriptEl.dataset.debug === 'true';
   var API_BASE  = 'https://app.clinicbridge-ai.com';
   var POLL_MS   = 5000;
-  var VERSION   = '6.1.0';
+  var VERSION   = '6.2.0';
 
   /* ── Session ID ── */
   var sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
@@ -132,6 +132,20 @@
       tr: 'Merhaba, şu anda dijital asistanımızın kurulum süreci devam ediyor. Çok yakında sorularınızı buradan yanıtlayabileceğiz. Randevu ve detaylı bilgi için lütfen kliniğimizle doğrudan iletişime geçiniz.',
       en: 'Hello, our digital assistant is currently being prepared. Very soon, we’ll be able to answer your questions here. For appointments or detailed information, please contact the clinic directly.'
     },
+    launcher: {
+      shape: "rounded_square",
+      position: "bottom_right",
+      size: "medium",
+      icon: "sparkle",
+      text: "Asistan ile konuş",
+      showText: false,
+      showOnlineIndicator: true,
+      showNotificationDot: false,
+      tooltipEnabled: true,
+      tooltipMessage: "Merhaba 👋",
+      tooltipDelaySeconds: 2,
+      tooltipAutoHide: true,
+    },
     showBubbles: DEF_BUBBLES,
     messages: DEF_MSG,
   };
@@ -188,13 +202,44 @@
   }
 
   /* ─── SVGs ─── */
-  var ICON_SVG = '<svg width="30" height="30" viewBox="0 0 30 30" fill="none"><path d="M15 3.5C12 3.5 9.5 5.8 9 8.8C8.4 6.2 6.4 4.5 5 4.5C5 4.5 6 10 8 13C9.3 15.2 10 18 10 21C10 23.5 11 26 12.8 26C14 26 14.8 24.8 15 22.8C15.2 24.8 16 26 17.2 26C19 26 20 23.5 20 21C20 18 20.7 15.2 22 13C24 10 25 4.5 25 4.5C23.6 4.5 21.6 6.2 21 8.8C20.5 5.8 18 3.5 15 3.5Z" fill="white" opacity="0.93"/><path d="M23 6L23.6 7.8L25.4 8.4L23.6 9L23 10.8L22.4 9L20.6 8.4L22.4 7.8L23 6Z" fill="white"/></svg>';
+  var ICON_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path><path d="M5 3v4"></path><path d="M7 5H3"></path><path d="M21 17v4"></path><path d="M23 19h-4"></path></svg>';
+  var CHAT_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>';
+  var PULSE_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path><path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"></path></svg>';
+  var BOT_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="10" x="3" y="11" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4"></path><line x1="8" x2="8" y1="16" y2="16"></line><line x1="16" x2="16" y1="16" y2="16"></line></svg>';
   var AVT_SVG  = '<svg width="22" height="22" viewBox="0 0 30 30" fill="none"><path d="M15 3.5C12 3.5 9.5 5.8 9 8.8C8.4 6.2 6.4 4.5 5 4.5C5 4.5 6 10 8 13C9.3 15.2 10 18 10 21C10 23.5 11 26 12.8 26C14 26 14.8 24.8 15 22.8C15.2 24.8 16 26 17.2 26C19 26 20 23.5 20 21C20 18 20.7 15.2 22 13C24 10 25 4.5 25 4.5C23.6 4.5 21.6 6.2 21 8.8C20.5 5.8 18 3.5 15 3.5Z" fill="white" opacity="0.9"/></svg>';
   var CLO_SVG  = '<svg width="16" height="16" fill="none" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="white" stroke-width="2.2" stroke-linecap="round"/></svg>';
   var SND_SVG  = '<svg width="17" height="17" fill="none" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
   /* ─── CSS (injected into shadow root — fully isolated) ─── */
-  function buildCSS(c, isLeft) {
+  function buildCSS(s) {
+    var isLeft = s.launcher.position === 'bottom_left' || s.launcher.position === 'middle_left';
+    var isMiddle = s.launcher.position === 'middle_left' || s.launcher.position === 'middle_right';
+    var c = s.primaryColor;
+    
+    // Position
+    var posCSS = 'position:fixed;' +
+      (isMiddle ? 'top:50%;transform:translateY(-50%);' : 'bottom:28px;') +
+      (isLeft ? 'left:28px;right:auto;' : 'right:28px;left:auto;');
+
+    // Shape/Size
+    var scale = s.launcher.size === 'small' ? 0.85 : (s.launcher.size === 'large' ? 1.15 : 1);
+    var shape = s.launcher.shape || 'rounded_square';
+    var lRadius = '18px'; var lWidth = '60px'; var lHeight = '60px'; var lPadding = '0';
+    var lBg = c; var lShadow = '0 8px 28px ' + c + '70'; var lBorder = 'none'; var lColor = 'white';
+    
+    if (shape === 'circle') { lRadius = '50%'; }
+    if (shape === 'square') { lRadius = '4px'; }
+    if (shape === 'pill') { lRadius = '30px'; lWidth = 'auto'; lPadding = '0 24px'; }
+    if (shape === 'chat_bubble') { lRadius = isLeft ? '24px 24px 24px 4px' : '24px 24px 4px 24px'; }
+    if (shape === 'minimal') {
+      lRadius = '50%'; lBg = 'transparent'; lShadow = 'none'; lColor = c;
+    }
+
+    if (s.launcher.showText && shape !== 'minimal') {
+      lWidth = 'auto';
+      lPadding = '0 20px';
+    }
+
     return [
       /* ── Reset: everything inside the shadow root starts clean ── */
       '*, *::before, *::after{box-sizing:border-box;margin:0;padding:0;border:0;',
@@ -202,8 +247,7 @@
         'text-decoration:none;color:inherit;background:transparent;outline:none}',
 
       /* ── Host container ── */
-      ':host{all:initial;position:fixed;' + (isLeft ? 'left:28px;right:auto;' : 'right:28px;left:auto;') +
-        'bottom:28px;z-index:2147483640;display:flex;flex-direction:column;',
+      ':host{all:initial;' + posCSS + 'z-index:2147483640;display:flex;flex-direction:column;',
         'align-items:' + (isLeft ? 'flex-start' : 'flex-end') + ';gap:10px;',
         'font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;',
         'font-size:14px;line-height:1.5}',
@@ -226,13 +270,14 @@
       '@keyframes cbw-bubble-in{from{opacity:0;transform:translateY(10px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}',
 
       /* ── Launcher button ── */
-      '#cbw-launcher{width:60px!important;height:60px!important;border-radius:18px!important;',
-        'border:none!important;cursor:pointer!important;background:' + c + '!important;',
-        'box-shadow:0 8px 28px ' + c + '70!important;display:flex!important;',
+      '#cbw-launcher{width:' + lWidth + '!important;height:' + lHeight + '!important;padding:' + lPadding + '!important;',
+        'border-radius:' + lRadius + '!important;border:' + lBorder + '!important;cursor:pointer!important;',
+        'background:' + lBg + '!important;color:' + lColor + '!important;',
+        'box-shadow:' + lShadow + '!important;display:flex!important;gap:8px!important;',
         'align-items:center!important;justify-content:center!important;',
         'position:relative!important;transition:transform .25s!important;',
-        'flex-shrink:0!important;outline:none!important}',
-      '#cbw-launcher:hover{transform:scale(1.08) translateY(-2px)!important}',
+        'flex-shrink:0!important;outline:none!important;transform:scale(' + scale + ')!important;font-weight:600!important}',
+      '#cbw-launcher:hover{transform:scale(' + (scale * 1.05).toFixed(2) + ') translateY(-2px)!important}',
       '#cbw-online-dot{position:absolute!important;top:-4px!important;right:-4px!important;',
         'width:14px!important;height:14px!important;border-radius:50%!important;',
         'background:#22C55E!important;border:2.5px solid #fff!important;',
@@ -337,13 +382,29 @@
   /* ─── Build DOM inside Shadow Root ─── */
   function buildDOM(hostEl, s, lang, sys) {
     var shadow = hostEl.attachShadow({ mode: 'open' });
-    var isLeft = s.position === 'bottom-left';
     var locale = getLocale(s, lang);
+
+    /* Get SVG icon based on config */
+    var lIconSVG = ICON_SVG;
+    if (s.launcher.icon === 'chat') lIconSVG = CHAT_SVG;
+    if (s.launcher.icon === 'tooth') lIconSVG = '<span style="font-size:24px">🦷</span>';
+    if (s.launcher.icon === 'medical_plus') lIconSVG = PULSE_SVG;
+    if (s.launcher.icon === 'assistant') lIconSVG = BOT_SVG;
+    if (s.launcher.icon === 'sparkle' || s.launcher.icon === 'custom') lIconSVG = ICON_SVG;
+
+    /* Build launcher inner html */
+    var launcherInner = lIconSVG;
+    if (s.launcher.showText && s.launcher.shape !== 'minimal') {
+      launcherInner += '<span>' + s.launcher.text + '</span>';
+    }
+    if (s.launcher.showOnlineIndicator) {
+      launcherInner += '<div id="cbw-online-dot"></div>';
+    }
 
     /* CSS */
     var styleEl = d.createElement('style');
     styleEl.id  = 'cbw-style';
-    styleEl.textContent = buildCSS(s.primaryColor, isLeft);
+    styleEl.textContent = buildCSS(s);
     shadow.appendChild(styleEl);
 
     /* Bubbles container */
@@ -353,6 +414,7 @@
 
     /* Panel + Launcher */
     var wrapper = d.createElement('div');
+    wrapper.style.position = 'relative';
     wrapper.innerHTML = [
       '<div id="cbw-panel" role="dialog" aria-hidden="true">',
         '<div id="cbw-head">',
@@ -378,7 +440,9 @@
           '<a href="https://clinicbridge-ai.com" target="_blank" rel="noopener">' + sys.powered + '</a>',
         '</div>',
       '</div>',
-      '<button id="cbw-launcher" aria-label="' + sys.openAria + '">' + ICON_SVG + '<span id="cbw-online-dot"></span></button>',
+      '<button id="cbw-launcher" aria-label="' + sys.openAria + '">',
+        launcherInner,
+      '</button>',
     ].join('');
 
     while (wrapper.firstChild) shadow.appendChild(wrapper.firstChild);
@@ -389,13 +453,32 @@
   /* ─── Apply settings to shadow root DOM ─── */
   function applySettings(shadow, s, lang, sys, firstTime) {
     var locale = getLocale(s, lang);
-    var isLeft = s.position === 'bottom-left';
-    var c      = s.primaryColor;
-    var sb     = s.showBubbles;
-
-    /* Update CSS */
-    var styleEl = shadow.getElementById('cbw-style');
-    if (styleEl) styleEl.textContent = buildCSS(c, isLeft);
+    
+    if (!firstTime) {
+      /* Update styles specifically for the panel color etc if needed */
+      var styleEl = shadow.getElementById('cbw-style');
+      if (styleEl) styleEl.textContent = buildCSS(s);
+      
+      /* Update launcher content if config changed */
+      var launcherBtn = shadow.getElementById('cbw-launcher');
+      if (launcherBtn) {
+        var lIconSVG = ICON_SVG;
+        if (s.launcher.icon === 'chat') lIconSVG = CHAT_SVG;
+        if (s.launcher.icon === 'tooth') lIconSVG = '<span style="font-size:24px">🦷</span>';
+        if (s.launcher.icon === 'medical_plus') lIconSVG = PULSE_SVG;
+        if (s.launcher.icon === 'assistant') lIconSVG = BOT_SVG;
+        if (s.launcher.icon === 'sparkle' || s.launcher.icon === 'custom') lIconSVG = ICON_SVG;
+        
+        var launcherInner = lIconSVG;
+        if (s.launcher.showText && s.launcher.shape !== 'minimal') {
+          launcherInner += '<span>' + s.launcher.text + '</span>';
+        }
+        if (s.launcher.showOnlineIndicator) {
+          launcherInner += '<div id="cbw-online-dot"></div>';
+        }
+        launcherBtn.innerHTML = launcherInner;
+      }
+    }
 
     /* Title */
     var hname = shadow.querySelector('.cbw-hname');
@@ -431,10 +514,17 @@
 
     /* Bubble texts */
     var bubLang = (sb.messages && sb.messages[lang] && sb.messages[lang].length) ? lang : 'en';
-    w.__cbwBubbleTexts    = sb.messages[bubLang] || [];
-    w.__cbwBubblesEnabled = sb.enabled && sb.displayMode !== 'disabled';
+    var texts = sb.messages[bubLang] ? sb.messages[bubLang].slice() : [];
+    if (s.launcher.tooltipEnabled && locale.tooltipMessage) {
+      // Prepend tooltip if not already there
+      if (texts.indexOf(locale.tooltipMessage) === -1) {
+        texts.unshift(locale.tooltipMessage);
+      }
+    }
+    w.__cbwBubbleTexts    = texts;
+    w.__cbwBubblesEnabled = (sb.enabled && sb.displayMode !== 'disabled') || s.launcher.tooltipEnabled;
     w.__cbwBubbleInterval = (sb.timing.rotationIntervalSeconds || 6) * 1000;
-    w.__cbwBubbleDelay    = (sb.timing.initialDelaySeconds    || 3) * 1000;
+    w.__cbwBubbleDelay    = s.launcher.tooltipEnabled ? (s.launcher.tooltipDelaySeconds * 1000) : ((sb.timing.initialDelaySeconds || 3) * 1000);
 
     /* Welcome message (first load only) */
     if (firstTime) {

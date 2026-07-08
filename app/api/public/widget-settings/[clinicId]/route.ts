@@ -58,6 +58,21 @@ export async function GET(
         tr: raw.testModeMessage?.tr ?? "Merhaba, şu anda dijital asistanımızın kurulum süreci devam ediyor. Çok yakında sorularınızı buradan yanıtlayabileceğiz. Randevu ve detaylı bilgi için lütfen kliniğimizle doğrudan iletişime geçiniz.",
         en: raw.testModeMessage?.en ?? "Hello, our digital assistant is currently being prepared. Very soon, we’ll be able to answer your questions here. For appointments or detailed information, please contact the clinic directly.",
       },
+      /** Launcher config */
+      launcher: {
+        shape:               raw.launcher?.shape               ?? "rounded_square",
+        position:            raw.launcher?.position            ?? "bottom_right",
+        size:                raw.launcher?.size                ?? "medium",
+        icon:                raw.launcher?.icon                ?? "sparkle",
+        text:                raw.launcher?.text                ?? "Asistan ile konuş",
+        showText:            raw.launcher?.showText            ?? false,
+        showOnlineIndicator: raw.launcher?.showOnlineIndicator ?? true,
+        showNotificationDot: raw.launcher?.showNotificationDot ?? false,
+        tooltipEnabled:      raw.launcher?.tooltipEnabled      ?? true,
+        tooltipMessage:      raw.launcher?.tooltipMessage      ?? "Merhaba, size nasıl yardımcı olabiliriz?",
+        tooltipDelaySeconds: raw.launcher?.tooltipDelaySeconds ?? 2,
+        tooltipAutoHide:     raw.launcher?.tooltipAutoHide     ?? true,
+      },
       /** Per-language message config (greeting, placeholder, tooltip, quickActions) */
       messages: {
         tr: {
@@ -131,6 +146,20 @@ function buildDefaults(clinicId: string) {
     testModeMessage: {
       tr: "Merhaba, şu anda dijital asistanımızın kurulum süreci devam ediyor. Çok yakında sorularınızı buradan yanıtlayabileceğiz. Randevu ve detaylı bilgi için lütfen kliniğimizle doğrudan iletişime geçiniz.",
       en: "Hello, our digital assistant is currently being prepared. Very soon, we’ll be able to answer your questions here. For appointments or detailed information, please contact the clinic directly.",
+    },
+    launcher: {
+      shape: "rounded_square",
+      position: "bottom_right",
+      size: "medium",
+      icon: "sparkle",
+      text: "Asistan ile konuş",
+      showText: false,
+      showOnlineIndicator: true,
+      showNotificationDot: false,
+      tooltipEnabled: true,
+      tooltipMessage: "Merhaba, size nasıl yardımcı olabiliriz?",
+      tooltipDelaySeconds: 2,
+      tooltipAutoHide: true,
     },
     messages: {
       tr: {
