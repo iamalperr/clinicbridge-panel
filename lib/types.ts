@@ -121,6 +121,21 @@ export type WidgetAvatarType =
   | "minimal" 
   | "custom";
 
+export interface WidgetLauncherConfig {
+  shape: "rounded_square" | "circle" | "square" | "pill" | "minimal" | "chat_bubble";
+  position: "bottom_right" | "bottom_left" | "middle_right" | "middle_left";
+  size: "small" | "medium" | "large";
+  icon: "chat" | "tooth" | "medical_plus" | "assistant" | "sparkle" | "custom";
+  text: string;
+  showText: boolean;
+  showOnlineIndicator: boolean;
+  showNotificationDot: boolean;
+  tooltipEnabled: boolean;
+  tooltipMessage: string;
+  tooltipDelaySeconds: number;
+  tooltipAutoHide: boolean;
+}
+
 export interface WidgetSettings {
   title: string;
   assistantName?: string;
@@ -134,6 +149,7 @@ export interface WidgetSettings {
   placeholder: string;
   showBubbles?: ShowBubblesConfig;
   quickActions?: QuickAction[];
+  launcher?: WidgetLauncherConfig;
   updatedAt?: any;
 }
 

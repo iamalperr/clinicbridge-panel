@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Send, RotateCcw, X, User, Shield, Sparkles } from "lucide-react";
+import { Send, RotateCcw, X, User, Shield, Sparkles, MessageCircle, HeartPulse, Bot } from "lucide-react";
 import { UI_COLORS } from "@/components/ui/ui-shared";
 import type { WidgetSettings } from "@/lib/types";
 
@@ -31,62 +31,111 @@ const QUICK_QUESTIONS = [
 
 // ─── Floating CTA Button ─────────────────────────────────────────────────────
 interface FloatingCTAProps {
-  side: "right" | "left";
-  active: boolean;
-  primaryColor?: string;
+  settings: WidgetSettings;
 }
 
-function FloatingCTAButton({ side, active, primaryColor }: FloatingCTAProps) {
-  const [showTooltip, setShowTooltip] = useState(true);
+function getLauncherIcon(icon: string) {
+  switch (icon) {
+    case "chat": return <MessageCircle size={20} />;
+    case "tooth": return <span style={{ fontSize: 18 }}>🦷</span>;
+    case "medical_plus": return <HeartPulse size={20} />;
+    case "assistant": return <Bot size={20} />;
+    case "sparkle": return <Sparkles size={20} />;
+    case "custom": return <Sparkles size={20} />;
+    default: return <Sparkles size={20} />;
+  }
+}
+
+function FloatingCTAButton({ settings }: FloatingCTAProps) {
+  const launcher = settings.launcher || {
+    shape: "rounded_square", position: settings.position, size: "medium", icon: "sparkle",
+    text: "Asistan ile konuş", showText: true, showOnlineIndicator: true, showNotificationDot: false,
+    tooltipEnabled: true, tooltipMessage: "Merhaba 👋 Size yardımcı olabilirim", tooltipDelaySeconds: 2, tooltipAutoHide: true
+  };
+  
+  const active = true;
+  const primaryColor = settings.primaryColor || "#6366f1";
+  
+  const [showTooltip, setShowTooltip] = useState(false);
   const [tooltipExiting, setTooltipExiting] = useState(false);
 
-  // Auto-dismiss tooltip after 3 s
   useEffect(() => {
-    if (!active) return;
-    const timer = setTimeout(() => {
-      setTooltipExiting(true);
-      setTimeout(() => setShowTooltip(false), 300);
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, [active]);
+    if (!launcher.tooltipEnabled) {
+      setShowTooltip(false);
+      return;
+    }
+    const timerIn = setTimeout(() => {
+      setShowTooltip(true);
+      if (launcher.tooltipAutoHide) {
+        setTimeout(() => {
+          setTooltipExiting(true);
+          setTimeout(() => setShowTooltip(false), 300);
+        }, 4000);
+      }
+    }, launcher.tooltipDelaySeconds * 1000);
+    return () => clearTimeout(timerIn);
+  }, [launcher]);
 
+  const isLeft = launcher.position === "bottom_left" || launcher.position === "middle_left";
+  const isMiddle = launcher.position === "middle_left" || launcher.position === "middle_right";
+  
   const positionStyle: React.CSSProperties = {
     position: "absolute",
-    bottom: 28,
-    ...(side === "right" ? { right: 20 } : { left: 20 }),
+    ...(isMiddle ? { top: "50%", transform: "translateY(-50%)" } : { bottom: 28 }),
+    ...(isLeft ? { left: 20 } : { right: 20 }),
+    display: "flex",
+    flexDirection: "column",
+    alignItems: isLeft ? "flex-start" : "flex-end",
+    zIndex: 50,
   };
+
+  const getShapeStyle = () => {
+    switch (launcher.shape) {
+      case "circle": return { borderRadius: 999, padding: launcher.showText ? "0 20px" : "0", width: launcher.showText ? "auto" : 56, height: 56, justifyContent: "center" };
+      case "square": return { borderRadius: 12, padding: launcher.showText ? "0 16px" : "0", width: launcher.showText ? "auto" : 52, height: 52, justifyContent: "center" };
+      case "rounded_square": return { borderRadius: 20, padding: launcher.showText ? "0 18px" : "0", width: launcher.showText ? "auto" : 56, height: 56, justifyContent: "center" };
+      case "pill": return { borderRadius: 999, padding: "0 24px", height: 50, justifyContent: "center" };
+      case "minimal": return { borderRadius: "50%", padding: 0, width: 48, height: 48, background: "transparent", color: primaryColor, boxShadow: "none", border: "none", justifyContent: "center" };
+      case "chat_bubble": return { borderRadius: isLeft ? "24px 24px 24px 4px" : "24px 24px 4px 24px", padding: launcher.showText ? "0 20px" : "0", width: launcher.showText ? "auto" : 56, height: 56, justifyContent: "center" };
+      default: return { borderRadius: 999, padding: "0 18px 0 6px", height: 52 };
+    }
+  };
+
+  const shapeStyle = getShapeStyle();
+  
+  // Apply size scaling
+  const scale = launcher.size === "small" ? 0.85 : launcher.size === "large" ? 1.15 : 1;
 
   return (
     <div style={positionStyle}>
       {/* Tooltip */}
-      {active && showTooltip && (
+      {launcher.tooltipEnabled && showTooltip && (
         <div
           className={tooltipExiting ? "cta-pill-tooltip-exit" : "cta-pill-tooltip-enter"}
           style={{
             position: "absolute",
-            bottom: "calc(100% + 10px)",
-            ...(side === "right" ? { right: 0 } : { left: 0 }),
+            bottom: "calc(100% + 14px)",
+            ...(isLeft ? { left: 0 } : { right: 0 }),
             background: "rgba(15,18,28,0.92)",
             backdropFilter: "blur(12px)",
-            WebkitBackdropFilter: "blur(12px)",
             border: "1px solid rgba(255,255,255,0.10)",
-            borderRadius: 10,
-            padding: "8px 14px",
+            borderRadius: 12,
+            padding: "10px 16px",
             whiteSpace: "nowrap",
-            fontSize: 12.5,
+            fontSize: 13,
             fontWeight: 600,
             color: "#e2e8f0",
             pointerEvents: "none",
             boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
           }}
         >
-          Merhaba 👋 Size yardımcı olabilirim
+          {launcher.tooltipMessage}
           {/* Tail */}
           <span style={{
             position: "absolute",
-            bottom: -5,
-            ...(side === "right" ? { right: 18 } : { left: 18 }),
-            width: 10, height: 10,
+            bottom: -6,
+            ...(isLeft ? { left: 24 } : { right: 24 }),
+            width: 12, height: 12,
             background: "rgba(15,18,28,0.92)",
             border: "1px solid rgba(255,255,255,0.10)",
             borderTop: "none", borderLeft: "none",
@@ -96,87 +145,72 @@ function FloatingCTAButton({ side, active, primaryColor }: FloatingCTAProps) {
         </div>
       )}
 
-      {/* Pulse ring */}
-      {active && (
-        <div
-          className="cta-pulse-ring"
-          style={{
-            position: "absolute",
-            inset: -4,
-            borderRadius: 999,
-            border: `2px solid ${primaryColor || "#6366f1"}`,
-            pointerEvents: "none",
-          }}
-        />
-      )}
-
-      {/* Pill button */}
+      {/* Button */}
       <button
-        className="cta-pill"
         disabled
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 10,
-          padding: "0 18px 0 6px",
-          height: 52,
-          borderRadius: 999,
-          border: "1px solid rgba(255,255,255,0.18)",
+          gap: 8,
           cursor: "not-allowed",
           position: "relative",
-          overflow: "hidden",
-          /* Gradient background */
-          background: active
-            ? "linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)"
-            : "rgba(99,102,241,0.15)",
-          color: "white",
-          opacity: active ? 1 : 0.25,
-          transition: "transform 0.25s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.25s ease, opacity 0.3s ease",
-          boxShadow: active
-            ? "0 10px 30px rgba(99,102,241,0.45), 0 2px 8px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.2)"
-            : "none",
+          overflow: launcher.shape !== "minimal" ? "hidden" : "visible",
+          background: launcher.shape === "minimal" ? "transparent" : `linear-gradient(135deg, ${primaryColor} 0%, ${primaryColor}dd 100%)`,
+          color: launcher.shape === "minimal" ? primaryColor : "white",
+          boxShadow: launcher.shape === "minimal" ? "none" : `0 10px 30px ${primaryColor}55, 0 2px 8px rgba(0,0,0,0.25)`,
+          border: launcher.shape === "minimal" ? "none" : "1px solid rgba(255,255,255,0.18)",
+          transform: `scale(${scale})`,
+          transition: "transform 0.25s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.25s ease",
+          ...shapeStyle,
         }}
       >
-        {/* Glassmorphism overlay */}
-        <span style={{
-          position: "absolute", inset: 0,
-          borderRadius: 999,
-          background: "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)",
-          pointerEvents: "none",
-        }} />
+        {launcher.shape !== "minimal" && (
+          <span style={{
+            position: "absolute", inset: 0,
+            background: "linear-gradient(135deg, rgba(255,255,255,0.2) 0%, transparent 100%)",
+            pointerEvents: "none",
+          }} />
+        )}
 
-        {/* Icon bubble */}
+        {/* Icon */}
         <span
-          className="cta-icon-wrap"
           style={{
-            width: 40, height: 40,
-            borderRadius: "50%",
-            background: "rgba(255,255,255,0.20)",
-            backdropFilter: "blur(6px)",
-            WebkitBackdropFilter: "blur(6px)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            flexShrink: 0,
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.25)",
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            ...(launcher.shape === "minimal" 
+              ? { width: 48, height: 48, background: `${primaryColor}22`, borderRadius: "50%" } 
+              : { width: launcher.showText && launcher.shape === "rounded_square" ? 40 : "auto", height: launcher.showText && launcher.shape === "rounded_square" ? 40 : "auto", background: launcher.showText && launcher.shape === "rounded_square" ? "rgba(255,255,255,0.2)" : "transparent", borderRadius: "50%" })
           }}
         >
-          <Sparkles size={18} />
+          {getLauncherIcon(launcher.icon)}
         </span>
 
-        {/* Label + online dot */}
-        <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2, minWidth: 0 }}>
-          <span style={{ fontSize: 13.5, fontWeight: 700, letterSpacing: "-0.2px", whiteSpace: "nowrap" }}>
-            Asistan ile konuş
+        {/* Text Area */}
+        {launcher.showText && launcher.shape !== "minimal" && (
+          <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2, alignItems: "flex-start", marginLeft: 4 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, whiteSpace: "nowrap" }}>
+              {launcher.text}
+            </span>
+            {launcher.showOnlineIndicator && (
+              <span style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
+                <span style={{
+                  width: 6, height: 6, borderRadius: "50%",
+                  background: "#10b981",
+                  boxShadow: "0 0 0 2px rgba(16,185,129,0.3)",
+                }} />
+                <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.9 }}>Online</span>
+              </span>
+            )}
           </span>
-          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <span style={{
-              width: 6, height: 6, borderRadius: "50%",
-              background: "#10b981",
-              boxShadow: "0 0 0 2px rgba(16,185,129,0.3)",
-              display: "inline-block",
-            }} />
-            <span style={{ fontSize: 10.5, fontWeight: 600, opacity: 0.8 }}>Online</span>
-          </span>
-        </span>
+        )}
+        
+        {/* Notification Dot overlay if not text mode or minimal */}
+        {launcher.showNotificationDot && (
+          <span style={{
+            position: "absolute", top: -2, right: -2,
+            width: 14, height: 14, background: "#ef4444", borderRadius: "50%",
+            border: "2px solid var(--bg-card)"
+          }} />
+        )}
       </button>
     </div>
   );
@@ -629,19 +663,8 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
         </div>
       </div>
 
-      {/* Floating CTA – Bottom Right */}
-      <FloatingCTAButton
-        side="right"
-        active={settings.position === "bottom-right"}
-        primaryColor={settings.primaryColor}
-      />
-
-      {/* Floating CTA – Bottom Left */}
-      <FloatingCTAButton
-        side="left"
-        active={settings.position === "bottom-left"}
-        primaryColor={settings.primaryColor}
-      />
+      {/* Floating CTA */}
+      <FloatingCTAButton settings={settings} />
 
       <style>{`
         @keyframes typing {

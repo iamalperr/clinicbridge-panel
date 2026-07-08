@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import SectionCard from "@/components/ui/SectionCard";
 import { Loader2, Save, Layout, Palette, MessageCircle, Sparkles, Plus, Trash2, GripVertical, User } from "lucide-react";
-import type { WidgetSettings, ShowBubblesConfig, QuickAction, QuickActionType } from "@/lib/types";
+import type { WidgetSettings, ShowBubblesConfig, QuickAction, QuickActionType, WidgetLauncherConfig } from "@/lib/types";
 import WidgetPreview from "./WidgetPreview";
 import WidgetIntegration from "./WidgetIntegration";
 import {
@@ -55,6 +55,21 @@ const DEFAULT_BUBBLES: ShowBubblesConfig = {
   behavior: { hideAfterOpen: true, showOncePerSession: false, disableOnMobile: false },
 };
 
+const DEFAULT_LAUNCHER: WidgetLauncherConfig = {
+  shape: "rounded_square",
+  position: "bottom_right",
+  size: "medium",
+  icon: "sparkle",
+  text: "Asistan ile konuş",
+  showText: true,
+  showOnlineIndicator: true,
+  showNotificationDot: false,
+  tooltipEnabled: true,
+  tooltipMessage: "Merhaba, size nasıl yardımcı olabiliriz?",
+  tooltipDelaySeconds: 2,
+  tooltipAutoHide: true,
+};
+
 const DEFAULT_SETTINGS: WidgetSettings = {
   title: "Clinic Assistant",
   welcomeMessage: "Merhaba! Size nasıl yardımcı olabilirim?",
@@ -64,6 +79,7 @@ const DEFAULT_SETTINGS: WidgetSettings = {
   showOnlineStatus: true,
   placeholder: "Bir mesaj yazın...",
   showBubbles: DEFAULT_BUBBLES,
+  launcher: DEFAULT_LAUNCHER,
 };
 
 const ACTION_TYPE_OPTIONS: { value: QuickActionType; label: string }[] = [
@@ -695,6 +711,173 @@ export default function WidgetPage({ params }: PageProps) {
               )}
             </div>
           </SectionCard>
+
+          {/* Widget Butonu */}
+          {(() => {
+            const launcher: WidgetLauncherConfig = settings.launcher || DEFAULT_LAUNCHER;
+            const setLauncher = (patch: Partial<WidgetLauncherConfig>) =>
+              setSettings({ ...settings, launcher: { ...launcher, ...patch } });
+
+            const SHAPE_OPTIONS: { value: WidgetLauncherConfig["shape"]; label: string; preview: React.ReactNode }[] = [
+              { value: "rounded_square", label: "Yuvarlak Kare", preview: <div style={{ width: 32, height: 32, borderRadius: 10, background: settings.primaryColor || "#6366f1" }} /> },
+              { value: "circle", label: "Daire", preview: <div style={{ width: 32, height: 32, borderRadius: "50%", background: settings.primaryColor || "#6366f1" }} /> },
+              { value: "square", label: "Kare", preview: <div style={{ width: 32, height: 32, borderRadius: 4, background: settings.primaryColor || "#6366f1" }} /> },
+              { value: "pill", label: "Pill", preview: <div style={{ width: 52, height: 28, borderRadius: 999, background: settings.primaryColor || "#6366f1" }} /> },
+              { value: "minimal", label: "Minimal", preview: <div style={{ width: 32, height: 32, borderRadius: "50%", border: `2px solid ${settings.primaryColor || "#6366f1"}`, background: "transparent" }} /> },
+              { value: "chat_bubble", label: "Balo\u015f", preview: <div style={{ width: 36, height: 30, borderRadius: "12px 12px 2px 12px", background: settings.primaryColor || "#6366f1" }} /> },
+            ];
+
+            const ICON_OPTIONS: { value: WidgetLauncherConfig["icon"]; label: string; icon: string }[] = [
+              { value: "sparkle", label: "Sparkle", icon: "\u2728" },
+              { value: "chat", label: "Mesaj", icon: "\ud83d\udcac" },
+              { value: "tooth", label: "Di\u015f", icon: "\ud83e\uddb7" },
+              { value: "medical_plus", label: "Sa\u011fl\u0131k", icon: "\u2764\ufe0f" },
+              { value: "assistant", label: "Asistan", icon: "\ud83e\udd16" },
+            ];
+
+            const POS_OPTIONS: { value: WidgetLauncherConfig["position"]; label: string }[] = [
+              { value: "bottom_right", label: "Sa\u011f Alt" },
+              { value: "bottom_left", label: "Sol Alt" },
+              { value: "middle_right", label: "Sa\u011f Orta" },
+              { value: "middle_left", label: "Sol Orta" },
+            ];
+
+            const SIZE_OPTIONS: { value: WidgetLauncherConfig["size"]; label: string }[] = [
+              { value: "small", label: "K\u00fc\u00e7\u00fck" },
+              { value: "medium", label: "Orta" },
+              { value: "large", label: "B\u00fcy\u00fck" },
+            ];
+
+            const rCard = (selected: boolean): React.CSSProperties => ({
+              background: selected ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.02)",
+              border: `1px solid ${selected ? UI_COLORS.brand : UI_COLORS.border}`,
+              borderRadius: 12,
+              padding: "12px 10px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 8,
+              cursor: "pointer",
+              transition: "all 0.2s",
+              color: UI_COLORS.textPrimary,
+            });
+
+            const subLabel: React.CSSProperties = {
+              fontSize: 13,
+              fontWeight: 700,
+              color: UI_COLORS.textSecondary,
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              marginBottom: 10,
+            };
+
+            return (
+              <SectionCard title="Widget Butonu" icon={<MessageCircle size={18} />}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+
+                  {/* Buton Şekli */}
+                  <div>
+                    <p style={subLabel}>Buton Şekli</p>
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      {SHAPE_OPTIONS.map((opt) => (
+                        <button key={opt.value} onClick={() => setLauncher({ shape: opt.value })} style={rCard(launcher.shape === opt.value)}>
+                          {opt.preview}
+                          <span style={{ fontSize: 12, fontWeight: 600 }}>{opt.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Buton İkonu */}
+                  <div>
+                    <p style={subLabel}>Buton İkonu</p>
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      {ICON_OPTIONS.map((opt) => (
+                        <button key={opt.value} onClick={() => setLauncher({ icon: opt.value })} style={rCard(launcher.icon === opt.value)}>
+                          <span style={{ fontSize: 22, lineHeight: 1 }}>{opt.icon}</span>
+                          <span style={{ fontSize: 12, fontWeight: 600 }}>{opt.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Buton Metni & Toggle'lar */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
+                    <Input
+                      label="Buton Metni"
+                      value={launcher.text}
+                      onChange={(e) => setLauncher({ text: e.target.value })}
+                      placeholder="Asistan ile konu\u015f"
+                    />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 24 }}>
+                      <Toggle checked={launcher.showText} onChange={(v) => setLauncher({ showText: v })} label="Metni G\u00f6ster" />
+                      <Toggle checked={launcher.showOnlineIndicator} onChange={(v) => setLauncher({ showOnlineIndicator: v })} label="Online G\u00f6stergesi" />
+                      <Toggle checked={launcher.showNotificationDot} onChange={(v) => setLauncher({ showNotificationDot: v })} label="Bildirim Noktas\u0131" />
+                    </div>
+                  </div>
+
+                  {/* Konum & Boyut */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                    <div>
+                      <p style={subLabel}>Konum</p>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        {POS_OPTIONS.map((opt) => (
+                          <button key={opt.value} onClick={() => setLauncher({ position: opt.value })} style={{ ...rCard(launcher.position === opt.value), padding: "10px 8px" }}>
+                            <span style={{ fontSize: 12, fontWeight: 600 }}>{opt.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p style={subLabel}>Boyut</p>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        {SIZE_OPTIONS.map((opt) => (
+                          <button key={opt.value} onClick={() => setLauncher({ size: opt.value })} style={{ ...rCard(launcher.size === opt.value), padding: "10px 8px", flex: "1 1 0" }}>
+                            <span style={{ fontSize: 12, fontWeight: 600 }}>{opt.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Tooltip */}
+                  <div style={{ padding: 16, borderRadius: 12, border: `1px solid ${UI_COLORS.border}`, background: "rgba(255,255,255,0.02)", display: "flex", flexDirection: "column", gap: 16 }}>
+                    <Toggle
+                      checked={launcher.tooltipEnabled}
+                      onChange={(v) => setLauncher({ tooltipEnabled: v })}
+                      label="A\u00e7\u0131l\u0131\u015f Mesaj Balonu"
+                      description='Widget butonunun \u00fczerinde k\u0131sa bir kar\u015f\u0131lama mesaj\u0131 g\u00f6sterir.'
+                    />
+                    {launcher.tooltipEnabled && (
+                      <>
+                        <Input
+                          label="Tooltip Mesaj\u0131"
+                          value={launcher.tooltipMessage}
+                          onChange={(e) => setLauncher({ tooltipMessage: e.target.value })}
+                          placeholder="Merhaba, size nas\u0131l yard\u0131mc\u0131 olabiliriz?"
+                        />
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            <label style={{ fontSize: 13, fontWeight: 700, color: UI_COLORS.textSecondary, textTransform: "uppercase", letterSpacing: "0.05em" }}>Gecikme (sn)</label>
+                            <input
+                              type="number" min={0} max={30}
+                              value={launcher.tooltipDelaySeconds}
+                              onChange={(e) => setLauncher({ tooltipDelaySeconds: Number(e.target.value) })}
+                              style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(255,255,255,0.03)", border: `1px solid ${UI_COLORS.border}`, fontSize: 13.5, color: UI_COLORS.textPrimary, outline: "none", width: "100%" }}
+                            />
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 24 }}>
+                            <Toggle checked={launcher.tooltipAutoHide} onChange={(v) => setLauncher({ tooltipAutoHide: v })} label="Otomatik Kapan" />
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                </div>
+              </SectionCard>
+            );
+          })()}
 
           {/* Mesajlar */}
           <SectionCard title="Mesajlar ve İçerik" icon={<MessageCircle size={18} />}>
