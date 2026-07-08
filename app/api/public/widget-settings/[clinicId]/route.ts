@@ -49,6 +49,8 @@ export async function GET(
       primaryColor:     raw.primaryColor     ?? "#6366f1",
       position:         raw.position         ?? "bottom-right",
       showAvatar:       raw.showAvatar       ?? true,
+      avatarType:       raw.avatarType       ?? "default",
+      customAvatarUrl:  raw.customAvatarUrl  ?? null,
       showOnlineStatus: raw.showOnlineStatus ?? true,
       /** Default language preference — auto | tr | en */
       defaultLanguage:  raw.defaultLanguage  ?? "auto",
@@ -151,6 +153,8 @@ function buildDefaults(clinicId: string) {
     primaryColor: "#6366f1",
     position: "bottom-right",
     showAvatar: true,
+    avatarType: "default",
+    customAvatarUrl: null,
     showOnlineStatus: true,
     defaultLanguage: "auto",
     testMode: false,

@@ -79,6 +79,10 @@
       connErr:   'Bağlantı hatası oluştu. Lütfen kliniğimizi doğrudan arayın. 📞',
       closeAria: 'Kapat',
       openAria:  'ClinicBridge AI Asistanı Aç',
+      consentTitle: 'KVKK ve Gizlilik',
+      consentText: 'Yapay zekâ asistanımızla yapacağınız görüşmelerde sağladığınız bilgiler hizmet kalitesi amacıyla işlenebilir. Devam ederek Aydınlatma Metni’ni kabul etmiş olursunuz.',
+      consentAccept: 'Kabul Ediyorum ve Devam Et',
+      consentDecline: 'Reddet',
     },
     en: {
       online:    'Online',
@@ -89,6 +93,10 @@
       connErr:   'Connection error. Please call the clinic directly. 📞',
       closeAria: 'Close',
       openAria:  'Open ClinicBridge AI Assistant',
+      consentTitle: 'Privacy & Data Protection',
+      consentText: 'Information you share with our AI assistant may be processed to improve service quality. By continuing, you acknowledge the privacy notice.',
+      consentAccept: 'Accept and Continue',
+      consentDecline: 'Decline',
     },
   };
 
@@ -218,6 +226,19 @@
     minimal: '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="3"/></svg>'
   };
   var AVT_SVG  = '<svg width="22" height="22" viewBox="0 0 30 30" fill="none"><path d="M15 3.5C12 3.5 9.5 5.8 9 8.8C8.4 6.2 6.4 4.5 5 4.5C5 4.5 6 10 8 13C9.3 15.2 10 18 10 21C10 23.5 11 26 12.8 26C14 26 14.8 24.8 15 22.8C15.2 24.8 16 26 17.2 26C19 26 20 23.5 20 21C20 18 20.7 15.2 22 13C24 10 25 4.5 25 4.5C23.6 4.5 21.6 6.2 21 8.8C20.5 5.8 18 3.5 15 3.5Z" fill="white" opacity="0.9"/></svg>';
+  var AVATARS = {
+    female_doctor: '<span style="font-size:24px;line-height:1">👩‍⚕️</span>',
+    male_doctor: '<span style="font-size:24px;line-height:1">👨‍⚕️</span>',
+    clinic_assistant: '<span style="font-size:24px;line-height:1">🧑‍💼</span>',
+    minimal: SVG_NS + '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>',
+    default: AVT_SVG
+  };
+  function getAvatarHTML(s) {
+    if (s.avatarType === 'custom' && s.customAvatarUrl) {
+      return '<img src="' + s.customAvatarUrl + '" alt="Avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%"/>';
+    }
+    return AVATARS[s.avatarType] || AVATARS['default'];
+  }
   var CLO_SVG  = '<svg width="16" height="16" fill="none" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="white" stroke-width="2.2" stroke-linecap="round"/></svg>';
   var SND_SVG  = '<svg width="17" height="17" fill="none" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
@@ -429,7 +450,7 @@
       '<div id="cbw-panel" role="dialog" aria-hidden="true">',
         '<div id="cbw-head">',
           '<div class="cbw-hleft">',
-            '<div class="cbw-avatar">' + AVT_SVG + '</div>',
+            '<div class="cbw-avatar">' + getAvatarHTML(s) + '</div>',
             '<div>',
               '<span class="cbw-hname"></span>',
               '<div class="cbw-hstatus">',
@@ -440,14 +461,23 @@
           '</div>',
           '<button id="cbw-close" aria-label="' + sys.closeAria + '">' + CLO_SVG + '</button>',
         '</div>',
-        '<div id="cbw-msgs"></div>',
-        '<div id="cbw-quick"></div>',
-        '<div id="cbw-inputrow">',
-          '<input id="cbw-input" type="text" autocomplete="off" placeholder="' + locale.inputPlaceholder + '"/>',
-          '<button id="cbw-send" aria-label="' + sys.send + '">' + SND_SVG + '</button>',
+        '<div id="cbw-consent" style="display:none;flex-direction:column;flex:1;padding:24px;text-align:center;align-items:center;justify-content:center;background:#fff;z-index:10;">',
+          '<div style="font-size:48px;margin-bottom:16px;">🛡️</div>',
+          '<h3 style="margin:0 0 12px;font-size:16px;color:#0f172a;font-family:inherit;">' + sys.consentTitle + '</h3>',
+          '<p style="margin:0 0 24px;font-size:13px;color:#475569;line-height:1.5;font-family:inherit;">' + sys.consentText + '</p>',
+          '<button id="cbw-consent-accept" style="width:100%;padding:12px;background:' + s.primaryColor + ';color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;margin-bottom:8px;transition:opacity .2s;font-family:inherit;">' + sys.consentAccept + '</button>',
+          '<button id="cbw-consent-decline" style="width:100%;padding:10px;background:transparent;color:#64748b;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">' + sys.consentDecline + '</button>',
         '</div>',
-        '<div id="cbw-powered">',
-          '<a href="https://clinicbridge-ai.com" target="_blank" rel="noopener">' + sys.powered + '</a>',
+        '<div id="cbw-chat" style="display:flex;flex-direction:column;flex:1;">',
+          '<div id="cbw-msgs"></div>',
+          '<div id="cbw-quick"></div>',
+          '<div id="cbw-inputrow">',
+            '<input id="cbw-input" type="text" autocomplete="off" placeholder="' + locale.inputPlaceholder + '"/>',
+            '<button id="cbw-send" aria-label="' + sys.send + '">' + SND_SVG + '</button>',
+          '</div>',
+          '<div id="cbw-powered">',
+            '<a href="https://clinicbridge-ai.com" target="_blank" rel="noopener">' + sys.powered + '</a>',
+          '</div>',
         '</div>',
       '</div>',
       '<button id="cbw-launcher" aria-label="' + sys.openAria + '">',
@@ -503,9 +533,12 @@
     var hstatus = shadow.querySelector('.cbw-hstatus');
     if (hstatus) hstatus.style.display = s.showOnlineStatus ? '' : 'none';
 
-    /* Avatar visibility */
+    /* Avatar visibility and content */
     var avt = shadow.querySelector('.cbw-avatar');
-    if (avt) avt.style.display = s.showAvatar ? '' : 'none';
+    if (avt) {
+      avt.style.display = s.showAvatar ? '' : 'none';
+      if (!firstTime) avt.innerHTML = getAvatarHTML(s);
+    }
 
     /* Input placeholder */
     var inp = shadow.getElementById('cbw-input');
@@ -597,8 +630,20 @@
       isTestMode = embedTestMode || !!s.testMode;
       testModeMsg = (s.testModeMessage && s.testModeMessage[resolvedLang]) || DEF.testModeMessage[resolvedLang] || DEF.testModeMessage.en;
 
-      dbg('Config loaded:', { title: s.title, color: s.primaryColor, defaultLanguage: s.defaultLanguage, testMode: isTestMode });
+      var consentKey = 'clinicbridge_consent_' + clinicId;
+      var hasConsent = w.localStorage.getItem(consentKey) === 'true';
 
+      dbg('Config loaded:', { 
+        title: s.title, 
+        color: s.primaryColor, 
+        resolvedLang: resolvedLang, 
+        testMode: isTestMode,
+        consentAccepted: hasConsent,
+        avatar: s.avatarType || 'default',
+        launcherShape: s.launcher.shape,
+        launcherIcon: s.launcher.icon,
+        launcherShowText: s.launcher.showText
+      });
       shadow = buildDOM(hostEl, s, resolvedLang, sys);
       applySettings(shadow, s, resolvedLang, sys, true);
       lastHash = JSON.stringify(raw);
@@ -626,6 +671,23 @@
         var btn = e.target.closest('.cbw-qbtn');
         if (btn) send(shadow, btn.textContent.trim(), lang, sys, testMode, testMsg);
       });
+      
+      var consentAccept = shadow.getElementById('cbw-consent-accept');
+      if (consentAccept) {
+        consentAccept.addEventListener('click', function () {
+          w.localStorage.setItem('clinicbridge_consent_' + clinicId, 'true');
+          shadow.getElementById('cbw-consent').style.display = 'none';
+          shadow.getElementById('cbw-chat').style.display = 'flex';
+          var inp = shadow.getElementById('cbw-input');
+          if (inp) inp.focus();
+        });
+      }
+      var consentDecline = shadow.getElementById('cbw-consent-decline');
+      if (consentDecline) {
+        consentDecline.addEventListener('click', function () {
+          closePanel(shadow);
+        });
+      }
     }
 
     function sendFromInput(shadow, lang, sys, testMode, testMsg) {
@@ -703,8 +765,21 @@
       clearBubbles(shadow);
       var p = shadow.getElementById('cbw-panel');
       if (p) { p.classList.add('cbw-open'); p.setAttribute('aria-hidden', 'false'); }
-      var inp = shadow.getElementById('cbw-input');
-      if (inp) inp.focus();
+      
+      var consentKey = 'clinicbridge_consent_' + clinicId;
+      var hasConsent = w.localStorage.getItem(consentKey) === 'true';
+      var consentEl = shadow.getElementById('cbw-consent');
+      var chatEl = shadow.getElementById('cbw-chat');
+      
+      if (!hasConsent) {
+        if (consentEl) consentEl.style.display = 'flex';
+        if (chatEl) chatEl.style.display = 'none';
+      } else {
+        if (consentEl) consentEl.style.display = 'none';
+        if (chatEl) chatEl.style.display = 'flex';
+        var inp = shadow.getElementById('cbw-input');
+        if (inp) inp.focus();
+      }
     }
     function closePanel(shadow) {
       isOpen = false;
