@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import SectionCard from "@/components/ui/SectionCard";
-import { Loader2, Save, Layout, Palette, MessageCircle, Sparkles, Plus, Trash2, GripVertical, User } from "lucide-react";
+import { Loader2, Save, Layout, Palette, MessageCircle, Sparkles, Plus, Trash2, GripVertical, User, Activity } from "lucide-react";
 import type { WidgetSettings, ShowBubblesConfig, QuickAction, QuickActionType, WidgetLauncherConfig, WidgetMessages, WidgetLanguage } from "@/lib/types";
 import WidgetPreview from "./WidgetPreview";
 import WidgetIntegration from "./WidgetIntegration";
@@ -105,6 +105,11 @@ const DEFAULT_SETTINGS: WidgetSettings = {
   launcher: DEFAULT_LAUNCHER,
   messages: DEFAULT_MESSAGES,
   defaultLanguage: "auto",
+  testMode: false,
+  testModeMessage: {
+    tr: "Bu widget şu anda yalnızca entegrasyon ve performans testi için aktiftir. Klinik özelindeki asistan yapılandırması tamamlandığında sorularınızı yanıtlayabilecektir.",
+    en: "This widget is currently active for integration and performance testing only. Once the clinic-specific assistant setup is completed, it will be able to answer your questions."
+  }
 };
 
 const ACTION_TYPE_OPTIONS: { value: QuickActionType; label: string }[] = [
@@ -1239,6 +1244,55 @@ export default function WidgetPage({ params }: PageProps) {
                 <span style={{ flex: 1 }}>İngilizce</span>
                 <span style={{ flex: "0 0 60px" }}>Aktif</span>
               </div>
+            </div>
+          </SectionCard>
+
+          {/* ── Test Mode Section ── */}
+          <SectionCard
+            title="Test Modu"
+            subtitle="Bu widget şu anda web sitenizde test ediliyorsa canlı AI asistanını devre dışı bırakın."
+            icon={<Activity size={18} />}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              <Toggle
+                checked={settings.testMode ?? false}
+                onChange={(v) => setSettings(s => ({ ...s, testMode: v }))}
+                label="Test Modu Aktif"
+                description="Test modu aktifken widget web sitesinde görünür, ancak kullanıcı mesajlarına klinik özelinde yanıt üretmez. Bu mod performans ve entegrasyon testleri için önerilir."
+              />
+
+              {(settings.testMode ?? false) && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 8, padding: 16, background: "rgba(255,255,255,0.03)", borderRadius: 12, border: `1px solid ${UI_COLORS.border}` }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: UI_COLORS.textSecondary, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      Türkçe Test Mesajı
+                    </label>
+                    <textarea
+                      value={settings.testModeMessage?.tr ?? ""}
+                      onChange={e => setSettings(s => ({
+                        ...s,
+                        testModeMessage: { ...s.testModeMessage, en: s.testModeMessage?.en ?? "", tr: e.target.value }
+                      }))}
+                      placeholder="Türkçe test mesajı..."
+                      style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${UI_COLORS.border}`, background: "rgba(255,255,255,0.03)", color: UI_COLORS.textPrimary, fontSize: 14, outline: "none", minHeight: 80, resize: "vertical", fontFamily: "inherit" }}
+                    />
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: UI_COLORS.textSecondary, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      İngilizce Test Mesajı (English)
+                    </label>
+                    <textarea
+                      value={settings.testModeMessage?.en ?? ""}
+                      onChange={e => setSettings(s => ({
+                        ...s,
+                        testModeMessage: { ...s.testModeMessage, tr: s.testModeMessage?.tr ?? "", en: e.target.value }
+                      }))}
+                      placeholder="English test message..."
+                      style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${UI_COLORS.border}`, background: "rgba(255,255,255,0.03)", color: UI_COLORS.textPrimary, fontSize: 14, outline: "none", minHeight: 80, resize: "vertical", fontFamily: "inherit" }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </SectionCard>
 

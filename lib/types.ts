@@ -167,6 +167,12 @@ export interface WidgetSettings {
   /** Multi-language message config */
   defaultLanguage?: WidgetLanguage;
   messages?: WidgetMessages;
+  /** Test Mode config */
+  testMode?: boolean;
+  testModeMessage?: {
+    tr: string;
+    en: string;
+  };
   updatedAt?: any;
 }
 

@@ -52,6 +52,12 @@ export async function GET(
       showOnlineStatus: raw.showOnlineStatus ?? true,
       /** Default language preference — auto | tr | en */
       defaultLanguage:  raw.defaultLanguage  ?? "auto",
+      /** Test Mode config */
+      testMode:         raw.testMode         ?? false,
+      testModeMessage: {
+        tr: raw.testModeMessage?.tr ?? "Bu widget şu anda yalnızca entegrasyon ve performans testi için aktiftir. Klinik özelindeki asistan yapılandırması tamamlandığında sorularınızı yanıtlayabilecektir.",
+        en: raw.testModeMessage?.en ?? "This widget is currently active for integration and performance testing only. Once the clinic-specific assistant setup is completed, it will be able to answer your questions.",
+      },
       /** Per-language message config (greeting, placeholder, tooltip, quickActions) */
       messages: {
         tr: {
@@ -121,6 +127,11 @@ function buildDefaults(clinicId: string) {
     showAvatar: true,
     showOnlineStatus: true,
     defaultLanguage: "auto",
+    testMode: false,
+    testModeMessage: {
+      tr: "Bu widget şu anda yalnızca entegrasyon ve performans testi için aktiftir. Klinik özelindeki asistan yapılandırması tamamlandığında sorularınızı yanıtlayabilecektir.",
+      en: "This widget is currently active for integration and performance testing only. Once the clinic-specific assistant setup is completed, it will be able to answer your questions.",
+    },
     messages: {
       tr: {
         greetingMessage:  "Merhaba! Size nasıl yardımcı olabiliriz?",
