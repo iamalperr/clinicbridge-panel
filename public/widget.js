@@ -79,8 +79,6 @@
       connErr:   'Bağlantı hatası oluştu. Lütfen kliniğimizi doğrudan arayın. 📞',
       closeAria: 'Kapat',
       openAria:  'ClinicBridge AI Asistanı Aç',
-      testBadge: 'Test modu aktif',
-      testQA:    ['Widget nasıl çalışır?', 'Entegrasyon testi yapıyorum', 'Performans testi hakkında bilgi'],
     },
     en: {
       online:    'Online',
@@ -91,8 +89,6 @@
       connErr:   'Connection error. Please call the clinic directly. 📞',
       closeAria: 'Close',
       openAria:  'Open ClinicBridge AI Assistant',
-      testBadge: 'Test mode active',
-      testQA:    ['How does the widget work?', 'I\'m testing the integration', 'About performance testing'],
     },
   };
 
@@ -133,8 +129,8 @@
     defaultLanguage: 'auto',
     testMode: false,
     testModeMessage: {
-      tr: 'Bu widget şu anda yalnızca entegrasyon ve performans testi için aktiftir. Klinik özelindeki asistan yapılandırması tamamlandığında sorularınızı yanıtlayabilecektir.',
-      en: 'This widget is currently active for integration and performance testing only. Once the clinic-specific assistant setup is completed, it will be able to answer your questions.'
+      tr: 'Merhaba, şu anda dijital asistanımızın kurulum süreci devam ediyor. Çok yakında sorularınızı buradan yanıtlayabileceğiz. Randevu ve detaylı bilgi için lütfen kliniğimizle doğrudan iletişime geçiniz.',
+      en: 'Hello, our digital assistant is currently being prepared. Very soon, we’ll be able to answer your questions here. For appointments or detailed information, please contact the clinic directly.'
     },
     showBubbles: DEF_BUBBLES,
     messages: DEF_MSG,
@@ -178,16 +174,16 @@
   }
 
   /* ─── Get locale for a specific language ─── */
-  function getLocale(s, lang, isTestMode, sys) {
+  function getLocale(s, lang) {
     var m = s.messages && s.messages[lang];
     var d = DEF_MSG[lang] || DEF_MSG.en;
     var locale = {
       greetingMessage:  (m && m.greetingMessage)  || d.greetingMessage,
       inputPlaceholder: (m && m.inputPlaceholder) || d.inputPlaceholder,
       tooltipMessage:   (m && m.tooltipMessage)   || d.tooltipMessage,
-      quickActions:     isTestMode ? sys.testQA : ((m && m.quickActions && m.quickActions.length) ? m.quickActions : d.quickActions),
+      quickActions:     (m && m.quickActions && m.quickActions.length) ? m.quickActions : d.quickActions,
     };
-    dbg('Locale[' + lang + ']:', locale, isTestMode ? '(Test Mode)' : '');
+    dbg('Locale[' + lang + ']:', locale);
     return locale;
   }
 
@@ -275,11 +271,6 @@
         'justify-content:center!important;transition:background .2s!important}',
       '#cbw-close:hover{background:rgba(255,255,255,.3)!important}',
 
-      /* ── Test Mode Badge ── */
-      '#cbw-test-badge{background:#F59E0B!important;color:#fff!important;font-size:11px!important;',
-        'font-weight:600!important;text-transform:uppercase!important;padding:4px 0!important;',
-        'text-align:center!important;letter-spacing:0.05em!important;font-family:inherit!important}',
-
       /* ── Messages area ── */
       '#cbw-msgs{flex:1!important;overflow-y:auto!important;padding:16px!important;',
         'display:flex!important;flex-direction:column!important;gap:12px!important;',
@@ -344,10 +335,10 @@
   }
 
   /* ─── Build DOM inside Shadow Root ─── */
-  function buildDOM(hostEl, s, lang, sys, isTestMode) {
+  function buildDOM(hostEl, s, lang, sys) {
     var shadow = hostEl.attachShadow({ mode: 'open' });
     var isLeft = s.position === 'bottom-left';
-    var locale = getLocale(s, lang, isTestMode, sys);
+    var locale = getLocale(s, lang);
 
     /* CSS */
     var styleEl = d.createElement('style');
@@ -359,8 +350,6 @@
     var bubs = d.createElement('div');
     bubs.id   = 'cbw-bubbles';
     shadow.appendChild(bubs);
-
-    var testBadgeHTML = isTestMode ? '<div id="cbw-test-badge">' + sys.testBadge + '</div>' : '';
 
     /* Panel + Launcher */
     var wrapper = d.createElement('div');
@@ -379,7 +368,6 @@
           '</div>',
           '<button id="cbw-close" aria-label="' + sys.closeAria + '">' + CLO_SVG + '</button>',
         '</div>',
-        testBadgeHTML,
         '<div id="cbw-msgs"></div>',
         '<div id="cbw-quick"></div>',
         '<div id="cbw-inputrow">',
@@ -399,8 +387,8 @@
   }
 
   /* ─── Apply settings to shadow root DOM ─── */
-  function applySettings(shadow, s, lang, sys, isTestMode, firstTime) {
-    var locale = getLocale(s, lang, isTestMode, sys);
+  function applySettings(shadow, s, lang, sys, firstTime) {
+    var locale = getLocale(s, lang);
     var isLeft = s.position === 'bottom-left';
     var c      = s.primaryColor;
     var sb     = s.showBubbles;
@@ -511,8 +499,8 @@
 
       dbg('Config loaded:', { title: s.title, color: s.primaryColor, defaultLanguage: s.defaultLanguage, testMode: isTestMode });
 
-      shadow = buildDOM(hostEl, s, resolvedLang, sys, isTestMode);
-      applySettings(shadow, s, resolvedLang, sys, isTestMode, true);
+      shadow = buildDOM(hostEl, s, resolvedLang, sys);
+      applySettings(shadow, s, resolvedLang, sys, true);
       lastHash = JSON.stringify(raw);
 
       wireEvents(shadow, s, resolvedLang, sys, isTestMode, testModeMsg);
@@ -670,9 +658,11 @@
           var s = mergeConfig(raw);
           var sys = SYS[resolvedLang] || SYS.en;
           
-          /* If test mode state changes dramatically, we might need a full reboot but for now just update settings */
-          var newTestMode = embedTestMode || !!s.testMode;
-          applySettings(shadow, s, resolvedLang, sys, newTestMode, false);
+          /* Check if test mode toggled via backend */
+          isTestMode = embedTestMode || !!s.testMode;
+          testModeMsg = (s.testModeMessage && s.testModeMessage[resolvedLang]) || DEF.testModeMessage[resolvedLang] || DEF.testModeMessage.en;
+
+          applySettings(shadow, s, resolvedLang, sys, false);
           clearBubbles(shadow);
           if (!isOpen && w.__cbwBubblesEnabled) setTimeout(function () { showBubble(shadow); }, 1000);
         });

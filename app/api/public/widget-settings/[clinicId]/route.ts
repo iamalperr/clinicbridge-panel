@@ -55,8 +55,8 @@ export async function GET(
       /** Test Mode config */
       testMode:         raw.testMode         ?? false,
       testModeMessage: {
-        tr: raw.testModeMessage?.tr ?? "Bu widget şu anda yalnızca entegrasyon ve performans testi için aktiftir. Klinik özelindeki asistan yapılandırması tamamlandığında sorularınızı yanıtlayabilecektir.",
-        en: raw.testModeMessage?.en ?? "This widget is currently active for integration and performance testing only. Once the clinic-specific assistant setup is completed, it will be able to answer your questions.",
+        tr: raw.testModeMessage?.tr ?? "Merhaba, şu anda dijital asistanımızın kurulum süreci devam ediyor. Çok yakında sorularınızı buradan yanıtlayabileceğiz. Randevu ve detaylı bilgi için lütfen kliniğimizle doğrudan iletişime geçiniz.",
+        en: raw.testModeMessage?.en ?? "Hello, our digital assistant is currently being prepared. Very soon, we’ll be able to answer your questions here. For appointments or detailed information, please contact the clinic directly.",
       },
       /** Per-language message config (greeting, placeholder, tooltip, quickActions) */
       messages: {
@@ -129,8 +129,8 @@ function buildDefaults(clinicId: string) {
     defaultLanguage: "auto",
     testMode: false,
     testModeMessage: {
-      tr: "Bu widget şu anda yalnızca entegrasyon ve performans testi için aktiftir. Klinik özelindeki asistan yapılandırması tamamlandığında sorularınızı yanıtlayabilecektir.",
-      en: "This widget is currently active for integration and performance testing only. Once the clinic-specific assistant setup is completed, it will be able to answer your questions.",
+      tr: "Merhaba, şu anda dijital asistanımızın kurulum süreci devam ediyor. Çok yakında sorularınızı buradan yanıtlayabileceğiz. Randevu ve detaylı bilgi için lütfen kliniğimizle doğrudan iletişime geçiniz.",
+      en: "Hello, our digital assistant is currently being prepared. Very soon, we’ll be able to answer your questions here. For appointments or detailed information, please contact the clinic directly.",
     },
     messages: {
       tr: {

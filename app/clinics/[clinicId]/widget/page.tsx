@@ -107,8 +107,8 @@ const DEFAULT_SETTINGS: WidgetSettings = {
   defaultLanguage: "auto",
   testMode: false,
   testModeMessage: {
-    tr: "Bu widget şu anda yalnızca entegrasyon ve performans testi için aktiftir. Klinik özelindeki asistan yapılandırması tamamlandığında sorularınızı yanıtlayabilecektir.",
-    en: "This widget is currently active for integration and performance testing only. Once the clinic-specific assistant setup is completed, it will be able to answer your questions."
+    tr: "Merhaba, şu anda dijital asistanımızın kurulum süreci devam ediyor. Çok yakında sorularınızı buradan yanıtlayabileceğiz. Randevu ve detaylı bilgi için lütfen kliniğimizle doğrudan iletişime geçiniz.",
+    en: "Hello, our digital assistant is currently being prepared. Very soon, we’ll be able to answer your questions here. For appointments or detailed information, please contact the clinic directly."
   }
 };
 
@@ -1250,7 +1250,7 @@ export default function WidgetPage({ params }: PageProps) {
           {/* ── Test Mode Section ── */}
           <SectionCard
             title="Test Modu"
-            subtitle="Bu widget şu anda web sitenizde test ediliyorsa canlı AI asistanını devre dışı bırakın."
+            subtitle="Test modu aktifken widget web sitesinde normal şekilde görünür. Ancak kullanıcı mesajlarına klinik özelinde AI yanıtı üretmez. Bu mod, klinik özelindeki içerikler tamamlanmadan önce performans ve entegrasyon testleri için kullanılır."
             icon={<Activity size={18} />}
           >
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -1258,7 +1258,7 @@ export default function WidgetPage({ params }: PageProps) {
                 checked={settings.testMode ?? false}
                 onChange={(v) => setSettings(s => ({ ...s, testMode: v }))}
                 label="Test Modu Aktif"
-                description="Test modu aktifken widget web sitesinde görünür, ancak kullanıcı mesajlarına klinik özelinde yanıt üretmez. Bu mod performans ve entegrasyon testleri için önerilir."
+                description="Kullanıcı mesaj yazdığında AI yanıtı üretmek yerine aşağıdaki mesajı gösterir."
               />
 
               {(settings.testMode ?? false) && (
