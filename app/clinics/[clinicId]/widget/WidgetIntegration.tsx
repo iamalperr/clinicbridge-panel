@@ -135,6 +135,42 @@ export default function WidgetIntegration({ clinicId }: WidgetIntegrationProps) 
         </div>
       </div>
 
+      {/* Integration Guide Section */}
+      <div style={{
+        background: UI_COLORS.bgCard,
+        border: `1px solid ${UI_COLORS.border}`,
+        borderRadius: 16,
+        padding: 20,
+        display: "flex", flexDirection: "column", gap: 16
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, color: UI_COLORS.textPrimary, fontWeight: 600, fontSize: 15 }}>
+              <Globe size={18} color={UI_COLORS.brand} />
+              Web sağlayıcınız için entegrasyon rehberi
+            </div>
+            <p style={{ fontSize: 13, color: UI_COLORS.textSecondary, marginTop: 4, lineHeight: 1.5, maxWidth: 500 }}>
+              Widget kurulumunu web ekibinizle paylaşmak için ClinicBridge AI entegrasyon rehberini kullanabilirsiniz.
+            </p>
+          </div>
+          <a
+            href="/widget-guide"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              background: UI_COLORS.brand,
+              color: "#fff",
+              border: "none",
+              padding: "8px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+              cursor: "pointer", transition: "all 0.2s", textDecoration: "none"
+            }}
+          >
+            Rehberi Aç
+          </a>
+        </div>
+      </div>
+
       {/* Premium / Custom Domain Section */}
       <div style={{ 
         background: `linear-gradient(135deg, ${UI_COLORS.bgCard} 0%, rgba(99, 102, 241, 0.05) 100%)`, 

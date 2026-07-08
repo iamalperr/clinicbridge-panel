@@ -93,12 +93,13 @@ export function middleware(req: NextRequest) {
       return NextResponse.next();
     }
 
-    // Allow LinkedIn showcase demos and assets
+    // Allow LinkedIn showcase demos and assets, and widget guide
     if (
       pathname === "/showcase-demo" ||
       pathname === "/showcase-patient-questions" ||
       pathname === "/linkedin-assets" ||
-      pathname === "/social-posts"
+      pathname === "/social-posts" ||
+      pathname === "/widget-guide"
     ) return NextResponse.next();
 
     // Block everything else → back to landing
