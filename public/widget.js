@@ -1,7 +1,12 @@
 /**
- * ClinicBridge AI Widget v4.1 — Live Settings Polling
+ * ClinicBridge AI Widget v5.0 — Multi-Language Runtime
  * https://widget.clinicbridge-ai.com/widget.js
- * Usage: <script src="..." data-clinic-id="YOUR_ID"></script>
+ * Usage: <script src="..." data-clinic-id="YOUR_ID" data-language="tr|en"></script>
+ *
+ * Language resolution priority:
+ *   1. data-language attribute on the script tag
+ *   2. widgetConfig.defaultLanguage from API (if not "auto")
+ *   3. navigator.language — tr/tr-TR → "tr", everything else → "en"
  */
 (function (w, d) {
   'use strict';
@@ -17,24 +22,103 @@
 
   w.__cbwLoaded = true;
 
-  var scriptEl  = d.currentScript || d.querySelector('script[data-clinic-id]');
+  var scriptEl = d.currentScript || d.querySelector('script[data-clinic-id]');
   var clinicId  = scriptEl && scriptEl.dataset.clinicId || 'demo';
+  // Read data-language from embed tag (overrides everything)
+  var embedLang = scriptEl && scriptEl.dataset.language || null; // "tr" | "en" | null
   var API_BASE  = 'https://app.clinicbridge-ai.com';
   var POLL_MS   = 5000;
 
   /* ── Session ID (unique per page load) ── */
   var sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
 
-  /* ── Log conversation message to Firestore via API ── */
+  /* ── Resolve language ──────────────────────────────────────────────────
+     Priority: data-language attr → config.defaultLanguage → browser lang */
+  function resolveLang(cfg) {
+    if (embedLang === 'tr' || embedLang === 'en') return embedLang;
+    if (cfg && cfg.defaultLanguage && cfg.defaultLanguage !== 'auto') return cfg.defaultLanguage;
+    var nav = (navigator.language || navigator.languages && navigator.languages[0] || 'en');
+    return nav.slice(0,2).toLowerCase() === 'tr' ? 'tr' : 'en';
+  }
+
+  /* ── i18n system strings ── */
+  var SYS = {
+    tr: {
+      online:   'Çevrimiçi',
+      justNow:  'Az önce',
+      send:     'Gönder',
+      poweredBy:'ClinicBridge AI ile desteklenmektedir',
+      noReply:  'Üzgünüm, şu an yanıt üretemiyorum. Lütfen kliniğimizi arayın.',
+      connErr:  'Bağlantı hatası oluştu. Lütfen kliniğimizi doğrudan arayın. 📞',
+      closeAria: 'Kapat',
+      openAria:  'ClinicBridge AI Asistanı Aç',
+    },
+    en: {
+      online:   'Online',
+      justNow:  'Just now',
+      send:     'Send',
+      poweredBy:'Powered by ClinicBridge AI',
+      noReply:  'Sorry, I cannot respond right now. Please call the clinic.',
+      connErr:  'Connection error. Please call the clinic directly. 📞',
+      closeAria: 'Close',
+      openAria:  'Open ClinicBridge AI Assistant',
+    }
+  };
+
+  /* ── Default messages (fallback when widgetConfig.messages is absent) ── */
+  var DEF_MESSAGES = {
+    tr: {
+      greetingMessage:  'Merhaba! Size nasıl yardımcı olabiliriz?',
+      inputPlaceholder: 'Bir mesaj yazın...',
+      tooltipMessage:   'Merhaba, size nasıl yardımcı olabiliriz?',
+      quickActions:     [
+        'Randevu almak istiyorum',
+        'Hizmetleriniz nelerdir?',
+        'Kliniğiniz nerede?',
+      ],
+    },
+    en: {
+      greetingMessage:  'Hello! How can we help you?',
+      inputPlaceholder: 'Type your message...',
+      tooltipMessage:   'Hello, how can we help you?',
+      quickActions:     [
+        'Book an appointment',
+        'What services do you offer?',
+        'Where is your clinic?',
+      ],
+    },
+  };
+
+  /* ── Show-bubbles defaults ── */
+  var DEF_BUBBLES = {
+    enabled: true, displayMode: 'rotate',
+    messages: { tr: ['Randevu almak ister misiniz?'], en: ['Want to book an appointment?'] },
+    timing:   { initialDelaySeconds: 3, rotationIntervalSeconds: 6 },
+    behavior: { hideAfterOpen: true, showOncePerSession: false, disableOnMobile: false }
+  };
+
+  /* ── Overall widget defaults ── */
+  var DEF = {
+    title: 'ClinicBridge AI',
+    primaryColor: '#6366f1',
+    position: 'bottom-right',
+    showAvatar: true,
+    showOnlineStatus: true,
+    showBubbles: DEF_BUBBLES,
+    messages: DEF_MESSAGES,
+    defaultLanguage: 'auto',
+  };
+
+  /* ─── Log conversation message to Firestore via API ─── */
   function logMessage(userMessage) {
     fetch(API_BASE + '/api/public/conversation-log', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ clinicId: clinicId, sessionId: sessionId, userMessage: userMessage }),
-    }).catch(function() {}); // fire-and-forget, never block UI
+    }).catch(function() {}); // fire-and-forget
   }
 
-  /* ─── fetch settings (no-cache) ─── */
+  /* ─── Fetch settings (no-cache) ─── */
   function fetchCfg(cb) {
     fetch(API_BASE + '/api/public/widget-settings/' + clinicId, {
       cache: 'no-store',
@@ -45,31 +129,38 @@
     .catch(function(){ cb({}); });
   }
 
-  /* ─── defaults ─── */
-  var DEF = {
-    title: 'Clinic Assistant',
-    welcomeMessage: 'Merhaba! Size nasıl yardımcı olabilirim?',
-    placeholder: 'Bir mesaj yazın...',
-    primaryColor: '#6366f1',
-    position: 'bottom-right',
-    showAvatar: true,
-    showOnlineStatus: true,
-    showBubbles: {
-      enabled: true, displayMode: 'rotate',
-      messages: { tr: ['Randevu almak ister misiniz?'], en: ['Want to book an appointment?'] },
-      timing: { initialDelaySeconds: 3, rotationIntervalSeconds: 6 },
-      behavior: { hideAfterOpen: true, showOncePerSession: false, disableOnMobile: false }
-    }
-  };
-
+  /* ─── Deep-merge config with defaults ─── */
   function merge(cfg) {
     var s  = Object.assign({}, DEF, cfg);
-    var sb = Object.assign({}, DEF.showBubbles, s.showBubbles);
-    sb.messages  = Object.assign({}, DEF.showBubbles.messages,  sb.messages);
-    sb.timing    = Object.assign({}, DEF.showBubbles.timing,     sb.timing);
-    sb.behavior  = Object.assign({}, DEF.showBubbles.behavior,   sb.behavior);
+    // Merge show-bubbles
+    var sb = Object.assign({}, DEF_BUBBLES, s.showBubbles);
+    sb.messages  = Object.assign({}, DEF_BUBBLES.messages, sb.messages);
+    sb.timing    = Object.assign({}, DEF_BUBBLES.timing,   sb.timing);
+    sb.behavior  = Object.assign({}, DEF_BUBBLES.behavior, sb.behavior);
     s.showBubbles = sb;
+    // Merge i18n messages
+    var msgs = { tr: Object.assign({}, DEF_MESSAGES.tr), en: Object.assign({}, DEF_MESSAGES.en) };
+    if (cfg.messages) {
+      if (cfg.messages.tr) msgs.tr = Object.assign({}, DEF_MESSAGES.tr, cfg.messages.tr);
+      if (cfg.messages.en) msgs.en = Object.assign({}, DEF_MESSAGES.en, cfg.messages.en);
+    }
+    // Backwards-compat: if welcomeMessage/placeholder are set but messages.tr is empty, fill in
+    if (cfg.welcomeMessage && !msgs.tr.greetingMessage) msgs.tr.greetingMessage = cfg.welcomeMessage;
+    if (cfg.placeholder   && !msgs.tr.inputPlaceholder) msgs.tr.inputPlaceholder = cfg.placeholder;
+    s.messages = msgs;
     return s;
+  }
+
+  /* ─── Resolve locale object for a given lang ─── */
+  function getLocale(s, lang) {
+    var m = s.messages && s.messages[lang];
+    var def = DEF_MESSAGES[lang];
+    return {
+      greetingMessage:  (m && m.greetingMessage)  || def.greetingMessage,
+      inputPlaceholder: (m && m.inputPlaceholder) || def.inputPlaceholder,
+      tooltipMessage:   (m && m.tooltipMessage)   || def.tooltipMessage,
+      quickActions:     (m && m.quickActions && m.quickActions.length) ? m.quickActions : def.quickActions,
+    };
   }
 
   /* ─── SVGs ─── */
@@ -78,11 +169,9 @@
   var CLO  = '<svg width="16" height="16" fill="none" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="white" stroke-width="2.2" stroke-linecap="round"/></svg>';
   var SND  = '<svg width="17" height="17" fill="none" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
-  function esc(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  function attr(t){ return String(t).replace(/"/g,'&quot;'); }
-
   /* ─── initial DOM build (called once) ─── */
-  function buildDOM(s) {
+  function buildDOM(s, lang) {
+    var sys = SYS[lang] || SYS.en;
     var isLeft = s.position === 'bottom-left';
 
     // inject <style>
@@ -103,35 +192,35 @@
           '<div class="cbw-hleft">',
             '<div class="cbw-avatar">' + AVT + '</div>',
             '<div><span class="cbw-hname"></span>',
-              '<div class="cbw-hstatus"><span class="cbw-sdot"></span>Online</div></div>',
+              '<div class="cbw-hstatus"><span class="cbw-sdot"></span><span id="cbw-online-text">' + sys.online + '</span></div></div>',
           '</div>',
-          '<button id="cbw-close" aria-label="Close">' + CLO + '</button>',
+          '<button id="cbw-close" aria-label="' + sys.closeAria + '">' + CLO + '</button>',
         '</div>',
         '<div id="cbw-msgs"></div>',
         '<div id="cbw-quick"></div>',
         '<div id="cbw-inputrow">',
           '<input id="cbw-input" type="text" autocomplete="off"/>',
-          '<button id="cbw-send" aria-label="Send">' + SND + '</button>',
+          '<button id="cbw-send" aria-label="' + sys.send + '">' + SND + '</button>',
         '</div>',
-        '<div id="cbw-powered">Powered by <a href="https://clinicbridge-ai.com" target="_blank" rel="noopener">ClinicBridge AI</a></div>',
+        '<div id="cbw-powered"><a href="https://clinicbridge-ai.com" target="_blank" rel="noopener">' + sys.poweredBy + '</a></div>',
       '</div>',
-      '<button id="cbw-launcher" aria-label="Open ClinicBridge AI">' + ICON + '<span id="cbw-online"></span></button>',
+      '<button id="cbw-launcher" aria-label="' + sys.openAria + '">' + ICON + '<span id="cbw-online"></span></button>',
     ].join('');
 
     d.body.appendChild(root);
   }
 
   /* ─── apply settings to existing DOM ─── */
-  function applySettings(s, firstTime) {
+  function applySettings(s, lang, firstTime) {
     var isLeft = s.position === 'bottom-left';
-    var c = s.primaryColor;
-    var lang = (navigator.language || 'en').slice(0,2);
-    if (!s.showBubbles.messages[lang]) lang = 'en';
-    var sb = s.showBubbles;
+    var c      = s.primaryColor;
+    var sys    = SYS[lang] || SYS.en;
+    var locale = getLocale(s, lang);
+    var sb     = s.showBubbles;
 
     /* update <style> */
     var styleEl = d.getElementById('cbw-style');
-    if (styleEl) styleEl.textContent = buildCSS(s, isLeft, c, lang);
+    if (styleEl) styleEl.textContent = buildCSS(s, isLeft, c);
 
     /* position */
     var root = d.getElementById('cbw-root');
@@ -150,39 +239,39 @@
 
     /* title */
     var hname = d.querySelector('.cbw-hname');
-    if (hname) hname.textContent = s.title;
+    if (hname) hname.textContent = s.title || 'ClinicBridge AI';
 
-    /* placeholder */
+    /* online text */
+    var onlineText = d.getElementById('cbw-online-text');
+    if (onlineText) onlineText.textContent = sys.online;
+
+    /* placeholder from locale */
     var inp = d.getElementById('cbw-input');
-    if (inp) inp.placeholder = s.placeholder;
+    if (inp) inp.placeholder = locale.inputPlaceholder;
 
     /* avatar */
     var avt = d.querySelector('.cbw-avatar');
     if (avt) avt.style.display = s.showAvatar ? '' : 'none';
 
-    /* online status */
+    /* online status visibility */
     var onlineEl = d.getElementById('cbw-online');
     if (onlineEl) onlineEl.style.display = s.showOnlineStatus ? '' : 'none';
     var hstatus  = d.querySelector('.cbw-hstatus');
     if (hstatus) hstatus.style.display = s.showOnlineStatus ? '' : 'none';
 
-    /* quick buttons */
+    /* quick action buttons — rebuilt from locale.quickActions */
     if (firstTime) {
       var quickEl = d.getElementById('cbw-quick');
       if (quickEl) {
-        var qi = [
-          { label: lang==='tr' ? '📅 Randevu almak istiyorum' : '📅 Book an appointment', key:'book' },
-          { label: lang==='tr' ? '🏥 Hizmetleriniz neler?' : '🏥 What services?', key:'services' },
-          { label: lang==='tr' ? '💬 WhatsApp ile iletişim' : '💬 Contact on WhatsApp', key:'whatsapp' },
-        ];
-        quickEl.innerHTML = qi.map(function(q){
-          return '<button class="cbw-qbtn" data-key="'+q.key+'">'+q.label+'</button>';
+        quickEl.innerHTML = locale.quickActions.map(function(qa) {
+          return '<button class="cbw-qbtn">' + qa + '</button>';
         }).join('');
       }
     }
 
-    /* bubble messages */
-    w.__cbwBubbleTexts = (sb.messages[lang] && sb.messages[lang].length) ? sb.messages[lang] : sb.messages.en;
+    /* bubble messages — use resolved language */
+    var bubLang = (sb.messages && sb.messages[lang] && sb.messages[lang].length) ? lang : 'en';
+    w.__cbwBubbleTexts    = sb.messages[bubLang];
     w.__cbwBubblesEnabled = sb.enabled && sb.displayMode !== 'disabled';
     w.__cbwBubbleInterval = (sb.timing.rotationIntervalSeconds || 6) * 1000;
     w.__cbwBubbleDelay    = (sb.timing.initialDelaySeconds || 3) * 1000;
@@ -190,12 +279,12 @@
     /* welcome message — only on first load */
     if (firstTime) {
       var msgs = d.getElementById('cbw-msgs');
-      if (msgs) appendMsg(s.welcomeMessage, false, msgs, lang, true);
+      if (msgs) appendMsg(locale.greetingMessage, false, msgs, sys.justNow, true);
     }
   }
 
   /* ─── CSS builder ─── */
-  function buildCSS(s, isLeft, c, lang) {
+  function buildCSS(s, isLeft, c) {
     return [
       '#cbw-launcher{width:60px;height:60px;border-radius:18px;border:none;cursor:pointer;background:'+c+';',
         'box-shadow:0 8px 28px '+c+'70;display:flex;align-items:center;justify-content:center;',
@@ -209,7 +298,7 @@
         'font-size:13.5px;color:#1e293b;box-shadow:0 4px 18px rgba(0,0,0,.11);display:flex;align-items:center;',
         'gap:9px;max-width:236px;line-height:1.4;cursor:pointer;transition:box-shadow .2s,transform .2s;',
         'animation:cbw-bubble-in .35s cubic-bezier(.34,1.56,.64,1)}',
-      '.cbw-bubble:hover{box-shadow:0 6px 22px rgba(0,0,0,.15);transform:translateX('+(isLeft?'':'−')+'3px)}',
+      '.cbw-bubble:hover{box-shadow:0 6px 22px rgba(0,0,0,.15);transform:translateX('+(isLeft?'':'-')+'3px)}',
       '.cbw-bdot{width:8px;height:8px;border-radius:50%;background:'+c+';flex-shrink:0}',
       '.cbw-bx{margin-left:auto;color:#94A3B8;font-size:14px;flex-shrink:0}',
       '@keyframes cbw-bubble-in{from{opacity:0;transform:translateY(10px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}',
@@ -258,43 +347,47 @@
   }
 
   /* ─── message helper ─── */
-  function appendMsg(text, isUser, container, lang, isWelcome) {
+  function appendMsg(text, isUser, container, timeLabel, isWelcome) {
     var div = d.createElement('div');
     div.className = 'cbw-msg ' + (isUser ? 'cbw-user' : 'cbw-bot');
-    var time = isWelcome ? (lang==='tr' ? 'Az önce' : 'Just now')
-               : new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-    div.innerHTML = '<div class="cbw-bubble-msg">'+text+'</div><span class="cbw-ts">'+time+'</span>';
+    var time = isWelcome
+      ? timeLabel
+      : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    div.innerHTML = '<div class="cbw-bubble-msg">' + text + '</div><span class="cbw-ts">' + time + '</span>';
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
   }
 
   /* ─── BOOT ─── */
   function boot() {
-    var lang = (navigator.language || 'en').slice(0,2);
     var isOpen = false;
     var bubbleTimer = null;
     var currentBubble = null;
     var pollTimer = null;
     var lastSettingsHash = '';
+    var resolvedLang = embedLang || 'auto'; // will be finalized after first fetch
 
     /* ── initial load ── */
     fetchCfg(function(raw) {
       var s = merge(raw);
-      buildDOM(s);
-      applySettings(s, true);
+      // Finalize language now that we have config
+      resolvedLang = resolveLang(raw);
+      var sys = SYS[resolvedLang] || SYS.en;
+
+      buildDOM(s, resolvedLang);
+      applySettings(s, resolvedLang, true);
       lastSettingsHash = JSON.stringify(raw);
-      wireEvents(s);
+      wireEvents(s, resolvedLang, sys);
       startBubbles();
       startPolling();
     });
 
     /* ── conversation history for context ── */
     var chatHistory = [];
-    /* ── pending appointment data from server (set when AI asks for confirmation) ── */
     var pendingApptData = null;
 
     /* ── wire interaction events (once) ── */
-    function wireEvents(initSettings) {
+    function wireEvents(initSettings, lang, sys) {
       d.getElementById('cbw-launcher').addEventListener('click', function(){
         isOpen ? closePanel() : openPanel();
       });
@@ -305,22 +398,21 @@
       });
       d.getElementById('cbw-quick').addEventListener('click', function(e){
         var btn = e.target.closest('.cbw-qbtn');
-        if (btn) send(btn.textContent);
+        if (btn) send(btn.textContent.trim(), lang, sys);
       });
 
       function sendFromInput() {
         var inp = d.getElementById('cbw-input');
         var v = inp.value.trim(); inp.value = '';
-        if (v) send(v);
+        if (v) send(v, lang, sys);
       }
 
-      function send(text) {
+      function send(text, lang, sys) {
         if (!text.trim()) return;
         var msgs = d.getElementById('cbw-msgs');
-        appendMsg(text, true, msgs, lang, false);
-        logMessage(text); // log to Firestore (fire-and-forget)
+        appendMsg(text, true, msgs, '', false);
+        logMessage(text);
 
-        // push to history
         chatHistory.push({ role: 'user', content: text });
 
         var q = d.getElementById('cbw-quick');
@@ -328,61 +420,39 @@
 
         // show typing indicator
         var typing = d.createElement('div');
-        typing.id = 'cbw-typing'; typing.className = 'cbw-msg cbw-bot cbw-typing';
+        typing.id = 'cbw-typing';
+        typing.className = 'cbw-msg cbw-bot cbw-typing';
         typing.innerHTML = '<div class="cbw-bubble-msg"><span class="cbw-tdot"></span><span class="cbw-tdot"></span><span class="cbw-tdot"></span></div>';
         msgs.appendChild(typing); msgs.scrollTop = msgs.scrollHeight;
 
-        // call real AI API
         var payload = {
-          clinicId: clinicId,
-          message: text,
-          history: chatHistory.slice(-12),
-          conversationId: sessionId,
+          clinicId:              clinicId,
+          message:               text,
+          history:               chatHistory.slice(-12),
+          conversationId:        sessionId,
           pendingAppointmentData: pendingApptData || undefined,
+          language:              lang,
         };
-        console.log('[ClinicBridge Widget] sending to API:', API_BASE + '/api/public/chat', {
-          clinicId: payload.clinicId,
-          message: payload.message,
-          hasPendingAppt: !!payload.pendingAppointmentData,
-        });
 
         fetch(API_BASE + '/api/public/chat', {
-          method: 'POST',
+          method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          body:    JSON.stringify(payload),
         })
-        .then(function(r) {
-          console.log('[ClinicBridge Widget] API status:', r.status);
-          return r.json();
-        })
+        .then(function(r) { return r.json(); })
         .then(function(data) {
-          console.log('[ClinicBridge Widget] API response:', data);
           var t = d.getElementById('cbw-typing'); if (t) t.remove();
-          var reply = (data && data.reply) ? data.reply : (lang === 'tr'
-            ? 'Üzgünüm, şu an yanıt üretemiyorum. Lütfen kliniğimizi arayın.'
-            : 'Sorry, I cannot respond right now. Please call the clinic.');
+          var reply = (data && data.reply) ? data.reply : sys.noReply;
           chatHistory.push({ role: 'assistant', content: reply });
-          appendMsg(reply, false, msgs, lang, false);
+          appendMsg(reply, false, msgs, '', false);
 
-          // Store pending appointment data for next confirmation message
-          if (data && data.pendingAppointmentData) {
-            pendingApptData = data.pendingAppointmentData;
-            console.log('[ClinicBridge Widget] Stored pendingApptData:', pendingApptData);
-          }
-
-          // Appointment created server-side → clear pending data
-          if (data && data.appointmentCreated) {
-            console.log('[ClinicBridge Widget] ✅ Appointment created:', data.appointmentId);
-            pendingApptData = null;
-          }
+          if (data && data.pendingAppointmentData) pendingApptData = data.pendingAppointmentData;
+          if (data && data.appointmentCreated) pendingApptData = null;
         })
-        .catch(function(err) {
-          console.error('[ClinicBridge Widget] API error:', err);
+        .catch(function() {
           var t = d.getElementById('cbw-typing'); if (t) t.remove();
-          var fallback = lang === 'tr'
-            ? 'Bağlantı hatası oluştu. Lütfen kliniğimizi doğrudan arayın. 📞'
-            : 'Connection error. Please call the clinic directly. 📞';
-          appendMsg(fallback, false, msgs, lang, false);
+          var msgs2 = d.getElementById('cbw-msgs');
+          appendMsg(sys.connErr, false, msgs2, '', false);
         });
       }
     }
@@ -415,7 +485,7 @@
       if (currentBubble) { currentBubble.remove(); currentBubble = null; }
       var el = d.createElement('div');
       el.className = 'cbw-bubble';
-      el.innerHTML = '<span class="cbw-bdot"></span><span style="flex:1">'+texts[bubIdx % texts.length]+'</span><span class="cbw-bx">×</span>';
+      el.innerHTML = '<span class="cbw-bdot"></span><span style="flex:1">' + texts[bubIdx % texts.length] + '</span><span class="cbw-bx">×</span>';
       bubIdx++;
       el.querySelector('.cbw-bx').addEventListener('click', function(e){ e.stopPropagation(); clearBubbles(); });
       el.addEventListener('click', openPanel);
@@ -433,11 +503,11 @@
       pollTimer = setInterval(function(){
         fetchCfg(function(raw){
           var hash = JSON.stringify(raw);
-          if (hash === lastSettingsHash) return; // no change
+          if (hash === lastSettingsHash) return;
           lastSettingsHash = hash;
           var s = merge(raw);
-          applySettings(s, false); // false = keep message history
-          // restart bubbles with new texts/timing
+          // Keep same resolvedLang (embed-time lang is sticky)
+          applySettings(s, resolvedLang, false);
           clearBubbles();
           if (!isOpen && w.__cbwBubblesEnabled) setTimeout(showBubble, 1000);
         });

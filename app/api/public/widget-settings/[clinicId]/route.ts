@@ -50,6 +50,31 @@ export async function GET(
       position:         raw.position         ?? "bottom-right",
       showAvatar:       raw.showAvatar       ?? true,
       showOnlineStatus: raw.showOnlineStatus ?? true,
+      /** Default language preference — auto | tr | en */
+      defaultLanguage:  raw.defaultLanguage  ?? "auto",
+      /** Per-language message config (greeting, placeholder, tooltip, quickActions) */
+      messages: {
+        tr: {
+          greetingMessage:  raw.messages?.tr?.greetingMessage  ?? raw.welcomeMessage ?? "Merhaba! Size nasıl yardımcı olabiliriz?",
+          inputPlaceholder: raw.messages?.tr?.inputPlaceholder ?? raw.placeholder    ?? "Bir mesaj yazın...",
+          tooltipMessage:   raw.messages?.tr?.tooltipMessage   ?? "Merhaba, size nasıl yardımcı olabiliriz?",
+          quickActions:     raw.messages?.tr?.quickActions     ?? [
+            "Randevu almak istiyorum",
+            "Hizmetleriniz nelerdir?",
+            "Kliniğiniz nerede?",
+          ],
+        },
+        en: {
+          greetingMessage:  raw.messages?.en?.greetingMessage  ?? "Hello! How can we help you?",
+          inputPlaceholder: raw.messages?.en?.inputPlaceholder ?? "Type your message...",
+          tooltipMessage:   raw.messages?.en?.tooltipMessage   ?? "Hello, how can we help you?",
+          quickActions:     raw.messages?.en?.quickActions     ?? [
+            "Book an appointment",
+            "What services do you offer?",
+            "Where is your clinic?",
+          ],
+        },
+      },
       showBubbles: {
         enabled:     raw.showBubbles?.enabled     ?? true,
         displayMode: raw.showBubbles?.displayMode ?? "rotate",
@@ -95,6 +120,21 @@ function buildDefaults(clinicId: string) {
     position: "bottom-right",
     showAvatar: true,
     showOnlineStatus: true,
+    defaultLanguage: "auto",
+    messages: {
+      tr: {
+        greetingMessage:  "Merhaba! Size nasıl yardımcı olabiliriz?",
+        inputPlaceholder: "Bir mesaj yazın...",
+        tooltipMessage:   "Merhaba, size nasıl yardımcı olabiliriz?",
+        quickActions:     ["Randevu almak istiyorum", "Hizmetleriniz nelerdir?", "Kliniğiniz nerede?"],
+      },
+      en: {
+        greetingMessage:  "Hello! How can we help you?",
+        inputPlaceholder: "Type your message...",
+        tooltipMessage:   "Hello, how can we help you?",
+        quickActions:     ["Book an appointment", "What services do you offer?", "Where is your clinic?"],
+      },
+    },
     showBubbles: {
       enabled: true,
       displayMode: "rotate",
