@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Send, RotateCcw, X, User, Shield, Sparkles, MessageCircle, HeartPulse, Bot } from "lucide-react";
 import { UI_COLORS } from "@/components/ui/ui-shared";
-import type { WidgetSettings } from "@/lib/types";
+import type { WidgetSettings, WidgetMessages } from "@/lib/types";
 
 interface Message {
   id: string;
@@ -22,12 +22,29 @@ interface WidgetPreviewProps {
   };
 }
 
-const QUICK_QUESTIONS = [
-  "Randevu nasıl alabilirim?",
-  "Muayene ücretiniz nedir?",
-  "Klinik nerede?",
-  "Çalışma saatleriniz nedir?"
-];
+/** Default i18n messages used in preview when settings.messages is not set */
+const DEFAULT_MESSAGES: WidgetMessages = {
+  tr: {
+    greetingMessage: "Merhaba! Size nasıl yardımcı olabiliriz?",
+    inputPlaceholder: "Bir mesaj yazın...",
+    tooltipMessage: "Merhaba, size nasıl yardımcı olabiliriz?",
+    quickActions: [
+      "Randevu almak istiyorum",
+      "Hizmetleriniz nelerdir?",
+      "Kliniğiniz nerede?",
+    ],
+  },
+  en: {
+    greetingMessage: "Hello! How can we help you?",
+    inputPlaceholder: "Type your message...",
+    tooltipMessage: "Hello, how can we help you?",
+    quickActions: [
+      "Book an appointment",
+      "What services do you offer?",
+      "Where is your clinic?",
+    ],
+  },
+};
 
 // ─── Floating CTA Button ─────────────────────────────────────────────────────
 interface FloatingCTAProps {
@@ -235,7 +252,22 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [hasConsent, setHasConsent] = useState<boolean | null>(null);
+  const [previewLang, setPreviewLang] = useState<"tr" | "en">("tr");
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  /** Resolve the correct locale messages — fallback to defaults */
+  const getLangMessages = (lang: "tr" | "en") => {
+    const saved = settings.messages?.[lang];
+    const defaults = DEFAULT_MESSAGES[lang];
+    return {
+      greetingMessage: saved?.greetingMessage || (lang === "tr" ? settings.welcomeMessage : defaults.greetingMessage) || defaults.greetingMessage,
+      inputPlaceholder: saved?.inputPlaceholder || (lang === "tr" ? settings.placeholder : defaults.inputPlaceholder) || defaults.inputPlaceholder,
+      tooltipMessage: saved?.tooltipMessage || defaults.tooltipMessage,
+      quickActions: (saved?.quickActions && saved.quickActions.length > 0) ? saved.quickActions : defaults.quickActions,
+    };
+  };
+
+  const locale = getLangMessages(previewLang);
 
   useEffect(() => {
     const consent = sessionStorage.getItem("patientConsent");
@@ -248,7 +280,7 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
       setMessages([
         {
           id: "1",
-          text: settings.welcomeMessage || "Merhaba! Size nasıl yardımcı olabilirim?",
+          text: locale.greetingMessage,
           sender: "bot",
           timestamp: new Date(),
         },
@@ -257,13 +289,16 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
       setMessages([
         {
           id: "1",
-          text: "KVKK onayı olmadan asistan hizmeti kullanılamaz. Görüşmeye başlamak için sayfayı yenileyip onay verebilirsiniz.",
+          text: previewLang === "tr"
+            ? "KVKK onayı olmadan asistan hizmeti kullanılamaz."
+            : "Consent required to use the assistant.",
           sender: "bot",
           timestamp: new Date(),
         },
       ]);
     }
-  }, [settings.welcomeMessage, hasConsent]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.welcomeMessage, settings.messages, hasConsent, previewLang]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -343,7 +378,7 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
     setMessages([
       {
         id: "1",
-        text: settings.welcomeMessage || "Merhaba! Size nasıl yardımcı olabilirim?",
+        text: locale.greetingMessage,
         sender: "bot",
         timestamp: new Date(),
       },
@@ -365,7 +400,25 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
     }}>
       {/* Background Decor */}
       <div style={{ position: "absolute", top: 20, left: 20, fontSize: 12, fontWeight: 700, color: UI_COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.1em" }}>
-        Live Preview Area
+        Live Preview
+      </div>
+
+      {/* Language switcher */}
+      <div style={{ position: "absolute", top: 14, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 4, background: "rgba(255,255,255,0.04)", borderRadius: 10, padding: 4, border: `1px solid ${UI_COLORS.border}` }}>
+        {(["tr", "en"] as const).map(lang => (
+          <button
+            key={lang}
+            onClick={() => setPreviewLang(lang)}
+            style={{
+              padding: "4px 12px", borderRadius: 7, border: "none", fontSize: 12, fontWeight: 700,
+              cursor: "pointer", transition: "all 0.15s",
+              background: previewLang === lang ? UI_COLORS.brand : "transparent",
+              color: previewLang === lang ? "white" : UI_COLORS.textMuted,
+            }}
+          >
+            {lang === "tr" ? "🇹🇷 TR" : "🇬🇧 EN"}
+          </button>
+        ))}
       </div>
       
       <button 
@@ -417,7 +470,9 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }} />
                   <span style={{ fontSize: 11, opacity: 0.8 }}>
-                    {settings.assistantName ? `Online • ${settings.assistantName}` : "Online"}
+                    {settings.assistantName
+                      ? `${previewLang === "tr" ? "Online" : "Online"} • ${settings.assistantName}`
+                      : previewLang === "tr" ? "Online" : "Online"}
                   </span>
                 </div>
               )}
@@ -454,13 +509,16 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
               <div style={{ width: 48, height: 48, borderRadius: 12, background: "rgba(99, 102, 241, 0.1)", color: UI_COLORS.brand, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
                 <Shield size={24} />
               </div>
-              <h3 style={{ fontSize: 18, fontWeight: 700, color: UI_COLORS.textPrimary, marginBottom: 8 }}>KVKK ve Gizlilik</h3>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: UI_COLORS.textPrimary, marginBottom: 8 }}>
+                {previewLang === "tr" ? "KVKK ve Gizlilik" : "Privacy & Data Protection"}
+              </h3>
               <p style={{ fontSize: 13, color: UI_COLORS.textSecondary, lineHeight: 1.5, marginBottom: 24 }}>
-                Yapay zekâ asistanımızla yapacağınız görüşmelerde sağladığınız sağlık verileriniz hizmet kalitesi amacıyla işlenebilir.
-                Detaylı bilgi için <a href="/kvkk" target="_blank" style={{ color: UI_COLORS.brand, textDecoration: "none" }}>Aydınlatma Metni</a>'ni inceleyebilirsiniz.
+                {previewLang === "tr"
+                  ? <>Yapay zekâ asistanımızla yapacağınız görüşmelerde sağlık verileriniz hizmet kalitesi amacıyla işlenebilir. Detaylı bilgi için <a href="/kvkk" target="_blank" style={{ color: UI_COLORS.brand, textDecoration: "none" }}>Aydınlatma Metni</a>&apos;ni inceleyebilirsiniz.</>
+                  : "Your health data shared with our AI assistant may be processed to improve service quality. See our Privacy Policy for details."}
               </p>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <button 
+                <button
                   onClick={() => {
                     sessionStorage.setItem("patientConsent", "true");
                     setHasConsent(true);
@@ -469,9 +527,9 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
                     background: settings.primaryColor || UI_COLORS.brand,
                     color: "white", padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 600, border: "none", cursor: "pointer"
                   }}>
-                  Kabul Ediyorum ve Devam Et
+                  {previewLang === "tr" ? "Kabul Ediyorum ve Devam Et" : "Accept and Continue"}
                 </button>
-                <button 
+                <button
                   onClick={() => {
                     sessionStorage.setItem("patientConsent", "false");
                     setHasConsent(false);
@@ -479,7 +537,7 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
                   style={{
                     background: "transparent", color: UI_COLORS.textSecondary, padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 600, border: `1px solid ${UI_COLORS.border}`, cursor: "pointer"
                   }}>
-                  Reddet
+                  {previewLang === "tr" ? "Reddet" : "Decline"}
                 </button>
               </div>
             </div>
@@ -577,19 +635,19 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
         {/* Input Area */}
         <div style={{ padding: "12px 16px 16px 16px", borderTop: `1px solid ${UI_COLORS.border}`, background: "var(--bg-card)", display: "flex", flexDirection: "column", gap: 12 }}>
           
-          {/* Quick Questions */}
-          <div 
+          {/* Quick Actions */}
+          <div
             className="hide-scrollbar"
-            style={{ 
-              display: "flex", 
-              gap: 8, 
+            style={{
+              display: "flex",
+              gap: 8,
               overflowX: "auto",
               paddingBottom: 2,
               opacity: hasConsent !== true ? 0.3 : 1,
               pointerEvents: hasConsent !== true ? "none" : "auto"
             }}
           >
-            {QUICK_QUESTIONS.map((q, idx) => (
+            {locale.quickActions.map((q, idx) => (
               <button
                 key={idx}
                 onClick={() => handleSend(q)}
@@ -617,18 +675,20 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
             ))}
           </div>
 
-          <div style={{ 
-            display: "flex", 
-            alignItems: "center", 
+          <div style={{
+            display: "flex",
+            alignItems: "center",
             gap: 10,
             background: "rgba(0,0,0,0.2)",
             borderRadius: 12,
             padding: "8px 12px",
             border: `1px solid ${UI_COLORS.border}`
           }}>
-            <input 
+            <input
               type="text"
-              placeholder={hasConsent === false ? "KVKK onayı gerekli" : (settings.placeholder || "Bir mesaj yazın...")}
+              placeholder={hasConsent === false
+                ? (previewLang === "tr" ? "KVKK onayı gerekli" : "Consent required")
+                : locale.inputPlaceholder}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}

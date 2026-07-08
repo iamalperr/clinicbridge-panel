@@ -121,6 +121,20 @@ export type WidgetAvatarType =
   | "minimal" 
   | "custom";
 
+export type WidgetLanguage = "auto" | "tr" | "en";
+
+export interface WidgetMessageLocale {
+  greetingMessage: string;
+  inputPlaceholder: string;
+  tooltipMessage: string;
+  quickActions: string[];
+}
+
+export interface WidgetMessages {
+  tr: WidgetMessageLocale;
+  en: WidgetMessageLocale;
+}
+
 export interface WidgetLauncherConfig {
   shape: "rounded_square" | "circle" | "square" | "pill" | "minimal" | "chat_bubble";
   position: "bottom_right" | "bottom_left" | "middle_right" | "middle_left";
@@ -150,6 +164,9 @@ export interface WidgetSettings {
   showBubbles?: ShowBubblesConfig;
   quickActions?: QuickAction[];
   launcher?: WidgetLauncherConfig;
+  /** Multi-language message config */
+  defaultLanguage?: WidgetLanguage;
+  messages?: WidgetMessages;
   updatedAt?: any;
 }
 

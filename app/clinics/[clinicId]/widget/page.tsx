@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import SectionCard from "@/components/ui/SectionCard";
 import { Loader2, Save, Layout, Palette, MessageCircle, Sparkles, Plus, Trash2, GripVertical, User } from "lucide-react";
-import type { WidgetSettings, ShowBubblesConfig, QuickAction, QuickActionType, WidgetLauncherConfig } from "@/lib/types";
+import type { WidgetSettings, ShowBubblesConfig, QuickAction, QuickActionType, WidgetLauncherConfig, WidgetMessages, WidgetLanguage } from "@/lib/types";
 import WidgetPreview from "./WidgetPreview";
 import WidgetIntegration from "./WidgetIntegration";
 import {
@@ -70,6 +70,29 @@ const DEFAULT_LAUNCHER: WidgetLauncherConfig = {
   tooltipAutoHide: true,
 };
 
+const DEFAULT_MESSAGES: WidgetMessages = {
+  tr: {
+    greetingMessage: "Merhaba! Size nasıl yardımcı olabiliriz?",
+    inputPlaceholder: "Bir mesaj yazın...",
+    tooltipMessage: "Merhaba, size nasıl yardımcı olabiliriz?",
+    quickActions: [
+      "Randevu almak istiyorum",
+      "Hizmetleriniz nelerdir?",
+      "Kliniğiniz nerede?",
+    ],
+  },
+  en: {
+    greetingMessage: "Hello! How can we help you?",
+    inputPlaceholder: "Type your message...",
+    tooltipMessage: "Hello, how can we help you?",
+    quickActions: [
+      "Book an appointment",
+      "What services do you offer?",
+      "Where is your clinic?",
+    ],
+  },
+};
+
 const DEFAULT_SETTINGS: WidgetSettings = {
   title: "Clinic Assistant",
   welcomeMessage: "Merhaba! Size nasıl yardımcı olabilirim?",
@@ -80,6 +103,8 @@ const DEFAULT_SETTINGS: WidgetSettings = {
   placeholder: "Bir mesaj yazın...",
   showBubbles: DEFAULT_BUBBLES,
   launcher: DEFAULT_LAUNCHER,
+  messages: DEFAULT_MESSAGES,
+  defaultLanguage: "auto",
 };
 
 const ACTION_TYPE_OPTIONS: { value: QuickActionType; label: string }[] = [
@@ -430,6 +455,7 @@ export default function WidgetPage({ params }: PageProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">("idle");
   const [errMsg, setErrMsg] = useState("");
+  const [msgLang, setMsgLang] = useState<"tr" | "en">("tr");
 
   /* ── New bubble inputs ── */
   const [newBubbleTr, setNewBubbleTr] = useState("");
@@ -449,6 +475,12 @@ export default function WidgetPage({ params }: PageProps) {
               timing: { ...DEFAULT_BUBBLES.timing, ...data.showBubbles?.timing },
               behavior: { ...DEFAULT_BUBBLES.behavior, ...data.showBubbles?.behavior },
             },
+            // Merge i18n messages with defaults
+            messages: {
+              tr: { ...DEFAULT_MESSAGES.tr, ...data.messages?.tr },
+              en: { ...DEFAULT_MESSAGES.en, ...data.messages?.en },
+            },
+            defaultLanguage: data.defaultLanguage ?? "auto",
           });
           if (data.quickActions && data.quickActions.length > 0) {
             setQuickActions(data.quickActions);
@@ -879,21 +911,157 @@ export default function WidgetPage({ params }: PageProps) {
             );
           })()}
 
-          {/* Mesajlar */}
+          {/* Mesajlar ve İçerik — TR / EN tabs */}
           <SectionCard title="Mesajlar ve İçerik" icon={<MessageCircle size={18} />}>
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-              <Input
-                label="Karşılama Mesajı"
-                value={settings.welcomeMessage}
-                onChange={(e) => setSettings({ ...settings, welcomeMessage: e.target.value })}
-                placeholder="Size nasıl yardımcı olabilirim?"
-              />
-              <Input
-                label="Giriş Alanı Metni"
-                value={settings.placeholder}
-                onChange={(e) => setSettings({ ...settings, placeholder: e.target.value })}
-                placeholder="Bir mesaj yazın..."
-              />
+
+              {/* Language tabs */}
+              <div style={{ display: "flex", gap: 4, background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: 4, border: `1px solid ${UI_COLORS.border}`, alignSelf: "flex-start" }}>
+                {(["tr", "en"] as const).map(lang => (
+                  <button
+                    key={lang}
+                    onClick={() => setMsgLang(lang)}
+                    style={{
+                      padding: "6px 18px", borderRadius: 7, border: "none", fontSize: 13, fontWeight: 700,
+                      cursor: "pointer", transition: "all 0.15s",
+                      background: msgLang === lang ? UI_COLORS.brand : "transparent",
+                      color: msgLang === lang ? "white" : UI_COLORS.textMuted,
+                    }}
+                  >
+                    {lang === "tr" ? "🇹🇷 Türkçe" : "🇬🇧 English"}
+                  </button>
+                ))}
+              </div>
+
+              {/* Greeting Message */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: UI_COLORS.textSecondary, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  {msgLang === "tr" ? "Karşılama Mesajı" : "Greeting Message"}
+                </label>
+                <input
+                  value={settings.messages?.[msgLang]?.greetingMessage ?? ""}
+                  onChange={e => setSettings(s => ({
+                    ...s,
+                    messages: {
+                      ...DEFAULT_MESSAGES,
+                      ...s.messages,
+                      [msgLang]: { ...DEFAULT_MESSAGES[msgLang], ...s.messages?.[msgLang], greetingMessage: e.target.value }
+                    }
+                  }))}
+                  placeholder={DEFAULT_MESSAGES[msgLang].greetingMessage}
+                  style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${UI_COLORS.border}`, background: "rgba(255,255,255,0.03)", color: UI_COLORS.textPrimary, fontSize: 14, outline: "none" }}
+                />
+              </div>
+
+              {/* Input Placeholder */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: UI_COLORS.textSecondary, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  {msgLang === "tr" ? "Giriş Alanı Metni" : "Input Placeholder"}
+                </label>
+                <input
+                  value={settings.messages?.[msgLang]?.inputPlaceholder ?? ""}
+                  onChange={e => setSettings(s => ({
+                    ...s,
+                    messages: {
+                      ...DEFAULT_MESSAGES,
+                      ...s.messages,
+                      [msgLang]: { ...DEFAULT_MESSAGES[msgLang], ...s.messages?.[msgLang], inputPlaceholder: e.target.value }
+                    }
+                  }))}
+                  placeholder={DEFAULT_MESSAGES[msgLang].inputPlaceholder}
+                  style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${UI_COLORS.border}`, background: "rgba(255,255,255,0.03)", color: UI_COLORS.textPrimary, fontSize: 14, outline: "none" }}
+                />
+              </div>
+
+              {/* Tooltip Message */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: UI_COLORS.textSecondary, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  {msgLang === "tr" ? "Tooltip / Açılış Mesaj Balonu" : "Tooltip Message"}
+                </label>
+                <input
+                  value={settings.messages?.[msgLang]?.tooltipMessage ?? ""}
+                  onChange={e => setSettings(s => ({
+                    ...s,
+                    messages: {
+                      ...DEFAULT_MESSAGES,
+                      ...s.messages,
+                      [msgLang]: { ...DEFAULT_MESSAGES[msgLang], ...s.messages?.[msgLang], tooltipMessage: e.target.value }
+                    }
+                  }))}
+                  placeholder={DEFAULT_MESSAGES[msgLang].tooltipMessage}
+                  style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${UI_COLORS.border}`, background: "rgba(255,255,255,0.03)", color: UI_COLORS.textPrimary, fontSize: 14, outline: "none" }}
+                />
+                <p style={{ fontSize: 12, color: UI_COLORS.textMuted, lineHeight: 1.5 }}>
+                  {msgLang === "tr"
+                    ? "Widget butonu üzerinde görünen karşılama balonu metni."
+                    : "Text shown in the tooltip bubble above the widget button."}
+                </p>
+              </div>
+
+              {/* Quick Actions per language */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: UI_COLORS.textSecondary, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  {msgLang === "tr" ? "Hızlı Komutlar" : "Quick Actions"}
+                </label>
+                <p style={{ fontSize: 12, color: UI_COLORS.textMuted, marginTop: -4, lineHeight: 1.5 }}>
+                  {msgLang === "tr"
+                    ? "Widget açıldığında ziyaretçiye sunulan hazır butonlar (Türkçe)."
+                    : "Preset buttons shown to visitors when the widget opens (English)."}
+                </p>
+                {(settings.messages?.[msgLang]?.quickActions ?? DEFAULT_MESSAGES[msgLang].quickActions).map((qa, idx) => (
+                  <div key={idx} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input
+                      value={qa}
+                      onChange={e => {
+                        const current = [...(settings.messages?.[msgLang]?.quickActions ?? DEFAULT_MESSAGES[msgLang].quickActions)];
+                        current[idx] = e.target.value;
+                        setSettings(s => ({
+                          ...s,
+                          messages: {
+                            ...DEFAULT_MESSAGES,
+                            ...s.messages,
+                            [msgLang]: { ...DEFAULT_MESSAGES[msgLang], ...s.messages?.[msgLang], quickActions: current }
+                          }
+                        }));
+                      }}
+                      style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: `1px solid ${UI_COLORS.border}`, background: "rgba(255,255,255,0.03)", color: UI_COLORS.textPrimary, fontSize: 13.5, outline: "none" }}
+                    />
+                    <button
+                      onClick={() => {
+                        const current = (settings.messages?.[msgLang]?.quickActions ?? DEFAULT_MESSAGES[msgLang].quickActions).filter((_, i) => i !== idx);
+                        setSettings(s => ({
+                          ...s,
+                          messages: {
+                            ...DEFAULT_MESSAGES,
+                            ...s.messages,
+                            [msgLang]: { ...DEFAULT_MESSAGES[msgLang], ...s.messages?.[msgLang], quickActions: current }
+                          }
+                        }));
+                      }}
+                      style={{ background: "none", border: "none", cursor: "pointer", color: UI_COLORS.textMuted, flexShrink: 0 }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  onClick={() => {
+                    const current = [...(settings.messages?.[msgLang]?.quickActions ?? DEFAULT_MESSAGES[msgLang].quickActions), ""];
+                    setSettings(s => ({
+                      ...s,
+                      messages: {
+                        ...DEFAULT_MESSAGES,
+                        ...s.messages,
+                        [msgLang]: { ...DEFAULT_MESSAGES[msgLang], ...s.messages?.[msgLang], quickActions: current }
+                      }
+                    }));
+                  }}
+                  style={{ display: "flex", alignItems: "center", gap: 6, alignSelf: "flex-start", background: "none", border: `1.5px dashed ${UI_COLORS.border}`, borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 600, color: UI_COLORS.textMuted, cursor: "pointer" }}
+                >
+                  <Plus size={14} /> {msgLang === "tr" ? "Yeni Komut Ekle" : "Add Quick Action"}
+                </button>
+              </div>
+
             </div>
           </SectionCard>
 
@@ -1074,7 +1242,11 @@ export default function WidgetPage({ params }: PageProps) {
             </div>
           </SectionCard>
 
-          <WidgetIntegration clinicId={clinicId} />
+          <WidgetIntegration
+            clinicId={clinicId}
+            defaultLanguage={settings.defaultLanguage ?? "auto"}
+            onLanguageChange={(lang: WidgetLanguage) => setSettings(s => ({ ...s, defaultLanguage: lang }))}
+          />
         </div>
 
         {/* ── Right: Preview ── */}
