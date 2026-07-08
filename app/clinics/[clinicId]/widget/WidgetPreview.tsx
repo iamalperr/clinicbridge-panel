@@ -49,6 +49,7 @@ const DEFAULT_MESSAGES: WidgetMessages = {
 // ─── Floating CTA Button ─────────────────────────────────────────────────────
 interface FloatingCTAProps {
   settings: WidgetSettings;
+  previewLang: "tr" | "en";
 }
 
 function getLauncherIcon(icon: string) {
@@ -63,7 +64,7 @@ function getLauncherIcon(icon: string) {
   }
 }
 
-function FloatingCTAButton({ settings }: FloatingCTAProps) {
+function FloatingCTAButton({ settings, previewLang }: FloatingCTAProps) {
   const launcher = settings.launcher || {
     shape: "rounded_square", position: settings.position, size: "medium", icon: "sparkle",
     text: "Asistan ile konuş", showText: true, showOnlineIndicator: true, showNotificationDot: false,
@@ -204,8 +205,11 @@ function FloatingCTAButton({ settings }: FloatingCTAProps) {
         {/* Text Area */}
         {launcher.showText && launcher.shape !== "minimal" && (
           <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2, alignItems: "flex-start", marginLeft: 4 }}>
-            <span style={{ fontSize: 14, fontWeight: 700, whiteSpace: "nowrap" }}>
-              {launcher.text}
+            <span style={{ whiteSpace: "nowrap" }}>
+              {typeof launcher.text === "string" 
+                ? launcher.text 
+                : (launcher.text?.[previewLang] || (previewLang === "tr" ? "Asistan ile konuş" : "Chat with assistant"))
+              }
             </span>
             {launcher.showOnlineIndicator && (
               <span style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
@@ -724,7 +728,7 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
       </div>
 
       {/* Floating CTA */}
-      <FloatingCTAButton settings={settings} />
+      <FloatingCTAButton settings={settings} previewLang={previewLang} />
 
       <style>{`
         @keyframes typing {

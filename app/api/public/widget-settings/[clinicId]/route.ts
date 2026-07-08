@@ -64,7 +64,12 @@ export async function GET(
         position:            raw.launcher?.position            ?? "bottom_right",
         size:                raw.launcher?.size                ?? "medium",
         icon:                raw.launcher?.icon                ?? "sparkle",
-        text:                raw.launcher?.text                ?? "Asistan ile konuş",
+        text:                typeof raw.launcher?.text === "string"
+                               ? { tr: raw.launcher.text, en: "Chat with assistant" }
+                               : {
+                                   tr: raw.launcher?.text?.tr ?? "Asistan ile konuş",
+                                   en: raw.launcher?.text?.en ?? "Chat with assistant"
+                                 },
         showText:            raw.launcher?.showText            ?? false,
         showOnlineIndicator: raw.launcher?.showOnlineIndicator ?? true,
         showNotificationDot: raw.launcher?.showNotificationDot ?? false,
@@ -152,7 +157,10 @@ function buildDefaults(clinicId: string) {
       position: "bottom_right",
       size: "medium",
       icon: "sparkle",
-      text: "Asistan ile konuş",
+      text: {
+        tr: "Asistan ile konuş",
+        en: "Chat with assistant"
+      },
       showText: false,
       showOnlineIndicator: true,
       showNotificationDot: false,

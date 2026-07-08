@@ -395,7 +395,10 @@
     /* Build launcher inner html */
     var launcherInner = lIconSVG;
     if (s.launcher.showText && s.launcher.shape !== 'minimal') {
-      launcherInner += '<span>' + s.launcher.text + '</span>';
+      var lText = typeof s.launcher.text === 'string' 
+        ? s.launcher.text 
+        : (s.launcher.text && s.launcher.text[lang] ? s.launcher.text[lang] : (lang === 'tr' ? 'Asistan ile konuş' : 'Chat with assistant'));
+      launcherInner += '<span>' + lText + '</span>';
     }
     if (s.launcher.showOnlineIndicator) {
       launcherInner += '<div id="cbw-online-dot"></div>';
@@ -471,7 +474,10 @@
         
         var launcherInner = lIconSVG;
         if (s.launcher.showText && s.launcher.shape !== 'minimal') {
-          launcherInner += '<span>' + s.launcher.text + '</span>';
+          var lText = typeof s.launcher.text === 'string' 
+            ? s.launcher.text 
+            : (s.launcher.text && s.launcher.text[lang] ? s.launcher.text[lang] : (lang === 'tr' ? 'Asistan ile konuş' : 'Chat with assistant'));
+          launcherInner += '<span>' + lText + '</span>';
         }
         if (s.launcher.showOnlineIndicator) {
           launcherInner += '<div id="cbw-online-dot"></div>';

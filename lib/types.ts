@@ -140,7 +140,10 @@ export interface WidgetLauncherConfig {
   position: "bottom_right" | "bottom_left" | "middle_right" | "middle_left";
   size: "small" | "medium" | "large";
   icon: "chat" | "tooth" | "medical_plus" | "assistant" | "sparkle" | "custom";
-  text: string;
+  text: {
+    tr: string;
+    en: string;
+  };
   showText: boolean;
   showOnlineIndicator: boolean;
   showNotificationDot: boolean;

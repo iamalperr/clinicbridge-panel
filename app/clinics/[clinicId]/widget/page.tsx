@@ -60,8 +60,11 @@ const DEFAULT_LAUNCHER: WidgetLauncherConfig = {
   position: "bottom_right",
   size: "medium",
   icon: "sparkle",
-  text: "Asistan ile konuş",
-  showText: true,
+  text: {
+    tr: "Asistan ile konuş",
+    en: "Chat with assistant"
+  },
+  showText: false,
   showOnlineIndicator: true,
   showNotificationDot: false,
   tooltipEnabled: true,
@@ -461,6 +464,7 @@ export default function WidgetPage({ params }: PageProps) {
   const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">("idle");
   const [errMsg, setErrMsg] = useState("");
   const [msgLang, setMsgLang] = useState<"tr" | "en">("tr");
+  const [launcherLang, setLauncherLang] = useState<"tr" | "en">("tr");
 
   /* ── New bubble inputs ── */
   const [newBubbleTr, setNewBubbleTr] = useState("");
@@ -840,13 +844,34 @@ export default function WidgetPage({ params }: PageProps) {
 
                   {/* Buton Metni & Toggle'lar */}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
-                    <Input
-                      label="Buton Metni"
-                      value={launcher.text}
-                      onChange={(e) => setLauncher({ text: e.target.value })}
-                      placeholder="Asistan ile konuş"
-                    />
-                    <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 24 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "flex", gap: 4, background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: 4, border: `1px solid ${UI_COLORS.border}`, alignSelf: "flex-start" }}>
+                        {(["tr", "en"] as const).map(lang => (
+                          <button
+                            key={lang}
+                            onClick={() => setLauncherLang(lang)}
+                            style={{
+                              padding: "4px 12px", borderRadius: 7, border: "none", fontSize: 12, fontWeight: 700,
+                              cursor: "pointer", transition: "all 0.15s",
+                              background: launcherLang === lang ? UI_COLORS.brand : "transparent",
+                              color: launcherLang === lang ? "white" : UI_COLORS.textMuted,
+                            }}
+                          >
+                            {lang === "tr" ? "🇹🇷 Türkçe" : "🇬🇧 English"}
+                          </button>
+                        ))}
+                      </div>
+                      <Input
+                        label={launcherLang === "tr" ? "Buton Metni" : "Button Text"}
+                        value={typeof launcher.text === "string" ? (launcherLang === "tr" ? launcher.text : "") : (launcher.text?.[launcherLang] ?? "")}
+                        onChange={(e) => {
+                          const currentTextObj = typeof launcher.text === "string" ? { tr: launcher.text, en: "Chat with assistant" } : (launcher.text || { tr: "Asistan ile konuş", en: "Chat with assistant" });
+                          setLauncher({ text: { ...currentTextObj, [launcherLang]: e.target.value } });
+                        }}
+                        placeholder={launcherLang === "tr" ? "Asistan ile konuş" : "Chat with assistant"}
+                      />
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 40 }}>
                       <Toggle checked={launcher.showText} onChange={(v) => setLauncher({ showText: v })} label="Metni Göster" />
                       <Toggle checked={launcher.showOnlineIndicator} onChange={(v) => setLauncher({ showOnlineIndicator: v })} label="Online Göstergesi" />
                       <Toggle checked={launcher.showNotificationDot} onChange={(v) => setLauncher({ showNotificationDot: v })} label="Bildirim Noktası" />
