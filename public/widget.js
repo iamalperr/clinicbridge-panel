@@ -202,10 +202,21 @@
   }
 
   /* ─── SVGs ─── */
-  var ICON_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path><path d="M5 3v4"></path><path d="M7 5H3"></path><path d="M21 17v4"></path><path d="M23 19h-4"></path></svg>';
-  var CHAT_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>';
-  var PULSE_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path><path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"></path></svg>';
-  var BOT_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="10" x="3" y="11" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4"></path><line x1="8" x2="8" y1="16" y2="16"></line><line x1="16" x2="16" y1="16" y2="16"></line></svg>';
+  var SVG_NS = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">';
+  var ICONS = {
+    tooth: SVG_NS + '<path d="M12 21a5.5 5.5 0 0 1-4.7-2.6c-.6-1-1.3-2.4-1.3-3.4C6 11 4 9 4 6.5A4.5 4.5 0 0 1 8.5 2c1.7 0 3 1.3 3.5 2.5C12.5 3.3 13.8 2 15.5 2A4.5 4.5 0 0 1 20 6.5c0 2.5-2 4.5-2 8.5 0 1-.7 2.4-1.3 3.4A5.5 5.5 0 0 1 12 21z"/><path d="M12 21v-4"/></svg>',
+    chat: SVG_NS + '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+    ai_sparkle: SVG_NS + '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>',
+    medical_plus: SVG_NS + '<circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>',
+    heart: SVG_NS + '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>',
+    assistant: SVG_NS + '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>',
+    psychology: SVG_NS + '<path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/></svg>',
+    beauty: SVG_NS + '<path d="M12 5a3 3 0 1 1-3 3m3-3a3 3 0 1 0 3 3m-3-3v14m0-14a3 3 0 1 0-3-3m3 3a3 3 0 1 1 3-3m-3 3a3 3 0 1 0-3 3m3-3a3 3 0 1 1 3 3m-3 3a3 3 0 1 0 3-3m-3 3a3 3 0 1 1-3-3"/></svg>',
+    clinic: SVG_NS + '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>',
+    calendar: SVG_NS + '<rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>',
+    smile: SVG_NS + '<circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/></svg>',
+    minimal: '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="3"/></svg>'
+  };
   var AVT_SVG  = '<svg width="22" height="22" viewBox="0 0 30 30" fill="none"><path d="M15 3.5C12 3.5 9.5 5.8 9 8.8C8.4 6.2 6.4 4.5 5 4.5C5 4.5 6 10 8 13C9.3 15.2 10 18 10 21C10 23.5 11 26 12.8 26C14 26 14.8 24.8 15 22.8C15.2 24.8 16 26 17.2 26C19 26 20 23.5 20 21C20 18 20.7 15.2 22 13C24 10 25 4.5 25 4.5C23.6 4.5 21.6 6.2 21 8.8C20.5 5.8 18 3.5 15 3.5Z" fill="white" opacity="0.9"/></svg>';
   var CLO_SVG  = '<svg width="16" height="16" fill="none" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="white" stroke-width="2.2" stroke-linecap="round"/></svg>';
   var SND_SVG  = '<svg width="17" height="17" fill="none" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -386,12 +397,7 @@
     var locale = getLocale(s, lang);
 
     /* Get SVG icon based on config */
-    var lIconSVG = ICON_SVG;
-    if (s.launcher.icon === 'chat') lIconSVG = CHAT_SVG;
-    if (s.launcher.icon === 'tooth') lIconSVG = '<span style="font-size:24px">🦷</span>';
-    if (s.launcher.icon === 'medical_plus') lIconSVG = PULSE_SVG;
-    if (s.launcher.icon === 'assistant') lIconSVG = BOT_SVG;
-    if (s.launcher.icon === 'sparkle' || s.launcher.icon === 'custom') lIconSVG = ICON_SVG;
+    var lIconSVG = ICONS[s.launcher.icon] || ICONS.tooth;
 
     /* Build launcher inner html */
     var launcherInner = lIconSVG;
@@ -466,13 +472,9 @@
       /* Update launcher content if config changed */
       var launcherBtn = shadow.getElementById('cbw-launcher');
       if (launcherBtn) {
-        var lIconSVG = ICON_SVG;
-        if (s.launcher.icon === 'chat') lIconSVG = CHAT_SVG;
-        if (s.launcher.icon === 'tooth') lIconSVG = '<span style="font-size:24px">🦷</span>';
-        if (s.launcher.icon === 'medical_plus') lIconSVG = PULSE_SVG;
-        if (s.launcher.icon === 'assistant') lIconSVG = BOT_SVG;
-        if (s.launcher.icon === 'sparkle' || s.launcher.icon === 'custom') lIconSVG = ICON_SVG;
-        
+        /* Get SVG icon based on config */
+        var lIconSVG = ICONS[s.launcher.icon] || ICONS.tooth;
+
         var launcherInner = lIconSVG;
         if (s.launcher.showText && s.launcher.shape !== 'minimal') {
           var lText = typeof s.launcher.text === 'string' 

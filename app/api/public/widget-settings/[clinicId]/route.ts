@@ -59,11 +59,16 @@ export async function GET(
         en: raw.testModeMessage?.en ?? "Hello, our digital assistant is currently being prepared. Very soon, we’ll be able to answer your questions here. For appointments or detailed information, please contact the clinic directly.",
       },
       /** Launcher config */
-      launcher: {
-        shape:               raw.launcher?.shape               ?? "rounded_square",
-        position:            raw.launcher?.position            ?? "bottom_right",
-        size:                raw.launcher?.size                ?? "medium",
-        icon:                raw.launcher?.icon                ?? "tooth",
+      launcher: (() => {
+        let resolvedIcon = raw.launcher?.icon ?? "tooth";
+        const iconFallback: Record<string, string> = { "sparkle": "ai_sparkle", "health": "medical_plus" };
+        if (iconFallback[resolvedIcon]) resolvedIcon = iconFallback[resolvedIcon];
+
+        return {
+          shape:               raw.launcher?.shape               ?? "rounded_square",
+          position:            raw.launcher?.position            ?? "bottom_right",
+          size:                raw.launcher?.size                ?? "medium",
+          icon:                resolvedIcon,
         text:                typeof raw.launcher?.text === "string"
                                ? { tr: raw.launcher.text, en: "Chat with assistant" }
                                : {
@@ -77,7 +82,8 @@ export async function GET(
         tooltipMessage:      raw.launcher?.tooltipMessage      ?? "Merhaba, size nasıl yardımcı olabiliriz?",
         tooltipDelaySeconds: raw.launcher?.tooltipDelaySeconds ?? 2,
         tooltipAutoHide:     raw.launcher?.tooltipAutoHide     ?? true,
-      },
+        };
+      })(),
       /** Per-language message config (greeting, placeholder, tooltip, quickActions) */
       messages: {
         tr: {

@@ -139,7 +139,7 @@ export interface WidgetLauncherConfig {
   shape: "rounded_square" | "circle" | "square" | "pill" | "minimal" | "chat_bubble";
   position: "bottom_right" | "bottom_left" | "middle_right" | "middle_left";
   size: "small" | "medium" | "large";
-  icon: "chat" | "tooth" | "medical_plus" | "assistant" | "sparkle" | "custom";
+  icon: "tooth" | "chat" | "ai_sparkle" | "medical_plus" | "heart" | "assistant" | "psychology" | "beauty" | "clinic" | "calendar" | "smile" | "minimal";
   text: {
     tr: string;
     en: string;

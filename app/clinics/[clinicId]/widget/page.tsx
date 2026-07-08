@@ -768,12 +768,19 @@ export default function WidgetPage({ params }: PageProps) {
               { value: "chat_bubble", label: "Balon", preview: <div style={{ width: 36, height: 30, borderRadius: "12px 12px 2px 12px", background: settings.primaryColor || "#6366f1" }} /> },
             ];
 
-            const ICON_OPTIONS: { value: WidgetLauncherConfig["icon"]; label: string; icon: string }[] = [
-              { value: "sparkle", label: "Sparkle", icon: "\u2728" },
-              { value: "chat", label: "Mesaj", icon: "\ud83d\udcac" },
-              { value: "tooth", label: "Diş", icon: "\ud83e\uddb7" },
-              { value: "medical_plus", label: "Sağlık", icon: "\u2764\ufe0f" },
-              { value: "assistant", label: "Asistan", icon: "\ud83e\udd16" },
+            const ICON_OPTIONS: { value: WidgetLauncherConfig["icon"]; label: string; preview: React.ReactNode }[] = [
+              { value: "tooth", label: "Diş", preview: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21a5.5 5.5 0 0 1-4.7-2.6c-.6-1-1.3-2.4-1.3-3.4C6 11 4 9 4 6.5A4.5 4.5 0 0 1 8.5 2c1.7 0 3 1.3 3.5 2.5C12.5 3.3 13.8 2 15.5 2A4.5 4.5 0 0 1 20 6.5c0 2.5-2 4.5-2 8.5 0 1-.7 2.4-1.3 3.4A5.5 5.5 0 0 1 12 21z"/><path d="M12 21v-4"/></svg> },
+              { value: "chat", label: "Mesaj", preview: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> },
+              { value: "ai_sparkle", label: "AI", preview: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg> },
+              { value: "medical_plus", label: "Sağlık", preview: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg> },
+              { value: "heart", label: "Kalp", preview: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg> },
+              { value: "assistant", label: "Asistan", preview: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg> },
+              { value: "psychology", label: "Psikoloji", preview: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/></svg> },
+              { value: "beauty", label: "Estetik", preview: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5a3 3 0 1 1-3 3m3-3a3 3 0 1 0 3 3m-3-3v14m0-14a3 3 0 1 0-3-3m3 3a3 3 0 1 1 3-3m-3 3a3 3 0 1 0-3 3m3-3a3 3 0 1 1 3 3m-3 3a3 3 0 1 0 3-3m-3 3a3 3 0 1 1-3-3"/></svg> },
+              { value: "clinic", label: "Klinik", preview: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg> },
+              { value: "calendar", label: "Randevu", preview: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg> },
+              { value: "smile", label: "Gülümseme", preview: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/></svg> },
+              { value: "minimal", label: "Minimal", preview: <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="3"/></svg> },
             ];
 
             const POS_OPTIONS: { value: WidgetLauncherConfig["position"]; label: string }[] = [
@@ -832,10 +839,12 @@ export default function WidgetPage({ params }: PageProps) {
                   {/* Buton İkonu */}
                   <div>
                     <p style={subLabel}>Buton İkonu</p>
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(85px, 1fr))", gap: 10 }}>
                       {ICON_OPTIONS.map((opt) => (
                         <button key={opt.value} onClick={() => setLauncher({ icon: opt.value })} style={rCard(launcher.icon === opt.value)}>
-                          <span style={{ fontSize: 22, lineHeight: 1 }}>{opt.icon}</span>
+                          <div style={{ width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            {opt.preview}
+                          </div>
                           <span style={{ fontSize: 12, fontWeight: 600 }}>{opt.label}</span>
                         </button>
                       ))}
