@@ -59,7 +59,7 @@ const DEFAULT_LAUNCHER: WidgetLauncherConfig = {
   shape: "rounded_square",
   position: "bottom_right",
   size: "medium",
-  icon: "sparkle",
+  icon: "tooth",
   text: {
     tr: "Asistan ile konuş",
     en: "Chat with assistant"
@@ -872,7 +872,12 @@ export default function WidgetPage({ params }: PageProps) {
                       />
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 40 }}>
-                      <Toggle checked={launcher.showText} onChange={(v) => setLauncher({ showText: v })} label="Metni Göster" />
+                      <Toggle 
+                        checked={launcher.showText} 
+                        onChange={(v) => setLauncher({ showText: v })} 
+                        label="Metni Göster" 
+                        description="Metinli buton yalnızca pill/balon tipinde önerilir. Standart kullanımda açılış mesaj balonu kullanılması tavsiye edilir."
+                      />
                       <Toggle checked={launcher.showOnlineIndicator} onChange={(v) => setLauncher({ showOnlineIndicator: v })} label="Online Göstergesi" />
                       <Toggle checked={launcher.showNotificationDot} onChange={(v) => setLauncher({ showNotificationDot: v })} label="Bildirim Noktası" />
                     </div>

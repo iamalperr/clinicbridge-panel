@@ -278,6 +278,7 @@
         'position:relative!important;transition:transform .25s!important;',
         'flex-shrink:0!important;outline:none!important;transform:scale(' + scale + ')!important;font-weight:600!important}',
       '#cbw-launcher:hover{transform:scale(' + (scale * 1.05).toFixed(2) + ') translateY(-2px)!important}',
+      '#cbw-launcher *{pointer-events:none!important}',
       '#cbw-online-dot{position:absolute!important;top:-4px!important;right:-4px!important;',
         'width:14px!important;height:14px!important;border-radius:50%!important;',
         'background:#22C55E!important;border:2.5px solid #fff!important;',

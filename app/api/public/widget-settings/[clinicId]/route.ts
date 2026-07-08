@@ -63,7 +63,7 @@ export async function GET(
         shape:               raw.launcher?.shape               ?? "rounded_square",
         position:            raw.launcher?.position            ?? "bottom_right",
         size:                raw.launcher?.size                ?? "medium",
-        icon:                raw.launcher?.icon                ?? "sparkle",
+        icon:                raw.launcher?.icon                ?? "tooth",
         text:                typeof raw.launcher?.text === "string"
                                ? { tr: raw.launcher.text, en: "Chat with assistant" }
                                : {
@@ -156,7 +156,7 @@ function buildDefaults(clinicId: string) {
       shape: "rounded_square",
       position: "bottom_right",
       size: "medium",
-      icon: "sparkle",
+      icon: "tooth",
       text: {
         tr: "Asistan ile konuş",
         en: "Chat with assistant"
