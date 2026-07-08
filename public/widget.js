@@ -1,527 +1,658 @@
 /**
- * ClinicBridge AI Widget v5.0 — Multi-Language Runtime
+ * ClinicBridge AI Widget v6.0 — Shadow DOM + Full i18n
  * https://widget.clinicbridge-ai.com/widget.js
- * Usage: <script src="..." data-clinic-id="YOUR_ID" data-language="tr|en"></script>
  *
- * Language resolution priority:
- *   1. data-language attribute on the script tag
- *   2. widgetConfig.defaultLanguage from API (if not "auto")
- *   3. navigator.language — tr/tr-TR → "tr", everything else → "en"
+ * Usage:
+ *   <script src="..." data-clinic-id="CLINIC_ID" async></script>
+ *   <script src="..." data-clinic-id="CLINIC_ID" data-language="tr" async></script>
+ *   <script src="..." data-clinic-id="CLINIC_ID" data-language="en" data-debug="true" async></script>
+ *
+ * What's new in v6.0:
+ *   - Shadow DOM: widget is 100% isolated from host page CSS
+ *   - Single resolvedLang drives ALL text (greeting, placeholder, quick actions, system strings)
+ *   - data-debug="true" logs diagnostics to console
+ *   - CSS reset inside shadow root prevents host-site style bleed
  */
 (function (w, d) {
   'use strict';
   if (w.__cbwLoaded) return;
 
-  // ── Domain guard: block on panel / admin / CDN domains ──
+  // ── Domain guard ─────────────────────────────────────────────────────────────
   var _host = w.location.hostname;
-  var _blocked = ['clinicbridge-ai.com','www.clinicbridge-ai.com',
-    'app.clinicbridge-ai.com','widget.clinicbridge-ai.com',
-    'localhost','127.0.0.1'];
+  var _blocked = [
+    'clinicbridge-ai.com', 'www.clinicbridge-ai.com',
+    'app.clinicbridge-ai.com', 'widget.clinicbridge-ai.com',
+    'localhost', '127.0.0.1',
+  ];
   if (_blocked.indexOf(_host) !== -1) return;
-  // ────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────────
 
   w.__cbwLoaded = true;
 
-  var scriptEl = d.currentScript || d.querySelector('script[data-clinic-id]');
-  var clinicId  = scriptEl && scriptEl.dataset.clinicId || 'demo';
-  // Read data-language from embed tag (overrides everything)
-  var embedLang = scriptEl && scriptEl.dataset.language || null; // "tr" | "en" | null
+  var scriptEl  = d.currentScript || d.querySelector('script[data-clinic-id]');
+  var clinicId  = (scriptEl && scriptEl.dataset.clinicId) || 'demo';
+  var embedLang = (scriptEl && scriptEl.dataset.language) || null;   // "tr" | "en" | null
+  var debugMode = scriptEl && scriptEl.dataset.debug === 'true';
   var API_BASE  = 'https://app.clinicbridge-ai.com';
   var POLL_MS   = 5000;
+  var VERSION   = '6.0.0';
 
-  /* ── Session ID (unique per page load) ── */
+  /* ── Session ID ── */
   var sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
 
-  /* ── Resolve language ──────────────────────────────────────────────────
-     Priority: data-language attr → config.defaultLanguage → browser lang */
-  function resolveLang(cfg) {
-    if (embedLang === 'tr' || embedLang === 'en') return embedLang;
-    if (cfg && cfg.defaultLanguage && cfg.defaultLanguage !== 'auto') return cfg.defaultLanguage;
-    var nav = (navigator.language || navigator.languages && navigator.languages[0] || 'en');
-    return nav.slice(0,2).toLowerCase() === 'tr' ? 'tr' : 'en';
+  /* ── Debug helper ── */
+  function dbg() {
+    if (!debugMode) return;
+    var args = Array.prototype.slice.call(arguments);
+    args.unshift('[ClinicBridge Widget v' + VERSION + ']');
+    console.log.apply(console, args);
   }
 
-  /* ── i18n system strings ── */
+  /* ── Language resolver ────────────────────────────────────────────────────────
+     Priority: data-language attr → config.defaultLanguage → browser lang      */
+  function resolveLang(cfg) {
+    var source, lang;
+    if (embedLang === 'tr' || embedLang === 'en') {
+      source = 'embed-attr (data-language="' + embedLang + '")';
+      lang = embedLang;
+    } else if (cfg && cfg.defaultLanguage && cfg.defaultLanguage !== 'auto') {
+      source = 'config.defaultLanguage="' + cfg.defaultLanguage + '"';
+      lang = cfg.defaultLanguage;
+    } else {
+      var nav = (navigator.language || (navigator.languages && navigator.languages[0]) || 'en');
+      lang = nav.slice(0, 2).toLowerCase() === 'tr' ? 'tr' : 'en';
+      source = 'browser lang (' + nav + ')';
+    }
+    dbg('Language resolved:', lang, '| source:', source);
+    return lang;
+  }
+
+  /* ── System strings (locale-aware) ── */
   var SYS = {
     tr: {
-      online:   'Çevrimiçi',
-      justNow:  'Az önce',
-      send:     'Gönder',
-      poweredBy:'ClinicBridge AI ile desteklenmektedir',
-      noReply:  'Üzgünüm, şu an yanıt üretemiyorum. Lütfen kliniğimizi arayın.',
-      connErr:  'Bağlantı hatası oluştu. Lütfen kliniğimizi doğrudan arayın. 📞',
+      online:    'Çevrimiçi',
+      justNow:   'Az önce',
+      send:      'Gönder',
+      powered:   'ClinicBridge AI ile desteklenmektedir',
+      noReply:   'Üzgünüm, şu an yanıt üretemiyorum. Lütfen kliniğimizi arayın.',
+      connErr:   'Bağlantı hatası oluştu. Lütfen kliniğimizi doğrudan arayın. 📞',
       closeAria: 'Kapat',
       openAria:  'ClinicBridge AI Asistanı Aç',
     },
     en: {
-      online:   'Online',
-      justNow:  'Just now',
-      send:     'Send',
-      poweredBy:'Powered by ClinicBridge AI',
-      noReply:  'Sorry, I cannot respond right now. Please call the clinic.',
-      connErr:  'Connection error. Please call the clinic directly. 📞',
+      online:    'Online',
+      justNow:   'Just now',
+      send:      'Send',
+      powered:   'Powered by ClinicBridge AI',
+      noReply:   'Sorry, I cannot respond right now. Please call the clinic.',
+      connErr:   'Connection error. Please call the clinic directly. 📞',
       closeAria: 'Close',
       openAria:  'Open ClinicBridge AI Assistant',
-    }
+    },
   };
 
-  /* ── Default messages (fallback when widgetConfig.messages is absent) ── */
-  var DEF_MESSAGES = {
+  /* ── Default per-language messages ── */
+  var DEF_MSG = {
     tr: {
       greetingMessage:  'Merhaba! Size nasıl yardımcı olabiliriz?',
       inputPlaceholder: 'Bir mesaj yazın...',
       tooltipMessage:   'Merhaba, size nasıl yardımcı olabiliriz?',
-      quickActions:     [
-        'Randevu almak istiyorum',
-        'Hizmetleriniz nelerdir?',
-        'Kliniğiniz nerede?',
-      ],
+      quickActions:     ['Randevu almak istiyorum', 'Hizmetleriniz nelerdir?', 'Kliniğiniz nerede?'],
     },
     en: {
       greetingMessage:  'Hello! How can we help you?',
       inputPlaceholder: 'Type your message...',
       tooltipMessage:   'Hello, how can we help you?',
-      quickActions:     [
-        'Book an appointment',
-        'What services do you offer?',
-        'Where is your clinic?',
-      ],
+      quickActions:     ['Book an appointment', 'What services do you offer?', 'Where is your clinic?'],
     },
   };
 
   /* ── Show-bubbles defaults ── */
   var DEF_BUBBLES = {
     enabled: true, displayMode: 'rotate',
-    messages: { tr: ['Randevu almak ister misiniz?'], en: ['Want to book an appointment?'] },
+    messages: {
+      tr: ['Randevu almak ister misiniz?', 'Size nasıl yardımcı olabiliriz?'],
+      en: ['Want to book an appointment?', 'How can we help you?'],
+    },
     timing:   { initialDelaySeconds: 3, rotationIntervalSeconds: 6 },
-    behavior: { hideAfterOpen: true, showOncePerSession: false, disableOnMobile: false }
+    behavior: { hideAfterOpen: true, showOncePerSession: false, disableOnMobile: false },
   };
 
-  /* ── Overall widget defaults ── */
+  /* ── Widget defaults ── */
   var DEF = {
     title: 'ClinicBridge AI',
     primaryColor: '#6366f1',
     position: 'bottom-right',
     showAvatar: true,
     showOnlineStatus: true,
-    showBubbles: DEF_BUBBLES,
-    messages: DEF_MESSAGES,
     defaultLanguage: 'auto',
+    showBubbles: DEF_BUBBLES,
+    messages: DEF_MSG,
   };
 
-  /* ─── Log conversation message to Firestore via API ─── */
-  function logMessage(userMessage) {
-    fetch(API_BASE + '/api/public/conversation-log', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clinicId: clinicId, sessionId: sessionId, userMessage: userMessage }),
-    }).catch(function() {}); // fire-and-forget
-  }
-
-  /* ─── Fetch settings (no-cache) ─── */
+  /* ─── Fetch config (no-cache) ─── */
   function fetchCfg(cb) {
     fetch(API_BASE + '/api/public/widget-settings/' + clinicId, {
-      cache: 'no-store',
-      headers: { Accept: 'application/json' }
+      cache:   'no-store',
+      headers: { Accept: 'application/json' },
     })
-    .then(function(r){ return r.ok ? r.json() : null; })
-    .then(function(data){ cb(data || {}); })
-    .catch(function(){ cb({}); });
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (data) { cb(data || {}); })
+    .catch(function () { cb({}); });
   }
 
   /* ─── Deep-merge config with defaults ─── */
-  function merge(cfg) {
-    var s  = Object.assign({}, DEF, cfg);
+  function mergeConfig(cfg) {
+    var s = Object.assign({}, DEF, cfg);
+
     // Merge show-bubbles
     var sb = Object.assign({}, DEF_BUBBLES, s.showBubbles);
-    sb.messages  = Object.assign({}, DEF_BUBBLES.messages, sb.messages);
-    sb.timing    = Object.assign({}, DEF_BUBBLES.timing,   sb.timing);
-    sb.behavior  = Object.assign({}, DEF_BUBBLES.behavior, sb.behavior);
+    sb.messages  = Object.assign({}, DEF_BUBBLES.messages,  (s.showBubbles || {}).messages);
+    sb.timing    = Object.assign({}, DEF_BUBBLES.timing,    (s.showBubbles || {}).timing);
+    sb.behavior  = Object.assign({}, DEF_BUBBLES.behavior,  (s.showBubbles || {}).behavior);
     s.showBubbles = sb;
+
     // Merge i18n messages
-    var msgs = { tr: Object.assign({}, DEF_MESSAGES.tr), en: Object.assign({}, DEF_MESSAGES.en) };
+    var msgs = { tr: Object.assign({}, DEF_MSG.tr), en: Object.assign({}, DEF_MSG.en) };
     if (cfg.messages) {
-      if (cfg.messages.tr) msgs.tr = Object.assign({}, DEF_MESSAGES.tr, cfg.messages.tr);
-      if (cfg.messages.en) msgs.en = Object.assign({}, DEF_MESSAGES.en, cfg.messages.en);
+      if (cfg.messages.tr) msgs.tr = Object.assign({}, DEF_MSG.tr, cfg.messages.tr);
+      if (cfg.messages.en) msgs.en = Object.assign({}, DEF_MSG.en, cfg.messages.en);
     }
-    // Backwards-compat: if welcomeMessage/placeholder are set but messages.tr is empty, fill in
-    if (cfg.welcomeMessage && !msgs.tr.greetingMessage) msgs.tr.greetingMessage = cfg.welcomeMessage;
-    if (cfg.placeholder   && !msgs.tr.inputPlaceholder) msgs.tr.inputPlaceholder = cfg.placeholder;
+    // Back-compat: if old config has flat welcomeMessage/placeholder and no messages.tr
+    if (cfg.welcomeMessage && !cfg.messages) msgs.tr.greetingMessage  = cfg.welcomeMessage;
+    if (cfg.placeholder    && !cfg.messages) msgs.tr.inputPlaceholder = cfg.placeholder;
     s.messages = msgs;
+
+    dbg('Merged config:', { title: s.title, color: s.primaryColor, defaultLanguage: s.defaultLanguage, messages: s.messages });
     return s;
   }
 
-  /* ─── Resolve locale object for a given lang ─── */
+  /* ─── Get locale for a specific language ─── */
   function getLocale(s, lang) {
     var m = s.messages && s.messages[lang];
-    var def = DEF_MESSAGES[lang];
-    return {
-      greetingMessage:  (m && m.greetingMessage)  || def.greetingMessage,
-      inputPlaceholder: (m && m.inputPlaceholder) || def.inputPlaceholder,
-      tooltipMessage:   (m && m.tooltipMessage)   || def.tooltipMessage,
-      quickActions:     (m && m.quickActions && m.quickActions.length) ? m.quickActions : def.quickActions,
+    var d = DEF_MSG[lang] || DEF_MSG.en;
+    var locale = {
+      greetingMessage:  (m && m.greetingMessage)  || d.greetingMessage,
+      inputPlaceholder: (m && m.inputPlaceholder) || d.inputPlaceholder,
+      tooltipMessage:   (m && m.tooltipMessage)   || d.tooltipMessage,
+      quickActions:     (m && m.quickActions && m.quickActions.length) ? m.quickActions : d.quickActions,
     };
+    dbg('Locale[' + lang + ']:', locale);
+    return locale;
   }
 
   /* ─── SVGs ─── */
-  var ICON = '<svg width="30" height="30" viewBox="0 0 30 30" fill="none"><path d="M15 3.5C12 3.5 9.5 5.8 9 8.8C8.4 6.2 6.4 4.5 5 4.5C5 4.5 6 10 8 13C9.3 15.2 10 18 10 21C10 23.5 11 26 12.8 26C14 26 14.8 24.8 15 22.8C15.2 24.8 16 26 17.2 26C19 26 20 23.5 20 21C20 18 20.7 15.2 22 13C24 10 25 4.5 25 4.5C23.6 4.5 21.6 6.2 21 8.8C20.5 5.8 18 3.5 15 3.5Z" fill="white" opacity="0.93"/><path d="M23 6L23.6 7.8L25.4 8.4L23.6 9L23 10.8L22.4 9L20.6 8.4L22.4 7.8L23 6Z" fill="white"/></svg>';
-  var AVT  = '<svg width="22" height="22" viewBox="0 0 30 30" fill="none"><path d="M15 3.5C12 3.5 9.5 5.8 9 8.8C8.4 6.2 6.4 4.5 5 4.5C5 4.5 6 10 8 13C9.3 15.2 10 18 10 21C10 23.5 11 26 12.8 26C14 26 14.8 24.8 15 22.8C15.2 24.8 16 26 17.2 26C19 26 20 23.5 20 21C20 18 20.7 15.2 22 13C24 10 25 4.5 25 4.5C23.6 4.5 21.6 6.2 21 8.8C20.5 5.8 18 3.5 15 3.5Z" fill="white" opacity="0.9"/></svg>';
-  var CLO  = '<svg width="16" height="16" fill="none" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="white" stroke-width="2.2" stroke-linecap="round"/></svg>';
-  var SND  = '<svg width="17" height="17" fill="none" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var ICON_SVG = '<svg width="30" height="30" viewBox="0 0 30 30" fill="none"><path d="M15 3.5C12 3.5 9.5 5.8 9 8.8C8.4 6.2 6.4 4.5 5 4.5C5 4.5 6 10 8 13C9.3 15.2 10 18 10 21C10 23.5 11 26 12.8 26C14 26 14.8 24.8 15 22.8C15.2 24.8 16 26 17.2 26C19 26 20 23.5 20 21C20 18 20.7 15.2 22 13C24 10 25 4.5 25 4.5C23.6 4.5 21.6 6.2 21 8.8C20.5 5.8 18 3.5 15 3.5Z" fill="white" opacity="0.93"/><path d="M23 6L23.6 7.8L25.4 8.4L23.6 9L23 10.8L22.4 9L20.6 8.4L22.4 7.8L23 6Z" fill="white"/></svg>';
+  var AVT_SVG  = '<svg width="22" height="22" viewBox="0 0 30 30" fill="none"><path d="M15 3.5C12 3.5 9.5 5.8 9 8.8C8.4 6.2 6.4 4.5 5 4.5C5 4.5 6 10 8 13C9.3 15.2 10 18 10 21C10 23.5 11 26 12.8 26C14 26 14.8 24.8 15 22.8C15.2 24.8 16 26 17.2 26C19 26 20 23.5 20 21C20 18 20.7 15.2 22 13C24 10 25 4.5 25 4.5C23.6 4.5 21.6 6.2 21 8.8C20.5 5.8 18 3.5 15 3.5Z" fill="white" opacity="0.9"/></svg>';
+  var CLO_SVG  = '<svg width="16" height="16" fill="none" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="white" stroke-width="2.2" stroke-linecap="round"/></svg>';
+  var SND_SVG  = '<svg width="17" height="17" fill="none" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
-  /* ─── initial DOM build (called once) ─── */
-  function buildDOM(s, lang) {
-    var sys = SYS[lang] || SYS.en;
+  /* ─── CSS (injected into shadow root — fully isolated) ─── */
+  function buildCSS(c, isLeft) {
+    return [
+      /* ── Reset: everything inside the shadow root starts clean ── */
+      '*, *::before, *::after{box-sizing:border-box;margin:0;padding:0;border:0;',
+        'font:inherit;font-size:100%;line-height:normal;vertical-align:baseline;',
+        'text-decoration:none;color:inherit;background:transparent;outline:none}',
+
+      /* ── Host container ── */
+      ':host{all:initial;position:fixed;' + (isLeft ? 'left:28px;right:auto;' : 'right:28px;left:auto;') +
+        'bottom:28px;z-index:2147483640;display:flex;flex-direction:column;',
+        'align-items:' + (isLeft ? 'flex-start' : 'flex-end') + ';gap:10px;',
+        'font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;',
+        'font-size:14px;line-height:1.5}',
+
+      /* ── Bubbles ── */
+      '#cbw-bubbles{display:flex;flex-direction:column;gap:8px}',
+      '.cbw-bubble{background:#fff!important;border:1px solid ' + c + '25!important;',
+        'border-radius:20px 20px 4px 20px!important;padding:10px 14px!important;',
+        'font-size:13.5px!important;color:#1e293b!important;',
+        'box-shadow:0 4px 18px rgba(0,0,0,.11)!important;',
+        'display:flex!important;align-items:center!important;gap:9px!important;',
+        'max-width:240px!important;line-height:1.4!important;cursor:pointer!important;',
+        'animation:cbw-bubble-in .35s cubic-bezier(.34,1.56,.64,1)!important}',
+      '.cbw-bubble:hover{box-shadow:0 6px 22px rgba(0,0,0,.15)!important;',
+        'transform:translateX(' + (isLeft ? '' : '-') + '3px)!important}',
+      '.cbw-bdot{width:8px!important;height:8px!important;border-radius:50%!important;',
+        'background:' + c + '!important;flex-shrink:0!important}',
+      '.cbw-bx{margin-left:auto!important;color:#94A3B8!important;',
+        'font-size:16px!important;flex-shrink:0!important;line-height:1!important;cursor:pointer!important}',
+      '@keyframes cbw-bubble-in{from{opacity:0;transform:translateY(10px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}',
+
+      /* ── Launcher button ── */
+      '#cbw-launcher{width:60px!important;height:60px!important;border-radius:18px!important;',
+        'border:none!important;cursor:pointer!important;background:' + c + '!important;',
+        'box-shadow:0 8px 28px ' + c + '70!important;display:flex!important;',
+        'align-items:center!important;justify-content:center!important;',
+        'position:relative!important;transition:transform .25s!important;',
+        'flex-shrink:0!important;outline:none!important}',
+      '#cbw-launcher:hover{transform:scale(1.08) translateY(-2px)!important}',
+      '#cbw-online-dot{position:absolute!important;top:-4px!important;right:-4px!important;',
+        'width:14px!important;height:14px!important;border-radius:50%!important;',
+        'background:#22C55E!important;border:2.5px solid #fff!important;',
+        'animation:cbw-ping 2.5s infinite!important}',
+      '@keyframes cbw-ping{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}60%{box-shadow:0 0 0 7px rgba(34,197,94,0)}}',
+
+      /* ── Panel ── */
+      '#cbw-panel{width:360px!important;background:#fff!important;border-radius:20px!important;',
+        'box-shadow:0 20px 60px rgba(0,0,0,.15),0 0 0 1px rgba(0,0,0,.05)!important;',
+        'overflow:hidden!important;display:flex!important;flex-direction:column!important;',
+        'transform:scale(.88) translateY(24px)!important;',
+        'transform-origin:bottom ' + (isLeft ? 'left' : 'right') + '!important;',
+        'opacity:0!important;pointer-events:none!important;',
+        'transition:all .32s cubic-bezier(.34,1.56,.64,1)!important;',
+        'position:absolute!important;bottom:74px!important;',
+        (isLeft ? 'left:0!important;right:auto!important;' : 'right:0!important;left:auto!important;') + '}',
+      '#cbw-panel.cbw-open{transform:scale(1) translateY(0)!important;opacity:1!important;pointer-events:all!important}',
+
+      /* ── Header ── */
+      '#cbw-head{background:' + c + '!important;padding:17px 20px!important;',
+        'display:flex!important;align-items:center!important;',
+        'justify-content:space-between!important;flex-shrink:0!important}',
+      '.cbw-hleft{display:flex!important;align-items:center!important;gap:12px!important}',
+      '.cbw-avatar{width:40px!important;height:40px!important;border-radius:50%!important;',
+        'background:rgba(255,255,255,.2)!important;display:flex!important;',
+        'align-items:center!important;justify-content:center!important;flex-shrink:0!important}',
+      '.cbw-hname{font-size:13.5px!important;font-weight:700!important;color:#fff!important;',
+        'font-family:inherit!important;line-height:1.3!important}',
+      '.cbw-hstatus{display:flex!important;align-items:center!important;gap:5px!important;',
+        'font-size:12px!important;color:rgba(255,255,255,.85)!important;margin-top:3px!important}',
+      '.cbw-sdot{width:7px!important;height:7px!important;border-radius:50%!important;',
+        'background:#86EFAC!important;display:inline-block!important;flex-shrink:0!important}',
+      '#cbw-close{background:rgba(255,255,255,.18)!important;border:none!important;',
+        'border-radius:8px!important;cursor:pointer!important;padding:7px!important;',
+        'display:flex!important;color:#fff!important;align-items:center!important;',
+        'justify-content:center!important;transition:background .2s!important}',
+      '#cbw-close:hover{background:rgba(255,255,255,.3)!important}',
+
+      /* ── Messages area ── */
+      '#cbw-msgs{flex:1!important;overflow-y:auto!important;padding:16px!important;',
+        'display:flex!important;flex-direction:column!important;gap:12px!important;',
+        'min-height:180px!important;max-height:260px!important;scroll-behavior:smooth!important;',
+        'background:#fff!important}',
+      '.cbw-msg{display:flex!important;flex-direction:column!important;gap:3px!important}',
+      '.cbw-bubble-msg{padding:11px 15px!important;font-size:14px!important;',
+        'line-height:1.65!important;max-width:86%!important;color:#1e293b!important;',
+        'font-family:inherit!important;word-break:break-word!important}',
+      '.cbw-bot .cbw-bubble-msg{background:#F1F5F9!important;border-radius:4px 16px 16px 16px!important}',
+      '.cbw-user{align-items:flex-end!important}',
+      '.cbw-user .cbw-bubble-msg{background:' + c + '!important;color:#fff!important;',
+        'border-radius:16px 4px 16px 16px!important}',
+      '.cbw-ts{font-size:11px!important;color:#94A3B8!important;padding:0 4px!important;',
+        'font-family:inherit!important}',
+      '.cbw-user .cbw-ts{text-align:right!important}',
+
+      /* ── Typing indicator ── */
+      '.cbw-typing .cbw-bubble-msg{display:flex!important;gap:5px!important;',
+        'align-items:center!important;padding:14px 18px!important}',
+      '.cbw-tdot{width:8px!important;height:8px!important;border-radius:50%!important;',
+        'background:#94A3B8!important;animation:cbw-bounce .8s infinite!important}',
+      '.cbw-tdot:nth-child(2){animation-delay:.15s!important}',
+      '.cbw-tdot:nth-child(3){animation-delay:.3s!important}',
+      '@keyframes cbw-bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}',
+
+      /* ── Quick action buttons ── */
+      '#cbw-quick{padding:10px 14px!important;display:flex!important;flex-direction:column!important;',
+        'gap:7px!important;border-top:1px solid #E2E8F0!important;flex-shrink:0!important;background:#fff!important}',
+      '.cbw-qbtn{background:' + c + '18!important;border:1.5px solid ' + c + '30!important;',
+        'border-radius:10px!important;padding:9px 13px!important;font-size:13px!important;',
+        'font-weight:500!important;color:' + c + '!important;cursor:pointer!important;',
+        'text-align:left!important;transition:all .2s!important;font-family:inherit!important;',
+        'line-height:1.4!important;width:100%!important}',
+      '.cbw-qbtn:hover{background:' + c + '30!important}',
+
+      /* ── Input row ── */
+      '#cbw-inputrow{display:flex!important;align-items:center!important;gap:8px!important;',
+        'padding:12px 14px!important;border-top:1px solid #E2E8F0!important;',
+        'flex-shrink:0!important;background:#fff!important}',
+      '#cbw-input{flex:1!important;border:1.5px solid #E2E8F0!important;border-radius:10px!important;',
+        'padding:10px 14px!important;font-size:14px!important;font-family:inherit!important;',
+        'outline:none!important;transition:border-color .2s!important;',
+        'color:#1e293b!important;background:#fff!important;line-height:1.5!important;',
+        'width:100%!important}',
+      '#cbw-input:focus{border-color:' + c + '!important;box-shadow:0 0 0 3px ' + c + '20!important}',
+      '#cbw-send{width:38px!important;height:38px!important;border-radius:10px!important;',
+        'border:none!important;cursor:pointer!important;background:' + c + '!important;',
+        'display:flex!important;align-items:center!important;justify-content:center!important;',
+        'flex-shrink:0!important;transition:transform .2s!important;color:#fff!important}',
+      '#cbw-send:hover{transform:scale(1.08)!important}',
+
+      /* ── Powered by ── */
+      '#cbw-powered{text-align:center!important;font-size:11px!important;color:#94A3B8!important;',
+        'padding:6px 14px 10px!important;border-top:1px solid #F1F5F9!important;',
+        'background:#fff!important;font-family:inherit!important}',
+      '#cbw-powered a{color:' + c + '!important;text-decoration:none!important;font-weight:600!important}',
+
+      /* ── Responsive ── */
+      '@media(max-width:480px){#cbw-panel{width:calc(100vw - 32px)!important;' + (isLeft ? 'left:4px!important' : 'right:-4px!important') + '}}',
+    ].join('');
+  }
+
+  /* ─── Build DOM inside Shadow Root ─── */
+  function buildDOM(hostEl, s, lang, sys) {
+    var shadow = hostEl.attachShadow({ mode: 'open' });
     var isLeft = s.position === 'bottom-left';
+    var locale = getLocale(s, lang);
 
-    // inject <style>
+    /* CSS */
     var styleEl = d.createElement('style');
     styleEl.id  = 'cbw-style';
-    d.head.appendChild(styleEl);
+    styleEl.textContent = buildCSS(s.primaryColor, isLeft);
+    shadow.appendChild(styleEl);
 
-    var root = d.createElement('div');
-    root.id  = 'cbw-root';
-
+    /* Bubbles container */
     var bubs = d.createElement('div');
-    bubs.id  = 'cbw-bubbles';
-    root.appendChild(bubs);
+    bubs.id   = 'cbw-bubbles';
+    shadow.appendChild(bubs);
 
-    root.innerHTML += [
+    /* Panel + Launcher */
+    var wrapper = d.createElement('div');
+    wrapper.innerHTML = [
       '<div id="cbw-panel" role="dialog" aria-hidden="true">',
         '<div id="cbw-head">',
           '<div class="cbw-hleft">',
-            '<div class="cbw-avatar">' + AVT + '</div>',
-            '<div><span class="cbw-hname"></span>',
-              '<div class="cbw-hstatus"><span class="cbw-sdot"></span><span id="cbw-online-text">' + sys.online + '</span></div></div>',
+            '<div class="cbw-avatar">' + AVT_SVG + '</div>',
+            '<div>',
+              '<span class="cbw-hname"></span>',
+              '<div class="cbw-hstatus">',
+                '<span class="cbw-sdot"></span>',
+                '<span id="cbw-online-text">' + sys.online + '</span>',
+              '</div>',
+            '</div>',
           '</div>',
-          '<button id="cbw-close" aria-label="' + sys.closeAria + '">' + CLO + '</button>',
+          '<button id="cbw-close" aria-label="' + sys.closeAria + '">' + CLO_SVG + '</button>',
         '</div>',
         '<div id="cbw-msgs"></div>',
         '<div id="cbw-quick"></div>',
         '<div id="cbw-inputrow">',
-          '<input id="cbw-input" type="text" autocomplete="off"/>',
-          '<button id="cbw-send" aria-label="' + sys.send + '">' + SND + '</button>',
+          '<input id="cbw-input" type="text" autocomplete="off" placeholder="' + locale.inputPlaceholder + '"/>',
+          '<button id="cbw-send" aria-label="' + sys.send + '">' + SND_SVG + '</button>',
         '</div>',
-        '<div id="cbw-powered"><a href="https://clinicbridge-ai.com" target="_blank" rel="noopener">' + sys.poweredBy + '</a></div>',
+        '<div id="cbw-powered">',
+          '<a href="https://clinicbridge-ai.com" target="_blank" rel="noopener">' + sys.powered + '</a>',
+        '</div>',
       '</div>',
-      '<button id="cbw-launcher" aria-label="' + sys.openAria + '">' + ICON + '<span id="cbw-online"></span></button>',
+      '<button id="cbw-launcher" aria-label="' + sys.openAria + '">' + ICON_SVG + '<span id="cbw-online-dot"></span></button>',
     ].join('');
 
-    d.body.appendChild(root);
+    while (wrapper.firstChild) shadow.appendChild(wrapper.firstChild);
+
+    return shadow;
   }
 
-  /* ─── apply settings to existing DOM ─── */
-  function applySettings(s, lang, firstTime) {
-    var isLeft = s.position === 'bottom-left';
-    var c      = s.primaryColor;
+  /* ─── Apply settings to shadow root DOM ─── */
+  function applySettings(shadow, s, lang, firstTime) {
     var sys    = SYS[lang] || SYS.en;
     var locale = getLocale(s, lang);
+    var isLeft = s.position === 'bottom-left';
+    var c      = s.primaryColor;
     var sb     = s.showBubbles;
 
-    /* update <style> */
-    var styleEl = d.getElementById('cbw-style');
-    if (styleEl) styleEl.textContent = buildCSS(s, isLeft, c);
+    /* Update CSS */
+    var styleEl = shadow.getElementById('cbw-style');
+    if (styleEl) styleEl.textContent = buildCSS(c, isLeft);
 
-    /* position */
-    var root = d.getElementById('cbw-root');
-    if (root) {
-      root.style.cssText = 'position:fixed;' + (isLeft ? 'left:28px;right:auto;' : 'right:28px;left:auto;') +
-        'bottom:28px;z-index:2147483640;display:flex;flex-direction:column;' +
-        'align-items:' + (isLeft ? 'flex-start' : 'flex-end') + ';gap:10px;' +
-        'font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;';
-    }
-
-    /* panel side */
-    var panel = d.getElementById('cbw-panel');
-    if (panel) {
-      panel.style.cssText = 'position:absolute;bottom:74px;' + (isLeft ? 'left:0;right:auto;' : 'right:0;left:auto;');
-    }
-
-    /* title */
-    var hname = d.querySelector('.cbw-hname');
+    /* Title */
+    var hname = shadow.querySelector('.cbw-hname');
     if (hname) hname.textContent = s.title || 'ClinicBridge AI';
 
-    /* online text */
-    var onlineText = d.getElementById('cbw-online-text');
+    /* Online text */
+    var onlineText = shadow.getElementById('cbw-online-text');
     if (onlineText) onlineText.textContent = sys.online;
 
-    /* placeholder from locale */
-    var inp = d.getElementById('cbw-input');
-    if (inp) inp.placeholder = locale.inputPlaceholder;
-
-    /* avatar */
-    var avt = d.querySelector('.cbw-avatar');
-    if (avt) avt.style.display = s.showAvatar ? '' : 'none';
-
-    /* online status visibility */
-    var onlineEl = d.getElementById('cbw-online');
-    if (onlineEl) onlineEl.style.display = s.showOnlineStatus ? '' : 'none';
-    var hstatus  = d.querySelector('.cbw-hstatus');
+    /* Online dot visibility */
+    var onlineDot = shadow.getElementById('cbw-online-dot');
+    if (onlineDot) onlineDot.style.display = s.showOnlineStatus ? '' : 'none';
+    var hstatus = shadow.querySelector('.cbw-hstatus');
     if (hstatus) hstatus.style.display = s.showOnlineStatus ? '' : 'none';
 
-    /* quick action buttons — rebuilt from locale.quickActions */
+    /* Avatar visibility */
+    var avt = shadow.querySelector('.cbw-avatar');
+    if (avt) avt.style.display = s.showAvatar ? '' : 'none';
+
+    /* Input placeholder */
+    var inp = shadow.getElementById('cbw-input');
+    if (inp) inp.placeholder = locale.inputPlaceholder;
+
+    /* Quick actions (first load only) */
     if (firstTime) {
-      var quickEl = d.getElementById('cbw-quick');
+      var quickEl = shadow.getElementById('cbw-quick');
       if (quickEl) {
-        quickEl.innerHTML = locale.quickActions.map(function(qa) {
+        quickEl.innerHTML = locale.quickActions.map(function (qa) {
           return '<button class="cbw-qbtn">' + qa + '</button>';
         }).join('');
       }
     }
 
-    /* bubble messages — use resolved language */
+    /* Bubble texts */
     var bubLang = (sb.messages && sb.messages[lang] && sb.messages[lang].length) ? lang : 'en';
-    w.__cbwBubbleTexts    = sb.messages[bubLang];
+    w.__cbwBubbleTexts    = sb.messages[bubLang] || [];
     w.__cbwBubblesEnabled = sb.enabled && sb.displayMode !== 'disabled';
     w.__cbwBubbleInterval = (sb.timing.rotationIntervalSeconds || 6) * 1000;
-    w.__cbwBubbleDelay    = (sb.timing.initialDelaySeconds || 3) * 1000;
+    w.__cbwBubbleDelay    = (sb.timing.initialDelaySeconds    || 3) * 1000;
 
-    /* welcome message — only on first load */
+    /* Welcome message (first load only) */
     if (firstTime) {
-      var msgs = d.getElementById('cbw-msgs');
-      if (msgs) appendMsg(locale.greetingMessage, false, msgs, sys.justNow, true);
+      var msgs = shadow.getElementById('cbw-msgs');
+      if (msgs) appendMsg(shadow, locale.greetingMessage, false, sys.justNow, true);
     }
   }
 
-  /* ─── CSS builder ─── */
-  function buildCSS(s, isLeft, c) {
-    return [
-      '#cbw-launcher{width:60px;height:60px;border-radius:18px;border:none;cursor:pointer;background:'+c+';',
-        'box-shadow:0 8px 28px '+c+'70;display:flex;align-items:center;justify-content:center;',
-        'position:relative;transition:transform .25s;flex-shrink:0;outline:none}',
-      '#cbw-launcher:hover{transform:scale(1.08) translateY(-2px)}',
-      '#cbw-online{position:absolute;top:-4px;right:-4px;width:14px;height:14px;border-radius:50%;',
-        'background:#22C55E;border:2.5px solid #fff;animation:cbw-ping 2.5s infinite}',
-      '@keyframes cbw-ping{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}60%{box-shadow:0 0 0 7px rgba(34,197,94,0)}}',
-      '#cbw-bubbles{display:flex;flex-direction:column;gap:8px}',
-      '.cbw-bubble{background:#fff;border:1px solid '+c+'25;border-radius:20px 20px 4px 20px;padding:10px 14px;',
-        'font-size:13.5px;color:#1e293b;box-shadow:0 4px 18px rgba(0,0,0,.11);display:flex;align-items:center;',
-        'gap:9px;max-width:236px;line-height:1.4;cursor:pointer;transition:box-shadow .2s,transform .2s;',
-        'animation:cbw-bubble-in .35s cubic-bezier(.34,1.56,.64,1)}',
-      '.cbw-bubble:hover{box-shadow:0 6px 22px rgba(0,0,0,.15);transform:translateX('+(isLeft?'':'-')+'3px)}',
-      '.cbw-bdot{width:8px;height:8px;border-radius:50%;background:'+c+';flex-shrink:0}',
-      '.cbw-bx{margin-left:auto;color:#94A3B8;font-size:14px;flex-shrink:0}',
-      '@keyframes cbw-bubble-in{from{opacity:0;transform:translateY(10px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}',
-      '#cbw-panel{width:360px;background:#fff;border-radius:20px;',
-        'box-shadow:0 20px 60px rgba(0,0,0,.15),0 0 0 1px rgba(0,0,0,.05);overflow:hidden;',
-        'display:flex;flex-direction:column;transform:scale(.88) translateY(24px);',
-        'transform-origin:bottom '+(isLeft?'left':'right')+';opacity:0;pointer-events:none;',
-        'transition:all .32s cubic-bezier(.34,1.56,.64,1)}',
-      '#cbw-panel.cbw-open{transform:scale(1) translateY(0);opacity:1;pointer-events:all}',
-      '#cbw-head{background:'+c+';padding:17px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}',
-      '.cbw-hleft{display:flex;align-items:center;gap:12px}',
-      '.cbw-avatar{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.2);',
-        'display:flex;align-items:center;justify-content:center;flex-shrink:0}',
-      '.cbw-hname{font-size:13.5px;font-weight:700;color:#fff}',
-      '.cbw-hstatus{display:flex;align-items:center;gap:5px;font-size:12px;color:rgba(255,255,255,.8);margin-top:2px}',
-      '.cbw-sdot{width:7px;height:7px;border-radius:50%;background:#86EFAC;display:inline-block}',
-      '#cbw-close{background:rgba(255,255,255,.18);border:none;border-radius:8px;cursor:pointer;padding:7px;display:flex;color:#fff}',
-      '#cbw-close:hover{background:rgba(255,255,255,.3)}',
-      '#cbw-msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;min-height:180px;max-height:260px;scroll-behavior:smooth}',
-      '.cbw-msg{display:flex;flex-direction:column;gap:3px}',
-      '.cbw-bubble-msg{padding:11px 15px;font-size:14px;line-height:1.65;max-width:86%;color:#1e293b}',
-      '.cbw-bot .cbw-bubble-msg{background:#F1F5F9;border-radius:4px 16px 16px 16px}',
-      '.cbw-user{align-items:flex-end}',
-      '.cbw-user .cbw-bubble-msg{background:'+c+';color:#fff;border-radius:16px 4px 16px 16px}',
-      '.cbw-ts{font-size:11px;color:#94A3B8;padding:0 4px}',
-      '.cbw-user .cbw-ts{text-align:right}',
-      '.cbw-typing .cbw-bubble-msg{display:flex;gap:5px;align-items:center;padding:14px 18px}',
-      '.cbw-tdot{width:8px;height:8px;border-radius:50%;background:#94A3B8;animation:cbw-bounce .8s infinite}',
-      '.cbw-tdot:nth-child(2){animation-delay:.15s}.cbw-tdot:nth-child(3){animation-delay:.3s}',
-      '@keyframes cbw-bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}',
-      '#cbw-quick{padding:10px 14px;display:flex;flex-direction:column;gap:7px;border-top:1px solid #E2E8F0;flex-shrink:0}',
-      '.cbw-qbtn{background:'+c+'18;border:1.5px solid '+c+'30;border-radius:10px;padding:9px 13px;',
-        'font-size:13px;font-weight:500;color:'+c+';cursor:pointer;text-align:left;transition:all .2s;font-family:inherit}',
-      '.cbw-qbtn:hover{background:'+c+'30}',
-      '#cbw-inputrow{display:flex;align-items:center;gap:8px;padding:12px 14px;border-top:1px solid #E2E8F0;flex-shrink:0}',
-      '#cbw-input{flex:1;border:1.5px solid #E2E8F0;border-radius:10px;padding:10px 14px;',
-        'font-size:14px;font-family:inherit;outline:none;transition:border-color .2s;color:#1e293b;background:#fff}',
-      '#cbw-input:focus{border-color:'+c+';box-shadow:0 0 0 3px '+c+'20}',
-      '#cbw-send{width:38px;height:38px;border-radius:10px;border:none;cursor:pointer;background:'+c+';',
-        'display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform .2s}',
-      '#cbw-send:hover{transform:scale(1.08)}',
-      '#cbw-powered{text-align:center;font-size:11px;color:#94A3B8;padding:6px 14px 10px;border-top:1px solid #F1F5F9}',
-      '#cbw-powered a{color:'+c+';text-decoration:none;font-weight:600}',
-      '@media(max-width:480px){#cbw-panel{width:calc(100vw - 32px);'+(isLeft?'left:4px':'right:-4px')+'}}',
-    ].join('');
-  }
-
-  /* ─── message helper ─── */
-  function appendMsg(text, isUser, container, timeLabel, isWelcome) {
+  /* ─── Append a message bubble ─── */
+  function appendMsg(shadow, text, isUser, timeLabel, isWelcome) {
+    var msgs = shadow.getElementById('cbw-msgs');
+    if (!msgs) return;
     var div = d.createElement('div');
     div.className = 'cbw-msg ' + (isUser ? 'cbw-user' : 'cbw-bot');
     var time = isWelcome
       ? timeLabel
       : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    div.innerHTML = '<div class="cbw-bubble-msg">' + text + '</div><span class="cbw-ts">' + time + '</span>';
-    container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
+    div.innerHTML = '<div class="cbw-bubble-msg">' + text + '</div>' +
+                    '<span class="cbw-ts">' + time + '</span>';
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  /* ─── Log conversation to Firestore ─── */
+  function logMessage(userMessage) {
+    fetch(API_BASE + '/api/public/conversation-log', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ clinicId: clinicId, sessionId: sessionId, userMessage: userMessage }),
+    }).catch(function () {});
   }
 
   /* ─── BOOT ─── */
   function boot() {
-    var isOpen = false;
-    var bubbleTimer = null;
+    var resolvedLang = 'en'; // will be finalized after first fetch
+    var shadow       = null;
+    var isOpen       = false;
+    var bubbleTimer  = null;
     var currentBubble = null;
-    var pollTimer = null;
-    var lastSettingsHash = '';
-    var resolvedLang = embedLang || 'auto'; // will be finalized after first fetch
+    var pollTimer    = null;
+    var lastHash     = '';
+    var chatHistory  = [];
+    var pendingApptData = null;
 
-    /* ── initial load ── */
-    fetchCfg(function(raw) {
-      var s = merge(raw);
-      // Finalize language now that we have config
+    /* Create host element (Shadow DOM container) */
+    var hostEl = d.createElement('div');
+    hostEl.id  = 'cbw-host';
+    d.body.appendChild(hostEl);
+
+    dbg('Boot | clinicId:', clinicId, '| embedLang:', embedLang, '| debug:', debugMode, '| version:', VERSION);
+
+    /* ── Initial fetch ── */
+    fetchCfg(function (raw) {
+      var s = mergeConfig(raw);
       resolvedLang = resolveLang(raw);
       var sys = SYS[resolvedLang] || SYS.en;
 
-      buildDOM(s, resolvedLang);
-      applySettings(s, resolvedLang, true);
-      lastSettingsHash = JSON.stringify(raw);
-      wireEvents(s, resolvedLang, sys);
-      startBubbles();
-      startPolling();
+      dbg('Config loaded:', { title: s.title, color: s.primaryColor, defaultLanguage: s.defaultLanguage });
+
+      shadow = buildDOM(hostEl, s, resolvedLang, sys);
+      applySettings(shadow, s, resolvedLang, true);
+      lastHash = JSON.stringify(raw);
+
+      wireEvents(shadow, s, resolvedLang, sys);
+      startBubbles(shadow);
+      startPolling(shadow);
     });
 
-    /* ── conversation history for context ── */
-    var chatHistory = [];
-    var pendingApptData = null;
-
-    /* ── wire interaction events (once) ── */
-    function wireEvents(initSettings, lang, sys) {
-      d.getElementById('cbw-launcher').addEventListener('click', function(){
-        isOpen ? closePanel() : openPanel();
+    /* ── Wire events ── */
+    function wireEvents(shadow, initSettings, lang, sys) {
+      shadow.getElementById('cbw-launcher').addEventListener('click', function () {
+        isOpen ? closePanel(shadow) : openPanel(shadow);
       });
-      d.getElementById('cbw-close').addEventListener('click', closePanel);
-      d.getElementById('cbw-send').addEventListener('click', sendFromInput);
-      d.getElementById('cbw-input').addEventListener('keydown', function(e){
-        if (e.key === 'Enter') sendFromInput();
+      shadow.getElementById('cbw-close').addEventListener('click', function () {
+        closePanel(shadow);
       });
-      d.getElementById('cbw-quick').addEventListener('click', function(e){
+      shadow.getElementById('cbw-send').addEventListener('click', function () {
+        sendFromInput(shadow, lang, sys);
+      });
+      shadow.getElementById('cbw-input').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') sendFromInput(shadow, lang, sys);
+      });
+      shadow.getElementById('cbw-quick').addEventListener('click', function (e) {
         var btn = e.target.closest('.cbw-qbtn');
-        if (btn) send(btn.textContent.trim(), lang, sys);
+        if (btn) send(shadow, btn.textContent.trim(), lang, sys);
       });
+    }
 
-      function sendFromInput() {
-        var inp = d.getElementById('cbw-input');
-        var v = inp.value.trim(); inp.value = '';
-        if (v) send(v, lang, sys);
-      }
+    function sendFromInput(shadow, lang, sys) {
+      var inp = shadow.getElementById('cbw-input');
+      if (!inp) return;
+      var v = inp.value.trim();
+      inp.value = '';
+      if (v) send(shadow, v, lang, sys);
+    }
 
-      function send(text, lang, sys) {
-        if (!text.trim()) return;
-        var msgs = d.getElementById('cbw-msgs');
-        appendMsg(text, true, msgs, '', false);
-        logMessage(text);
+    function send(shadow, text, lang, sys) {
+      if (!text.trim()) return;
+      appendMsg(shadow, text, true, '', false);
+      logMessage(text);
+      chatHistory.push({ role: 'user', content: text });
 
-        chatHistory.push({ role: 'user', content: text });
+      /* Hide quick actions */
+      var q = shadow.getElementById('cbw-quick');
+      if (q) q.style.display = 'none';
 
-        var q = d.getElementById('cbw-quick');
-        if (q) q.style.display = 'none';
+      /* Typing indicator */
+      var msgs = shadow.getElementById('cbw-msgs');
+      var typing = d.createElement('div');
+      typing.id = 'cbw-typing';
+      typing.className = 'cbw-msg cbw-bot cbw-typing';
+      typing.innerHTML = '<div class="cbw-bubble-msg">' +
+        '<span class="cbw-tdot"></span><span class="cbw-tdot"></span><span class="cbw-tdot"></span>' +
+        '</div>';
+      if (msgs) { msgs.appendChild(typing); msgs.scrollTop = msgs.scrollHeight; }
 
-        // show typing indicator
-        var typing = d.createElement('div');
-        typing.id = 'cbw-typing';
-        typing.className = 'cbw-msg cbw-bot cbw-typing';
-        typing.innerHTML = '<div class="cbw-bubble-msg"><span class="cbw-tdot"></span><span class="cbw-tdot"></span><span class="cbw-tdot"></span></div>';
-        msgs.appendChild(typing); msgs.scrollTop = msgs.scrollHeight;
-
-        var payload = {
+      /* API call */
+      fetch(API_BASE + '/api/public/chat', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
           clinicId:              clinicId,
           message:               text,
           history:               chatHistory.slice(-12),
           conversationId:        sessionId,
-          pendingAppointmentData: pendingApptData || undefined,
           language:              lang,
-        };
-
-        fetch(API_BASE + '/api/public/chat', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify(payload),
-        })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          var t = d.getElementById('cbw-typing'); if (t) t.remove();
-          var reply = (data && data.reply) ? data.reply : sys.noReply;
-          chatHistory.push({ role: 'assistant', content: reply });
-          appendMsg(reply, false, msgs, '', false);
-
-          if (data && data.pendingAppointmentData) pendingApptData = data.pendingAppointmentData;
-          if (data && data.appointmentCreated) pendingApptData = null;
-        })
-        .catch(function() {
-          var t = d.getElementById('cbw-typing'); if (t) t.remove();
-          var msgs2 = d.getElementById('cbw-msgs');
-          appendMsg(sys.connErr, false, msgs2, '', false);
-        });
-      }
+          pendingAppointmentData: pendingApptData || undefined,
+        }),
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var t = shadow.getElementById('cbw-typing'); if (t) t.remove();
+        var reply = (data && data.reply) ? data.reply : sys.noReply;
+        chatHistory.push({ role: 'assistant', content: reply });
+        appendMsg(shadow, reply, false, '', false);
+        if (data && data.pendingAppointmentData) pendingApptData = data.pendingAppointmentData;
+        if (data && data.appointmentCreated)     pendingApptData = null;
+      })
+      .catch(function () {
+        var t = shadow.getElementById('cbw-typing'); if (t) t.remove();
+        appendMsg(shadow, sys.connErr, false, '', false);
+      });
     }
 
-    /* ── open/close ── */
-    function openPanel() {
-      isOpen = true; clearBubbles();
-      var p = d.getElementById('cbw-panel');
-      if (p) { p.classList.add('cbw-open'); p.setAttribute('aria-hidden','false'); }
-      var inp = d.getElementById('cbw-input'); if (inp) inp.focus();
+    /* ── Open / Close ── */
+    function openPanel(shadow) {
+      isOpen = true;
+      clearBubbles(shadow);
+      var p = shadow.getElementById('cbw-panel');
+      if (p) { p.classList.add('cbw-open'); p.setAttribute('aria-hidden', 'false'); }
+      var inp = shadow.getElementById('cbw-input');
+      if (inp) inp.focus();
     }
-    function closePanel() {
+    function closePanel(shadow) {
       isOpen = false;
-      var p = d.getElementById('cbw-panel');
-      if (p) { p.classList.remove('cbw-open'); p.setAttribute('aria-hidden','true'); }
-      if (w.__cbwBubblesEnabled) setTimeout(startBubbles, 8000);
+      var p = shadow.getElementById('cbw-panel');
+      if (p) { p.classList.remove('cbw-open'); p.setAttribute('aria-hidden', 'true'); }
+      if (w.__cbwBubblesEnabled) setTimeout(function () { startBubbles(shadow); }, 8000);
     }
 
-    /* ── bubbles ── */
+    /* ── Bubbles ── */
     var bubIdx = 0;
-    function startBubbles() {
+    function startBubbles(shadow) {
       if (isOpen || !w.__cbwBubblesEnabled) return;
-      clearBubbles();
-      setTimeout(showBubble, w.__cbwBubbleDelay || 3000);
+      clearBubbles(shadow);
+      setTimeout(function () { showBubble(shadow); }, w.__cbwBubbleDelay || 3000);
     }
-    function showBubble() {
+    function showBubble(shadow) {
       if (isOpen) return;
       var texts = w.__cbwBubbleTexts || [];
       if (!texts.length) return;
       if (currentBubble) { currentBubble.remove(); currentBubble = null; }
       var el = d.createElement('div');
       el.className = 'cbw-bubble';
-      el.innerHTML = '<span class="cbw-bdot"></span><span style="flex:1">' + texts[bubIdx % texts.length] + '</span><span class="cbw-bx">×</span>';
+      el.innerHTML = '<span class="cbw-bdot"></span>' +
+                     '<span style="flex:1;font-size:13.5px;color:#1e293b">' + texts[bubIdx % texts.length] + '</span>' +
+                     '<span class="cbw-bx">×</span>';
       bubIdx++;
-      el.querySelector('.cbw-bx').addEventListener('click', function(e){ e.stopPropagation(); clearBubbles(); });
-      el.addEventListener('click', openPanel);
-      var bc = d.getElementById('cbw-bubbles'); if (bc) bc.appendChild(el);
+      el.querySelector('.cbw-bx').addEventListener('click', function (e) {
+        e.stopPropagation(); clearBubbles(shadow);
+      });
+      el.addEventListener('click', function () { openPanel(shadow); });
+      var bc = shadow.getElementById('cbw-bubbles');
+      if (bc) bc.appendChild(el);
       currentBubble = el;
-      bubbleTimer = setTimeout(showBubble, w.__cbwBubbleInterval || 6000);
+      bubbleTimer = setTimeout(function () { showBubble(shadow); }, w.__cbwBubbleInterval || 6000);
     }
-    function clearBubbles() {
+    function clearBubbles(shadow) {
       clearTimeout(bubbleTimer);
       if (currentBubble) { currentBubble.remove(); currentBubble = null; }
+      /* clear any leftover bubbles in the container */
+      var bc = shadow && shadow.getElementById('cbw-bubbles');
+      if (bc) bc.innerHTML = '';
     }
 
-    /* ── polling ── */
-    function startPolling() {
-      pollTimer = setInterval(function(){
-        fetchCfg(function(raw){
+    /* ── Polling ── */
+    function startPolling(shadow) {
+      pollTimer = setInterval(function () {
+        fetchCfg(function (raw) {
           var hash = JSON.stringify(raw);
-          if (hash === lastSettingsHash) return;
-          lastSettingsHash = hash;
-          var s = merge(raw);
-          // Keep same resolvedLang (embed-time lang is sticky)
-          applySettings(s, resolvedLang, false);
-          clearBubbles();
-          if (!isOpen && w.__cbwBubblesEnabled) setTimeout(showBubble, 1000);
+          if (hash === lastHash) return;
+          lastHash = hash;
+          var s = mergeConfig(raw);
+          applySettings(shadow, s, resolvedLang, false);
+          clearBubbles(shadow);
+          if (!isOpen && w.__cbwBubblesEnabled) setTimeout(function () { showBubble(shadow); }, 1000);
         });
       }, POLL_MS);
     }
 
-    /* ── cleanup on page unload ── */
-    w.addEventListener('beforeunload', function(){
+    w.addEventListener('beforeunload', function () {
       clearInterval(pollTimer);
-      clearBubbles();
+      if (shadow) clearBubbles(shadow);
     });
 
-    /* ── public API ── */
-    w.ClinicBridgeWidget = { open: openPanel, close: closePanel, clinicId: clinicId };
+    /* ── Public API ── */
+    w.ClinicBridgeWidget = {
+      open:     function () { if (shadow) openPanel(shadow); },
+      close:    function () { if (shadow) closePanel(shadow); },
+      clinicId: clinicId,
+      version:  VERSION,
+      lang:     function () { return resolvedLang; },
+    };
   }
 
   if (d.readyState === 'loading') {
