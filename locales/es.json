@@ -6,7 +6,7 @@
     "settings": "Ajustes",
     "platform": "Plataforma",
     "system": "Sistema",
-    "agencyPortal": "Portal de Agencia"
+    "portal": "Portal"
   },
   "common": {
     "addClinic": "Añadir clínica",
@@ -111,8 +111,19 @@
     "roles": {
       "admin": "Administrador",
       "clinicUser": "Usuario de clínica",
+      "agencyAdmin": "Admin de Agencia",
+      "agencyUser": "Usuario de Agencia",
       "platformWide": "Toda la plataforma"
     }
+  },
+  "portal": {
+    "backToAdmin": "← Panel de Admin",
+    "network": "ClinicBridge Network",
+    "myProfile": "Mi Perfil",
+    "agencySettings": "Ajustes de Agencia",
+    "management": "Gestión",
+    "configuration": "Configuración",
+    "signOut": "Cerrar Sesión"
   },
   "auth": {
     "accessDenied": "Acceso denegado",

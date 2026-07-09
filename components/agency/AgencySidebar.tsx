@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import ThemeToggle from "@/components/ui/ThemeToggle";
@@ -14,8 +15,14 @@ import {
   LogOut,
   Globe,
   MessageSquare,
+  ArrowLeft,
+  User,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { subscribeToAgency } from "@/lib/services/agencyService";
+import type { Agency } from "@/lib/types/agency";
 
 function NavItem({
   href,
@@ -118,6 +125,25 @@ function SectionLabel({ children }: { children: string }) {
 
 export default function AgencySidebar() {
   const { profile } = useAuth();
+  const [agency, setAgency] = useState<Agency | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const agencyId = profile?.agencyId;
+  const isAdmin = profile?.role === "admin";
+
+  useEffect(() => {
+    if (!agencyId) return;
+    const unsub = subscribeToAgency(agencyId, setAgency);
+    return () => unsub();
+  }, [agencyId]);
+
+  const agencyName = agency?.name || "Portal";
+  const roleName =
+    profile?.role === "admin"
+      ? "Super Admin"
+      : profile?.role === "agencyAdmin"
+      ? "Agency Admin"
+      : "Agency User";
 
   return (
     <aside
@@ -135,7 +161,7 @@ export default function AgencySidebar() {
       {/* Logo Area */}
       <div
         style={{
-          padding: "24px 20px 20px",
+          padding: "24px 20px 16px",
           borderBottom: `1px solid ${UI_COLORS.border}`,
         }}
       >
@@ -143,13 +169,14 @@ export default function AgencySidebar() {
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div
               style={{
-                width: 32,
-                height: 32,
-                borderRadius: 8,
+                width: 34,
+                height: 34,
+                borderRadius: 10,
                 background: "linear-gradient(135deg, #10b981, #059669)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                boxShadow: "0 2px 8px rgba(16, 185, 129, 0.3)",
               }}
             >
               <Globe size={18} color="#fff" />
@@ -163,21 +190,58 @@ export default function AgencySidebar() {
                   letterSpacing: "-0.02em",
                 }}
               >
-                Agency Portal
+                {agencyName} Portal
               </p>
               <p
                 style={{
                   fontSize: 11,
                   color: UI_COLORS.textMuted,
                   marginTop: -1,
+                  letterSpacing: "0.02em",
                 }}
               >
-                ClinicBridge AI
+                ClinicBridge Network
               </p>
             </div>
           </div>
         </Link>
       </div>
+
+      {/* Back to Admin Panel */}
+      {isAdmin && (
+        <div style={{ padding: "8px 12px 0" }}>
+          <Link
+            href="/clinics"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "8px 12px",
+              borderRadius: 10,
+              fontSize: 12.5,
+              fontWeight: 600,
+              color: UI_COLORS.textMuted,
+              background: "rgba(255, 255, 255, 0.02)",
+              border: `1px solid ${UI_COLORS.border}`,
+              textDecoration: "none",
+              transition: UI_COMMON_STYLES.transition,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(99, 102, 241, 0.06)";
+              e.currentTarget.style.color = UI_COLORS.brand;
+              e.currentTarget.style.borderColor = "rgba(99, 102, 241, 0.2)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(255, 255, 255, 0.02)";
+              e.currentTarget.style.color = UI_COLORS.textMuted;
+              e.currentTarget.style.borderColor = UI_COLORS.border;
+            }}
+          >
+            <ArrowLeft size={14} />
+            ← Admin Panel
+          </Link>
+        </div>
+      )}
 
       {/* Navigation */}
       <nav
@@ -190,7 +254,7 @@ export default function AgencySidebar() {
           overflowY: "auto",
         }}
       >
-        <SectionLabel>Management</SectionLabel>
+        <SectionLabel>Yönetim</SectionLabel>
         <NavItem
           href="/agency"
           label="Dashboard"
@@ -207,7 +271,7 @@ export default function AgencySidebar() {
           icon={<Building2 size={18} />}
         />
 
-        <SectionLabel>Configuration</SectionLabel>
+        <SectionLabel>Yapılandırma</SectionLabel>
         <NavItem
           href="/agency/widget"
           label="Widget"
@@ -223,89 +287,246 @@ export default function AgencySidebar() {
       {/* User & Auth Section */}
       <div
         style={{
-          padding: "16px 20px",
+          padding: "12px 16px 16px",
           borderTop: `1px solid ${UI_COLORS.border}`,
           background: "rgba(255, 255, 255, 0.01)",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: 16,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: "50%",
-                background:
-                  "linear-gradient(135deg, #10b981, #059669)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 12,
-                fontWeight: 800,
-                color: "white",
-              }}
-            >
-              {(
-                profile?.name?.[0] ||
-                profile?.email?.[0] ||
-                "U"
-              ).toUpperCase()}
-            </div>
-            <div>
-              <p
-                style={{
-                  fontSize: 13.5,
-                  fontWeight: 700,
-                  color: UI_COLORS.textPrimary,
-                }}
-              >
-                {profile?.name || "User"}
-              </p>
-              <p style={{ fontSize: 11.5, color: UI_COLORS.textMuted }}>
-                {profile?.role === "agencyAdmin"
-                  ? "Agency Admin"
-                  : "Agency User"}
-              </p>
-            </div>
-          </div>
-          <ThemeToggle />
-        </div>
-
+        {/* User Info — clickable to toggle menu */}
         <button
-          onClick={() => signOut(auth)}
+          onClick={() => setMenuOpen((v) => !v)}
           style={{
             width: "100%",
             display: "flex",
             alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-            padding: "9px",
-            borderRadius: 10,
-            background: "rgba(239, 68, 68, 0.05)",
-            border: "1px solid rgba(239, 68, 68, 0.1)",
-            color: UI_COLORS.danger,
-            fontSize: 13,
-            fontWeight: 600,
+            gap: 10,
+            padding: "10px 12px",
+            borderRadius: 12,
+            background: menuOpen
+              ? "rgba(16, 185, 129, 0.06)"
+              : "transparent",
+            border: `1px solid ${menuOpen ? "rgba(16, 185, 129, 0.15)" : "transparent"}`,
             cursor: "pointer",
             transition: UI_COMMON_STYLES.transition,
+            textAlign: "left",
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = "rgba(239, 68, 68, 0.1)";
+            if (!menuOpen) {
+              e.currentTarget.style.background = "rgba(255, 255, 255, 0.03)";
+            }
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.background = "rgba(239, 68, 68, 0.05)";
+            if (!menuOpen) {
+              e.currentTarget.style.background = "transparent";
+            }
           }}
         >
-          <LogOut size={14} />
-          Sign Out
+          <div
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: "50%",
+              background: "linear-gradient(135deg, #10b981, #059669)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 13,
+              fontWeight: 800,
+              color: "white",
+              flexShrink: 0,
+            }}
+          >
+            {(
+              profile?.name?.[0] ||
+              profile?.email?.[0] ||
+              "U"
+            ).toUpperCase()}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p
+              style={{
+                fontSize: 13.5,
+                fontWeight: 700,
+                color: UI_COLORS.textPrimary,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {profile?.name || "User"}
+            </p>
+            <p
+              style={{
+                fontSize: 11,
+                color: UI_COLORS.textMuted,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {agencyName} · {roleName}
+            </p>
+          </div>
+          {menuOpen ? (
+            <ChevronUp size={14} color={UI_COLORS.textMuted} />
+          ) : (
+            <ChevronDown size={14} color={UI_COLORS.textMuted} />
+          )}
         </button>
+
+        {/* Dropdown Menu */}
+        {menuOpen && (
+          <div
+            style={{
+              marginTop: 8,
+              padding: "6px",
+              borderRadius: 12,
+              background: "var(--bg-card)",
+              border: `1px solid ${UI_COLORS.border}`,
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+            }}
+          >
+            <Link
+              href="/agency/settings"
+              onClick={() => setMenuOpen(false)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "8px 12px",
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: 500,
+                color: UI_COLORS.textSecondary,
+                textDecoration: "none",
+                transition: "background 0.15s",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(255, 255, 255, 0.04)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+              }}
+            >
+              <User size={14} />
+              Profilim
+            </Link>
+
+            <Link
+              href="/agency/settings"
+              onClick={() => setMenuOpen(false)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "8px 12px",
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: 500,
+                color: UI_COLORS.textSecondary,
+                textDecoration: "none",
+                transition: "background 0.15s",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(255, 255, 255, 0.04)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+              }}
+            >
+              <Settings size={14} />
+              Agency Ayarları
+            </Link>
+
+            {isAdmin && (
+              <>
+                <div
+                  style={{
+                    height: 1,
+                    background: UI_COLORS.border,
+                    margin: "4px 8px",
+                  }}
+                />
+                <Link
+                  href="/clinics"
+                  onClick={() => setMenuOpen(false)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: UI_COLORS.brand,
+                    textDecoration: "none",
+                    transition: "background 0.15s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background =
+                      "rgba(99, 102, 241, 0.06)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent";
+                  }}
+                >
+                  <ArrowLeft size={14} />
+                  Ana Panele Dön
+                </Link>
+              </>
+            )}
+
+            <div
+              style={{
+                height: 1,
+                background: UI_COLORS.border,
+                margin: "4px 8px",
+              }}
+            />
+
+            <button
+              onClick={() => signOut(auth)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "8px 12px",
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: 500,
+                color: UI_COLORS.danger,
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                width: "100%",
+                textAlign: "left",
+                transition: "background 0.15s",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(239, 68, 68, 0.06)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+              }}
+            >
+              <LogOut size={14} />
+              Çıkış Yap
+            </button>
+          </div>
+        )}
+
+        {/* Theme Toggle */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            marginTop: 8,
+          }}
+        >
+          <ThemeToggle />
+        </div>
       </div>
     </aside>
   );

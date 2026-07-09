@@ -113,7 +113,7 @@ export default function Sidebar() {
           <NavItem href="/demo-requests" label="Demo Talepleri" icon={<ClipboardList size={18} />} />
         )}
         {profile?.role === "admin" && (
-          <NavItem href="/agency" label={t("nav.agencyPortal")} icon={<Globe size={18} />} />
+          <NavItem href="/agency" label={t("nav.portal")} icon={<Globe size={18} />} />
         )}
         
         <SectionLabel>{t("nav.system")}</SectionLabel>

@@ -6,7 +6,7 @@
     "settings": "Ayarlar",
     "platform": "Platform",
     "system": "Sistem",
-    "agencyPortal": "Ajans Portalı"
+    "portal": "Portal"
   },
   "common": {
     "addClinic": "Klinik Ekle",
@@ -113,8 +113,19 @@
     "roles": {
       "admin": "Yönetici",
       "clinicUser": "Klinik Kullanıcısı",
+      "agencyAdmin": "Agency Admin",
+      "agencyUser": "Agency User",
       "platformWide": "Platform Geneli"
     }
+  },
+  "portal": {
+    "backToAdmin": "← Admin Panel",
+    "network": "ClinicBridge Network",
+    "myProfile": "Profilim",
+    "agencySettings": "Agency Ayarları",
+    "management": "Yönetim",
+    "configuration": "Yapılandırma",
+    "signOut": "Çıkış Yap"
   },
   "auth": {
     "accessDenied": "Erişim Engellendi",

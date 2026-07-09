@@ -5,6 +5,7 @@ import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, where, do
 import { auth, db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import type { UserProfile, Clinic, UserRole } from "@/lib/types";
+import type { Agency } from "@/lib/types/agency";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -12,7 +13,7 @@ import Modal from "@/components/ui/Modal";
 import Badge from "@/components/ui/Badge";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 import PageHeader from "@/components/ui/PageHeader";
-import { UserPlus, Search, Shield, Building2, Calendar, Edit2, Trash2, Power, Ban } from "lucide-react";
+import { UserPlus, Search, Shield, Building2, Calendar, Edit2, Trash2, Power, Ban, Globe } from "lucide-react";
 
 import { useI18n } from "@/lib/i18n-context";
 
@@ -21,6 +22,7 @@ export default function UsersPage() {
   const { t } = useI18n();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [clinics, setClinics] = useState<Clinic[]>([]);
+  const [agencies, setAgencies] = useState<Agency[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   
@@ -51,15 +53,17 @@ export default function UsersPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [userSnap, clinicSnap] = await Promise.all([
+      const [userSnap, clinicSnap, agencySnap] = await Promise.all([
         getDocs(query(collection(db, "users"), orderBy("email", "asc"))),
-        getDocs(collection(db, "clinics"))
+        getDocs(collection(db, "clinics")),
+        getDocs(collection(db, "agencies"))
       ]);
       
       setUsers(userSnap.docs.map(d => ({ id: d.id, ...d.data() as UserProfile })));
       setClinics(clinicSnap.docs.map(d => ({ id: d.id, ...d.data() as Omit<Clinic, "id"> })));
+      setAgencies(agencySnap.docs.map(d => ({ id: d.id, ...d.data() as Omit<Agency, "id"> } as Agency)));
     } catch (err) {
-      console.error("Failed to fetch users/clinics:", err);
+      console.error("Failed to fetch users/clinics/agencies:", err);
     } finally {
       setLoading(false);
     }
@@ -75,19 +79,21 @@ export default function UsersPage() {
 
     return users.filter(u => {
       const clinicName = clinics.find(c => c.id === u.clinicId)?.name || "";
-      const roleStr = u.role === "admin" ? t("users.roles.admin") : t("users.roles.clinicUser");
+      const agencyName = agencies.find(a => a.id === u.agencyId)?.name || "";
+      const roleStr = t(`users.roles.${u.role}`) || u.role;
       
       return (
         u.name?.toLowerCase().includes(q) ||
         u.email.toLowerCase().includes(q) ||
         roleStr.toLowerCase().includes(q) ||
-        clinicName.toLowerCase().includes(q)
+        clinicName.toLowerCase().includes(q) ||
+        agencyName.toLowerCase().includes(q)
       );
     });
-  }, [users, clinics, searchQuery, t]);
+  }, [users, clinics, agencies, searchQuery, t]);
 
   const openAddUser = () => {
-    setNewUser({ name: "", email: "", role: "clinicUser", status: "active", clinicId: "" });
+    setNewUser({ name: "", email: "", role: "clinicUser", status: "active", clinicId: "", agencyId: "" });
     setTemporaryPassword("");
     setCreatedUserData(null);
     setSubmitSuccess(false);
@@ -102,7 +108,8 @@ export default function UsersPage() {
       email: user.email,
       role: user.role,
       status: user.status,
-      clinicId: user.clinicId || ""
+      clinicId: user.clinicId || "",
+      agencyId: user.agencyId || ""
     });
     setEditingUserId(user.id || null);
     setIsModalOpen(true);
@@ -161,15 +168,22 @@ export default function UsersPage() {
       return;
     }
 
+    if ((newUser.role === "agencyAdmin" || newUser.role === "agencyUser") && !newUser.agencyId) {
+      setError("Agency seçimi zorunludur.");
+      return;
+    }
+
     if (editingUserId) {
       setIsSubmitting(true);
       setError(null);
       try {
+        const isAgencyRole = newUser.role === "agencyAdmin" || newUser.role === "agencyUser";
         const userData = {
           name: newUser.name,
           role: newUser.role,
           status: newUser.status || "active",
-          clinicId: newUser.role === "admin" ? null : newUser.clinicId,
+          clinicId: newUser.role === "clinicUser" ? newUser.clinicId : null,
+          agencyId: isAgencyRole ? newUser.agencyId : null,
         };
         // Don't update email directly to prevent auth mismatch
         await updateDoc(doc(db, "users", editingUserId), userData);
@@ -202,6 +216,11 @@ export default function UsersPage() {
       return;
     }
 
+    if ((newUser.role === "agencyAdmin" || newUser.role === "agencyUser") && !newUser.agencyId) {
+      setError("Agency seçimi zorunludur.");
+      return;
+    }
+
     // 1. Frontend State Check (Case-insensitive)
     const isDuplicateLocal = users.some(u => u.email.trim().toLowerCase() === normalizedEmail);
     if (isDuplicateLocal) {
@@ -230,7 +249,8 @@ export default function UsersPage() {
           name: newUser.name,
           email: normalizedEmail,
           role: newUser.role,
-          clinicId: newUser.clinicId,
+          clinicId: newUser.role === "clinicUser" ? newUser.clinicId : undefined,
+          agencyId: (newUser.role === "agencyAdmin" || newUser.role === "agencyUser") ? newUser.agencyId : undefined,
           password: temporaryPassword || undefined
         })
       });
@@ -350,9 +370,9 @@ export default function UsersPage() {
                     </div>
                   </td>
                   <td style={{ padding: "16px 20px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: u.role === "admin" ? UI_COLORS.brand : UI_COLORS.textPrimary }}>
-                      <Shield size={14} />
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>{u.role === "admin" ? t("users.roles.admin") : t("users.roles.clinicUser")}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: u.role === "admin" ? UI_COLORS.brand : (u.role === "agencyAdmin" || u.role === "agencyUser") ? "#10b981" : UI_COLORS.textPrimary }}>
+                      {(u.role === "agencyAdmin" || u.role === "agencyUser") ? <Globe size={14} /> : <Shield size={14} />}
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{t(`users.roles.${u.role}`)}</span>
                     </div>
                   </td>
                   <td style={{ padding: "16px 20px" }}>
@@ -361,6 +381,11 @@ export default function UsersPage() {
                         <>
                           <Building2 size={14} />
                           <span style={{ fontSize: 13 }}>{clinics.find(c => c.id === u.clinicId)?.name || "Unknown Clinic"}</span>
+                        </>
+                      ) : (u.role === "agencyAdmin" || u.role === "agencyUser") ? (
+                        <>
+                          <Globe size={14} />
+                          <span style={{ fontSize: 13 }}>{agencies.find(a => a.id === u.agencyId)?.name || "Unknown Agency"}</span>
                         </>
                       ) : (
                         <span style={{ fontSize: 13, color: UI_COLORS.textMuted }}>{t("users.roles.platformWide")}</span>
@@ -459,9 +484,19 @@ export default function UsersPage() {
               <Select 
                 label={t("users.table.role")} 
                 value={newUser.role}
-                onChange={(e) => setNewUser({ ...newUser, role: e.target.value as UserRole, clinicId: e.target.value === "admin" ? "" : newUser.clinicId })}
+                onChange={(e) => {
+                  const role = e.target.value as UserRole;
+                  setNewUser({
+                    ...newUser,
+                    role,
+                    clinicId: role === "clinicUser" ? newUser.clinicId : "",
+                    agencyId: (role === "agencyAdmin" || role === "agencyUser") ? newUser.agencyId : "",
+                  });
+                }}
                 options={[
                   { label: t("users.roles.clinicUser"), value: "clinicUser" },
+                  { label: t("users.roles.agencyAdmin"), value: "agencyAdmin" },
+                  { label: t("users.roles.agencyUser"), value: "agencyUser" },
                   { label: t("users.roles.admin"), value: "admin" },
                 ]}
               />
@@ -484,6 +519,18 @@ export default function UsersPage() {
                 options={[
                   { label: "...", value: "" },
                   ...clinics.map(c => ({ label: c.name, value: c.id }))
+                ]}
+              />
+            )}
+
+            {(newUser.role === "agencyAdmin" || newUser.role === "agencyUser") && (
+              <Select 
+                label="Agency" 
+                value={newUser.agencyId}
+                onChange={(e) => setNewUser({ ...newUser, agencyId: e.target.value })}
+                options={[
+                  { label: "...", value: "" },
+                  ...agencies.map(a => ({ label: a.name, value: a.id }))
                 ]}
               />
             )}

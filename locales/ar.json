@@ -6,7 +6,7 @@
     "settings": "الإعدادات",
     "platform": "المنصة",
     "system": "النظام",
-    "agencyPortal": "بوابة الوكالة"
+    "portal": "البوابة"
   },
   "common": {
     "addClinic": "إضافة عيادة",
@@ -111,8 +111,19 @@
     "roles": {
       "admin": "مشرف",
       "clinicUser": "مستخدم العيادة",
+      "agencyAdmin": "مشرف الوكالة",
+      "agencyUser": "مستخدم الوكالة",
       "platformWide": "على مستوى المنصة"
     }
+  },
+  "portal": {
+    "backToAdmin": "← لوحة الإدارة",
+    "network": "ClinicBridge Network",
+    "myProfile": "ملفي الشخصي",
+    "agencySettings": "إعدادات الوكالة",
+    "management": "الإدارة",
+    "configuration": "التكوين",
+    "signOut": "تسجيل الخروج"
   },
   "auth": {
     "accessDenied": "تم رفض الوصول",

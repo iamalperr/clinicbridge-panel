@@ -56,7 +56,7 @@ export async function POST(req: Request) {
 
     // 3. Parse Request Body
     const body = await req.json();
-    const { email, name, role, clinicId, password } = body;
+    const { email, name, role, clinicId, agencyId, password } = body;
 
     if (!email || !name || !role) {
       return NextResponse.json({ error: "E-posta, isim ve rol alanları zorunludur." }, { status: 400 });
@@ -64,6 +64,10 @@ export async function POST(req: Request) {
 
     if (role === "clinicUser" && !clinicId) {
       return NextResponse.json({ error: "Klinik kullanıcısı oluştururken klinik seçimi zorunludur." }, { status: 400 });
+    }
+
+    if ((role === "agencyAdmin" || role === "agencyUser") && !agencyId) {
+      return NextResponse.json({ error: "Agency kullanıcısı oluştururken agency seçimi zorunludur." }, { status: 400 });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
@@ -100,13 +104,15 @@ export async function POST(req: Request) {
 
     // 7. Store user in Firestore
     try {
+      const isAgencyRole = role === "agencyAdmin" || role === "agencyUser";
       const userDocRef = adminDb.collection("users").doc(userRecord.uid);
       await userDocRef.set({
         uid: userRecord.uid,
         email: normalizedEmail,
         name,
         role,
-        clinicId: role === "admin" ? null : clinicId,
+        clinicId: role === "clinicUser" ? clinicId : null,
+        agencyId: isAgencyRole ? agencyId : null,
         status: "active",
         createdAt: FieldValue.serverTimestamp(),
       }, { merge: true }); // Use merge in case the document already exists to avoid overwriting everything
