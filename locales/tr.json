@@ -5,7 +5,8 @@
     "users": "Kullanıcılar",
     "settings": "Ayarlar",
     "platform": "Platform",
-    "system": "Sistem"
+    "system": "Sistem",
+    "agencyPortal": "Ajans Portalı"
   },
   "common": {
     "addClinic": "Klinik Ekle",

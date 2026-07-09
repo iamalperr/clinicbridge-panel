@@ -5,7 +5,8 @@
     "users": "Users",
     "settings": "Settings",
     "platform": "Platform",
-    "system": "System"
+    "system": "System",
+    "agencyPortal": "Agency Portal"
   },
   "common": {
     "addClinic": "Add Clinic",

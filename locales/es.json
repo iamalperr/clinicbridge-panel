@@ -5,7 +5,8 @@
     "users": "Usuarios",
     "settings": "Ajustes",
     "platform": "Plataforma",
-    "system": "Sistema"
+    "system": "Sistema",
+    "agencyPortal": "Portal de Agencia"
   },
   "common": {
     "addClinic": "Añadir clínica",

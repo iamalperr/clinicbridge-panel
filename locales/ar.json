@@ -5,7 +5,8 @@
     "users": "المستخدمون",
     "settings": "الإعدادات",
     "platform": "المنصة",
-    "system": "النظام"
+    "system": "النظام",
+    "agencyPortal": "بوابة الوكالة"
   },
   "common": {
     "addClinic": "إضافة عيادة",

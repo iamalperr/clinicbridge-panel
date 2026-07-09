@@ -5,7 +5,8 @@
     "users": "Benutzer",
     "settings": "Einstellungen",
     "platform": "Plattform",
-    "system": "System"
+    "system": "System",
+    "agencyPortal": "Agenturportal"
   },
   "common": {
     "addClinic": "Klinik hinzufügen",
