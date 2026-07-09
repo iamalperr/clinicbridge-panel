@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { isSuperAdmin } from "@/lib/types";
 import { subscribeToAllAgencies, createAgency, updateAgency } from "@/lib/services/agencyService";
+import { seedFeelinHealthy } from "@/lib/seed/feelinhealthy";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -11,7 +12,7 @@ import Modal from "@/components/ui/Modal";
 import Badge from "@/components/ui/Badge";
 import { UI_COLORS } from "@/components/ui/ui-shared";
 import {
-  Building2, Plus, Search, Loader2, Globe, Calendar, Edit2, AlertCircle,
+  Building2, Plus, Search, Loader2, Globe, Calendar, Edit2, AlertCircle, Database,
 } from "lucide-react";
 import type { Agency, TreatmentCategory } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES } from "@/lib/types/agency";
@@ -24,6 +25,7 @@ export default function AgenciesPage() {
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [seeding, setSeeding] = useState(false);
 
   // Form
   const [form, setForm] = useState({
@@ -140,9 +142,24 @@ export default function AgenciesPage() {
             {agencies.length} agencies in the ClinicBridge Network.
           </p>
         </div>
-        <Button onClick={openAdd}>
-          <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Plus size={16} /> Create Agency</span>
-        </Button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button variant="secondary" onClick={async () => {
+            const agency = agencies.find(a => a.slug === "feelinhealthy");
+            if (!agency) { alert("Create FeelinHealthy agency first."); return; }
+            if (!confirm("Seed FeelinHealthy with demo treatments, clinics, pricing and leads?")) return;
+            setSeeding(true);
+            try {
+              const result = await seedFeelinHealthy(agency.id);
+              alert(`Seeded: ${result.treatments} treatments, ${result.clinics} clinics, ${result.pricing} pricing entries, ${result.leads} leads.`);
+            } catch (err) { console.error(err); alert("Seed failed."); }
+            finally { setSeeding(false); }
+          }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Database size={14} /> {seeding ? "Seeding..." : "Seed Demo"}</span>
+          </Button>
+          <Button onClick={openAdd}>
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Plus size={16} /> Create Agency</span>
+          </Button>
+        </div>
       </div>
 
       {/* Search */}

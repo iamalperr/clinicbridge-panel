@@ -17,17 +17,23 @@ export type TreatmentCategory =
   | "check_up"
   | "eye_treatments"
   | "oncology"
+  | "stroke_rehab"
+  | "cardiology"
+  | "bone_marrow"
   | "other";
 
 export const TREATMENT_CATEGORIES: Record<TreatmentCategory, { tr: string; en: string }> = {
-  dental:             { tr: "Diş Tedavisi",       en: "Dental" },
-  hair_transplant:    { tr: "Saç Ekimi",           en: "Hair Transplant" },
-  aesthetic_surgery:  { tr: "Estetik Cerrahi",     en: "Aesthetic Surgery" },
-  ivf:                { tr: "Tüp Bebek (IVF)",     en: "IVF" },
-  check_up:           { tr: "Check-Up",            en: "Check-Up" },
-  eye_treatments:     { tr: "Göz Tedavisi",        en: "Eye Treatments" },
-  oncology:           { tr: "Onkoloji",            en: "Oncology" },
-  other:              { tr: "Diğer",               en: "Other" },
+  dental:             { tr: "Diş Tedavisi",                        en: "Dental" },
+  hair_transplant:    { tr: "Saç Ekimi",                            en: "Hair Transplant" },
+  aesthetic_surgery:  { tr: "Estetik Cerrahi",                      en: "Aesthetic Surgery" },
+  ivf:                { tr: "Tüp Bebek (IVF)",                      en: "IVF" },
+  check_up:           { tr: "Check-Up",                              en: "Check-Up" },
+  eye_treatments:     { tr: "Göz Tedavisi",                          en: "Eye Treatments" },
+  oncology:           { tr: "Onkoloji",                              en: "Oncology" },
+  stroke_rehab:       { tr: "İnme Rehabilitasyonu",                  en: "Stroke Rehabilitation" },
+  cardiology:         { tr: "Kardiyoloji ve Kalp Damar Cerrahisi",   en: "Cardiology & Cardiovascular" },
+  bone_marrow:        { tr: "Kemik İliği ve Kök Hücre Nakli",        en: "Bone Marrow & Stem Cell" },
+  other:              { tr: "Diğer",                                 en: "Other" },
 };
 
 // ─── Lead Status ────────────────────────────────────────────────────────────
@@ -106,14 +112,23 @@ export interface AgencyClinic {
   id?: string; // Firestore doc ID
   clinicId: string;
   clinicName: string;
+  clinicType?: "clinicbridge" | "external";
   branch?: string;
   category?: string;
   location: AgencyClinicLocation;
+  profileUrl?: string; // e.g. https://www.feelinhealthy.com/medicalcenter/...
+  website?: string;
+  whatsapp?: string;
   supportedLanguages: string[];
   treatmentCategories: TreatmentCategory[];
+  subTreatments?: string[];
+  accreditation?: string[];
+  rating?: number;
+  reviewCount?: number;
   status: AgencyClinicStatus;
   priority: number;
   responseSLA?: number; // hours
+  leadCapacity?: number;
   addedAt: any;
   updatedAt: any;
 }

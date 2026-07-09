@@ -41,9 +41,15 @@ export default function AgencyClinicsPage() {
   const [newClinic, setNewClinic] = useState({
     clinicId: "",
     clinicName: "",
+    clinicType: "external" as "clinicbridge" | "external",
     branch: "",
     city: "",
     country: "",
+    profileUrl: "",
+    website: "",
+    whatsapp: "",
+    subTreatments: "",
+    leadCapacity: "",
     treatmentCategories: [] as TreatmentCategory[],
   });
 
@@ -66,12 +72,18 @@ export default function AgencyClinicsPage() {
       await addClinicToAgency(agencyId, {
         clinicId: newClinic.clinicId,
         clinicName: newClinic.clinicName,
+        clinicType: newClinic.clinicType,
         branch: newClinic.branch || undefined,
         category: undefined,
         location: {
           city: newClinic.city,
           country: newClinic.country,
         },
+        profileUrl: newClinic.profileUrl || undefined,
+        website: newClinic.website || undefined,
+        whatsapp: newClinic.whatsapp || undefined,
+        subTreatments: newClinic.subTreatments ? newClinic.subTreatments.split(",").map(s => s.trim()).filter(Boolean) : [],
+        leadCapacity: newClinic.leadCapacity ? Number(newClinic.leadCapacity) : undefined,
         supportedLanguages: ["en", "tr"],
         treatmentCategories: newClinic.treatmentCategories,
         status: "active",
@@ -79,7 +91,7 @@ export default function AgencyClinicsPage() {
         responseSLA: 24,
       });
       setShowAddModal(false);
-      setNewClinic({ clinicId: "", clinicName: "", branch: "", city: "", country: "", treatmentCategories: [] });
+      setNewClinic({ clinicId: "", clinicName: "", clinicType: "external", branch: "", city: "", country: "", profileUrl: "", website: "", whatsapp: "", subTreatments: "", leadCapacity: "", treatmentCategories: [] });
     } catch (err) {
       console.error("Failed to add clinic:", err);
     }
@@ -254,17 +266,38 @@ export default function AgencyClinicsPage() {
       {showAddModal && (
         <Modal isOpen={showAddModal} title="Add Clinic to Agency" onClose={() => setShowAddModal(false)}>
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {/* Clinic Type */}
+            <div style={{ display: "flex", gap: 8 }}>
+              {(["clinicbridge", "external"] as const).map((type) => (
+                <button key={type} type="button" onClick={() => setNewClinic((p) => ({ ...p, clinicType: type }))}
+                  style={{
+                    flex: 1, padding: "10px 14px", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                    border: `1px solid ${newClinic.clinicType === type ? "#10b981" : UI_COLORS.border}`,
+                    background: newClinic.clinicType === type ? "rgba(16, 185, 129, 0.08)" : "transparent",
+                    color: newClinic.clinicType === type ? "#10b981" : UI_COLORS.textSecondary,
+                  }}>
+                  {type === "clinicbridge" ? "🔗 Link ClinicBridge Clinic" : "➕ Create External Clinic"}
+                </button>
+              ))}
+            </div>
+
             <Input
-              label="Clinic ID (from ClinicBridge)"
+              label="Clinic ID"
               value={newClinic.clinicId}
               onChange={(e) => setNewClinic((p) => ({ ...p, clinicId: e.target.value }))}
-              placeholder="e.g., DnOlKzIhPc4agVymYcoH"
+              placeholder={newClinic.clinicType === "clinicbridge" ? "ClinicBridge ID (e.g. DnOlKz...)" : "Unique identifier"}
             />
             <Input
               label="Clinic Name"
               value={newClinic.clinicName}
               onChange={(e) => setNewClinic((p) => ({ ...p, clinicName: e.target.value }))}
-              placeholder="e.g., Nova Dental Clinic"
+              placeholder="e.g., Hospitadent Dental Group Pendik"
+            />
+            <Input
+              label="FeelinHealthy Profile URL"
+              value={newClinic.profileUrl}
+              onChange={(e) => setNewClinic((p) => ({ ...p, profileUrl: e.target.value }))}
+              placeholder="https://www.feelinhealthy.com/medicalcenter/..."
             />
             <Input
               label="Branch (optional)"
@@ -286,6 +319,32 @@ export default function AgencyClinicsPage() {
                 placeholder="Turkey"
               />
             </div>
+            <div style={{ display: "flex", gap: 12 }}>
+              <Input
+                label="Website"
+                value={newClinic.website}
+                onChange={(e) => setNewClinic((p) => ({ ...p, website: e.target.value }))}
+                placeholder="https://..."
+              />
+              <Input
+                label="WhatsApp (optional)"
+                value={newClinic.whatsapp}
+                onChange={(e) => setNewClinic((p) => ({ ...p, whatsapp: e.target.value }))}
+                placeholder="+90..."
+              />
+            </div>
+            <Input
+              label="Sub-Treatments (comma separated)"
+              value={newClinic.subTreatments}
+              onChange={(e) => setNewClinic((p) => ({ ...p, subTreatments: e.target.value }))}
+              placeholder="Dental Implant, Zirconium Crowns, Hollywood Smile"
+            />
+            <Input
+              label="Lead Capacity (optional)"
+              value={newClinic.leadCapacity}
+              onChange={(e) => setNewClinic((p) => ({ ...p, leadCapacity: e.target.value }))}
+              placeholder="e.g. 50"
+            />
 
             {/* Treatment Categories */}
             <div>
