@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test Widget</title></head>
+<body>
+<script>
+window.__cbwTestMode = true;
+window.fetch = function() {
+  return Promise.resolve({
+    json: () => Promise.resolve({
+      launcher: { shape: "pill", showText: true, text: { tr: "Test", en: "Test" } }
+    })
+  });
+};
+</script>
+<script src="/widget.js" data-clinic-id="demo"></script>
+</body>
+</html>

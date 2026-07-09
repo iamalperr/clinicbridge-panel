@@ -1,7 +1,7 @@
 export type Plan = "trial" | "pro" | "enterprise";
 export type ClinicStatus = "active" | "inactive" | "trial";
 
-export type UserRole = "admin" | "clinicUser";
+export type UserRole = "admin" | "clinicUser" | "agencyAdmin" | "agencyUser";
 
 export interface UserProfile {
   id?: string;
@@ -11,6 +11,7 @@ export interface UserProfile {
   role: UserRole;
   status?: "active" | "pending" | "suspended";
   clinicId?: string;
+  agencyId?: string;
   createdAt?: string | number | { seconds: number; nanoseconds: number } | object;
 }
 

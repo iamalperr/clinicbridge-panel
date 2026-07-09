@@ -18,7 +18,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       if (!user && !isPublicRoute) {
         router.replace("/login");
       } else if (user && profile && (pathname === "/login" || pathname === "/")) {
-        router.replace("/clinics");
+        const isAgencyRole = profile.role === "agencyAdmin" || profile.role === "agencyUser";
+        router.replace(isAgencyRole ? "/agency" : "/clinics");
       }
     }
   }, [user, profile, loading, pathname, router]);
@@ -63,6 +64,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const roleStr = profile?.role as string;
   const isAdmin = roleStr === "admin" || roleStr === "platform_admin" || roleStr === "Yönetici" || roleStr === "yonetici";
   const isClinicUser = roleStr === "clinicUser" || roleStr === "Klinik Kullanıcısı";
+  const isAgencyUser = roleStr === "agencyAdmin" || roleStr === "agencyUser";
 
   const isAuthorized = profile && (isAdmin || profile.status === "active");
 
@@ -91,6 +93,21 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         return <UnauthorizedScreen />;
       }
     }
+  }
+
+  // Route-Level Role Guards for Agency Users
+  if (user && profile && !isPublicRoute && isAgencyUser) {
+    // Agency users can only access /agency/* routes
+    if (!pathname.startsWith("/agency")) {
+      return <UnauthorizedScreen />;
+    }
+    // Block access to other agencies
+    // (agency routes don't have agencyId in URL — they read from profile.agencyId)
+  }
+
+  // Block clinic/admin users from accessing /agency/* routes
+  if (user && profile && !isPublicRoute && !isAdmin && !isAgencyUser && pathname.startsWith("/agency")) {
+    return <UnauthorizedScreen />;
   }
 
   return <>{children}</>;

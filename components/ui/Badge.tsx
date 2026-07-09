@@ -3,6 +3,8 @@ type BadgeVariant =
   | "pro" | "starter" | "enterprise"
   | "indexed" | "pending" | "failed"
   | "resolved" | "open" | "escalated"
+  // Semantic variants
+  | "success" | "info" | "warning" | "danger" | "default"
   // Module-specific variants
   | "module-ai" | "module-widget" | "module-voice" | "module-sms";
 
@@ -24,6 +26,12 @@ const MAP: Record<BadgeVariant, { bg: string; color: string }> = {
   "module-widget": { bg: "rgba(14,165,233,0.12)",  color: "#38bdf8" },
   "module-voice":  { bg: "rgba(168,85,247,0.12)",  color: "#c084fc" },
   "module-sms":    { bg: "rgba(234,179,8,0.12)",   color: "#facc15" },
+  // Semantic variants
+  success:         { bg: "var(--badge-active-bg)",     color: "var(--badge-active-fg)" },
+  info:            { bg: "var(--badge-open-bg)",       color: "var(--badge-open-fg)" },
+  warning:         { bg: "var(--badge-trial-bg)",      color: "var(--badge-trial-fg)" },
+  danger:          { bg: "var(--badge-failed-bg)",     color: "var(--badge-failed-fg)" },
+  default:         { bg: "var(--badge-inactive-bg)",   color: "var(--badge-inactive-fg)" },
 };
 
 interface BadgeProps {
