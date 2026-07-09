@@ -37,6 +37,32 @@ export async function getAgency(agencyId: string): Promise<Agency | null> {
   return { id: snap.id, ...snap.data() } as Agency;
 }
 
+export function subscribeToAllAgencies(
+  onData: (agencies: Agency[]) => void
+): () => void {
+  const q = query(collection(db, "agencies"), orderBy("name", "asc"));
+  return onSnapshot(
+    q,
+    (snap) => {
+      onData(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Agency)));
+    },
+    () => onData([])
+  );
+}
+
+export async function createAgency(
+  data: Omit<Agency, "id" | "createdAt" | "updatedAt">
+): Promise<string> {
+  const colRef = collection(db, "agencies");
+  const docRef = doc(colRef);
+  await setDoc(docRef, {
+    ...data,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return docRef.id;
+}
+
 export function subscribeToAgency(
   agencyId: string,
   onData: (agency: Agency | null) => void

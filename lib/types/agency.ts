@@ -84,6 +84,10 @@ export interface Agency {
   privacyUrl: string;
   treatmentCategories: TreatmentCategory[];
   status: AgencyStatus;
+  productType?: string;
+  contactEmail?: string;
+  timezone?: string;
+  allowedDomains?: string[];
   createdAt: any; // Firestore Timestamp
   updatedAt: any;
 }

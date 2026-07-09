@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { isSuperAdmin } from "@/lib/types";
 import {
   subscribeToAgencyClinics,
   addClinicToAgency,
@@ -22,6 +23,7 @@ import {
   MapPin,
   Globe,
   Stethoscope,
+  AlertCircle,
 } from "lucide-react";
 import type { AgencyClinic, TreatmentCategory } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES } from "@/lib/types/agency";
@@ -46,7 +48,10 @@ export default function AgencyClinicsPage() {
   });
 
   useEffect(() => {
-    if (!agencyId) return;
+    if (!agencyId) {
+      setLoading(false);
+      return;
+    }
     const unsub = subscribeToAgencyClinics(agencyId, (data) => {
       setClinics(data);
       setLoading(false);

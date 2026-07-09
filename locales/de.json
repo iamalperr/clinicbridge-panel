@@ -109,7 +109,9 @@
       "created": "Erstellt"
     },
     "roles": {
+      "superAdmin": "Super Admin",
       "admin": "Administrator",
+      "clinicAdmin": "Klinik-Admin",
       "clinicUser": "Klinikbenutzer",
       "agencyAdmin": "Agency Admin",
       "agencyUser": "Agency User",

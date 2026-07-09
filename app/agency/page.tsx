@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { isSuperAdmin } from "@/lib/types";
 import {
   subscribeToAgency,
   subscribeToAgencyDashboard,
+  subscribeToAllAgencies,
 } from "@/lib/services/agencyService";
 import { subscribeToLeads } from "@/lib/services/leadService";
 import StatCard from "@/components/ui/StatCard";
@@ -31,14 +33,28 @@ import {
 export default function AgencyDashboardPage() {
   const { profile } = useAuth();
   const agencyId = profile?.agencyId;
+  const superAdmin = isSuperAdmin(profile?.role);
 
   const [agency, setAgency] = useState<Agency | null>(null);
+  const [allAgencies, setAllAgencies] = useState<Agency[]>([]);
   const [metrics, setMetrics] = useState<AgencyDashboardMetrics>(EMPTY_AGENCY_METRICS);
   const [recentLeads, setRecentLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!agencyId) return;
+    // SuperAdmin without agencyId → show Network Overview
+    if (superAdmin && !agencyId) {
+      const unsub = subscribeToAllAgencies((agencies) => {
+        setAllAgencies(agencies);
+        setLoading(false);
+      });
+      return () => unsub();
+    }
+
+    if (!agencyId) {
+      setLoading(false);
+      return;
+    }
 
     const unsub1 = subscribeToAgency(agencyId, (a) => {
       setAgency(a);
@@ -56,9 +72,10 @@ export default function AgencyDashboardPage() {
       unsub2();
       unsub3();
     };
-  }, [agencyId]);
+  }, [agencyId, superAdmin]);
 
-  if (!agencyId) {
+  // Non-superAdmin without agencyId → show assignment error
+  if (!agencyId && !superAdmin) {
     return (
       <div style={{ padding: 40, textAlign: "center" }}>
         <AlertCircle size={48} color={UI_COLORS.textMuted} />
@@ -66,8 +83,88 @@ export default function AgencyDashboardPage() {
           No Agency Assigned
         </h2>
         <p style={{ color: UI_COLORS.textMuted, marginTop: 8 }}>
-          Your account is not linked to any agency. Contact admin.
+          Your account is not linked to any agency. Contact your administrator.
         </p>
+      </div>
+    );
+  }
+
+  // SuperAdmin without agencyId → Network Overview
+  if (!agencyId && superAdmin) {
+    return (
+      <div style={{ padding: "24px 32px", maxWidth: 1400 }}>
+        <div style={{ marginBottom: 28 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.02em" }}>
+            Network Overview
+          </h1>
+          <p style={{ fontSize: 14, color: UI_COLORS.textMuted, marginTop: 4 }}>
+            Manage all agencies in the ClinicBridge Network.
+          </p>
+        </div>
+
+        {loading ? (
+          <div style={{ height: "40vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Loader2 size={32} style={{ animation: "spin 1s linear infinite" }} color="#10b981" />
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        ) : (
+          <>
+            {/* Stats */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 28 }}>
+              <StatCard label="Total Agencies" value={allAgencies.length} icon={<Building2 size={20} />} />
+              <StatCard label="Active Agencies" value={allAgencies.filter(a => a.status === "active").length} icon={<TrendingUp size={20} />} />
+            </div>
+
+            {/* Agency List */}
+            <SectionCard title="Agencies">
+              {allAgencies.length === 0 ? (
+                <div style={{ padding: 32, textAlign: "center", color: UI_COLORS.textMuted }}>
+                  <Building2 size={40} style={{ opacity: 0.3, marginBottom: 12 }} />
+                  <p style={{ fontWeight: 600 }}>No agencies yet</p>
+                  <p style={{ fontSize: 13, marginTop: 4 }}>Go to the Agencies page to create your first agency.</p>
+                  <Link href="/agency/agencies" style={{ display: "inline-block", marginTop: 16, padding: "8px 20px", borderRadius: 8, background: "#10b981", color: "#fff", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>
+                    Go to Agencies →
+                  </Link>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {allAgencies.map((a) => (
+                    <Link
+                      key={a.id}
+                      href={`/agency/agencies`}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "12px 16px",
+                        borderRadius: 10,
+                        border: `1px solid ${UI_COLORS.border}`,
+                        textDecoration: "none",
+                        transition: "background 0.15s",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(16, 185, 129, 0.04)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 8, background: "linear-gradient(135deg, #10b981, #059669)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <Building2 size={18} color="#fff" />
+                        </div>
+                        <div>
+                          <p style={{ fontSize: 14, fontWeight: 700, color: UI_COLORS.textPrimary }}>{a.name}</p>
+                          <p style={{ fontSize: 12, color: UI_COLORS.textMuted }}>{a.domain || "No domain"}</p>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <Badge label={a.status === "active" ? "Active" : "Inactive"} variant={a.status === "active" ? "success" : "warning"} />
+                        <ArrowRight size={16} color={UI_COLORS.textMuted} />
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+          </>
+        )}
       </div>
     );
   }

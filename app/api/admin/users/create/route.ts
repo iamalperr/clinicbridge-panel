@@ -45,7 +45,7 @@ export async function POST(req: Request) {
     }
 
     // Support all possible admin role values across the system
-    const adminRoles = ["admin", "platform_admin", "Yönetici", "yonetici"];
+    const adminRoles = ["superAdmin", "admin", "platform_admin", "Yönetici", "yonetici"];
     const resolvedRole = callerData?.role || "none";
 
     console.log(`[AdminAuth] Resolved user role: ${resolvedRole}`);

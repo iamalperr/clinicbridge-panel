@@ -111,7 +111,9 @@
       "created": "Oluşturma"
     },
     "roles": {
+      "superAdmin": "Super Admin",
       "admin": "Yönetici",
+      "clinicAdmin": "Klinik Yöneticisi",
       "clinicUser": "Klinik Kullanıcısı",
       "agencyAdmin": "Agency Admin",
       "agencyUser": "Agency User",

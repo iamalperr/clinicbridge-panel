@@ -1,7 +1,41 @@
 export type Plan = "trial" | "pro" | "enterprise";
 export type ClinicStatus = "active" | "inactive" | "trial";
 
-export type UserRole = "admin" | "clinicUser" | "agencyAdmin" | "agencyUser";
+export type UserRole = "superAdmin" | "admin" | "agencyAdmin" | "agencyUser" | "clinicAdmin" | "clinicUser";
+
+// ─── Role Helpers ─────────────────────────────────────────────────────────────
+// "admin" is a backward-compatible alias for "superAdmin" in Firestore.
+// Both grant full platform access.
+
+export function isSuperAdmin(role?: string): boolean {
+  return role === "superAdmin" || role === "admin";
+}
+
+export function isAgencyRole(role?: string): boolean {
+  return role === "agencyAdmin" || role === "agencyUser";
+}
+
+export function isClinicRole(role?: string): boolean {
+  return role === "clinicAdmin" || role === "clinicUser";
+}
+
+export function getRoleDisplayName(role?: string): string {
+  switch (role) {
+    case "superAdmin":
+    case "admin":
+      return "Super Admin";
+    case "agencyAdmin":
+      return "Agency Admin";
+    case "agencyUser":
+      return "Agency User";
+    case "clinicAdmin":
+      return "Clinic Admin";
+    case "clinicUser":
+      return "Clinic User";
+    default:
+      return role || "Unknown";
+  }
+}
 
 export interface UserProfile {
   id?: string;

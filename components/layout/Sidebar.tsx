@@ -8,6 +8,7 @@ import { auth } from "@/lib/firebase";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 import { Grid, BarChart3, Settings, Users, LogOut, ClipboardList, Globe } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { isSuperAdmin, getRoleDisplayName } from "@/lib/types";
 import { useI18n } from "@/lib/i18n-context";
 import Logo from "@/components/ui/Logo";
 
@@ -109,15 +110,15 @@ export default function Sidebar() {
         <SectionLabel>{t("nav.platform")}</SectionLabel>
         <NavItem href="/clinics" label={t("nav.clinics")} icon={<Grid size={18} />} />
         <NavItem href="/analytics" label={t("nav.analytics")} icon={<BarChart3 size={18} />} />
-        {profile?.role === "admin" && (
+        {isSuperAdmin(profile?.role) && (
           <NavItem href="/demo-requests" label="Demo Talepleri" icon={<ClipboardList size={18} />} />
         )}
-        {profile?.role === "admin" && (
+        {isSuperAdmin(profile?.role) && (
           <NavItem href="/agency" label={t("nav.portal")} icon={<Globe size={18} />} />
         )}
         
         <SectionLabel>{t("nav.system")}</SectionLabel>
-        {profile?.role === "admin" && (
+        {isSuperAdmin(profile?.role) && (
           <NavItem href="/users" label={t("nav.users")} icon={<Users size={18} />} />
         )}
         <NavItem href="/settings" label={t("nav.settings")} icon={<Settings size={18} />} />
@@ -150,7 +151,7 @@ export default function Sidebar() {
                 {profile?.name || "User"}
               </p>
               <p style={{ fontSize: 11.5, color: UI_COLORS.textMuted }}>
-                {profile?.role === "admin" ? t("users.roles.admin") : t("users.roles.clinicUser")}
+                {getRoleDisplayName(profile?.role)}
               </p>
             </div>
           </div>

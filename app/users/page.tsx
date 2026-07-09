@@ -5,6 +5,7 @@ import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, where, do
 import { auth, db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import type { UserProfile, Clinic, UserRole } from "@/lib/types";
+import { isSuperAdmin, isAgencyRole, isClinicRole, getRoleDisplayName } from "@/lib/types";
 import type { Agency } from "@/lib/types/agency";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -489,15 +490,16 @@ export default function UsersPage() {
                   setNewUser({
                     ...newUser,
                     role,
-                    clinicId: role === "clinicUser" ? newUser.clinicId : "",
+                    clinicId: (role === "clinicUser" || role === "clinicAdmin") ? newUser.clinicId : "",
                     agencyId: (role === "agencyAdmin" || role === "agencyUser") ? newUser.agencyId : "",
                   });
                 }}
                 options={[
-                  { label: t("users.roles.clinicUser"), value: "clinicUser" },
-                  { label: t("users.roles.agencyAdmin"), value: "agencyAdmin" },
-                  { label: t("users.roles.agencyUser"), value: "agencyUser" },
-                  { label: t("users.roles.admin"), value: "admin" },
+                  { label: "Super Admin", value: "superAdmin" },
+                  { label: "Agency Admin", value: "agencyAdmin" },
+                  { label: "Agency User", value: "agencyUser" },
+                  { label: "Clinic Admin", value: "clinicAdmin" },
+                  { label: "Clinic User", value: "clinicUser" },
                 ]}
               />
               <Select 
@@ -511,7 +513,7 @@ export default function UsersPage() {
               />
             </div>
 
-            {newUser.role === "clinicUser" && (
+            {isClinicRole(newUser.role) && (
               <Select 
                 label={t("users.table.clinic")} 
                 value={newUser.clinicId}
@@ -523,7 +525,7 @@ export default function UsersPage() {
               />
             )}
 
-            {(newUser.role === "agencyAdmin" || newUser.role === "agencyUser") && (
+            {isAgencyRole(newUser.role) && (
               <Select 
                 label="Agency" 
                 value={newUser.agencyId}

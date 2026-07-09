@@ -29,7 +29,10 @@ export default function AgencySettingsPage() {
   const [categories, setCategories] = useState<TreatmentCategory[]>([]);
 
   useEffect(() => {
-    if (!agencyId) return;
+    if (!agencyId) {
+      setLoading(false);
+      return;
+    }
     const unsub = subscribeToAgency(agencyId, (a) => {
       setAgency(a);
       if (a) {

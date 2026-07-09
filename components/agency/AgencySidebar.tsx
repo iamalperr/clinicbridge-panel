@@ -7,6 +7,7 @@ import ThemeToggle from "@/components/ui/ThemeToggle";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
+import { isSuperAdmin, isAgencyRole, getRoleDisplayName } from "@/lib/types";
 import {
   LayoutDashboard,
   Users2,
@@ -19,6 +20,9 @@ import {
   User,
   ChevronDown,
   ChevronUp,
+  Bot,
+  Code,
+  Briefcase,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { subscribeToAgency } from "@/lib/services/agencyService";
@@ -129,7 +133,7 @@ export default function AgencySidebar() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   const agencyId = profile?.agencyId;
-  const isAdmin = profile?.role === "admin";
+  const superAdmin = isSuperAdmin(profile?.role);
 
   useEffect(() => {
     if (!agencyId) return;
@@ -137,13 +141,12 @@ export default function AgencySidebar() {
     return () => unsub();
   }, [agencyId]);
 
-  const agencyName = agency?.name || "Portal";
-  const roleName =
-    profile?.role === "admin"
-      ? "Super Admin"
-      : profile?.role === "agencyAdmin"
-      ? "Agency Admin"
-      : "Agency User";
+  // Naming logic
+  const agencyName = agency?.name;
+  const headerTitle = superAdmin && !agencyId ? "ClinicBridge Network" : agencyName ? `${agencyName}` : "Network Portal";
+  const headerSubtitle = superAdmin ? "Agency SaaS Platform" : "ClinicBridge Network";
+  const roleName = getRoleDisplayName(profile?.role);
+  const orgName = superAdmin ? "ClinicBridge" : agencyName || "Network";
 
   return (
     <aside
@@ -190,7 +193,7 @@ export default function AgencySidebar() {
                   letterSpacing: "-0.02em",
                 }}
               >
-                {agencyName} Portal
+                {headerTitle}
               </p>
               <p
                 style={{
@@ -200,7 +203,7 @@ export default function AgencySidebar() {
                   letterSpacing: "0.02em",
                 }}
               >
-                ClinicBridge Network
+                {headerSubtitle}
               </p>
             </div>
           </div>
@@ -208,7 +211,7 @@ export default function AgencySidebar() {
       </div>
 
       {/* Back to Admin Panel */}
-      {isAdmin && (
+      {superAdmin && (
         <div style={{ padding: "8px 12px 0" }}>
           <Link
             href="/clinics"
@@ -228,7 +231,7 @@ export default function AgencySidebar() {
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = "rgba(99, 102, 241, 0.06)";
-              e.currentTarget.style.color = UI_COLORS.brand;
+              e.currentTarget.style.color = "#6366f1";
               e.currentTarget.style.borderColor = "rgba(99, 102, 241, 0.2)";
             }}
             onMouseLeave={(e) => {
@@ -238,7 +241,7 @@ export default function AgencySidebar() {
             }}
           >
             <ArrowLeft size={14} />
-            ← Admin Panel
+            Admin Panel
           </Link>
         </div>
       )}
@@ -254,34 +257,22 @@ export default function AgencySidebar() {
           overflowY: "auto",
         }}
       >
-        <SectionLabel>Yönetim</SectionLabel>
-        <NavItem
-          href="/agency"
-          label="Dashboard"
-          icon={<LayoutDashboard size={18} />}
-        />
-        <NavItem
-          href="/agency/leads"
-          label="Leads"
-          icon={<Users2 size={18} />}
-        />
-        <NavItem
-          href="/agency/clinics"
-          label="Clinics"
-          icon={<Building2 size={18} />}
-        />
+        <SectionLabel>Overview</SectionLabel>
+        <NavItem href="/agency" label="Dashboard" icon={<LayoutDashboard size={18} />} />
 
-        <SectionLabel>Yapılandırma</SectionLabel>
-        <NavItem
-          href="/agency/widget"
-          label="Widget"
-          icon={<MessageSquare size={18} />}
-        />
-        <NavItem
-          href="/agency/settings"
-          label="Settings"
-          icon={<Settings size={18} />}
-        />
+        {/* SuperAdmin-only items */}
+        {superAdmin && (
+          <NavItem href="/agency/agencies" label="Agencies" icon={<Briefcase size={18} />} />
+        )}
+
+        <SectionLabel>Management</SectionLabel>
+        <NavItem href="/agency/leads" label="Leads" icon={<Users2 size={18} />} />
+        <NavItem href="/agency/clinics" label="Clinics" icon={<Building2 size={18} />} />
+
+        <SectionLabel>Configuration</SectionLabel>
+        <NavItem href="/agency/ai-config" label="AI Assistant" icon={<Bot size={18} />} />
+        <NavItem href="/agency/widget" label="Widget" icon={<Code size={18} />} />
+        <NavItem href="/agency/settings" label="Settings" icon={<Settings size={18} />} />
       </nav>
 
       {/* User & Auth Section */}
@@ -292,7 +283,7 @@ export default function AgencySidebar() {
           background: "rgba(255, 255, 255, 0.01)",
         }}
       >
-        {/* User Info — clickable to toggle menu */}
+        {/* User Info */}
         <button
           onClick={() => setMenuOpen((v) => !v)}
           style={{
@@ -302,232 +293,106 @@ export default function AgencySidebar() {
             gap: 10,
             padding: "10px 12px",
             borderRadius: 12,
-            background: menuOpen
-              ? "rgba(16, 185, 129, 0.06)"
-              : "transparent",
+            background: menuOpen ? "rgba(16, 185, 129, 0.06)" : "transparent",
             border: `1px solid ${menuOpen ? "rgba(16, 185, 129, 0.15)" : "transparent"}`,
             cursor: "pointer",
             transition: UI_COMMON_STYLES.transition,
             textAlign: "left",
           }}
           onMouseEnter={(e) => {
-            if (!menuOpen) {
-              e.currentTarget.style.background = "rgba(255, 255, 255, 0.03)";
-            }
+            if (!menuOpen) e.currentTarget.style.background = "rgba(255, 255, 255, 0.03)";
           }}
           onMouseLeave={(e) => {
-            if (!menuOpen) {
-              e.currentTarget.style.background = "transparent";
-            }
+            if (!menuOpen) e.currentTarget.style.background = "transparent";
           }}
         >
           <div
             style={{
-              width: 34,
-              height: 34,
-              borderRadius: "50%",
+              width: 34, height: 34, borderRadius: "50%",
               background: "linear-gradient(135deg, #10b981, #059669)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 13,
-              fontWeight: 800,
-              color: "white",
-              flexShrink: 0,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 13, fontWeight: 800, color: "white", flexShrink: 0,
             }}
           >
-            {(
-              profile?.name?.[0] ||
-              profile?.email?.[0] ||
-              "U"
-            ).toUpperCase()}
+            {(profile?.name?.[0] || profile?.email?.[0] || "U").toUpperCase()}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p
-              style={{
-                fontSize: 13.5,
-                fontWeight: 700,
-                color: UI_COLORS.textPrimary,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
+            <p style={{
+              fontSize: 13.5, fontWeight: 700, color: UI_COLORS.textPrimary,
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>
               {profile?.name || "User"}
             </p>
-            <p
-              style={{
-                fontSize: 11,
-                color: UI_COLORS.textMuted,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {agencyName} · {roleName}
+            <p style={{
+              fontSize: 11, color: UI_COLORS.textMuted,
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>
+              {orgName} · {roleName}
             </p>
           </div>
-          {menuOpen ? (
-            <ChevronUp size={14} color={UI_COLORS.textMuted} />
-          ) : (
-            <ChevronDown size={14} color={UI_COLORS.textMuted} />
-          )}
+          {menuOpen ? <ChevronUp size={14} color={UI_COLORS.textMuted} /> : <ChevronDown size={14} color={UI_COLORS.textMuted} />}
         </button>
 
         {/* Dropdown Menu */}
         {menuOpen && (
-          <div
-            style={{
-              marginTop: 8,
-              padding: "6px",
-              borderRadius: 12,
-              background: "var(--bg-card)",
-              border: `1px solid ${UI_COLORS.border}`,
-              display: "flex",
-              flexDirection: "column",
-              gap: 2,
-            }}
-          >
-            <Link
-              href="/agency/settings"
-              onClick={() => setMenuOpen(false)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "8px 12px",
-                borderRadius: 8,
-                fontSize: 13,
-                fontWeight: 500,
-                color: UI_COLORS.textSecondary,
-                textDecoration: "none",
-                transition: "background 0.15s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "rgba(255, 255, 255, 0.04)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "transparent";
-              }}
-            >
-              <User size={14} />
-              Profilim
-            </Link>
+          <div style={{
+            marginTop: 8, padding: "6px", borderRadius: 12,
+            background: "var(--bg-card)", border: `1px solid ${UI_COLORS.border}`,
+            display: "flex", flexDirection: "column", gap: 2,
+          }}>
+            <MenuLink href="/agency/settings" icon={<User size={14} />} label="My Profile" onClick={() => setMenuOpen(false)} />
+            <MenuLink href="/agency/settings" icon={<Settings size={14} />} label="Agency Settings" onClick={() => setMenuOpen(false)} />
 
-            <Link
-              href="/agency/settings"
-              onClick={() => setMenuOpen(false)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "8px 12px",
-                borderRadius: 8,
-                fontSize: 13,
-                fontWeight: 500,
-                color: UI_COLORS.textSecondary,
-                textDecoration: "none",
-                transition: "background 0.15s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "rgba(255, 255, 255, 0.04)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "transparent";
-              }}
-            >
-              <Settings size={14} />
-              Agency Ayarları
-            </Link>
-
-            {isAdmin && (
+            {superAdmin && (
               <>
-                <div
-                  style={{
-                    height: 1,
-                    background: UI_COLORS.border,
-                    margin: "4px 8px",
-                  }}
-                />
-                <Link
-                  href="/clinics"
-                  onClick={() => setMenuOpen(false)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "8px 12px",
-                    borderRadius: 8,
-                    fontSize: 13,
-                    fontWeight: 500,
-                    color: UI_COLORS.brand,
-                    textDecoration: "none",
-                    transition: "background 0.15s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background =
-                      "rgba(99, 102, 241, 0.06)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "transparent";
-                  }}
-                >
-                  <ArrowLeft size={14} />
-                  Ana Panele Dön
-                </Link>
+                <div style={{ height: 1, background: UI_COLORS.border, margin: "4px 8px" }} />
+                <MenuLink href="/clinics" icon={<ArrowLeft size={14} />} label="Back to Admin Panel" onClick={() => setMenuOpen(false)} brand />
               </>
             )}
 
-            <div
-              style={{
-                height: 1,
-                background: UI_COLORS.border,
-                margin: "4px 8px",
-              }}
-            />
+            <div style={{ height: 1, background: UI_COLORS.border, margin: "4px 8px" }} />
 
             <button
               onClick={() => signOut(auth)}
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "8px 12px",
-                borderRadius: 8,
-                fontSize: 13,
-                fontWeight: 500,
-                color: UI_COLORS.danger,
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-                width: "100%",
-                textAlign: "left",
-                transition: "background 0.15s",
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "8px 12px", borderRadius: 8, fontSize: 13, fontWeight: 500,
+                color: UI_COLORS.danger, background: "transparent", border: "none",
+                cursor: "pointer", width: "100%", textAlign: "left", transition: "background 0.15s",
               }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "rgba(239, 68, 68, 0.06)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "transparent";
-              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239, 68, 68, 0.06)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
             >
               <LogOut size={14} />
-              Çıkış Yap
+              Sign Out
             </button>
           </div>
         )}
 
-        {/* Theme Toggle */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            marginTop: 8,
-          }}
-        >
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
           <ThemeToggle />
         </div>
       </div>
     </aside>
+  );
+}
+
+function MenuLink({ href, icon, label, onClick, brand }: { href: string; icon: React.ReactNode; label: string; onClick: () => void; brand?: boolean }) {
+  return (
+    <Link
+      href={href}
+      onClick={onClick}
+      style={{
+        display: "flex", alignItems: "center", gap: 10,
+        padding: "8px 12px", borderRadius: 8, fontSize: 13, fontWeight: 500,
+        color: brand ? "#6366f1" : UI_COLORS.textSecondary,
+        textDecoration: "none", transition: "background 0.15s",
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = brand ? "rgba(99, 102, 241, 0.06)" : "rgba(255, 255, 255, 0.04)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+    >
+      {icon}
+      {label}
+    </Link>
   );
 }

@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
+import { isSuperAdmin } from "@/lib/types";
 import { subscribeToLeads } from "@/lib/services/leadService";
 import Badge from "@/components/ui/Badge";
 import { UI_COLORS } from "@/components/ui/ui-shared";
-import { Search, Filter, Loader2, UserPlus } from "lucide-react";
+import { Search, Filter, Loader2, UserPlus, AlertCircle } from "lucide-react";
 import type { Lead, TreatmentCategory, LeadStatus } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES, LEAD_STATUSES, LEAD_URGENCIES } from "@/lib/types/agency";
 
@@ -22,7 +23,10 @@ export default function LeadsPage() {
   const [filterCountry, setFilterCountry] = useState<string>("all");
 
   useEffect(() => {
-    if (!agencyId) return;
+    if (!agencyId) {
+      setLoading(false);
+      return;
+    }
     const unsub = subscribeToLeads(agencyId, (data) => {
       setLeads(data);
       setLoading(false);
@@ -53,6 +57,16 @@ export default function LeadsPage() {
       <div style={{ height: "60vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <Loader2 size={32} style={{ animation: "spin 1s linear infinite" }} color="#10b981" />
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  if (!agencyId && !isSuperAdmin(profile?.role)) {
+    return (
+      <div style={{ padding: 40, textAlign: "center" }}>
+        <AlertCircle size={48} color={UI_COLORS.textMuted} />
+        <h2 style={{ marginTop: 16, color: UI_COLORS.textPrimary }}>No Agency Assigned</h2>
+        <p style={{ color: UI_COLORS.textMuted, marginTop: 8 }}>Your account is not linked to any agency.</p>
       </div>
     );
   }

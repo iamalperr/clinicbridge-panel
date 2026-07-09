@@ -109,7 +109,9 @@
       "created": "تاريخ الإنشاء"
     },
     "roles": {
+      "superAdmin": "مشرف رئيسي",
       "admin": "مشرف",
+      "clinicAdmin": "مشرف العيادة",
       "clinicUser": "مستخدم العيادة",
       "agencyAdmin": "مشرف الوكالة",
       "agencyUser": "مستخدم الوكالة",
