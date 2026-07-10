@@ -18,6 +18,7 @@ import { DollarSign, Plus, Search, Loader2, Edit2, Trash2, AlertCircle } from "l
 import type { ClinicTreatmentPrice, TreatmentCatalogItem } from "@/lib/types/matching";
 import type { TreatmentCategory, AgencyClinic } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES } from "@/lib/types/agency";
+import { useI18n } from "@/lib/i18n-context";
 
 const EMPTY_FORM = {
   treatmentId: "",
@@ -37,6 +38,7 @@ const EMPTY_FORM = {
 export default function PricingPage() {
   const { profile } = useAuth();
   const { agencyId } = useAgencyWorkspace();
+  const { t, language } = useI18n();
 
   const [pricing, setPricing] = useState<ClinicTreatmentPrice[]>([]);
   const [treatments, setTreatments] = useState<TreatmentCatalogItem[]>([]);
@@ -47,6 +49,8 @@ export default function PricingPage() {
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
+
+  const catLabel = (cat: string) => TREATMENT_CATEGORIES[cat as TreatmentCategory]?.[language === "tr" ? "tr" : "en"] || cat;
 
   useEffect(() => {
     if (!agencyId) { setLoading(false); return; }
@@ -63,9 +67,9 @@ export default function PricingPage() {
     return (
       <div style={{ padding: 40, textAlign: "center" }}>
         <AlertCircle size={48} color={UI_COLORS.textMuted} />
-        <h2 style={{ marginTop: 16, color: UI_COLORS.textPrimary }}>No Agency Selected</h2>
+        <h2 style={{ marginTop: 16, color: UI_COLORS.textPrimary }}>{t("portal.common.noAgencySelected")}</h2>
         <p style={{ color: UI_COLORS.textMuted, marginTop: 8 }}>
-          {isSuperAdmin(profile?.role) ? "Select an agency to manage treatment pricing." : "Your account is not linked to any agency."}
+          {isSuperAdmin(profile?.role) ? t("portal.common.selectAgency") : t("portal.common.notLinked")}
         </p>
       </div>
     );
@@ -77,7 +81,6 @@ export default function PricingPage() {
     return p.treatmentName.toLowerCase().includes(q) || (p.clinicName || "").toLowerCase().includes(q);
   });
 
-  // Group by: global (no clinicId) vs clinic-specific
   const globalPricing = filtered.filter((p) => !p.clinicId);
   const clinicPricing = filtered.filter((p) => !!p.clinicId);
 
@@ -121,13 +124,13 @@ export default function PricingPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!agencyId || !confirm("Delete this pricing entry?")) return;
+    if (!agencyId || !confirm(t("portal.pricing.deleteConfirm"))) return;
     try { await deletePricing(agencyId, id); } catch (err) { console.error(err); }
   };
 
   const selectTreatment = (tid: string) => {
-    const t = treatments.find((tr) => tr.id === tid);
-    if (t) setForm({ ...form, treatmentId: t.id, treatmentName: t.name, category: t.category });
+    const tr = treatments.find((trt) => trt.id === tid);
+    if (tr) setForm({ ...form, treatmentId: tr.id, treatmentName: tr.name, category: tr.category });
   };
 
   const selectClinic = (cid: string) => {
@@ -136,7 +139,17 @@ export default function PricingPage() {
     if (c) setForm({ ...form, clinicId: c.clinicId, clinicName: c.clinicName });
   };
 
-  const renderPricingTable = (items: ClinicTreatmentPrice[], title: string) => {
+  const priceTypeLabel = (pt: string) => {
+    const map: Record<string, string> = {
+      average: t("portal.pricing.average"),
+      starting_from: t("portal.pricing.startingFrom"),
+      package: t("portal.pricing.package"),
+      per_unit: t("portal.pricing.perUnit"),
+    };
+    return map[pt] || pt;
+  };
+
+  const renderPricingTable = (items: ClinicTreatmentPrice[], title: string, isClinicTable: boolean) => {
     if (items.length === 0) return null;
     return (
       <div style={{ background: "var(--bg-card)", borderRadius: 14, border: `1px solid ${UI_COLORS.border}`, overflow: "hidden", marginBottom: 20 }}>
@@ -148,7 +161,7 @@ export default function PricingPage() {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${UI_COLORS.border}` }}>
-              {["Treatment", "Category", title.includes("Clinic") ? "Clinic" : "", "Price Range", "Type", "Status", ""].filter(Boolean).map((h) => (
+              {[t("portal.pricing.treatment"), t("portal.pricing.category"), ...(isClinicTable ? [t("portal.pricing.clinic")] : []), t("portal.pricing.priceRange"), t("portal.pricing.type"), t("portal.pricing.status"), ""].map((h) => (
                 <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: UI_COLORS.textMuted }}>{h}</th>
               ))}
             </tr>
@@ -160,18 +173,18 @@ export default function PricingPage() {
                 onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
                 <td style={{ padding: "12px 14px", fontWeight: 600, color: UI_COLORS.textPrimary }}>{p.treatmentName}</td>
                 <td style={{ padding: "12px 14px", color: UI_COLORS.textMuted, fontSize: 12 }}>
-                  {TREATMENT_CATEGORIES[p.category]?.en || p.category}
+                  {catLabel(p.category)}
                 </td>
-                {title.includes("Clinic") && <td style={{ padding: "12px 14px", color: UI_COLORS.textSecondary }}>{p.clinicName}</td>}
+                {isClinicTable && <td style={{ padding: "12px 14px", color: UI_COLORS.textSecondary }}>{p.clinicName}</td>}
                 <td style={{ padding: "12px 14px" }}>
                   <span style={{ fontWeight: 700, color: "#10b981" }}>{p.priceMin}–{p.priceMax} {p.currency}</span>
                 </td>
-                <td style={{ padding: "12px 14px", color: UI_COLORS.textMuted, fontSize: 12 }}>{p.priceType.replace("_", " ")}</td>
-                <td style={{ padding: "12px 14px" }}><Badge label={p.status === "active" ? "Active" : "Inactive"} variant={p.status === "active" ? "success" : "warning"} /></td>
+                <td style={{ padding: "12px 14px", color: UI_COLORS.textMuted, fontSize: 12 }}>{priceTypeLabel(p.priceType)}</td>
+                <td style={{ padding: "12px 14px" }}><Badge label={p.status === "active" ? t("portal.common.active") : t("portal.common.inactive")} variant={p.status === "active" ? "success" : "warning"} /></td>
                 <td style={{ padding: "12px 14px" }}>
                   <div style={{ display: "flex", gap: 6 }}>
                     <button onClick={() => openEdit(p)} style={{ padding: "5px 8px", borderRadius: 6, border: `1px solid ${UI_COLORS.border}`, background: "var(--bg-card)", color: UI_COLORS.textMuted, cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", gap: 3 }}>
-                      <Edit2 size={11} /> Edit
+                      <Edit2 size={11} /> {t("portal.common.edit")}
                     </button>
                     <button onClick={() => handleDelete(p.id)} style={{ padding: "5px 8px", borderRadius: 6, border: `1px solid ${UI_COLORS.border}`, background: "var(--bg-card)", color: "#ef4444", cursor: "pointer", fontSize: 11 }}>
                       <Trash2 size={11} />
@@ -190,19 +203,19 @@ export default function PricingPage() {
     <div style={{ padding: "24px 32px", maxWidth: 1400 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.02em" }}>Treatment Pricing</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.02em" }}>{t("portal.pricing.title")}</h1>
           <p style={{ fontSize: 14, color: UI_COLORS.textMuted, marginTop: 4 }}>
-            {pricing.length} pricing entries — {globalPricing.length} global, {clinicPricing.length} clinic-specific
+            {pricing.length} {t("portal.pricing.countSummary")} — {globalPricing.length} {t("portal.pricing.global")}, {clinicPricing.length} {t("portal.pricing.clinicSpecific")}
           </p>
         </div>
         <Button onClick={openAdd}>
-          <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Plus size={16} /> Add Pricing</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Plus size={16} /> {t("portal.pricing.addPricing")}</span>
         </Button>
       </div>
 
       <div style={{ position: "relative", maxWidth: 400, marginBottom: 20 }}>
         <Search size={16} style={{ position: "absolute", left: 12, top: 11, color: UI_COLORS.textMuted }} />
-        <input type="text" placeholder="Search pricing..." value={search} onChange={(e) => setSearch(e.target.value)}
+        <input type="text" placeholder={t("portal.pricing.searchPlaceholder")} value={search} onChange={(e) => setSearch(e.target.value)}
           style={{ width: "100%", padding: "10px 12px 10px 36px", borderRadius: 10, border: `1px solid ${UI_COLORS.border}`, fontSize: 13, background: "var(--bg-card)", color: UI_COLORS.textPrimary, outline: "none" }} />
       </div>
 
@@ -214,50 +227,50 @@ export default function PricingPage() {
       ) : pricing.length === 0 ? (
         <div style={{ padding: 48, textAlign: "center", background: "var(--bg-card)", borderRadius: 14, border: `1px solid ${UI_COLORS.border}` }}>
           <DollarSign size={48} color={UI_COLORS.textMuted} style={{ opacity: 0.3 }} />
-          <h3 style={{ marginTop: 16, fontSize: 16, fontWeight: 700, color: UI_COLORS.textPrimary }}>No pricing configured</h3>
+          <h3 style={{ marginTop: 16, fontSize: 16, fontWeight: 700, color: UI_COLORS.textPrimary }}>{t("portal.pricing.noPricing")}</h3>
           <p style={{ color: UI_COLORS.textMuted, fontSize: 13, marginTop: 8 }}>
-            Add treatment pricing to enable AI price range responses.
+            {t("portal.pricing.noPricingDesc")}
           </p>
         </div>
       ) : (
         <>
-          {renderPricingTable(globalPricing, "Global Treatment Pricing")}
-          {renderPricingTable(clinicPricing, "Clinic-Specific Pricing")}
+          {renderPricingTable(globalPricing, t("portal.pricing.globalPricing"), false)}
+          {renderPricingTable(clinicPricing, t("portal.pricing.clinicPricing"), true)}
         </>
       )}
 
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editingId ? "Edit Pricing" : "Add Pricing"}>
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editingId ? t("portal.pricing.editPricing") : t("portal.pricing.addPricing")}>
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {treatments.length > 0 ? (
-            <Select label="Treatment" value={form.treatmentId} onChange={(e) => selectTreatment(e.target.value)}
-              options={[{ label: "Select treatment...", value: "" }, ...treatments.map((t) => ({ label: `${t.name} (${TREATMENT_CATEGORIES[t.category]?.en})`, value: t.id }))]} />
+            <Select label={t("portal.pricing.treatment")} value={form.treatmentId} onChange={(e) => selectTreatment(e.target.value)}
+              options={[{ label: t("portal.pricing.selectTreatment"), value: "" }, ...treatments.map((tr) => ({ label: `${tr.name} (${catLabel(tr.category)})`, value: tr.id }))]} />
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <Input label="Treatment Name" value={form.treatmentName} onChange={(e) => setForm({ ...form, treatmentName: e.target.value })} placeholder="e.g. Dental Implant" />
-              <Select label="Category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value as TreatmentCategory })}
-                options={Object.entries(TREATMENT_CATEGORIES).map(([k, v]) => ({ label: v.en, value: k }))} />
+              <Input label={t("portal.pricing.treatmentName")} value={form.treatmentName} onChange={(e) => setForm({ ...form, treatmentName: e.target.value })} placeholder={t("portal.pricing.treatmentNamePlaceholder")} />
+              <Select label={t("portal.pricing.category")} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value as TreatmentCategory })}
+                options={Object.entries(TREATMENT_CATEGORIES).map(([k, v]) => ({ label: language === "tr" ? v.tr : v.en, value: k }))} />
             </div>
           )}
-          <Select label="Clinic (optional — leave empty for global pricing)" value={form.clinicId} onChange={(e) => selectClinic(e.target.value)}
-            options={[{ label: "Global (all clinics)", value: "" }, ...clinics.map((c) => ({ label: c.clinicName, value: c.clinicId }))]} />
+          <Select label={t("portal.pricing.clinicOptional")} value={form.clinicId} onChange={(e) => selectClinic(e.target.value)}
+            options={[{ label: t("portal.pricing.globalAllClinics"), value: "" }, ...clinics.map((c) => ({ label: c.clinicName, value: c.clinicId }))]} />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
-            <Input label="Price Min" value={form.priceMin} onChange={(e) => setForm({ ...form, priceMin: e.target.value })} placeholder="400" />
-            <Input label="Price Max" value={form.priceMax} onChange={(e) => setForm({ ...form, priceMax: e.target.value })} placeholder="900" />
-            <Select label="Currency" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}
+            <Input label={t("portal.pricing.priceMin")} value={form.priceMin} onChange={(e) => setForm({ ...form, priceMin: e.target.value })} placeholder="400" />
+            <Input label={t("portal.pricing.priceMax")} value={form.priceMax} onChange={(e) => setForm({ ...form, priceMax: e.target.value })} placeholder="900" />
+            <Select label={t("portal.pricing.currency")} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}
               options={[{ label: "EUR", value: "EUR" }, { label: "USD", value: "USD" }, { label: "GBP", value: "GBP" }, { label: "TRY", value: "TRY" }]} />
           </div>
-          <Select label="Price Type" value={form.priceType} onChange={(e) => setForm({ ...form, priceType: e.target.value as ClinicTreatmentPrice["priceType"] })}
+          <Select label={t("portal.pricing.priceType")} value={form.priceType} onChange={(e) => setForm({ ...form, priceType: e.target.value as ClinicTreatmentPrice["priceType"] })}
             options={[
-              { label: "Average", value: "average" },
-              { label: "Starting from", value: "starting_from" },
-              { label: "Package", value: "package" },
-              { label: "Per Unit", value: "per_unit" },
+              { label: t("portal.pricing.average"), value: "average" },
+              { label: t("portal.pricing.startingFrom"), value: "starting_from" },
+              { label: t("portal.pricing.package"), value: "package" },
+              { label: t("portal.pricing.perUnit"), value: "per_unit" },
             ]} />
-          <Input label="Package Details (optional)" value={form.packageDetails} onChange={(e) => setForm({ ...form, packageDetails: e.target.value })} placeholder="Includes accommodation, transfers..." />
-          <Input label="Notes (optional)" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Internal notes" />
+          <Input label={t("portal.pricing.packageDetails")} value={form.packageDetails} onChange={(e) => setForm({ ...form, packageDetails: e.target.value })} placeholder={t("portal.pricing.packageDetailsPlaceholder")} />
+          <Input label={t("portal.pricing.notes")} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder={t("portal.pricing.notesPlaceholder")} />
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
-            <Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button>
-            <Button onClick={handleSave} isLoading={saving}>{editingId ? "Save Changes" : "Add Pricing"}</Button>
+            <Button variant="secondary" onClick={() => setShowModal(false)}>{t("portal.common.cancel")}</Button>
+            <Button onClick={handleSave} isLoading={saving}>{editingId ? t("portal.common.saveChanges") : t("portal.pricing.addPricing")}</Button>
           </div>
         </div>
       </Modal>

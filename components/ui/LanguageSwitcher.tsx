@@ -8,9 +8,6 @@ import { ChevronDown } from "lucide-react";
 const languages = [
   { code: "tr", name: "Türkçe", flag: "🇹🇷" },
   { code: "en", name: "English", flag: "🇺🇸" },
-  { code: "de", name: "Deutsch", flag: "🇩🇪" },
-  { code: "ar", name: "العربية", flag: "🇸🇦" },
-  { code: "es", name: "Español", flag: "🇪🇸" },
 ] as const;
 
 export default function LanguageSwitcher() {

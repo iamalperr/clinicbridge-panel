@@ -12,16 +12,21 @@ import { FileText, Loader2, AlertCircle, Search, ChevronDown, ChevronUp, Buildin
 import type { QuoteRequest, QuoteStatus } from "@/lib/types/matching";
 import { QUOTE_STATUSES } from "@/lib/types/matching";
 import { TREATMENT_CATEGORIES, type TreatmentCategory } from "@/lib/types/agency";
+import { useI18n } from "@/lib/i18n-context";
 
 export default function QuotesPage() {
   const { profile } = useAuth();
   const { agencyId } = useAgencyWorkspace();
+  const { t, language } = useI18n();
 
   const [quotes, setQuotes] = useState<QuoteRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const catLabel = (cat: string) => TREATMENT_CATEGORIES[cat as TreatmentCategory]?.[language === "tr" ? "tr" : "en"] || cat;
+  const quoteStatusLabel = (s: string) => QUOTE_STATUSES[s as QuoteStatus]?.[language === "tr" ? "tr" : "en"] || s;
 
   useEffect(() => {
     if (!agencyId) { setLoading(false); return; }
@@ -33,9 +38,9 @@ export default function QuotesPage() {
     return (
       <div style={{ padding: 40, textAlign: "center" }}>
         <AlertCircle size={48} color={UI_COLORS.textMuted} />
-        <h2 style={{ marginTop: 16, color: UI_COLORS.textPrimary }}>No Agency Selected</h2>
+        <h2 style={{ marginTop: 16, color: UI_COLORS.textPrimary }}>{t("portal.common.noAgencySelected")}</h2>
         <p style={{ color: UI_COLORS.textMuted, marginTop: 8 }}>
-          {isSuperAdmin(profile?.role) ? "Select an agency to view quote requests." : "Your account is not linked to any agency."}
+          {isSuperAdmin(profile?.role) ? t("portal.common.selectAgency") : t("portal.common.notLinked")}
         </p>
       </div>
     );
@@ -75,9 +80,9 @@ export default function QuotesPage() {
     <div style={{ padding: "24px 32px", maxWidth: 1400 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.02em" }}>Quote Requests</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.02em" }}>{t("portal.quotes.title")}</h1>
           <p style={{ fontSize: 14, color: UI_COLORS.textMuted, marginTop: 4 }}>
-            {quotes.length} quote requests — manage clinic offers and patient responses.
+            {quotes.length} {t("portal.quotes.countSummary")}
           </p>
         </div>
       </div>
@@ -91,7 +96,7 @@ export default function QuotesPage() {
             background: filterStatus === "all" ? "rgba(16, 185, 129, 0.08)" : "transparent",
             color: filterStatus === "all" ? "#10b981" : UI_COLORS.textMuted,
           }}>
-          All ({quotes.length})
+          {t("portal.quotes.all")} ({quotes.length})
         </button>
         {Object.entries(QUOTE_STATUSES).map(([key, val]) => (
           <button key={key} onClick={() => setFilterStatus(key)}
@@ -101,7 +106,7 @@ export default function QuotesPage() {
               background: filterStatus === key ? `${val.color}14` : "transparent",
               color: filterStatus === key ? val.color : UI_COLORS.textMuted,
             }}>
-            {val.en} {statusCounts[key] ? `(${statusCounts[key]})` : ""}
+            {language === "tr" ? val.tr : val.en} {statusCounts[key] ? `(${statusCounts[key]})` : ""}
           </button>
         ))}
       </div>
@@ -109,7 +114,7 @@ export default function QuotesPage() {
       {/* Search */}
       <div style={{ position: "relative", maxWidth: 400, marginBottom: 20 }}>
         <Search size={16} style={{ position: "absolute", left: 12, top: 11, color: UI_COLORS.textMuted }} />
-        <input type="text" placeholder="Search quotes..." value={search} onChange={(e) => setSearch(e.target.value)}
+        <input type="text" placeholder={t("portal.quotes.searchPlaceholder")} value={search} onChange={(e) => setSearch(e.target.value)}
           style={{ width: "100%", padding: "10px 12px 10px 36px", borderRadius: 10, border: `1px solid ${UI_COLORS.border}`, fontSize: 13, background: "var(--bg-card)", color: UI_COLORS.textPrimary, outline: "none" }} />
       </div>
 
@@ -122,10 +127,10 @@ export default function QuotesPage() {
         <div style={{ padding: 48, textAlign: "center", background: "var(--bg-card)", borderRadius: 14, border: `1px solid ${UI_COLORS.border}` }}>
           <FileText size={48} color={UI_COLORS.textMuted} style={{ opacity: 0.3 }} />
           <h3 style={{ marginTop: 16, fontSize: 16, fontWeight: 700, color: UI_COLORS.textPrimary }}>
-            {search || filterStatus !== "all" ? "No quotes match your filters" : "No quote requests yet"}
+            {search || filterStatus !== "all" ? t("portal.quotes.noQuotesFilter") : t("portal.quotes.noQuotes")}
           </h3>
           <p style={{ color: UI_COLORS.textMuted, fontSize: 13, marginTop: 8 }}>
-            Quote requests are created when patients request clinic offers through the AI assistant.
+            {t("portal.quotes.noQuotesDesc")}
           </p>
         </div>
       ) : (
@@ -144,14 +149,14 @@ export default function QuotesPage() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
                     <span style={{ fontSize: 14, fontWeight: 700, color: UI_COLORS.textPrimary }}>
-                      {q.patientName || "Anonymous Patient"}
+                      {q.patientName || t("portal.quotes.anonymousPatient")}
                     </span>
-                    <Badge label={QUOTE_STATUSES[q.status]?.en || q.status} variant={statusBadgeVariant(q.status)} />
+                    <Badge label={quoteStatusLabel(q.status)} variant={statusBadgeVariant(q.status)} />
                   </div>
                   <div style={{ display: "flex", gap: 16, fontSize: 12, color: UI_COLORS.textMuted }}>
                     <span>{q.treatmentName}</span>
-                    <span>{TREATMENT_CATEGORIES[q.treatmentCategory]?.en}</span>
-                    <span>{q.selectedClinicNames?.length || 0} clinics</span>
+                    <span>{catLabel(q.treatmentCategory)}</span>
+                    <span>{q.selectedClinicNames?.length || 0} {t("portal.quotes.clinics")}</span>
                     {q.patientCountry && <span>🌍 {q.patientCountry}</span>}
                   </div>
                 </div>
@@ -163,28 +168,27 @@ export default function QuotesPage() {
                 <div style={{ padding: "0 20px 20px", borderTop: `1px solid ${UI_COLORS.border}` }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
                     <div>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: UI_COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Patient Info</p>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: UI_COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>{t("portal.quotes.patientInfo")}</p>
                       <div style={{ fontSize: 13, color: UI_COLORS.textSecondary, lineHeight: 1.8 }}>
-                        <p><strong>Name:</strong> {q.patientName || "—"}</p>
-                        <p><strong>Email:</strong> {q.patientEmail || "—"}</p>
-                        <p><strong>Country:</strong> {q.patientCountry || "—"}</p>
-                        <p><strong>Consent:</strong> {q.consentStatus}</p>
+                        <p><strong>{t("portal.quotes.name")}:</strong> {q.patientName || "—"}</p>
+                        <p><strong>{t("portal.quotes.email")}:</strong> {q.patientEmail || "—"}</p>
+                        <p><strong>{t("portal.quotes.country")}:</strong> {q.patientCountry || "—"}</p>
+                        <p><strong>{t("portal.quotes.consent")}:</strong> {q.consentStatus}</p>
                       </div>
                     </div>
                     <div>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: UI_COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Treatment</p>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: UI_COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>{t("portal.quotes.treatment")}</p>
                       <div style={{ fontSize: 13, color: UI_COLORS.textSecondary, lineHeight: 1.8 }}>
-                        <p><strong>Treatment:</strong> {q.treatmentName}</p>
-                        <p><strong>Category:</strong> {TREATMENT_CATEGORIES[q.treatmentCategory]?.en}</p>
-                        {q.subTreatment && <p><strong>Sub-treatment:</strong> {q.subTreatment}</p>}
+                        <p><strong>{t("portal.quotes.treatment")}:</strong> {q.treatmentName}</p>
+                        <p><strong>{t("portal.quotes.category")}:</strong> {catLabel(q.treatmentCategory)}</p>
+                        {q.subTreatment && <p><strong>{t("portal.quotes.subTreatment")}:</strong> {q.subTreatment}</p>}
                       </div>
                     </div>
                   </div>
 
-                  {/* Selected Clinics */}
                   {q.selectedClinicNames && q.selectedClinicNames.length > 0 && (
                     <div style={{ marginTop: 16 }}>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: UI_COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Selected Clinics</p>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: UI_COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>{t("portal.quotes.selectedClinics")}</p>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                         {q.selectedClinicNames.map((name, i) => (
                           <span key={i} style={{
@@ -200,10 +204,9 @@ export default function QuotesPage() {
                     </div>
                   )}
 
-                  {/* Clinic Offers */}
                   {q.clinicOffers && q.clinicOffers.length > 0 && (
                     <div style={{ marginTop: 16 }}>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: UI_COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Clinic Offers</p>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: UI_COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>{t("portal.quotes.clinicOffers")}</p>
                       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                         {q.clinicOffers.map((offer, i) => (
                           <div key={i} style={{ padding: "12px 16px", borderRadius: 10, border: `1px solid ${UI_COLORS.border}`, background: "var(--bg-app)" }}>
@@ -229,7 +232,7 @@ export default function QuotesPage() {
                       }}
                     >
                       {Object.entries(QUOTE_STATUSES).map(([k, v]) => (
-                        <option key={k} value={k}>{v.en}</option>
+                        <option key={k} value={k}>{language === "tr" ? v.tr : v.en}</option>
                       ))}
                     </select>
                   </div>

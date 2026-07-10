@@ -16,6 +16,7 @@ import { Code, Copy, CheckCircle2, Globe, Building2, AlertCircle, Loader2, Save,
 import type { Agency } from "@/lib/types/agency";
 import type { WidgetMode } from "@/lib/types/matching";
 import { WIDGET_MODES } from "@/lib/types/matching";
+import { useI18n } from "@/lib/i18n-context";
 
 interface WidgetConfig {
   mode: WidgetMode;
@@ -44,6 +45,7 @@ const DEFAULT_WIDGET_CONFIG: WidgetConfig = {
 export default function AgencyWidgetPage() {
   const { profile } = useAuth();
   const { agencyId } = useAgencyWorkspace();
+  const { t, language } = useI18n();
   const [copied, setCopied] = useState(false);
   const [agency, setAgency] = useState<Agency | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,12 +78,12 @@ export default function AgencyWidgetPage() {
   if (!agencyId || !agency) {
     return (
       <div style={{ padding: "24px 32px", maxWidth: 800 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: UI_COLORS.textPrimary }}>Widget Experience</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 800, color: UI_COLORS.textPrimary }}>{t("portal.widget.title")}</h1>
         <div style={{ padding: 48, textAlign: "center", background: "var(--bg-card)", borderRadius: 14, border: `1px solid ${UI_COLORS.border}`, marginTop: 20 }}>
           <AlertCircle size={48} color={UI_COLORS.textMuted} style={{ opacity: 0.4 }} />
-          <h3 style={{ marginTop: 16, fontSize: 16, fontWeight: 700, color: UI_COLORS.textPrimary }}>No Agency Selected</h3>
+          <h3 style={{ marginTop: 16, fontSize: 16, fontWeight: 700, color: UI_COLORS.textPrimary }}>{t("portal.common.noAgencySelected")}</h3>
           <p style={{ color: UI_COLORS.textMuted, fontSize: 13, marginTop: 8 }}>
-            {isSuperAdmin(profile?.role) ? "Select an agency from the Agencies page." : "Your account is not linked to any agency."}
+            {isSuperAdmin(profile?.role) ? t("portal.common.selectAgency") : t("portal.common.notLinked")}
           </p>
         </div>
       </div>
@@ -110,19 +112,25 @@ export default function AgencyWidgetPage() {
     finally { setSaving(false); }
   };
 
+  const widgetModeLabels: Record<WidgetMode, { label: string; desc: string }> = {
+    chat: { label: t("portal.widget.chat"), desc: t("portal.widget.chatDesc") },
+    matching_assistant: { label: t("portal.widget.matchingAssistant"), desc: t("portal.widget.matchingAssistantDesc") },
+    quote_assistant: { label: t("portal.widget.quoteAssistant"), desc: t("portal.widget.quoteAssistantDesc") },
+  };
+
   return (
     <div style={{ padding: "24px 32px", maxWidth: 1000 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.02em" }}>Widget Experience</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.02em" }}>{t("portal.widget.title")}</h1>
           <p style={{ fontSize: 14, color: UI_COLORS.textMuted, marginTop: 4 }}>
-            Configure and embed the AI Clinic Matching assistant on your website.
+            {t("portal.widget.subtitle")}
           </p>
         </div>
         <Button onClick={handleSave} isLoading={saving}>
           <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
             {saved ? <CheckCircle2 size={16} /> : <Save size={16} />}
-            {saved ? "Saved!" : "Save Config"}
+            {saved ? t("portal.widget.saved") : t("portal.widget.saveConfig")}
           </span>
         </Button>
       </div>
@@ -139,23 +147,23 @@ export default function AgencyWidgetPage() {
           </div>
           <div>
             <p style={{ fontSize: 15, fontWeight: 700, color: UI_COLORS.textPrimary }}>{agency.name} Widget</p>
-            <p style={{ fontSize: 12, color: UI_COLORS.textMuted }}>{agency.domain || "No domain"} · ID: {agencySlug}</p>
+            <p style={{ fontSize: 12, color: UI_COLORS.textMuted }}>{agency.domain || t("portal.widget.noDomain")} · ID: {agencySlug}</p>
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <Badge label={WIDGET_MODES[config.mode].label} variant="success" />
-          <Badge label={agency.status} variant={agency.status === "active" ? "success" : "warning"} />
+          <Badge label={widgetModeLabels[config.mode]?.label || config.mode} variant="success" />
+          <Badge label={agency.status === "active" ? t("portal.common.active") : t("portal.common.inactive")} variant={agency.status === "active" ? "success" : "warning"} />
         </div>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         {/* Widget Mode */}
-        <SectionCard title="Widget Mode">
+        <SectionCard title={t("portal.widget.widgetMode")}>
           <p style={{ fontSize: 12.5, color: UI_COLORS.textMuted, marginBottom: 12 }}>
-            Choose how the AI assistant interacts with patients on your website.
+            {t("portal.widget.widgetModeDesc")}
           </p>
           <div style={{ display: "flex", gap: 10 }}>
-            {(Object.entries(WIDGET_MODES) as [WidgetMode, { label: string; description: string }][]).map(([mode, info]) => (
+            {(Object.keys(WIDGET_MODES) as WidgetMode[]).map((mode) => (
               <button key={mode} onClick={() => setConfig({ ...config, mode })}
                 style={{
                   flex: 1, padding: "14px 16px", borderRadius: 12, textAlign: "left", cursor: "pointer",
@@ -164,24 +172,24 @@ export default function AgencyWidgetPage() {
                   transition: "all 0.15s",
                 }}>
                 <p style={{ fontSize: 14, fontWeight: 700, color: config.mode === mode ? "#10b981" : UI_COLORS.textPrimary }}>
-                  {info.label}
+                  {widgetModeLabels[mode]?.label}
                 </p>
-                <p style={{ fontSize: 11.5, color: UI_COLORS.textMuted, marginTop: 4 }}>{info.description}</p>
+                <p style={{ fontSize: 11.5, color: UI_COLORS.textMuted, marginTop: 4 }}>{widgetModeLabels[mode]?.desc}</p>
               </button>
             ))}
           </div>
         </SectionCard>
 
         {/* Feature Toggles */}
-        <SectionCard title="Feature Configuration">
+        <SectionCard title={t("portal.widget.featureConfig")}>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {([
-              { key: "treatmentSelectorVisible", label: "Treatment selector visible on start", icon: <MessageSquare size={14} /> },
-              { key: "clinicRecommendationCards", label: "Show clinic recommendation cards", icon: <Building2 size={14} /> },
-              { key: "priceRangeEnabled", label: "Show estimated price ranges", icon: <DollarSign size={14} /> },
-              { key: "quoteRequestEnabled", label: "Enable quote request flow", icon: <FileText size={14} /> },
-              { key: "profileLinkEnabled", label: "Show 'More Information' profile links", icon: <Link2 size={14} /> },
-              { key: "consentBeforeQuote", label: "Require GDPR/KVKK consent before quote", icon: <Shield size={14} /> },
+              { key: "treatmentSelectorVisible", label: t("portal.widget.treatmentSelector"), icon: <MessageSquare size={14} /> },
+              { key: "clinicRecommendationCards", label: t("portal.widget.showClinicCards"), icon: <Building2 size={14} /> },
+              { key: "priceRangeEnabled", label: t("portal.widget.showPriceRanges"), icon: <DollarSign size={14} /> },
+              { key: "quoteRequestEnabled", label: t("portal.widget.enableQuoteFlow"), icon: <FileText size={14} /> },
+              { key: "profileLinkEnabled", label: t("portal.widget.enableProfileLinks"), icon: <Link2 size={14} /> },
+              { key: "consentBeforeQuote", label: t("portal.widget.requireConsentQuote"), icon: <Shield size={14} /> },
             ] as const).map(({ key, label, icon }) => (
               <label key={key} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: "8px 0" }}>
                 <input type="checkbox" checked={config[key]} onChange={(e) => setConfig({ ...config, [key]: e.target.checked })}
@@ -195,24 +203,24 @@ export default function AgencyWidgetPage() {
         </SectionCard>
 
         {/* Appearance */}
-        <SectionCard title="Appearance">
+        <SectionCard title={t("portal.widget.appearance")}>
           <div style={{ display: "flex", gap: 16 }}>
             <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 8 }}>Theme</p>
+              <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 8 }}>{t("portal.widget.theme")}</p>
               <div style={{ display: "flex", gap: 8 }}>
-                {(["light", "dark", "auto"] as const).map((t) => (
-                  <button key={t} onClick={() => setConfig({ ...config, theme: t })}
+                {(["light", "dark", "auto"] as const).map((thm) => (
+                  <button key={thm} onClick={() => setConfig({ ...config, theme: thm })}
                     style={{
                       flex: 1, padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
-                      border: `1px solid ${config.theme === t ? "#10b981" : UI_COLORS.border}`,
-                      background: config.theme === t ? "rgba(16, 185, 129, 0.08)" : "transparent",
-                      color: config.theme === t ? "#10b981" : UI_COLORS.textMuted, textTransform: "capitalize",
-                    }}>{t}</button>
+                      border: `1px solid ${config.theme === thm ? "#10b981" : UI_COLORS.border}`,
+                      background: config.theme === thm ? "rgba(16, 185, 129, 0.08)" : "transparent",
+                      color: config.theme === thm ? "#10b981" : UI_COLORS.textMuted, textTransform: "capitalize",
+                    }}>{thm}</button>
                 ))}
               </div>
             </div>
             <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 8 }}>Position</p>
+              <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 8 }}>{t("portal.widget.position")}</p>
               <div style={{ display: "flex", gap: 8 }}>
                 {(["bottom-right", "bottom-left"] as const).map((p) => (
                   <button key={p} onClick={() => setConfig({ ...config, position: p })}
@@ -221,7 +229,7 @@ export default function AgencyWidgetPage() {
                       border: `1px solid ${config.position === p ? "#10b981" : UI_COLORS.border}`,
                       background: config.position === p ? "rgba(16, 185, 129, 0.08)" : "transparent",
                       color: config.position === p ? "#10b981" : UI_COLORS.textMuted,
-                    }}>{p === "bottom-right" ? "Bottom Right" : "Bottom Left"}</button>
+                    }}>{p === "bottom-right" ? t("portal.widget.bottomRight") : t("portal.widget.bottomLeft")}</button>
                 ))}
               </div>
             </div>
@@ -229,9 +237,9 @@ export default function AgencyWidgetPage() {
         </SectionCard>
 
         {/* Embed Code */}
-        <SectionCard title="Embed Code">
+        <SectionCard title={t("portal.widget.embedCode")}>
           <p style={{ fontSize: 12.5, color: UI_COLORS.textMuted, marginBottom: 12 }}>
-            Copy this code and paste it before the closing <code>&lt;/body&gt;</code> tag of your website.
+            {t("portal.widget.embedDesc")}
           </p>
           <div style={{ position: "relative" }}>
             <pre style={{
@@ -249,13 +257,13 @@ export default function AgencyWidgetPage() {
                 fontSize: 11, fontWeight: 600, cursor: "pointer",
                 display: "flex", alignItems: "center", gap: 4,
               }}>
-              {copied ? <><CheckCircle2 size={12} /> Copied!</> : <><Copy size={12} /> Copy</>}
+              {copied ? <><CheckCircle2 size={12} /> {t("portal.widget.copied")}</> : <><Copy size={12} /> {t("portal.widget.copyEmbed")}</>}
             </button>
           </div>
           {agency.allowedDomains && agency.allowedDomains.length > 0 && (
             <div style={{ marginTop: 12, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
               <Globe size={14} color={UI_COLORS.textMuted} />
-              <span style={{ fontSize: 12, color: UI_COLORS.textMuted }}>Allowed domains:</span>
+              <span style={{ fontSize: 12, color: UI_COLORS.textMuted }}>{t("portal.widget.allowedDomains")}:</span>
               {agency.allowedDomains.map((d) => (
                 <code key={d} style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: "var(--bg-app)", color: "#10b981" }}>{d}</code>
               ))}
@@ -264,16 +272,16 @@ export default function AgencyWidgetPage() {
         </SectionCard>
 
         {/* Widget Flow Preview */}
-        <SectionCard title="Widget Flow Preview">
+        <SectionCard title={t("portal.widget.widgetFlowPreview")}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {[
-              { step: 1, label: "Welcome", desc: "AI greets the patient and asks about their treatment need" },
-              { step: 2, label: "Treatment Detection", desc: "AI identifies treatment category from natural language" },
-              { step: 3, label: "Intake Questions", desc: "AI asks category-specific questions (location, date, budget)" },
-              config.clinicRecommendationCards && { step: 4, label: "Clinic Recommendations", desc: "AI shows matched clinic cards with profile links" },
-              config.priceRangeEnabled && { step: 5, label: "Price Range", desc: "AI shows estimated price range for the treatment" },
-              config.quoteRequestEnabled && { step: 6, label: "Quote Request", desc: "Patient can request quotes from recommended clinics" },
-              config.consentBeforeQuote && { step: 7, label: "GDPR/KVKK Consent", desc: "Patient provides consent before data is shared" },
+              { step: 1, label: t("portal.widget.flowWelcome"), desc: t("portal.widget.flowWelcomeDesc") },
+              { step: 2, label: t("portal.widget.flowTreatment"), desc: t("portal.widget.flowTreatmentDesc") },
+              { step: 3, label: t("portal.widget.flowIntake"), desc: t("portal.widget.flowIntakeDesc") },
+              config.clinicRecommendationCards && { step: 4, label: t("portal.widget.flowClinics"), desc: t("portal.widget.flowClinicsDesc") },
+              config.priceRangeEnabled && { step: 5, label: t("portal.widget.flowPrice"), desc: t("portal.widget.flowPriceDesc") },
+              config.quoteRequestEnabled && { step: 6, label: t("portal.widget.flowQuote"), desc: t("portal.widget.flowQuoteDesc") },
+              config.consentBeforeQuote && { step: 7, label: t("portal.widget.flowConsent"), desc: t("portal.widget.flowConsentDesc") },
             ].filter(Boolean).map((item: any) => (
               <div key={item.step} style={{
                 display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",

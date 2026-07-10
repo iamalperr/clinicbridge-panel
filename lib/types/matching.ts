@@ -136,16 +136,16 @@ export type QuoteStatus =
   | "rejected"
   | "expired";
 
-export const QUOTE_STATUSES: Record<QuoteStatus, { en: string; color: string }> = {
-  draft:            { en: "Draft",            color: "#94a3b8" },
-  waiting_consent:  { en: "Waiting Consent",  color: "#f59e0b" },
-  requested:        { en: "Requested",        color: "#3b82f6" },
-  clinic_reviewing: { en: "Clinic Reviewing", color: "#8b5cf6" },
-  offer_received:   { en: "Offer Received",   color: "#06b6d4" },
-  sent_to_patient:  { en: "Sent to Patient",  color: "#6366f1" },
-  accepted:         { en: "Accepted",          color: "#22c55e" },
-  rejected:         { en: "Rejected",          color: "#ef4444" },
-  expired:          { en: "Expired",           color: "#64748b" },
+export const QUOTE_STATUSES: Record<QuoteStatus, { en: string; tr: string; color: string }> = {
+  draft:            { en: "Draft",            tr: "Taslak",              color: "#94a3b8" },
+  waiting_consent:  { en: "Waiting Consent",  tr: "Onay Bekliyor",      color: "#f59e0b" },
+  requested:        { en: "Requested",        tr: "Talep Edildi",       color: "#3b82f6" },
+  clinic_reviewing: { en: "Clinic Reviewing", tr: "Klinik İnceliyor",  color: "#8b5cf6" },
+  offer_received:   { en: "Offer Received",   tr: "Teklif Alındı",     color: "#06b6d4" },
+  sent_to_patient:  { en: "Sent to Patient",  tr: "Hastaya Gönderildi", color: "#6366f1" },
+  accepted:         { en: "Accepted",          tr: "Kabul Edildi",      color: "#22c55e" },
+  rejected:         { en: "Rejected",          tr: "Reddedildi",        color: "#ef4444" },
+  expired:          { en: "Expired",           tr: "Süresi Doldu",      color: "#64748b" },
 };
 
 export interface ClinicOffer {

@@ -12,10 +12,12 @@ import { UI_COLORS } from "@/components/ui/ui-shared";
 import { Search, Filter, Loader2, UserPlus, AlertCircle } from "lucide-react";
 import type { Lead, TreatmentCategory, LeadStatus } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES, LEAD_STATUSES, LEAD_URGENCIES } from "@/lib/types/agency";
+import { useI18n } from "@/lib/i18n-context";
 
 export default function LeadsPage() {
   const { profile } = useAuth();
   const { agencyId } = useAgencyWorkspace();
+  const { t, language } = useI18n();
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,6 +25,10 @@ export default function LeadsPage() {
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterCountry, setFilterCountry] = useState<string>("all");
+
+  const catLabel = (cat: string) => TREATMENT_CATEGORIES[cat as TreatmentCategory]?.[language === "tr" ? "tr" : "en"] || cat;
+  const statusLabel = (s: string) => LEAD_STATUSES[s as LeadStatus]?.[language === "tr" ? "tr" : "en"] || s;
+  const urgencyLabel = (u: string) => LEAD_URGENCIES[u as keyof typeof LEAD_URGENCIES]?.[language === "tr" ? "tr" : "en"] || u;
 
   useEffect(() => {
     if (!agencyId) {
@@ -36,10 +42,8 @@ export default function LeadsPage() {
     return unsub;
   }, [agencyId]);
 
-  // Derive unique countries from leads
   const countries = [...new Set(leads.map((l) => l.country).filter(Boolean))].sort();
 
-  // Filter
   const filtered = leads.filter((lead) => {
     if (filterCategory !== "all" && lead.treatmentCategory !== filterCategory) return false;
     if (filterStatus !== "all" && lead.status !== filterStatus) return false;
@@ -67,8 +71,8 @@ export default function LeadsPage() {
     return (
       <div style={{ padding: 40, textAlign: "center" }}>
         <AlertCircle size={48} color={UI_COLORS.textMuted} />
-        <h2 style={{ marginTop: 16, color: UI_COLORS.textPrimary }}>No Agency Assigned</h2>
-        <p style={{ color: UI_COLORS.textMuted, marginTop: 8 }}>Your account is not linked to any agency.</p>
+        <h2 style={{ marginTop: 16, color: UI_COLORS.textPrimary }}>{t("portal.leads.noAgencyAssigned")}</h2>
+        <p style={{ color: UI_COLORS.textMuted, marginTop: 8 }}>{t("portal.leads.noAgencyAssignedDesc")}</p>
       </div>
     );
   }
@@ -79,22 +83,21 @@ export default function LeadsPage() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.02em" }}>
-            Leads
+            {t("portal.leads.title")}
           </h1>
           <p style={{ fontSize: 14, color: UI_COLORS.textMuted, marginTop: 4 }}>
-            {filtered.length} of {leads.length} leads
+            {filtered.length} / {leads.length} {t("portal.leads.countSummary")}
           </p>
         </div>
       </div>
 
       {/* Filters */}
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-        {/* Search */}
         <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
           <Search size={16} style={{ position: "absolute", left: 12, top: 11, color: UI_COLORS.textMuted }} />
           <input
             type="text"
-            placeholder="Search by name, email, summary..."
+            placeholder={t("portal.leads.searchPlaceholder")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{
@@ -110,61 +113,46 @@ export default function LeadsPage() {
           />
         </div>
 
-        {/* Category filter */}
         <select
           value={filterCategory}
           onChange={(e) => setFilterCategory(e.target.value)}
           style={{
-            padding: "10px 12px",
-            borderRadius: 10,
-            border: `1px solid ${UI_COLORS.border}`,
-            fontSize: 13,
-            background: "var(--bg-card)",
-            color: UI_COLORS.textPrimary,
-            cursor: "pointer",
+            padding: "10px 12px", borderRadius: 10,
+            border: `1px solid ${UI_COLORS.border}`, fontSize: 13,
+            background: "var(--bg-card)", color: UI_COLORS.textPrimary, cursor: "pointer",
           }}
         >
-          <option value="all">All Categories</option>
+          <option value="all">{t("portal.leads.allCategories")}</option>
           {Object.entries(TREATMENT_CATEGORIES).map(([key, val]) => (
-            <option key={key} value={key}>{val.en}</option>
+            <option key={key} value={key}>{language === "tr" ? val.tr : val.en}</option>
           ))}
         </select>
 
-        {/* Status filter */}
         <select
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
           style={{
-            padding: "10px 12px",
-            borderRadius: 10,
-            border: `1px solid ${UI_COLORS.border}`,
-            fontSize: 13,
-            background: "var(--bg-card)",
-            color: UI_COLORS.textPrimary,
-            cursor: "pointer",
+            padding: "10px 12px", borderRadius: 10,
+            border: `1px solid ${UI_COLORS.border}`, fontSize: 13,
+            background: "var(--bg-card)", color: UI_COLORS.textPrimary, cursor: "pointer",
           }}
         >
-          <option value="all">All Statuses</option>
+          <option value="all">{t("portal.leads.allStatuses")}</option>
           {Object.entries(LEAD_STATUSES).map(([key, val]) => (
-            <option key={key} value={key}>{val.en}</option>
+            <option key={key} value={key}>{language === "tr" ? val.tr : val.en}</option>
           ))}
         </select>
 
-        {/* Country filter */}
         <select
           value={filterCountry}
           onChange={(e) => setFilterCountry(e.target.value)}
           style={{
-            padding: "10px 12px",
-            borderRadius: 10,
-            border: `1px solid ${UI_COLORS.border}`,
-            fontSize: 13,
-            background: "var(--bg-card)",
-            color: UI_COLORS.textPrimary,
-            cursor: "pointer",
+            padding: "10px 12px", borderRadius: 10,
+            border: `1px solid ${UI_COLORS.border}`, fontSize: 13,
+            background: "var(--bg-card)", color: UI_COLORS.textPrimary, cursor: "pointer",
           }}
         >
-          <option value="all">All Countries</option>
+          <option value="all">{t("portal.leads.allCountries")}</option>
           {countries.map((c) => (
             <option key={c} value={c}>{c}</option>
           ))}
@@ -181,7 +169,16 @@ export default function LeadsPage() {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${UI_COLORS.border}` }}>
-              {["Patient", "Treatment", "Country", "Language", "Urgency", "Status", "Clinic", "Date"].map((h) => (
+              {[
+                t("portal.leads.patient"),
+                t("portal.leads.treatment"),
+                t("portal.leads.country"),
+                t("portal.leads.language"),
+                t("portal.leads.urgency"),
+                t("portal.leads.status"),
+                t("portal.leads.clinic"),
+                t("portal.leads.date"),
+              ].map((h) => (
                 <th key={h} style={{
                   padding: "12px 14px",
                   textAlign: "left",
@@ -200,7 +197,7 @@ export default function LeadsPage() {
             {filtered.length === 0 ? (
               <tr>
                 <td colSpan={8} style={{ padding: 40, textAlign: "center", color: UI_COLORS.textMuted }}>
-                  No leads found
+                  {t("portal.leads.noLeads")}
                 </td>
               </tr>
             ) : (
@@ -221,7 +218,7 @@ export default function LeadsPage() {
                 >
                   <td style={{ padding: "12px 14px" }}>
                     <Link href={`/agency/leads/${lead.id}`} style={{ textDecoration: "none", color: UI_COLORS.textPrimary, fontWeight: 600 }}>
-                      {lead.patientName || "Anonymous"}
+                      {lead.patientName || t("portal.leads.anonymous")}
                     </Link>
                     {lead.patientEmail && (
                       <p style={{ fontSize: 11.5, color: UI_COLORS.textMuted, marginTop: 2 }}>
@@ -230,7 +227,7 @@ export default function LeadsPage() {
                     )}
                   </td>
                   <td style={{ padding: "12px 14px", color: UI_COLORS.textSecondary }}>
-                    {TREATMENT_CATEGORIES[lead.treatmentCategory]?.en || lead.treatmentCategory}
+                    {catLabel(lead.treatmentCategory)}
                   </td>
                   <td style={{ padding: "12px 14px", color: UI_COLORS.textSecondary }}>
                     {lead.country}
@@ -244,12 +241,12 @@ export default function LeadsPage() {
                       fontWeight: 600,
                       color: LEAD_URGENCIES[lead.urgency]?.color || "#94a3b8",
                     }}>
-                      {LEAD_URGENCIES[lead.urgency]?.en || lead.urgency}
+                      {urgencyLabel(lead.urgency)}
                     </span>
                   </td>
                   <td style={{ padding: "12px 14px" }}>
                     <Badge
-                      label={LEAD_STATUSES[lead.status]?.en || lead.status}
+                      label={statusLabel(lead.status)}
                       variant={
                         lead.status === "new" ? "info" :
                         lead.status === "converted" ? "success" :

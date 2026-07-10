@@ -12,10 +12,12 @@ import { UI_COLORS } from "@/components/ui/ui-shared";
 import { Save, Loader2, Globe, Palette, Shield, CheckCircle2 } from "lucide-react";
 import type { Agency, TreatmentCategory } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES } from "@/lib/types/agency";
+import { useI18n } from "@/lib/i18n-context";
 
 export default function AgencySettingsPage() {
   const { profile } = useAuth();
   const { agencyId } = useAgencyWorkspace();
+  const { t, language } = useI18n();
 
   const [agency, setAgency] = useState<Agency | null>(null);
   const [loading, setLoading] = useState(true);
@@ -106,9 +108,9 @@ export default function AgencySettingsPage() {
     <div style={{ padding: "24px 32px", maxWidth: 800 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: UI_COLORS.textPrimary }}>Settings</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: UI_COLORS.textPrimary }}>{t("portal.settings.title")}</h1>
           <p style={{ fontSize: 14, color: UI_COLORS.textMuted, marginTop: 4 }}>
-            Agency branding, languages, and privacy configuration
+            {t("portal.settings.subtitle")}
           </p>
         </div>
         <Button
@@ -116,25 +118,25 @@ export default function AgencySettingsPage() {
           disabled={saving}
           style={{ background: "#10b981", borderColor: "#10b981" }}
         >
-          {saved ? <><CheckCircle2 size={14} /> Saved</> : saving ? "Saving..." : <><Save size={14} /> Save Changes</>}
+          {saved ? <><CheckCircle2 size={14} /> {t("portal.settings.saved")}</> : saving ? t("portal.settings.saving") : <><Save size={14} /> {t("portal.settings.saveChanges")}</>}
         </Button>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         {/* General */}
-        <SectionCard title="General Information">
+        <SectionCard title={t("portal.settings.generalInfo")}>
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <Input label="Agency Name" value={name} onChange={(e) => setName(e.target.value)} />
-            <Input label="Domain" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="feelinhealthy.com" />
+            <Input label={t("portal.settings.agencyName")} value={name} onChange={(e) => setName(e.target.value)} />
+            <Input label={t("portal.settings.domain")} value={domain} onChange={(e) => setDomain(e.target.value)} placeholder={t("portal.settings.domainPlaceholder")} />
           </div>
         </SectionCard>
 
         {/* Branding */}
-        <SectionCard title="Branding">
+        <SectionCard title={t("portal.settings.branding")}>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <div>
               <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 6 }}>
-                Primary Color
+                {t("portal.settings.primaryColor")}
               </p>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <input
@@ -164,26 +166,26 @@ export default function AgencySettingsPage() {
                 fontSize: 14,
               }}
             >
-              Preview
+              {t("portal.settings.preview")}
             </div>
           </div>
         </SectionCard>
 
         {/* Privacy */}
-        <SectionCard title="Privacy & KVKK/GDPR">
+        <SectionCard title={t("portal.settings.privacy")}>
           <Input
-            label="Privacy / KVKK URL"
+            label={t("portal.settings.privacyUrl")}
             value={privacyUrl}
             onChange={(e) => setPrivacyUrl(e.target.value)}
-            placeholder="https://yoursite.com/privacy"
+            placeholder={t("portal.settings.privacyUrlPlaceholder")}
           />
           <p style={{ fontSize: 12, color: UI_COLORS.textMuted, marginTop: 6 }}>
-            This URL will be shown in the widget consent screen.
+            {t("portal.settings.privacyUrlDesc")}
           </p>
         </SectionCard>
 
         {/* Languages */}
-        <SectionCard title="Supported Languages">
+        <SectionCard title={t("portal.settings.supportedLanguages")}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {LANG_OPTIONS.map((lang) => {
               const selected = languages.includes(lang.code);
@@ -212,9 +214,9 @@ export default function AgencySettingsPage() {
         </SectionCard>
 
         {/* Treatment Categories */}
-        <SectionCard title="Treatment Categories">
+        <SectionCard title={t("portal.settings.treatmentCategories")}>
           <p style={{ fontSize: 12.5, color: UI_COLORS.textMuted, marginBottom: 12 }}>
-            Select the treatment types your agency handles.
+            {t("portal.settings.treatmentCategoriesDesc")}
           </p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {Object.entries(TREATMENT_CATEGORIES).map(([key, val]) => {
@@ -236,7 +238,7 @@ export default function AgencySettingsPage() {
                     transition: "all 0.15s",
                   }}
                 >
-                  {val.en}
+                  {language === "tr" ? val.tr : val.en}
                 </button>
               );
             })}

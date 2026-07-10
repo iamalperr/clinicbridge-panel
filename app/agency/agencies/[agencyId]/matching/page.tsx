@@ -5,7 +5,7 @@ import { useAgencyWorkspace } from "@/components/agency/AgencyWorkspaceContext";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { isSuperAdmin } from "@/lib/types";
-import { doc, getDoc, setDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { subscribeToTreatments } from "@/lib/services/treatmentService";
 import { subscribeToAgencyClinics } from "@/lib/services/agencyService";
@@ -17,6 +17,7 @@ import { Brain, Save, Loader2, CheckCircle2, AlertCircle, Link2, DollarSign, Shi
 import type { AIMatchingConfig, TreatmentClinicRule, TreatmentCatalogItem } from "@/lib/types/matching";
 import type { TreatmentCategory, AgencyClinic } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES } from "@/lib/types/agency";
+import { useI18n } from "@/lib/i18n-context";
 
 const DEFAULT_CONFIG: Omit<AIMatchingConfig, "id" | "agencyId" | "createdAt" | "updatedAt"> = {
   routingMode: "manual",
@@ -30,6 +31,7 @@ const DEFAULT_CONFIG: Omit<AIMatchingConfig, "id" | "agencyId" | "createdAt" | "
 export default function MatchingPage() {
   const { profile } = useAuth();
   const { agencyId } = useAgencyWorkspace();
+  const { t, language } = useI18n();
 
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [treatments, setTreatments] = useState<TreatmentCatalogItem[]>([]);
@@ -37,6 +39,8 @@ export default function MatchingPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  const catLabel = (cat: string) => TREATMENT_CATEGORIES[cat as TreatmentCategory]?.[language === "tr" ? "tr" : "en"] || cat;
 
   useEffect(() => {
     if (!agencyId) { setLoading(false); return; }
@@ -68,7 +72,6 @@ export default function MatchingPage() {
     finally { setSaving(false); }
   };
 
-  // Get unique treatment categories from the agency's treatments
   const treatmentCats = Array.from(new Set(treatments.map((t) => t.category)));
 
   const getRule = (cat: TreatmentCategory): TreatmentClinicRule => {
@@ -107,8 +110,8 @@ export default function MatchingPage() {
     return (
       <div style={{ padding: 40, textAlign: "center" }}>
         <AlertCircle size={48} color={UI_COLORS.textMuted} />
-        <h2 style={{ marginTop: 16, color: UI_COLORS.textPrimary }}>No Agency Selected</h2>
-        <p style={{ color: UI_COLORS.textMuted, marginTop: 8 }}>Select an agency to configure AI matching rules.</p>
+        <h2 style={{ marginTop: 16, color: UI_COLORS.textPrimary }}>{t("portal.common.noAgencySelected")}</h2>
+        <p style={{ color: UI_COLORS.textMuted, marginTop: 8 }}>{t("portal.common.selectAgency")}</p>
       </div>
     );
   }
@@ -117,30 +120,30 @@ export default function MatchingPage() {
     <div style={{ padding: "24px 32px", maxWidth: 1000 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.02em" }}>AI Matching Rules</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.02em" }}>{t("portal.matching.title")}</h1>
           <p style={{ fontSize: 14, color: UI_COLORS.textMuted, marginTop: 4 }}>
-            Configure how AI matches patients to clinics based on treatment, location, and preferences.
+            {t("portal.matching.subtitle")}
           </p>
         </div>
         <Button onClick={handleSave} isLoading={saving}>
           <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
             {saved ? <CheckCircle2 size={16} /> : <Save size={16} />}
-            {saved ? "Saved!" : "Save Rules"}
+            {saved ? t("portal.matching.saved") : t("portal.matching.saveRules")}
           </span>
         </Button>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         {/* Routing Mode */}
-        <SectionCard title="Routing Mode">
+        <SectionCard title={t("portal.matching.routingMode")}>
           <p style={{ fontSize: 12.5, color: UI_COLORS.textMuted, marginBottom: 12 }}>
-            How should AI-recommended clinics be assigned to leads?
+            {t("portal.matching.routingModeDesc")}
           </p>
           <div style={{ display: "flex", gap: 10 }}>
             {([
-              { value: "manual", label: "Manual", desc: "AI recommends, agency admin assigns" },
-              { value: "assisted", label: "Assisted", desc: "AI pre-selects top 3–5, admin approves" },
-              { value: "auto", label: "Auto", desc: "AI auto-assigns (coming soon)" },
+              { value: "manual", label: t("portal.matching.manual"), desc: t("portal.matching.manualDesc") },
+              { value: "assisted", label: t("portal.matching.assisted"), desc: t("portal.matching.assistedDesc") },
+              { value: "auto", label: t("portal.matching.auto"), desc: t("portal.matching.autoDesc") },
             ] as const).map((mode) => (
               <button key={mode.value} onClick={() => mode.value !== "auto" && setConfig({ ...config, routingMode: mode.value })}
                 style={{
@@ -151,24 +154,24 @@ export default function MatchingPage() {
                 }}>
                 <p style={{ fontSize: 14, fontWeight: 700, color: config.routingMode === mode.value ? "#10b981" : UI_COLORS.textPrimary }}>{mode.label}</p>
                 <p style={{ fontSize: 11.5, color: UI_COLORS.textMuted, marginTop: 4 }}>{mode.desc}</p>
-                {mode.value === "auto" && <span style={{ fontSize: 10, color: "#f59e0b", fontWeight: 700 }}>Coming Soon</span>}
+                {mode.value === "auto" && <span style={{ fontSize: 10, color: "#f59e0b", fontWeight: 700 }}>{t("portal.matching.comingSoon")}</span>}
               </button>
             ))}
           </div>
         </SectionCard>
 
         {/* Display Settings */}
-        <SectionCard title="Display Settings">
+        <SectionCard title={t("portal.matching.displaySettings")}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <Select label="Max Clinics to Show" value={config.maxClinicsToShow.toString()} onChange={(e) => setConfig({ ...config, maxClinicsToShow: Number(e.target.value) })}
+            <Select label={t("portal.matching.maxClinics")} value={config.maxClinicsToShow.toString()} onChange={(e) => setConfig({ ...config, maxClinicsToShow: Number(e.target.value) })}
               options={[1, 2, 3, 5, 10].map((n) => ({ label: n.toString(), value: n.toString() }))} />
             <div />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
             {([
-              { key: "showPriceRange", label: "Show estimated price range", icon: <DollarSign size={14} /> },
-              { key: "showProfileLinks", label: "Show 'More Information' profile links", icon: <Link2 size={14} /> },
-              { key: "requireConsentBeforeQuote", label: "Require GDPR/KVKK consent before quote", icon: <Shield size={14} /> },
+              { key: "showPriceRange", label: t("portal.matching.showPriceRange"), icon: <DollarSign size={14} /> },
+              { key: "showProfileLinks", label: t("portal.matching.showProfileLinks"), icon: <Link2 size={14} /> },
+              { key: "requireConsentBeforeQuote", label: t("portal.matching.requireConsent"), icon: <Shield size={14} /> },
             ] as const).map(({ key, label, icon }) => (
               <label key={key} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: "8px 0" }}>
                 <input type="checkbox" checked={config[key] as boolean}
@@ -183,13 +186,13 @@ export default function MatchingPage() {
         </SectionCard>
 
         {/* Treatment → Clinic Rules */}
-        <SectionCard title="Treatment → Clinic Mapping">
+        <SectionCard title={t("portal.matching.clinicMapping")}>
           <p style={{ fontSize: 12.5, color: UI_COLORS.textMuted, marginBottom: 16 }}>
-            Select which clinics are eligible for each treatment category. AI will only recommend clinics that are mapped here.
+            {t("portal.matching.clinicMappingDesc")}
           </p>
           {treatmentCats.length === 0 ? (
             <p style={{ fontSize: 13, color: UI_COLORS.textMuted, fontStyle: "italic" }}>
-              No treatments defined yet. Add treatments in the Treatment Catalog first.
+              {t("portal.matching.noTreatmentsDefined")}
             </p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -198,10 +201,10 @@ export default function MatchingPage() {
                 return (
                   <div key={cat} style={{ padding: "14px 16px", borderRadius: 10, border: `1px solid ${UI_COLORS.border}`, background: "var(--bg-app)" }}>
                     <p style={{ fontSize: 13.5, fontWeight: 700, color: UI_COLORS.textPrimary, marginBottom: 10 }}>
-                      {TREATMENT_CATEGORIES[cat]?.en || cat}
+                      {catLabel(cat)}
                     </p>
                     {clinics.length === 0 ? (
-                      <p style={{ fontSize: 12, color: UI_COLORS.textMuted }}>No clinics available.</p>
+                      <p style={{ fontSize: 12, color: UI_COLORS.textMuted }}>{t("portal.matching.noClinicsAvailable")}</p>
                     ) : (
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                         {clinics.map((c) => {
