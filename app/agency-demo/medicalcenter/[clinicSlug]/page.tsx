@@ -7,7 +7,7 @@ import {
   MapPin, Star, Globe2, Hotel, Car, Heart, Stethoscope, Eye, Baby,
   Scissors, Sparkles, ChevronRight, ArrowLeft, CheckCircle2,
   Building2, Clock, Award, Shield, Languages, ExternalLink, Send,
-  Phone, Mail, Loader2, X, DollarSign, HelpCircle,
+  Phone, Mail, Loader2, X, DollarSign, HelpCircle, UserCircle,
 } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -99,6 +99,8 @@ const TX: Record<Lang, Record<string, string>> = {
     "pricing.package": "Paket",
     "pricing.perUnit": "Birim Başı",
     "faq.title": "Sık Sorulan Sorular",
+    "doctors.title": "Doktorlar",
+    "doctors.noDoctors": "Doktor bilgisi henüz eklenmedi.",
   },
   en: {
     "back": "Back to Clinics",
@@ -151,6 +153,8 @@ const TX: Record<Lang, Record<string, string>> = {
     "pricing.package": "Package",
     "pricing.perUnit": "Per Unit",
     "faq.title": "Frequently Asked Questions",
+    "doctors.title": "Doctors",
+    "doctors.noDoctors": "No doctor information added yet.",
   },
 };
 
@@ -199,6 +203,7 @@ export default function ClinicProfilePage() {
   const [leadSending, setLeadSending] = useState(false);
   const [clinicPricing, setClinicPricing] = useState<any[]>([]);
   const [clinicFaqs, setClinicFaqs] = useState<any[]>([]);
+  const [clinicDoctors, setClinicDoctors] = useState<any[]>([]);
 
   const t = (k: string) => TX[lang][k] || k;
 
@@ -251,12 +256,14 @@ export default function ClinicProfilePage() {
     if (!clinic?.id) return;
     (async () => {
       try {
-        const [pRes, fRes] = await Promise.all([
+        const [pRes, fRes, dRes] = await Promise.all([
           fetch(`/api/public/agency/feelinhealthy/clinics/${clinic.id}/pricing`).catch(() => null),
           fetch(`/api/public/agency/feelinhealthy/clinics/${clinic.id}/faq`).catch(() => null),
+          fetch(`/api/public/agency/feelinhealthy/clinics/${clinic.id}/doctors`).catch(() => null),
         ]);
         if (pRes?.ok) { const d = await pRes.json(); setClinicPricing(d.pricing || []); }
         if (fRes?.ok) { const d = await fRes.json(); setClinicFaqs(d.faq || []); }
+        if (dRes?.ok) { const d = await dRes.json(); setClinicDoctors(d.doctors || []); }
       } catch { /* silent */ }
     })();
   }, [clinic?.id]);
@@ -470,6 +477,51 @@ export default function ClinicProfilePage() {
                     <div key={i} style={{ padding: "16px 20px", borderRadius: 12, border: `1px solid ${C.border}`, background: C.bg }}>
                       <p style={{ fontSize: 14, fontWeight: 700, color: C.navy, marginBottom: 8 }}>{faq.question}</p>
                       <p style={{ fontSize: 13, color: C.textSec, lineHeight: 1.7 }}>{faq.answer}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* DOCTORS */}
+            {clinicDoctors.length > 0 && (
+              <section className="fu" style={{ marginBottom: 48 }}>
+                <h2 style={{ fontSize: 22, fontWeight: 800, color: C.navy, marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
+                  <UserCircle size={20} color={C.teal} /> {t("doctors.title")}
+                </h2>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
+                  {clinicDoctors.map((doc: any, i: number) => (
+                    <div key={i} style={{ padding: 20, borderRadius: 14, border: `1px solid ${C.border}`, background: C.white, boxShadow: "0 2px 8px rgba(0,0,0,.03)" }}>
+                      <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+                        {doc.photoUrl ? (
+                          <img src={doc.photoUrl} alt={doc.doctorName} style={{ width: 56, height: 56, borderRadius: 14, objectFit: "cover" }} />
+                        ) : (
+                          <div style={{
+                            width: 56, height: 56, borderRadius: 14,
+                            background: `linear-gradient(135deg, ${C.teal} 0%, ${C.navy} 100%)`,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            color: "#fff", fontSize: 22, fontWeight: 800,
+                          }}>{doc.doctorName?.charAt(0) || "?"}</div>
+                        )}
+                        <div>
+                          <p style={{ fontSize: 15, fontWeight: 700, color: C.navy }}>{doc.title ? `${doc.title} ${doc.doctorName}` : doc.doctorName}</p>
+                          <p style={{ fontSize: 12, color: C.textSec }}>{[doc.specialty, doc.role].filter(Boolean).join(" · ")}</p>
+                          {doc.experienceYears && (
+                            <p style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>{doc.experienceYears} {lang === "tr" ? "yıl deneyim" : "years exp."}</p>
+                          )}
+                        </div>
+                      </div>
+                      {doc.shortBio && <p style={{ fontSize: 13, color: C.textSec, lineHeight: 1.6, marginBottom: 10 }}>{doc.shortBio}</p>}
+                      {doc.expertiseAreas && doc.expertiseAreas.length > 0 && (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                          {doc.expertiseAreas.map((e: string, j: number) => (
+                            <span key={j} style={{ padding: "3px 10px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: C.tealBg, border: `1px solid ${C.tealBorder}`, color: C.teal }}>{e}</span>
+                          ))}
+                        </div>
+                      )}
+                      {doc.supportedLanguages && doc.supportedLanguages.length > 0 && (
+                        <p style={{ fontSize: 11, color: C.textMuted, marginTop: 8 }}>🌐 {doc.supportedLanguages.map((l: string) => l.toUpperCase()).join(", ")}</p>
+                      )}
                     </div>
                   ))}
                 </div>

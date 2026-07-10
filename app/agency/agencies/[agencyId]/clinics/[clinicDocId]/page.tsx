@@ -15,6 +15,10 @@ import {
   addClinicFAQ,
   updateClinicFAQ,
   deleteClinicFAQ,
+  subscribeToClinicDoctors,
+  addClinicDoctor,
+  updateClinicDoctor,
+  deleteClinicDoctor,
 } from "@/lib/services/agencyService";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -24,11 +28,11 @@ import { UI_COLORS } from "@/components/ui/ui-shared";
 import {
   ArrowLeft, Loader2, Save, Check, X, Plus, Trash2,
   Building2, FileText, Stethoscope, DollarSign, Brain,
-  HelpCircle, MapPin, Settings, ExternalLink, Globe,
+  HelpCircle, MapPin, Settings, ExternalLink, Globe, UserCircle, Edit2,
 } from "lucide-react";
 import type {
   AgencyClinic, ClinicOverview, ClinicKnowledgeBase,
-  ClinicLocationDetails, ClinicQuoteSettings, ClinicFAQ,
+  ClinicLocationDetails, ClinicQuoteSettings, ClinicFAQ, ClinicDoctor,
   ClinicTreatmentPricing, TreatmentCategory, PriceType,
 } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES } from "@/lib/types/agency";
@@ -82,7 +86,7 @@ function SectionTitle({ icon, title }: { icon: React.ReactNode; title: string })
 }
 
 // ─── Tab Definition ─────────────────────────────────────────────────────────
-const TAB_KEYS = ["general", "overview", "treatments", "pricing", "knowledgeBase", "faq", "location", "quoteSettings"] as const;
+const TAB_KEYS = ["general", "overview", "treatments", "pricing", "doctors", "knowledgeBase", "faq", "location", "quoteSettings"] as const;
 type TabKey = typeof TAB_KEYS[number];
 
 const TAB_ICONS: Record<TabKey, React.ReactNode> = {
@@ -90,6 +94,7 @@ const TAB_ICONS: Record<TabKey, React.ReactNode> = {
   overview: <FileText size={14} />,
   treatments: <Stethoscope size={14} />,
   pricing: <DollarSign size={14} />,
+  doctors: <UserCircle size={14} />,
   knowledgeBase: <Brain size={14} />,
   faq: <HelpCircle size={14} />,
   location: <MapPin size={14} />,
@@ -134,6 +139,29 @@ export default function ClinicProfilePage() {
   const [faqs, setFaqs] = useState<ClinicFAQ[]>([]);
   const [showFaqForm, setShowFaqForm] = useState(false);
   const [faqForm, setFaqForm] = useState({ question: "", answer: "", showOnPublicProfile: true, useInAIAnswers: true });
+
+  // Doctors
+  const [doctors, setDoctors] = useState<ClinicDoctor[]>([]);
+  const [showDoctorForm, setShowDoctorForm] = useState(false);
+  const [editingDoctorId, setEditingDoctorId] = useState<string | null>(null);
+  const [doctorForm, setDoctorForm] = useState({
+    doctorName: "", title: "", specialty: "", role: "", photoUrl: "",
+    shortBio: "", longBio: "", education: "", experienceYears: "",
+    expertiseAreas: "", certifications: "", supportedLanguages: [] as string[],
+    subTreatments: "", aiSummary: "", aiHighlights: "", doNotSay: "",
+    showOnPublicProfile: true, status: "active" as "active" | "inactive",
+    order: "",
+  });
+  const resetDoctorForm = () => {
+    setDoctorForm({
+      doctorName: "", title: "", specialty: "", role: "", photoUrl: "",
+      shortBio: "", longBio: "", education: "", experienceYears: "",
+      expertiseAreas: "", certifications: "", supportedLanguages: [],
+      subTreatments: "", aiSummary: "", aiHighlights: "", doNotSay: "",
+      showOnPublicProfile: true, status: "active", order: "",
+    });
+    setEditingDoctorId(null);
+  };
 
   // ─── Load clinic data ─────────────────────────────────────────────────
   useEffect(() => {
@@ -187,6 +215,12 @@ export default function ClinicProfilePage() {
   useEffect(() => {
     if (!agencyId || !clinicDocId) return;
     return subscribeToClinicFAQ(agencyId, clinicDocId, setFaqs);
+  }, [agencyId, clinicDocId]);
+
+  // Doctors subscription
+  useEffect(() => {
+    if (!agencyId || !clinicDocId) return;
+    return subscribeToClinicDoctors(agencyId, clinicDocId, setDoctors);
   }, [agencyId, clinicDocId]);
 
   // ─── Save Handlers ────────────────────────────────────────────────────
@@ -314,6 +348,72 @@ export default function ClinicProfilePage() {
       showToast("error", t("portal.clinics.profile.saveFailed"));
     }
     setSaving(false);
+  };
+
+  const handleSaveDoctor = async () => {
+    if (!doctorForm.doctorName) return;
+    setSaving(true);
+    try {
+      const payload = {
+        doctorName: doctorForm.doctorName,
+        title: doctorForm.title || undefined,
+        specialty: doctorForm.specialty || undefined,
+        role: doctorForm.role || undefined,
+        photoUrl: doctorForm.photoUrl || undefined,
+        shortBio: doctorForm.shortBio || undefined,
+        longBio: doctorForm.longBio || undefined,
+        education: doctorForm.education || undefined,
+        experienceYears: doctorForm.experienceYears ? Number(doctorForm.experienceYears) : undefined,
+        expertiseAreas: doctorForm.expertiseAreas ? doctorForm.expertiseAreas.split(",").map(s => s.trim()).filter(Boolean) : undefined,
+        certifications: doctorForm.certifications ? doctorForm.certifications.split(",").map(s => s.trim()).filter(Boolean) : undefined,
+        supportedLanguages: doctorForm.supportedLanguages.length > 0 ? doctorForm.supportedLanguages : undefined,
+        subTreatments: doctorForm.subTreatments ? doctorForm.subTreatments.split(",").map(s => s.trim()).filter(Boolean) : undefined,
+        aiSummary: doctorForm.aiSummary || undefined,
+        aiHighlights: doctorForm.aiHighlights ? doctorForm.aiHighlights.split("\n").filter(Boolean) : undefined,
+        doNotSay: doctorForm.doNotSay ? doctorForm.doNotSay.split("\n").filter(Boolean) : undefined,
+        showOnPublicProfile: doctorForm.showOnPublicProfile,
+        status: doctorForm.status,
+        order: doctorForm.order ? Number(doctorForm.order) : doctors.length,
+      };
+      if (editingDoctorId) {
+        await updateClinicDoctor(agencyId, clinicDocId, editingDoctorId, payload);
+      } else {
+        await addClinicDoctor(agencyId, clinicDocId, payload);
+      }
+      resetDoctorForm();
+      setShowDoctorForm(false);
+      showToast("success", t("portal.clinics.profile.saved"));
+    } catch (err) {
+      console.error(err);
+      showToast("error", t("portal.clinics.profile.saveFailed"));
+    }
+    setSaving(false);
+  };
+
+  const openEditDoctor = (doc: ClinicDoctor) => {
+    setEditingDoctorId(doc.id || null);
+    setDoctorForm({
+      doctorName: doc.doctorName || "",
+      title: doc.title || "",
+      specialty: doc.specialty || "",
+      role: doc.role || "",
+      photoUrl: doc.photoUrl || "",
+      shortBio: doc.shortBio || "",
+      longBio: doc.longBio || "",
+      education: doc.education || "",
+      experienceYears: doc.experienceYears ? String(doc.experienceYears) : "",
+      expertiseAreas: (doc.expertiseAreas || []).join(", "),
+      certifications: (doc.certifications || []).join(", "),
+      supportedLanguages: doc.supportedLanguages || [],
+      subTreatments: (doc.subTreatments || []).join(", "),
+      aiSummary: doc.aiSummary || "",
+      aiHighlights: (doc.aiHighlights || []).join("\n"),
+      doNotSay: (doc.doNotSay || []).join("\n"),
+      showOnPublicProfile: doc.showOnPublicProfile ?? true,
+      status: doc.status || "active",
+      order: doc.order !== undefined ? String(doc.order) : "",
+    });
+    setShowDoctorForm(true);
   };
 
   const catLabel = (cat: string) => TREATMENT_CATEGORIES[cat as TreatmentCategory]?.[language === "tr" ? "tr" : "en"] || cat;
@@ -578,6 +678,182 @@ export default function ClinicProfilePage() {
                   style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444" }}><Trash2 size={14} /></button>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* ═══ TAB: DOCTORS ═══ */}
+        {activeTab === "doctors" && (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <SectionTitle icon={<UserCircle size={18} />} title={t("portal.clinics.profile.doctors.title")} />
+              <Button variant="secondary" onClick={() => { if (showDoctorForm) { resetDoctorForm(); setShowDoctorForm(false); } else setShowDoctorForm(true); }} style={{ fontSize: 12 }}>
+                {showDoctorForm ? <X size={12} /> : <Plus size={12} />}
+                {showDoctorForm ? t("portal.buttons.cancel") : t("portal.clinics.profile.doctors.addDoctor")}
+              </Button>
+            </div>
+
+            {showDoctorForm && (
+              <div style={{ padding: 20, borderRadius: 12, border: "1px solid rgba(16,185,129,0.2)", background: "rgba(16,185,129,0.02)", marginBottom: 20 }}>
+                <h4 style={{ fontSize: 14, fontWeight: 700, color: UI_COLORS.textPrimary, marginBottom: 12 }}>
+                  {editingDoctorId ? t("portal.clinics.profile.doctors.editDoctor") : t("portal.clinics.profile.doctors.addDoctor")}
+                </h4>
+
+                {/* Basic Info */}
+                <p style={{ fontSize: 11, fontWeight: 700, color: "#10b981", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+                  {t("portal.clinics.profile.doctors.basicInfo")}
+                </p>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                  <Input label={t("portal.clinics.profile.doctors.doctorName")} value={doctorForm.doctorName} onChange={(e) => setDoctorForm(p => ({ ...p, doctorName: e.target.value }))} placeholder="Gülten Sinanoğlu" />
+                  <Input label={t("portal.clinics.profile.doctors.titleField")} value={doctorForm.title} onChange={(e) => setDoctorForm(p => ({ ...p, title: e.target.value }))} placeholder={t("portal.clinics.profile.doctors.titlePlaceholder")} />
+                  <Input label={t("portal.clinics.profile.doctors.specialty")} value={doctorForm.specialty} onChange={(e) => setDoctorForm(p => ({ ...p, specialty: e.target.value }))} placeholder={t("portal.clinics.profile.doctors.specialtyPlaceholder")} />
+                  <Input label={t("portal.clinics.profile.doctors.role")} value={doctorForm.role} onChange={(e) => setDoctorForm(p => ({ ...p, role: e.target.value }))} placeholder={t("portal.clinics.profile.doctors.rolePlaceholder")} />
+                </div>
+                <Input label={t("portal.clinics.profile.doctors.photoUrl")} value={doctorForm.photoUrl} onChange={(e) => setDoctorForm(p => ({ ...p, photoUrl: e.target.value }))} placeholder="https://..." />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+                  <Input label={t("portal.clinics.profile.doctors.experienceYears")} value={doctorForm.experienceYears} onChange={(e) => setDoctorForm(p => ({ ...p, experienceYears: e.target.value }))} placeholder="10" />
+                  <Input label={t("portal.clinics.profile.doctors.order")} value={doctorForm.order} onChange={(e) => setDoctorForm(p => ({ ...p, order: e.target.value }))} placeholder="1" />
+                </div>
+
+                {/* Biography */}
+                <p style={{ fontSize: 11, fontWeight: 700, color: "#10b981", textTransform: "uppercase", letterSpacing: 0.5, marginTop: 16, marginBottom: 8 }}>
+                  {t("portal.clinics.profile.doctors.biography")}
+                </p>
+                <TextArea label={t("portal.clinics.profile.doctors.shortBio")} value={doctorForm.shortBio} onChange={(v) => setDoctorForm(p => ({ ...p, shortBio: v }))} rows={2} />
+                <TextArea label={t("portal.clinics.profile.doctors.longBio")} value={doctorForm.longBio} onChange={(v) => setDoctorForm(p => ({ ...p, longBio: v }))} rows={4} />
+                <TextArea label={t("portal.clinics.profile.doctors.education")} value={doctorForm.education} onChange={(v) => setDoctorForm(p => ({ ...p, education: v }))} rows={2} />
+                <Input label={t("portal.clinics.profile.doctors.expertiseAreas")} value={doctorForm.expertiseAreas} onChange={(e) => setDoctorForm(p => ({ ...p, expertiseAreas: e.target.value }))} placeholder={t("portal.clinics.profile.doctors.expertisePlaceholder")} />
+                <Input label={t("portal.clinics.profile.doctors.certifications")} value={doctorForm.certifications} onChange={(e) => setDoctorForm(p => ({ ...p, certifications: e.target.value }))} placeholder={t("portal.clinics.profile.doctors.certificationsPlaceholder")} />
+
+                {/* Languages */}
+                <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginTop: 8, marginBottom: 6 }}>{t("portal.clinics.profile.doctors.supportedLanguages")}</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                  {(["en", "tr", "de", "ar", "ru", "fr", "es", "nl", "it"] as const).map((lang) => {
+                    const sel = doctorForm.supportedLanguages.includes(lang);
+                    return (
+                      <button key={lang} type="button" onClick={() => setDoctorForm(p => ({
+                        ...p,
+                        supportedLanguages: sel ? p.supportedLanguages.filter(l => l !== lang) : [...p.supportedLanguages, lang],
+                      }))} style={{
+                        padding: "4px 10px", borderRadius: 16, border: `1px solid ${sel ? "#10b981" : UI_COLORS.border}`,
+                        background: sel ? "rgba(16,185,129,0.1)" : "transparent",
+                        color: sel ? "#10b981" : UI_COLORS.textSecondary, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                      }}>{lang.toUpperCase()}</button>
+                    );
+                  })}
+                </div>
+
+                {/* Treatment Relation */}
+                <p style={{ fontSize: 11, fontWeight: 700, color: "#10b981", textTransform: "uppercase", letterSpacing: 0.5, marginTop: 8, marginBottom: 8 }}>
+                  {t("portal.clinics.profile.doctors.treatmentRelation")}
+                </p>
+                <Input label={t("portal.clinics.profile.doctors.subTreatments")} value={doctorForm.subTreatments} onChange={(e) => setDoctorForm(p => ({ ...p, subTreatments: e.target.value }))} placeholder={t("portal.clinics.profile.doctors.subTreatmentsPlaceholder")} />
+
+                {/* AI Fields */}
+                <p style={{ fontSize: 11, fontWeight: 700, color: "#10b981", textTransform: "uppercase", letterSpacing: 0.5, marginTop: 16, marginBottom: 8 }}>
+                  {t("portal.clinics.profile.doctors.aiFields")}
+                </p>
+                <TextArea label={t("portal.clinics.profile.doctors.aiSummary")} value={doctorForm.aiSummary} onChange={(v) => setDoctorForm(p => ({ ...p, aiSummary: v }))} placeholder={t("portal.clinics.profile.doctors.aiSummaryPlaceholder")} rows={2} />
+                <TextArea label={t("portal.clinics.profile.doctors.aiHighlights")} value={doctorForm.aiHighlights} onChange={(v) => setDoctorForm(p => ({ ...p, aiHighlights: v }))} placeholder={t("portal.clinics.profile.doctors.aiHighlightsPlaceholder")} rows={3} />
+                <TextArea label={t("portal.clinics.profile.doctors.doNotSay")} value={doctorForm.doNotSay} onChange={(v) => setDoctorForm(p => ({ ...p, doNotSay: v }))} placeholder={t("portal.clinics.profile.doctors.doNotSayPlaceholder")} rows={2} />
+
+                {/* Toggles */}
+                <div style={{ borderRadius: 10, border: `1px solid ${UI_COLORS.border}`, padding: 10, marginTop: 8 }}>
+                  <ToggleSwitch label={t("portal.clinics.profile.doctors.showOnPublicProfile")} checked={doctorForm.showOnPublicProfile} onChange={(v) => setDoctorForm(p => ({ ...p, showOnPublicProfile: v }))} />
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0" }}>
+                    <span style={{ fontSize: 13, color: UI_COLORS.textPrimary }}>{t("portal.status.status")}</span>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      {(["active", "inactive"] as const).map((s) => (
+                        <button key={s} type="button" onClick={() => setDoctorForm(p => ({ ...p, status: s }))} style={{
+                          padding: "3px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                          border: `1px solid ${doctorForm.status === s ? (s === "active" ? "#10b981" : "#ef4444") : UI_COLORS.border}`,
+                          background: doctorForm.status === s ? (s === "active" ? "rgba(16,185,129,0.1)" : "rgba(239,68,68,0.1)") : "transparent",
+                          color: doctorForm.status === s ? (s === "active" ? "#10b981" : "#ef4444") : UI_COLORS.textSecondary,
+                        }}>{t(`portal.status.${s}`)}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                  <Button variant="secondary" onClick={() => { resetDoctorForm(); setShowDoctorForm(false); }}>{t("portal.buttons.cancel")}</Button>
+                  <Button onClick={handleSaveDoctor} isLoading={saving}>
+                    <Save size={14} /> {editingDoctorId ? t("portal.buttons.saveChanges") : t("portal.clinics.profile.doctors.addDoctor")}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Doctor Cards */}
+            {doctors.length === 0 && !showDoctorForm && (
+              <div style={{ textAlign: "center", padding: 48, color: UI_COLORS.textMuted }}>
+                <UserCircle size={36} style={{ opacity: 0.3, marginBottom: 8 }} />
+                <p style={{ fontSize: 13 }}>{t("portal.clinics.profile.doctors.noDoctors")}</p>
+              </div>
+            )}
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 }}>
+              {doctors.map((doc) => (
+                <div key={doc.id} style={{
+                  padding: 16, borderRadius: 12, border: `1px solid ${UI_COLORS.border}`,
+                  background: doc.status === "active" ? "transparent" : "rgba(148,163,184,0.04)",
+                  opacity: doc.status === "active" ? 1 : 0.65,
+                }}>
+                  <div style={{ display: "flex", gap: 12, marginBottom: 10 }}>
+                    {/* Avatar */}
+                    {doc.photoUrl ? (
+                      <img src={doc.photoUrl} alt={doc.doctorName} style={{ width: 48, height: 48, borderRadius: 12, objectFit: "cover" }} />
+                    ) : (
+                      <div style={{
+                        width: 48, height: 48, borderRadius: 12,
+                        background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        color: "#fff", fontSize: 18, fontWeight: 800,
+                      }}>{doc.doctorName?.charAt(0) || "?"}</div>
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 14, fontWeight: 700, color: UI_COLORS.textPrimary }}>{doc.title ? `${doc.title} ${doc.doctorName}` : doc.doctorName}</p>
+                      <p style={{ fontSize: 12, color: UI_COLORS.textMuted }}>
+                        {[doc.specialty, doc.role].filter(Boolean).join(" · ")}
+                      </p>
+                    </div>
+                    <Badge label={doc.status === "active" ? t("portal.status.active") : t("portal.status.inactive")} variant={doc.status === "active" ? "success" : "default"} dot />
+                  </div>
+
+                  {doc.shortBio && <p style={{ fontSize: 12, color: UI_COLORS.textSecondary, lineHeight: 1.5, marginBottom: 8 }}>{doc.shortBio}</p>}
+
+                  {doc.expertiseAreas && doc.expertiseAreas.length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
+                      {doc.expertiseAreas.map((e, i) => (
+                        <span key={i} style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 600, background: "rgba(16,185,129,0.08)", color: "#10b981" }}>{e}</span>
+                      ))}
+                    </div>
+                  )}
+
+                  {doc.supportedLanguages && doc.supportedLanguages.length > 0 && (
+                    <p style={{ fontSize: 11, color: UI_COLORS.textMuted, marginBottom: 8 }}>
+                      🌐 {doc.supportedLanguages.map(l => l.toUpperCase()).join(", ")}
+                    </p>
+                  )}
+
+                  <div style={{ display: "flex", gap: 6, borderTop: `1px solid ${UI_COLORS.border}`, paddingTop: 10 }}>
+                    <button onClick={() => openEditDoctor(doc)} style={{
+                      padding: "5px 10px", borderRadius: 6, border: `1px solid ${UI_COLORS.border}`,
+                      background: "transparent", color: UI_COLORS.textSecondary, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: 4,
+                    }}><Edit2 size={11} /> {t("portal.clinics.edit")}</button>
+                    <button onClick={() => { if (doc.id) updateClinicDoctor(agencyId, clinicDocId, doc.id, { status: doc.status === "active" ? "inactive" : "active" }); }} style={{
+                      padding: "5px 10px", borderRadius: 6, border: `1px solid ${UI_COLORS.border}`,
+                      background: "transparent", color: UI_COLORS.textSecondary, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                    }}>{doc.status === "active" ? t("portal.clinics.pause") : t("portal.clinics.activate")}</button>
+                    <span style={{ flex: 1 }} />
+                    <button onClick={() => { if (doc.id && confirm(t("portal.clinics.profile.doctors.deleteConfirm"))) deleteClinicDoctor(agencyId, clinicDocId, doc.id); }} style={{
+                      padding: "5px 8px", borderRadius: 6, border: "1px solid rgba(239,68,68,0.2)",
+                      background: "rgba(239,68,68,0.04)", color: "#ef4444", fontSize: 11, cursor: "pointer",
+                    }}><Trash2 size={11} /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

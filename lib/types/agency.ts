@@ -171,6 +171,35 @@ export interface ClinicFAQ {
   updatedAt: any;
 }
 
+export interface ClinicDoctor {
+  id?: string;
+  doctorName: string;
+  title?: string; // Dt., Prof. Dr., Op. Dr.
+  specialty?: string; // Diş Hekimi, Plastik Cerrah
+  role?: string; // Dentist, Head Doctor
+  photoUrl?: string;
+  shortBio?: string;
+  longBio?: string;
+  education?: string;
+  experienceYears?: number;
+  expertiseAreas?: string[];
+  certifications?: string[];
+  supportedLanguages?: string[];
+  treatmentCategories?: TreatmentCategory[];
+  subTreatments?: string[];
+  highlightedTreatments?: string[];
+  // AI fields
+  aiSummary?: string;
+  aiHighlights?: string[];
+  doNotSay?: string[];
+  // Display
+  showOnPublicProfile?: boolean;
+  status: "active" | "inactive";
+  order?: number;
+  createdAt: any;
+  updatedAt: any;
+}
+
 // ─── Agency Clinic ──────────────────────────────────────────────────────────
 
 export interface AgencyClinic {

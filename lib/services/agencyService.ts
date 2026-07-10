@@ -388,3 +388,62 @@ export async function deleteClinicFAQ(
 ): Promise<void> {
   await deleteDoc(doc(db, "agencies", agencyId, "clinics", clinicDocId, "faq", faqId));
 }
+
+// ─── Clinic Doctor CRUD ─────────────────────────────────────────────────────
+
+import type { ClinicDoctor } from "@/lib/types/agency";
+
+export function subscribeToClinicDoctors(
+  agencyId: string,
+  clinicDocId: string,
+  onData: (doctors: ClinicDoctor[]) => void
+): () => void {
+  const q = query(
+    collection(db, "agencies", agencyId, "clinics", clinicDocId, "doctors"),
+    orderBy("order", "asc")
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      onData(snap.docs.map((d) => ({ id: d.id, ...d.data() })) as ClinicDoctor[]);
+    },
+    () => onData([])
+  );
+}
+
+export async function addClinicDoctor(
+  agencyId: string,
+  clinicDocId: string,
+  data: Omit<ClinicDoctor, "id" | "createdAt" | "updatedAt">
+): Promise<string> {
+  const colRef = collection(db, "agencies", agencyId, "clinics", clinicDocId, "doctors");
+  const docRef = doc(colRef);
+  const cleanData = stripUndefined(data as Record<string, any>);
+  await setDoc(docRef, {
+    ...cleanData,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return docRef.id;
+}
+
+export async function updateClinicDoctor(
+  agencyId: string,
+  clinicDocId: string,
+  doctorId: string,
+  data: Partial<ClinicDoctor>
+): Promise<void> {
+  const cleanData = stripUndefined(data as Record<string, any>);
+  await updateDoc(doc(db, "agencies", agencyId, "clinics", clinicDocId, "doctors", doctorId), {
+    ...cleanData,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteClinicDoctor(
+  agencyId: string,
+  clinicDocId: string,
+  doctorId: string
+): Promise<void> {
+  await deleteDoc(doc(db, "agencies", agencyId, "clinics", clinicDocId, "doctors", doctorId));
+}
