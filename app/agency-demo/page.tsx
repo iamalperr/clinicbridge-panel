@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import {
   Search, MapPin, Stethoscope, Star, Globe2, Hotel, Car, MessageSquare,
   ChevronRight, Send, Bot, User, Heart, Eye, Baby, Scissors, Sparkles,
   Phone, Mail, Shield, CheckCircle2, ArrowRight, Menu, X, Languages,
-  Building2, Clock, Award, TrendingUp, Loader2, FileText,
+  Building2, Clock, Award, TrendingUp, Loader2, FileText, ExternalLink,
 } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -61,6 +62,7 @@ const TEXTS: Record<Lang, Record<string, string>> = {
     "results.requestQuote": "Teklif İste",
     "results.talkToClinic": "Klinikle Görüş",
     "results.viewDetails": "Detayları Gör",
+    "results.viewProfile": "Daha Fazla Bilgi",
 
     // Clinics
     "clinics.title": "Ağımızdaki Klinikler",
@@ -171,6 +173,7 @@ const TEXTS: Record<Lang, Record<string, string>> = {
     "results.requestQuote": "Request Quote",
     "results.talkToClinic": "Talk to Clinic",
     "results.viewDetails": "View Details",
+    "results.viewProfile": "More Info",
 
     // Clinics
     "clinics.title": "Clinics in Our Network",
@@ -244,6 +247,7 @@ const TEXTS: Record<Lang, Record<string, string>> = {
 interface DemoClinic {
   id: string;
   name: string;
+  clinicSlug: string;
   type: { tr: string; en: string };
   location: string;
   rating: number;
@@ -255,11 +259,16 @@ interface DemoClinic {
   transfer: boolean;
   image: string;
   specialties: { tr: string; en: string }[];
+  shortDescription?: { tr: string; en: string };
+  longDescription?: { tr: string; en: string };
+  externalProfileUrl?: string;
+  accreditations?: string[];
+  services?: string[];
 }
 
-const DEMO_CLINICS: DemoClinic[] = [
+const FALLBACK_CLINICS: DemoClinic[] = [
   {
-    id: "1", name: "Dentaflow Clinic Istanbul",
+    id: "1", name: "Dentaflow Clinic Istanbul", clinicSlug: "dentaflow-clinic-istanbul",
     type: { tr: "Diş Kliniği", en: "Dental Clinic" },
     location: "İstanbul, Şişli",
     rating: 4.9, reviews: 1240, priceRange: "€400 – €1,200",
@@ -271,9 +280,13 @@ const DEMO_CLINICS: DemoClinic[] = [
       { tr: "Zirkonyum Kaplama", en: "Zirconium Crown" },
       { tr: "Hollywood Smile", en: "Hollywood Smile" },
     ],
+    shortDescription: { tr: "İstanbul'un kalbinde uzman diş hekimliği hizmetleri.", en: "Expert dental services in the heart of Istanbul." },
+    longDescription: { tr: "Dentaflow Clinic, 15 yılı aşkın deneyimiyle İstanbul Şişli'de uluslararası hastalara dental implant, zirkonyum kaplama ve Hollywood Smile tedavileri sunmaktadır. JCI akredite kliniğimizde son teknoloji ekipman ve uzman hekim kadromuzla güvenilir tedavi deneyimi yaşayın.", en: "Dentaflow Clinic offers dental implant, zirconium crown, and Hollywood Smile treatments to international patients in Istanbul Şişli with over 15 years of experience. Experience reliable treatment with state-of-the-art equipment and expert physicians at our JCI-accredited clinic." },
+    accreditations: ["JCI", "ISO 9001", "Health Tourism Certificate"],
+    services: ["Airport Transfer", "Hotel Accommodation", "24/7 Support", "Panoramic X-Ray", "3D CT Scan"],
   },
   {
-    id: "2", name: "MedSmile Dental Center",
+    id: "2", name: "MedSmile Dental Center", clinicSlug: "medsmile-dental-center",
     type: { tr: "Diş Kliniği", en: "Dental Clinic" },
     location: "Antalya, Lara",
     rating: 4.8, reviews: 890, priceRange: "€350 – €900",
@@ -285,9 +298,12 @@ const DEMO_CLINICS: DemoClinic[] = [
       { tr: "Diş Beyazlatma", en: "Teeth Whitening" },
       { tr: "Kanal Tedavisi", en: "Root Canal" },
     ],
+    shortDescription: { tr: "Antalya'da tatil ve tedavi bir arada.", en: "Vacation and dental treatment combined in Antalya." },
+    accreditations: ["ISO 9001", "Health Tourism Certificate"],
+    services: ["Airport Transfer", "Hotel Booking Assistance", "Multilingual Staff"],
   },
   {
-    id: "3", name: "HairLine Turkey",
+    id: "3", name: "HairLine Turkey", clinicSlug: "hairline-turkey",
     type: { tr: "Saç Ekim Merkezi", en: "Hair Transplant Center" },
     location: "İstanbul, Levent",
     rating: 4.9, reviews: 2100, priceRange: "€1,500 – €3,500",
@@ -299,9 +315,12 @@ const DEMO_CLINICS: DemoClinic[] = [
       { tr: "DHI Saç Ekimi", en: "DHI Hair Transplant" },
       { tr: "Sakal Ekimi", en: "Beard Transplant" },
     ],
+    shortDescription: { tr: "Türkiye'nin lider saç ekim merkezi.", en: "Turkey's leading hair transplant center." },
+    accreditations: ["JCI", "ISHRS Member"],
+    services: ["VIP Transfer", "5-Star Hotel", "PRP Treatment", "Post-Op Kit"],
   },
   {
-    id: "4", name: "AesthetiCare Clinic",
+    id: "4", name: "AesthetiCare Clinic", clinicSlug: "aestheticare-clinic",
     type: { tr: "Estetik Cerrahi Kliniği", en: "Aesthetic Surgery Clinic" },
     location: "İstanbul, Nişantaşı",
     rating: 4.7, reviews: 680, priceRange: "€2,000 – €6,000",
@@ -313,9 +332,12 @@ const DEMO_CLINICS: DemoClinic[] = [
       { tr: "Meme Estetiği", en: "Breast Augmentation" },
       { tr: "Liposuction", en: "Liposuction" },
     ],
+    shortDescription: { tr: "Nişantaşı'nda premium estetik cerrahi.", en: "Premium aesthetic surgery in Nişantaşı." },
+    accreditations: ["ISAPS Member", "ISO 9001"],
+    services: ["VIP Transfer", "Recovery Suite", "Post-Op Follow-up"],
   },
   {
-    id: "5", name: "Visionary Eye Center",
+    id: "5", name: "Visionary Eye Center", clinicSlug: "visionary-eye-center",
     type: { tr: "Göz Kliniği", en: "Eye Clinic" },
     location: "İzmir, Alsancak",
     rating: 4.8, reviews: 540, priceRange: "€800 – €2,500",
@@ -327,9 +349,12 @@ const DEMO_CLINICS: DemoClinic[] = [
       { tr: "Katarakt", en: "Cataract Surgery" },
       { tr: "Göz İçi Lens", en: "Intraocular Lens" },
     ],
+    shortDescription: { tr: "Ege'nin önde gelen göz sağlığı merkezi.", en: "Aegean's leading eye health center." },
+    accreditations: ["ISO 9001"],
+    services: ["Transfer", "Multilingual Staff"],
   },
   {
-    id: "6", name: "Fertility Plus IVF",
+    id: "6", name: "Fertility Plus IVF", clinicSlug: "fertility-plus-ivf",
     type: { tr: "Tüp Bebek Merkezi", en: "IVF Center" },
     location: "Antalya, Konyaaltı",
     rating: 4.9, reviews: 760, priceRange: "€2,500 – €5,000",
@@ -341,6 +366,30 @@ const DEMO_CLINICS: DemoClinic[] = [
       { tr: "Yumurta Dondurma", en: "Egg Freezing" },
       { tr: "Genetik Tanı", en: "Genetic Diagnosis" },
     ],
+    shortDescription: { tr: "Antalya'da ileri teknoloji tüp bebek tedavisi.", en: "Advanced IVF treatment in Antalya." },
+    accreditations: ["ESHRE Member", "Health Tourism Certificate"],
+    services: ["Airport Transfer", "Hotel Accommodation", "Genetic Counseling"],
+  },
+  {
+    id: "7", name: "Hospitadent Dental Group Alanya", clinicSlug: "hospitadent-dental-group-alanya",
+    type: { tr: "Diş Kliniği", en: "Dental Clinic" },
+    location: "Alanya, Antalya",
+    rating: 4.9, reviews: 2840, priceRange: "€400 – €900",
+    matchScore: 97, languages: ["EN", "TR", "DE", "RU", "AR"],
+    accommodation: true, transfer: true,
+    image: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+    externalProfileUrl: "https://feelinhealthy.com/medicalcenter/hospitadent-dental-group-alanya",
+    specialties: [
+      { tr: "Dental İmplant", en: "Dental Implant" },
+      { tr: "All-on-4 / All-on-6", en: "All-on-4 / All-on-6" },
+      { tr: "Zirkonyum Kaplama", en: "Zirconium Crowns" },
+      { tr: "Hollywood Smile", en: "Hollywood Smile" },
+      { tr: "Diş Beyazlatma", en: "Teeth Whitening" },
+    ],
+    shortDescription: { tr: "Alanya'nın en büyük diş kliniği zinciri. 10+ yıllık deneyim, JCI akredite.", en: "Alanya's largest dental clinic chain. 10+ years of experience, JCI accredited." },
+    longDescription: { tr: "Hospitadent Dental Group, Türkiye genelinde 12 şubesiyle hizmet veren köklü bir diş kliniği zinciridir. Alanya şubemiz, uluslararası hastalara dental implant, All-on-4, All-on-6, zirkonyum kaplama, Hollywood Smile, diş beyazlatma, kanal tedavisi, ortodonti ve ağız-çene-yüz cerrahisi alanlarında kapsamlı tedavi hizmeti sunmaktadır. JCI akredite kliniğimizde son teknoloji 3D tomografi, dijital gülüş tasarımı ve bilgisayar destekli implant planlama sistemleri kullanılmaktadır.", en: "Hospitadent Dental Group is an established dental clinic chain serving across Turkey with 12 branches. Our Alanya branch provides comprehensive treatment services to international patients in dental implant, All-on-4, All-on-6, zirconium crowns, Hollywood Smile, teeth whitening, root canal treatment, orthodontics, and oral-maxillofacial surgery. Our JCI-accredited clinic uses state-of-the-art 3D tomography, digital smile design, and computer-aided implant planning systems." },
+    accreditations: ["JCI", "ISO 9001", "Health Tourism Authorization", "TDB Member"],
+    services: ["Airport Transfer", "Hotel Accommodation", "City Tour", "24/7 WhatsApp Support", "Panoramic X-Ray", "3D CT Scan", "Digital Smile Design"],
   },
 ];
 
@@ -389,9 +438,44 @@ export default function AgencyDemoPage() {
   const [leadClinic, setLeadClinic] = useState("");
   const [leadSubmitted, setLeadSubmitted] = useState(false);
   const [leadSubmitting, setLeadSubmitting] = useState(false);
+  const [clinics, setClinics] = useState<DemoClinic[]>(FALLBACK_CLINICS);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const t = (key: string) => TEXTS[lang][key] || key;
+
+  // Fetch live clinic data, fallback to demo data
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/public/agency/feelinhealthy/clinics");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.clinics && data.clinics.length > 0) {
+          const mapped: DemoClinic[] = data.clinics.map((c: any) => ({
+            id: c.id,
+            name: c.clinicName,
+            clinicSlug: c.clinicSlug || c.clinicName?.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+$/g, "") || c.id,
+            type: { tr: c.category || c.clinicType || "", en: c.category || c.clinicType || "" },
+            location: c.location ? `${c.location.city}, ${c.location.country}` : "",
+            rating: c.rating || 4.8,
+            reviews: c.reviewCount || 0,
+            priceRange: "",
+            languages: (c.supportedLanguages || []).map((l: string) => l.toUpperCase()),
+            accommodation: true,
+            transfer: true,
+            image: "linear-gradient(135deg, #0D9488 0%, #065F46 100%)",
+            specialties: (c.subTreatments || []).map((s: string) => ({ tr: s, en: s })),
+            shortDescription: c.shortDescription ? { tr: c.shortDescription, en: c.shortDescription } : undefined,
+            longDescription: c.longDescription ? { tr: c.longDescription, en: c.longDescription } : undefined,
+            externalProfileUrl: c.profileUrl || undefined,
+            accreditations: c.accreditation || [],
+            services: [],
+          }));
+          setClinics(mapped);
+        }
+      } catch { /* fallback to FALLBACK_CLINICS */ }
+    })();
+  }, []);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -711,19 +795,21 @@ export default function AgencyDemoPage() {
               <p style={{ fontSize: 15, color: C.textSec, marginTop: 8 }}>{t("results.subtitle")}</p>
             </div>
             <div className="results-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
-              {DEMO_CLINICS.slice(0, 3).map((clinic) => (
+              {clinics.slice(0, 3).map((clinic) => (
                 <div key={clinic.id} className="card-hover" style={{
                   background: C.white, borderRadius: 16, border: `1px solid ${C.border}`,
                   overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.04)",
                 }}>
                   {/* Card Header */}
                   <div style={{ height: 100, background: clinic.image, position: "relative", display: "flex", alignItems: "flex-end", padding: 16 }}>
-                    <div style={{
-                      position: "absolute", top: 12, right: 12, padding: "4px 10px", borderRadius: 8,
-                      background: "rgba(255,255,255,0.95)", fontSize: 12, fontWeight: 800, color: C.teal,
-                    }}>
-                      {t("results.matchScore")}: {clinic.matchScore}%
-                    </div>
+                    {clinic.matchScore && (
+                      <div style={{
+                        position: "absolute", top: 12, right: 12, padding: "4px 10px", borderRadius: 8,
+                        background: "rgba(255,255,255,0.95)", fontSize: 12, fontWeight: 800, color: C.teal,
+                      }}>
+                        {t("results.matchScore")}: {clinic.matchScore}%
+                      </div>
+                    )}
                     <h3 style={{ fontSize: 16, fontWeight: 800, color: "#fff", textShadow: "0 1px 4px rgba(0,0,0,0.3)" }}>{clinic.name}</h3>
                   </div>
                   {/* Card Body */}
@@ -763,10 +849,10 @@ export default function AgencyDemoPage() {
                         style={{ flex: 1, padding: "10px 0", borderRadius: 10, background: C.teal, color: "#fff", fontSize: 13, fontWeight: 700 }}>
                         {t("results.requestQuote")}
                       </button>
-                      <button className="demo-btn"
-                        style={{ padding: "10px 14px", borderRadius: 10, background: C.bg, color: C.textSec, fontSize: 13, fontWeight: 600, border: `1px solid ${C.border}` }}>
-                        {t("results.viewDetails")}
-                      </button>
+                      <Link href={`/agency-demo/medicalcenter/${clinic.clinicSlug}`}
+                        style={{ padding: "10px 14px", borderRadius: 10, background: C.bg, color: C.textSec, fontSize: 13, fontWeight: 600, border: `1px solid ${C.border}`, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
+                        <ExternalLink size={12} /> {t("results.viewProfile")}
+                      </Link>
                     </div>
                   </div>
                 </div>
@@ -858,7 +944,7 @@ export default function AgencyDemoPage() {
             <p style={{ fontSize: 16, color: C.textSec, marginTop: 8 }}>{t("clinics.subtitle")}</p>
           </div>
           <div className="clinics-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
-            {DEMO_CLINICS.map((clinic) => (
+            {clinics.map((clinic) => (
               <div key={clinic.id} className="card-hover" style={{
                 background: C.white, borderRadius: 16, border: `1px solid ${C.border}`,
                 overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.03)",
@@ -892,14 +978,26 @@ export default function AgencyDemoPage() {
                       <Globe2 size={15} color={C.teal} />
                     </div>
                   </div>
-                  <button className="demo-btn" onClick={() => openLeadModal(clinic.name)}
-                    style={{
-                      width: "100%", marginTop: 14, padding: "10px 0", borderRadius: 10,
-                      background: C.tealBg, border: `1px solid ${C.tealBorder}`,
-                      color: C.teal, fontSize: 13, fontWeight: 700,
-                    }}>
-                    {t("results.requestQuote")}
-                  </button>
+                  <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                    <button className="demo-btn" onClick={() => openLeadModal(clinic.name)}
+                      style={{
+                        flex: 1, padding: "10px 0", borderRadius: 10,
+                        background: C.teal, border: "none",
+                        color: "#fff", fontSize: 13, fontWeight: 700,
+                      }}>
+                      {t("results.requestQuote")}
+                    </button>
+                    <Link href={`/agency-demo/medicalcenter/${clinic.clinicSlug}`}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 4,
+                        padding: "10px 14px", borderRadius: 10,
+                        background: C.bg, border: `1px solid ${C.border}`,
+                        color: C.textSec, fontSize: 12, fontWeight: 600,
+                        textDecoration: "none", transition: "all 0.2s",
+                      }}>
+                      <ExternalLink size={12} /> {t("results.viewProfile")}
+                    </Link>
+                  </div>
                 </div>
               </div>
             ))}
