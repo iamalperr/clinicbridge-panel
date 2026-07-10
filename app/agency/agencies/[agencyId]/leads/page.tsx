@@ -1,5 +1,7 @@
 "use client";
 
+import { useAgencyWorkspace } from "@/components/agency/AgencyWorkspaceContext";
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
@@ -13,7 +15,7 @@ import { TREATMENT_CATEGORIES, LEAD_STATUSES, LEAD_URGENCIES } from "@/lib/types
 
 export default function LeadsPage() {
   const { profile } = useAuth();
-  const agencyId = profile?.agencyId;
+  const { agencyId } = useAgencyWorkspace();
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);

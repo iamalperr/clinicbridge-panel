@@ -269,20 +269,6 @@ export default function AgencySidebar() {
           <NavItem href="/agency/agencies" label="Agencies" icon={<Briefcase size={18} />} />
         )}
 
-        <SectionLabel>Catalog</SectionLabel>
-        <NavItem href="/agency/treatments" label="Treatments" icon={<Stethoscope size={18} />} />
-        <NavItem href="/agency/clinics" label="Clinics" icon={<Building2 size={18} />} />
-        <NavItem href="/agency/pricing" label="Pricing" icon={<DollarSign size={18} />} />
-
-        <SectionLabel>AI Engine</SectionLabel>
-        <NavItem href="/agency/matching" label="AI Matching" icon={<Brain size={18} />} />
-        <NavItem href="/agency/ai-config" label="Intake Flow" icon={<MessageSquare size={18} />} />
-        <NavItem href="/agency/widget" label="Widget" icon={<Code size={18} />} />
-
-        <SectionLabel>Operations</SectionLabel>
-        <NavItem href="/agency/leads" label="Leads" icon={<Users2 size={18} />} />
-        <NavItem href="/agency/quotes" label="Quote Requests" icon={<FileText size={18} />} />
-
         <SectionLabel>System</SectionLabel>
         <NavItem href="/agency/settings" label="Settings" icon={<Settings size={18} />} />
       </nav>

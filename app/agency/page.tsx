@@ -401,7 +401,7 @@ export default function AgencyDashboardPage() {
         title="Recent Leads"
         action={
           <Link
-            href="/agency/leads"
+            href="/agency/agencies"
             style={{
               fontSize: 13,
               fontWeight: 600,

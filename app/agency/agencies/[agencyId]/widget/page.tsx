@@ -1,5 +1,7 @@
 "use client";
 
+import { useAgencyWorkspace } from "@/components/agency/AgencyWorkspaceContext";
+
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { isSuperAdmin } from "@/lib/types";
@@ -41,7 +43,7 @@ const DEFAULT_WIDGET_CONFIG: WidgetConfig = {
 
 export default function AgencyWidgetPage() {
   const { profile } = useAuth();
-  const agencyId = profile?.agencyId;
+  const { agencyId } = useAgencyWorkspace();
   const [copied, setCopied] = useState(false);
   const [agency, setAgency] = useState<Agency | null>(null);
   const [loading, setLoading] = useState(true);

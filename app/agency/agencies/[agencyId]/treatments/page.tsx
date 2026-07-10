@@ -1,5 +1,7 @@
 "use client";
 
+import { useAgencyWorkspace } from "@/components/agency/AgencyWorkspaceContext";
+
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { isSuperAdmin } from "@/lib/types";
@@ -34,7 +36,7 @@ const EMPTY_FORM = {
 
 export default function TreatmentsPage() {
   const { profile } = useAuth();
-  const agencyId = profile?.agencyId;
+  const { agencyId } = useAgencyWorkspace();
 
   const [treatments, setTreatments] = useState<TreatmentCatalogItem[]>([]);
   const [loading, setLoading] = useState(true);

@@ -1,5 +1,7 @@
 "use client";
 
+import { useAgencyWorkspace } from "@/components/agency/AgencyWorkspaceContext";
+
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { isSuperAdmin } from "@/lib/types";
@@ -13,7 +15,7 @@ import { TREATMENT_CATEGORIES, type TreatmentCategory } from "@/lib/types/agency
 
 export default function QuotesPage() {
   const { profile } = useAuth();
-  const agencyId = profile?.agencyId;
+  const { agencyId } = useAgencyWorkspace();
 
   const [quotes, setQuotes] = useState<QuoteRequest[]>([]);
   const [loading, setLoading] = useState(true);

@@ -1,5 +1,7 @@
 "use client";
 
+import { useAgencyWorkspace } from "@/components/agency/AgencyWorkspaceContext";
+
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { isSuperAdmin } from "@/lib/types";
@@ -94,7 +96,7 @@ const DEFAULT_AESTHETIC_FLOW: IntakeQuestion[] = [
 
 export default function AIConfigPage() {
   const { profile } = useAuth();
-  const agencyId = profile?.agencyId;
+  const { agencyId } = useAgencyWorkspace();
 
   const [config, setConfig] = useState<IntakeFlowConfig>(DEFAULT_CONFIG);
   const [loading, setLoading] = useState(true);

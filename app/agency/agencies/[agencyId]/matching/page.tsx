@@ -1,5 +1,7 @@
 "use client";
 
+import { useAgencyWorkspace } from "@/components/agency/AgencyWorkspaceContext";
+
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { isSuperAdmin } from "@/lib/types";
@@ -27,7 +29,7 @@ const DEFAULT_CONFIG: Omit<AIMatchingConfig, "id" | "agencyId" | "createdAt" | "
 
 export default function MatchingPage() {
   const { profile } = useAuth();
-  const agencyId = profile?.agencyId;
+  const { agencyId } = useAgencyWorkspace();
 
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [treatments, setTreatments] = useState<TreatmentCatalogItem[]>([]);

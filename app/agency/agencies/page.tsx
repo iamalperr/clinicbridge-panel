@@ -12,13 +12,16 @@ import Modal from "@/components/ui/Modal";
 import Badge from "@/components/ui/Badge";
 import { UI_COLORS } from "@/components/ui/ui-shared";
 import {
-  Building2, Plus, Search, Loader2, Globe, Calendar, Edit2, AlertCircle, Database,
+  Building2, Plus, Search, Loader2, Globe, Calendar, Edit2, AlertCircle, Database, ArrowRight, ExternalLink,
 } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Agency, TreatmentCategory } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES } from "@/lib/types/agency";
 
 export default function AgenciesPage() {
   const { profile } = useAuth();
+  const router = useRouter();
   const [agencies, setAgencies] = useState<Agency[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -110,7 +113,10 @@ export default function AgenciesPage() {
       if (editingId) {
         await updateAgency(editingId, data);
       } else {
-        await createAgency(data);
+        const newId = await createAgency(data);
+        setShowModal(false);
+        router.push(`/agency/agencies/${newId}/setup`);
+        return;
       }
       setShowModal(false);
     } catch (err) {
@@ -197,78 +203,100 @@ export default function AgenciesPage() {
           </p>
         </div>
       ) : (
-        <div style={{
-          background: "var(--bg-card)", borderRadius: 14,
-          border: `1px solid ${UI_COLORS.border}`, overflow: "hidden",
-        }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead>
-              <tr style={{ borderBottom: `1px solid ${UI_COLORS.border}` }}>
-                {["Agency", "Domain", "Slug", "Languages", "Type", "Status", "Actions"].map((h) => (
-                  <th key={h} style={{
-                    padding: "12px 14px", textAlign: "left", fontWeight: 700,
-                    fontSize: 11.5, textTransform: "uppercase",
-                    letterSpacing: "0.05em", color: UI_COLORS.textMuted,
-                  }}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((a) => (
-                <tr
-                  key={a.id}
-                  style={{ borderBottom: `1px solid ${UI_COLORS.border}`, transition: "background 0.15s" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(16, 185, 129, 0.03)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380, 1fr))", gap: 16 }}>
+          {filtered.map((a) => (
+            <div
+              key={a.id}
+              style={{
+                background: "var(--bg-card)", borderRadius: 14,
+                border: `1px solid ${UI_COLORS.border}`, overflow: "hidden",
+                transition: "box-shadow 0.2s, border-color 0.2s",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = "rgba(16, 185, 129, 0.3)";
+                e.currentTarget.style.boxShadow = "0 4px 20px rgba(16, 185, 129, 0.06)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = UI_COLORS.border;
+                e.currentTarget.style.boxShadow = "none";
+              }}
+            >
+              {/* Card Header */}
+              <div style={{ padding: "20px 20px 14px", display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{
+                  width: 42, height: 42, borderRadius: 10,
+                  background: "linear-gradient(135deg, #10b981, #059669)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  boxShadow: "0 2px 8px rgba(16, 185, 129, 0.3)",
+                  flexShrink: 0,
+                }}>
+                  <Building2 size={20} color="#fff" />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 15, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.01em" }}>
+                    {a.name}
+                  </p>
+                  <p style={{ fontSize: 12, color: UI_COLORS.textMuted }}>
+                    {a.productType || "Health Tourism Network"}
+                  </p>
+                </div>
+                <Badge label={a.status === "active" ? "Active" : a.status === "trial" ? "Trial" : "Inactive"}
+                  variant={a.status === "active" ? "success" : a.status === "trial" ? "warning" : "default"} dot />
+              </div>
+
+              {/* Card Stats */}
+              <div style={{ padding: "0 20px 14px", display: "flex", gap: 16, flexWrap: "wrap" }}>
+                {a.domain && (
+                  <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: UI_COLORS.textMuted }}>
+                    <Globe size={12} /> {a.domain}
+                  </span>
+                )}
+                <span style={{ fontSize: 12, color: UI_COLORS.textMuted }}>
+                  ID: <code style={{ fontSize: 11, background: "var(--bg-app)", padding: "1px 4px", borderRadius: 3 }}>{a.slug}</code>
+                </span>
+                {a.supportedLanguages?.length > 0 && (
+                  <span style={{ fontSize: 12, color: UI_COLORS.textMuted }}>
+                    {a.supportedLanguages.map(l => l.toUpperCase()).join(", ")}
+                  </span>
+                )}
+              </div>
+
+              {/* Card Actions */}
+              <div style={{
+                padding: "12px 20px", borderTop: `1px solid ${UI_COLORS.border}`,
+                display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between",
+              }}>
+                <Link
+                  href={`/agency/agencies/${a.id}`}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "8px 16px", borderRadius: 8, fontSize: 13, fontWeight: 700,
+                    background: "linear-gradient(135deg, #10b981, #059669)",
+                    color: "#fff", textDecoration: "none",
+                    boxShadow: "0 1px 4px rgba(16, 185, 129, 0.3)",
+                    transition: "opacity 0.15s",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.9"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
                 >
-                  <td style={{ padding: "14px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{
-                        width: 34, height: 34, borderRadius: 8,
-                        background: "linear-gradient(135deg, #10b981, #059669)",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                      }}>
-                        <Building2 size={16} color="#fff" />
-                      </div>
-                      <span style={{ fontWeight: 700, color: UI_COLORS.textPrimary }}>{a.name}</span>
-                    </div>
-                  </td>
-                  <td style={{ padding: "14px", color: UI_COLORS.textSecondary }}>
-                    {a.domain || "—"}
-                  </td>
-                  <td style={{ padding: "14px" }}>
-                    <code style={{ fontSize: 12, color: UI_COLORS.textMuted, background: "var(--bg-app)", padding: "2px 6px", borderRadius: 4 }}>
-                      {a.slug}
-                    </code>
-                  </td>
-                  <td style={{ padding: "14px", color: UI_COLORS.textSecondary, fontSize: 12 }}>
-                    {a.supportedLanguages?.map((l) => l.toUpperCase()).join(", ") || "—"}
-                  </td>
-                  <td style={{ padding: "14px", color: UI_COLORS.textMuted, fontSize: 12 }}>
-                    {a.productType || "—"}
-                  </td>
-                  <td style={{ padding: "14px" }}>
-                    <Badge label={a.status === "active" ? "Active" : "Inactive"} variant={a.status === "active" ? "success" : "warning"} />
-                  </td>
-                  <td style={{ padding: "14px" }}>
-                    <button
-                      onClick={() => openEdit(a)}
-                      style={{
-                        padding: "6px 12px", borderRadius: 6, border: `1px solid ${UI_COLORS.border}`,
-                        background: "var(--bg-card)", color: UI_COLORS.textSecondary,
-                        fontSize: 12, fontWeight: 600, cursor: "pointer",
-                        display: "flex", alignItems: "center", gap: 4,
-                      }}
-                    >
-                      <Edit2 size={12} /> Edit
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  <ArrowRight size={14} /> Çalışma Alanını Yönet
+                </Link>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button
+                    onClick={() => openEdit(a)}
+                    style={{
+                      padding: "7px 12px", borderRadius: 6, border: `1px solid ${UI_COLORS.border}`,
+                      background: "var(--bg-card)", color: UI_COLORS.textSecondary,
+                      fontSize: 12, fontWeight: 600, cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: 4,
+                    }}
+                  >
+                    <Edit2 size={12} /> Düzenle
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
