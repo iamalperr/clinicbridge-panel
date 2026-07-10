@@ -110,7 +110,7 @@ export default function AgencyClinicsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // ClinicBridge link mode
-  const [cbClinics, setCbClinics] = useState<{ id: string; name: string; city?: string }[]>([]);
+  const [cbClinics, setCbClinics] = useState<{ id: string; name: string; domain?: string; status?: string }[]>([]);
   const [cbLoading, setCbLoading] = useState(false);
 
   // Detail modal
@@ -520,20 +520,46 @@ export default function AgencyClinicsPage() {
                     ) : cbClinics.length === 0 ? (
                       <p style={{ fontSize: 12, color: UI_COLORS.textMuted, padding: 12 }}>{t("portal.clinics.noClinicBridge")}</p>
                     ) : (
-                      <div style={{ maxHeight: 150, overflowY: "auto", border: `1px solid ${UI_COLORS.border}`, borderRadius: 8 }}>
-                        {cbClinics.map((cb) => (
-                          <button key={cb.id} type="button" onClick={() => setForm((p) => ({ ...p, clinicId: cb.id, clinicName: p.clinicName || cb.name }))} style={{
-                            width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px",
-                            border: "none", borderBottom: `1px solid ${UI_COLORS.border}`,
-                            background: form.clinicId === cb.id ? "rgba(16, 185, 129, 0.06)" : "transparent",
-                            color: form.clinicId === cb.id ? "#10b981" : UI_COLORS.textPrimary,
-                            fontSize: 13, cursor: "pointer", textAlign: "left",
-                          }}>
-                            {form.clinicId === cb.id && <Check size={14} />}
-                            <span style={{ fontWeight: 600 }}>{cb.name}</span>
-                            {cb.city && <span style={{ fontSize: 11, color: UI_COLORS.textMuted }}>({cb.city})</span>}
-                          </button>
-                        ))}
+                      <div style={{ maxHeight: 200, overflowY: "auto", border: `1px solid ${UI_COLORS.border}`, borderRadius: 8 }}>
+                        {cbClinics.map((cb) => {
+                          const alreadyLinked = clinics.some((c) => c.clinicId === cb.id && c.clinicType === "clinicbridge");
+                          const isSelected = form.clinicId === cb.id;
+                          return (
+                            <button
+                              key={cb.id}
+                              type="button"
+                              disabled={alreadyLinked}
+                              onClick={() => {
+                                if (!alreadyLinked) {
+                                  setForm((p) => ({ ...p, clinicId: cb.id, clinicName: p.clinicName || cb.name }));
+                                }
+                              }}
+                              style={{
+                                width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px",
+                                border: "none", borderBottom: `1px solid ${UI_COLORS.border}`,
+                                background: isSelected ? "rgba(16, 185, 129, 0.06)" : alreadyLinked ? "rgba(148, 163, 184, 0.04)" : "transparent",
+                                color: alreadyLinked ? UI_COLORS.textMuted : isSelected ? "#10b981" : UI_COLORS.textPrimary,
+                                fontSize: 13, cursor: alreadyLinked ? "not-allowed" : "pointer", textAlign: "left",
+                                opacity: alreadyLinked ? 0.6 : 1,
+                              }}
+                            >
+                              {isSelected && !alreadyLinked && <Check size={14} />}
+                              <Building2 size={14} style={{ opacity: 0.5, flexShrink: 0 }} />
+                              <span style={{ fontWeight: 600, flex: 1 }}>{cb.name}</span>
+                              {cb.domain && <span style={{ fontSize: 11, color: UI_COLORS.textMuted }}>{cb.domain}</span>}
+                              {alreadyLinked && (
+                                <span style={{
+                                  fontSize: 10, fontWeight: 700, color: "#94a3b8",
+                                  padding: "2px 8px", borderRadius: 4,
+                                  background: "rgba(148, 163, 184, 0.1)", border: "1px solid rgba(148, 163, 184, 0.15)",
+                                  whiteSpace: "nowrap",
+                                }}>
+                                  {language === "tr" ? "Zaten bağlı" : "Already linked"}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>

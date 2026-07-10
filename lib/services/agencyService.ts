@@ -273,15 +273,17 @@ export async function deleteClinicPricing(
 // ─── ClinicBridge Clinic Listing (for link mode) ────────────────────────────
 
 export async function getClinicBridgeClinics(): Promise<
-  { id: string; name: string; city?: string }[]
+  { id: string; name: string; domain?: string; status?: string }[]
 > {
-  const snap = await getDocs(collection(db, "clinicSettings"));
+  // Main admin panel uses collection "clinics" — same source
+  const snap = await getDocs(collection(db, "clinics"));
   return snap.docs.map((d) => {
     const data = d.data();
     return {
       id: d.id,
-      name: data.clinicName || data.name || d.id,
-      city: data.city || data.location?.city || undefined,
+      name: data.name || d.id,
+      domain: data.domain || undefined,
+      status: data.status || undefined,
     };
   });
 }
