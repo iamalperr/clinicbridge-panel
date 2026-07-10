@@ -332,6 +332,18 @@
         "hospital": "Hospital",
         "medicalCenter": "Medical Center",
         "other": "Other"
+      },
+      "error": {
+        "noAgency": "Agency information not found.",
+        "nameRequired": "Clinic name is required.",
+        "locationRequired": "City and country are required.",
+        "categoryRequired": "At least one treatment category must be selected.",
+        "languageRequired": "At least one supported language must be selected."
+      },
+      "toast": {
+        "success": "Clinic added to agency.",
+        "error": "Failed to add clinic. Please try again.",
+        "updated": "Clinic information updated."
       }
     },
     "treatments": {

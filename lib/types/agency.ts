@@ -112,6 +112,7 @@ export interface AgencyClinic {
   id?: string; // Firestore doc ID
   clinicId: string;
   clinicName: string;
+  clinicSlug?: string; // URL-friendly slug for profile page routing
   clinicType?: "clinicbridge" | "external";
   branch?: string;
   category?: string;

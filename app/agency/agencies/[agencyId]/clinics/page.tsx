@@ -108,6 +108,8 @@ export default function AgencyClinicsPage() {
   const [form, setForm] = useState(emptyForm());
   const [modalTab, setModalTab] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // ClinicBridge link mode
   const [cbClinics, setCbClinics] = useState<{ id: string; name: string; domain?: string; status?: string }[]>([]);
@@ -180,11 +182,46 @@ export default function AgencyClinicsPage() {
   };
 
   const handleSave = async () => {
-    if (!agencyId || !form.clinicName) return;
+    setSaveError(null);
+
+    // ── Validation ──
+    if (!agencyId) {
+      setSaveError(t("portal.clinics.error.noAgency") || "Agency ID not found.");
+      return;
+    }
+    if (!form.clinicName.trim()) {
+      setSaveError(t("portal.clinics.error.nameRequired") || "Clinic name is required.");
+      setModalTab(0);
+      return;
+    }
+    if (!form.city.trim() || !form.country.trim()) {
+      setSaveError(t("portal.clinics.error.locationRequired") || "City and country are required.");
+      setModalTab(0);
+      return;
+    }
+    if (form.treatmentCategories.length === 0) {
+      setSaveError(t("portal.clinics.error.categoryRequired") || "At least one treatment category is required.");
+      setModalTab(1);
+      return;
+    }
+    if (form.supportedLanguages.length === 0) {
+      setSaveError(t("portal.clinics.error.languageRequired") || "At least one language is required.");
+      setModalTab(1);
+      return;
+    }
+
     setSaving(true);
+    const clinicSlug = form.clinicName
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+
     const payload: Omit<AgencyClinic, "id" | "addedAt" | "updatedAt"> = {
       clinicId: form.clinicId || `ext_${Date.now()}`,
       clinicName: form.clinicName,
+      clinicSlug,
       clinicType: form.clinicType,
       branch: form.branch || undefined,
       category: form.category,
@@ -218,7 +255,13 @@ export default function AgencyClinicsPage() {
       }
       setShowAddModal(false);
       setForm(emptyForm());
-    } catch (err) { console.error(err); }
+      setSaveError(null);
+      setToast({ type: "success", message: t("portal.clinics.toast.success") || "Clinic added to agency." });
+      setTimeout(() => setToast(null), 4000);
+    } catch (err) {
+      console.error("[AgencyClinics] Save failed:", err);
+      setSaveError(t("portal.clinics.toast.error") || "Failed to add clinic. Please try again.");
+    }
     setSaving(false);
   };
 
@@ -652,6 +695,14 @@ export default function AgencyClinicsPage() {
             )}
           </div>
 
+          {/* Validation Error */}
+          {saveError && (
+            <div style={{ margin: "12px 0 0", padding: "10px 14px", borderRadius: 10, background: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.2)", display: "flex", alignItems: "center", gap: 8 }}>
+              <X size={14} color="#ef4444" />
+              <span style={{ fontSize: 13, color: "#ef4444", fontWeight: 600 }}>{saveError}</span>
+            </div>
+          )}
+
           {/* Modal Footer */}
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20, paddingTop: 16, borderTop: `1px solid ${UI_COLORS.border}` }}>
             <div style={{ display: "flex", gap: 6 }}>
@@ -663,9 +714,9 @@ export default function AgencyClinicsPage() {
               )}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <Button variant="secondary" onClick={() => setShowAddModal(false)}>{t("portal.buttons.cancel")}</Button>
-              <Button onClick={handleSave} disabled={!form.clinicName || saving}>
-                {saving ? t("portal.clinics.saving") : editingId ? t("portal.buttons.saveChanges") : t("portal.clinics.addToAgency")}
+              <Button variant="secondary" onClick={() => { setShowAddModal(false); setSaveError(null); }}>{t("portal.buttons.cancel")}</Button>
+              <Button onClick={handleSave} isLoading={saving} disabled={saving}>
+                {saving ? (t("portal.clinics.saving") || "Saving...") : editingId ? t("portal.buttons.saveChanges") : t("portal.clinics.addToAgency")}
               </Button>
             </div>
           </div>
@@ -875,6 +926,28 @@ export default function AgencyClinicsPage() {
           </div>
         </Modal>
       )}
+
+      {/* ═══ TOAST ═══ */}
+      {toast && (
+        <div style={{
+          position: "fixed", bottom: 24, right: 24, zIndex: 10000,
+          display: "flex", alignItems: "center", gap: 10,
+          padding: "14px 20px", borderRadius: 12,
+          background: toast.type === "success" ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)",
+          border: `1px solid ${toast.type === "success" ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+          backdropFilter: "blur(8px)",
+          animation: "toastSlideUp 0.3s ease-out",
+        }}>
+          {toast.type === "success"
+            ? <Check size={16} color="#10b981" />
+            : <X size={16} color="#ef4444" />
+          }
+          <span style={{ fontSize: 13, fontWeight: 600, color: toast.type === "success" ? "#10b981" : "#ef4444" }}>{toast.message}</span>
+          <button onClick={() => setToast(null)} style={{ background: "none", border: "none", cursor: "pointer", marginLeft: 8, display: "flex" }}><X size={14} color={UI_COLORS.textMuted} /></button>
+        </div>
+      )}
+      <style>{`@keyframes toastSlideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }`}</style>
     </div>
   );
 }

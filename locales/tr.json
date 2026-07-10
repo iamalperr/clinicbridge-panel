@@ -332,6 +332,18 @@
         "hospital": "Hastane",
         "medicalCenter": "Medikal Merkez",
         "other": "Diğer"
+      },
+      "error": {
+        "noAgency": "Acenta bilgisi bulunamadı.",
+        "nameRequired": "Klinik adı zorunludur.",
+        "locationRequired": "Şehir ve ülke zorunludur.",
+        "categoryRequired": "En az bir tedavi kategorisi seçilmelidir.",
+        "languageRequired": "En az bir desteklenen dil seçilmelidir."
+      },
+      "toast": {
+        "success": "Klinik acentaya eklendi.",
+        "error": "Klinik eklenemedi. Lütfen tekrar deneyin.",
+        "updated": "Klinik bilgileri güncellendi."
       }
     },
     "treatments": {
