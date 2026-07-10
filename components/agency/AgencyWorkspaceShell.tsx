@@ -8,25 +8,12 @@ import { db } from "@/lib/firebase";
 import Badge from "@/components/ui/Badge";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 import { AgencyWorkspaceProvider } from "./AgencyWorkspaceContext";
+import { useI18n } from "@/lib/i18n-context";
 import type { Agency } from "@/lib/types/agency";
 import {
   LayoutDashboard, Rocket, Stethoscope, Building2, DollarSign,
   Brain, MessageSquare, Code, Users2, FileText, Settings,
 } from "lucide-react";
-
-const TABS = [
-  { label: "Genel Bakış",               path: "",              icon: <LayoutDashboard size={14} /> },
-  { label: "Kurulum",                   path: "/setup",        icon: <Rocket size={14} /> },
-  { label: "Tedaviler",                 path: "/treatments",   icon: <Stethoscope size={14} /> },
-  { label: "Klinikler",                 path: "/clinics",      icon: <Building2 size={14} /> },
-  { label: "Fiyatlandırma",             path: "/pricing",      icon: <DollarSign size={14} /> },
-  { label: "AI Eşleştirme",             path: "/matching",     icon: <Brain size={14} /> },
-  { label: "Ön Değerlendirme",          path: "/intake-flow",  icon: <MessageSquare size={14} /> },
-  { label: "Widget",                    path: "/widget",       icon: <Code size={14} /> },
-  { label: "Lead'ler",                  path: "/leads",        icon: <Users2 size={14} /> },
-  { label: "Teklif Talepleri",          path: "/quotes",       icon: <FileText size={14} /> },
-  { label: "Ayarlar",                   path: "/settings",     icon: <Settings size={14} /> },
-];
 
 interface WorkspaceCounts {
   clinics: number;
@@ -42,9 +29,24 @@ export default function AgencyWorkspaceShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const { t } = useI18n();
   const [agency, setAgency] = useState<Agency | null>(null);
   const [counts, setCounts] = useState<WorkspaceCounts>({ clinics: 0, treatments: 0, leads: 0 });
   const base = `/agency/agencies/${agencyId}`;
+
+  const TABS = [
+    { labelKey: "portal.tabs.overview",        path: "",              icon: <LayoutDashboard size={14} /> },
+    { labelKey: "portal.tabs.setup",           path: "/setup",        icon: <Rocket size={14} /> },
+    { labelKey: "portal.tabs.treatments",      path: "/treatments",   icon: <Stethoscope size={14} /> },
+    { labelKey: "portal.tabs.clinics",         path: "/clinics",      icon: <Building2 size={14} /> },
+    { labelKey: "portal.tabs.pricing",         path: "/pricing",      icon: <DollarSign size={14} /> },
+    { labelKey: "portal.tabs.aiMatching",      path: "/matching",     icon: <Brain size={14} /> },
+    { labelKey: "portal.tabs.intakeFlow",      path: "/intake-flow",  icon: <MessageSquare size={14} /> },
+    { labelKey: "portal.tabs.widget",          path: "/widget",       icon: <Code size={14} /> },
+    { labelKey: "portal.tabs.leads",           path: "/leads",        icon: <Users2 size={14} /> },
+    { labelKey: "portal.tabs.quoteRequests",   path: "/quotes",       icon: <FileText size={14} /> },
+    { labelKey: "portal.tabs.settings",        path: "/settings",     icon: <Settings size={14} /> },
+  ];
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -59,7 +61,6 @@ export default function AgencyWorkspaceShell({
     return () => unsub();
   }, [agencyId]);
 
-  // Fetch counts for header badges
   useEffect(() => {
     async function fetchCounts() {
       try {
@@ -80,6 +81,9 @@ export default function AgencyWorkspaceShell({
     fetchCounts();
   }, [agencyId]);
 
+  const statusLabel = agency?.status === "active" ? t("portal.status.active")
+    : agency?.status === "trial" ? t("portal.status.trial")
+    : t("portal.status.inactive");
   const statusVariant = agency?.status === "active" ? "success" : agency?.status === "trial" ? "warning" : "default";
 
   return (
@@ -103,7 +107,7 @@ export default function AgencyWorkspaceShell({
             onMouseEnter={(e) => { e.currentTarget.style.color = "#10b981"; }}
             onMouseLeave={(e) => { e.currentTarget.style.color = UI_COLORS.textMuted; }}
           >
-            ← Acentalara Dön
+            {t("portal.workspace.backToAgencies")}
           </Link>
 
           {/* Agency Info */}
@@ -123,10 +127,10 @@ export default function AgencyWorkspaceShell({
                   fontSize: 19, fontWeight: 800, color: UI_COLORS.textPrimary,
                   letterSpacing: "-0.5px", lineHeight: 1.2,
                 }}>
-                  {agency?.name ?? "Loading..."} <span style={{ fontWeight: 400, fontSize: 14, color: UI_COLORS.textMuted }}>Workspace</span>
+                  {agency?.name ?? "Loading..."} <span style={{ fontWeight: 400, fontSize: 14, color: UI_COLORS.textMuted }}>{t("portal.workspace.title")}</span>
                 </h1>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 5 }}>
-                  {agency?.status && <Badge label={agency.status === "active" ? "Active" : agency.status === "trial" ? "Trial" : "Inactive"} variant={statusVariant} dot />}
+                  {agency?.status && <Badge label={statusLabel} variant={statusVariant} dot />}
                   {agency?.domain && (
                     <span style={{ fontSize: 11.5, color: UI_COLORS.textMuted }}>
                       {agency.domain}
@@ -140,9 +144,9 @@ export default function AgencyWorkspaceShell({
                 {/* Stats row */}
                 <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
                   {[
-                    { label: "Klinik", count: counts.clinics },
-                    { label: "Tedavi", count: counts.treatments },
-                    { label: "Lead", count: counts.leads },
+                    { label: t("portal.workspace.clinic"), count: counts.clinics },
+                    { label: t("portal.workspace.treatment"), count: counts.treatments },
+                    { label: t("portal.workspace.lead"), count: counts.leads },
                   ].map(({ label, count }) => (
                     <span key={label} style={{ fontSize: 11, color: UI_COLORS.textMuted }}>
                       <strong style={{ color: UI_COLORS.textSecondary }}>{count}</strong> {label}
@@ -162,7 +166,7 @@ export default function AgencyWorkspaceShell({
                 : pathname.startsWith(href);
               return (
                 <Link
-                  key={tab.label}
+                  key={tab.labelKey}
                   href={href}
                   style={{
                     padding: "9px 14px",
@@ -176,7 +180,7 @@ export default function AgencyWorkspaceShell({
                   }}
                 >
                   {tab.icon}
-                  {tab.label}
+                  {t(tab.labelKey)}
                 </Link>
               );
             })}

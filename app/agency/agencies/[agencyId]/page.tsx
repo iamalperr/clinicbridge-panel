@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAgencyWorkspace } from "@/components/agency/AgencyWorkspaceContext";
+import { useI18n } from "@/lib/i18n-context";
 import { subscribeToTreatments } from "@/lib/services/treatmentService";
 import { subscribeToAgencyClinics } from "@/lib/services/agencyService";
 import { subscribeToLeads } from "@/lib/services/leadService";
@@ -22,6 +23,7 @@ import type { TreatmentCatalogItem, QuoteRequest, AIMatchingConfig } from "@/lib
 
 export default function AgencyOverviewPage() {
   const { agencyId } = useAgencyWorkspace();
+  const { t } = useI18n();
 
   const [clinics, setClinics] = useState<AgencyClinic[]>([]);
   const [treatments, setTreatments] = useState<TreatmentCatalogItem[]>([]);
@@ -51,7 +53,6 @@ export default function AgencyOverviewPage() {
       checkDone();
     }, () => checkDone()));
 
-    // Widget config check
     onSnapshot(doc(db, "agencies", agencyId, "config", "widget"), (snap) => {
       setWidgetConfigExists(snap.exists());
     }, () => {});
@@ -64,11 +65,11 @@ export default function AgencyOverviewPage() {
 
   // Setup checklist
   const checklist = [
-    { label: "En az 1 tedavi tanımlandı", done: treatments.length > 0, href: `${base}/treatments` },
-    { label: "En az 1 klinik bağlandı", done: clinics.length > 0, href: `${base}/clinics` },
-    { label: "AI Matching kuralları tanımlı", done: !!matchingConfig && (matchingConfig.treatmentClinicRules?.length || 0) > 0, href: `${base}/matching` },
-    { label: "Intake Flow oluşturuldu", done: intakeFlowExists, href: `${base}/intake-flow` },
-    { label: "Widget ayarlandı", done: widgetConfigExists, href: `${base}/widget` },
+    { label: t("portal.setup.treatmentCatalog"), done: treatments.length > 0, href: `${base}/treatments` },
+    { label: t("portal.setup.clinicNetwork"), done: clinics.length > 0, href: `${base}/clinics` },
+    { label: t("portal.setup.aiMatchingRules"), done: !!matchingConfig && (matchingConfig.treatmentClinicRules?.length || 0) > 0, href: `${base}/matching` },
+    { label: t("portal.setup.intakeFlowTitle"), done: intakeFlowExists, href: `${base}/intake-flow` },
+    { label: t("portal.setup.widgetExperience"), done: widgetConfigExists, href: `${base}/widget` },
   ];
   const completedSteps = checklist.filter((c) => c.done).length;
   const progressPercent = Math.round((completedSteps / checklist.length) * 100);
@@ -86,15 +87,15 @@ export default function AgencyOverviewPage() {
     <div style={{ maxWidth: 1200 }}>
       {/* Stats Grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 }}>
-        <StatCard label="Toplam Lead" value={leads.length} icon={<Users2 size={20} />} />
-        <StatCard label="Yeni Lead" value={newLeads} icon={<UserPlus size={20} />} />
-        <StatCard label="Bağlı Klinik" value={clinics.length} icon={<Building2 size={20} />} />
-        <StatCard label="Tanımlı Tedavi" value={treatments.length} icon={<Stethoscope size={20} />} />
+        <StatCard label={t("portal.overview.totalLeads")} value={leads.length} icon={<Users2 size={20} />} />
+        <StatCard label={t("portal.overview.newLeads")} value={newLeads} icon={<UserPlus size={20} />} />
+        <StatCard label={t("portal.overview.linkedClinics")} value={clinics.length} icon={<Building2 size={20} />} />
+        <StatCard label={t("portal.overview.definedTreatments")} value={treatments.length} icon={<Stethoscope size={20} />} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
         {/* Setup Checklist */}
-        <SectionCard title="Kurulum İlerlemesi">
+        <SectionCard title={t("portal.overview.setupProgress")}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
             <div style={{ flex: 1, height: 8, borderRadius: 4, background: "var(--bg-app)", overflow: "hidden" }}>
               <div style={{ width: `${progressPercent}%`, height: "100%", borderRadius: 4, background: progressPercent === 100 ? "#10b981" : "#f59e0b", transition: "width 0.5s" }} />
@@ -128,24 +129,24 @@ export default function AgencyOverviewPage() {
           </div>
         </SectionCard>
 
-        {/* Quick Stats */}
-        <SectionCard title="Durum Bilgisi">
+        {/* Status Info */}
+        <SectionCard title={t("portal.overview.statusInfo")}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${UI_COLORS.border}` }}>
-              <span style={{ fontSize: 13, color: UI_COLORS.textMuted }}>Teklif Talepleri</span>
+              <span style={{ fontSize: 13, color: UI_COLORS.textMuted }}>{t("portal.overview.quoteRequests")}</span>
               <span style={{ fontSize: 13, fontWeight: 700, color: UI_COLORS.textPrimary }}>{quotes.length}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${UI_COLORS.border}` }}>
-              <span style={{ fontSize: 13, color: UI_COLORS.textMuted }}>Routing Mode</span>
+              <span style={{ fontSize: 13, color: UI_COLORS.textMuted }}>{t("portal.overview.routingMode")}</span>
               <Badge label={matchingConfig?.routingMode || "—"} variant="default" />
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${UI_COLORS.border}` }}>
-              <span style={{ fontSize: 13, color: UI_COLORS.textMuted }}>Widget</span>
-              <Badge label={widgetConfigExists ? "Configured" : "Not Set"} variant={widgetConfigExists ? "success" : "warning"} />
+              <span style={{ fontSize: 13, color: UI_COLORS.textMuted }}>{t("portal.overview.widgetLabel")}</span>
+              <Badge label={widgetConfigExists ? t("portal.status.configured") : t("portal.status.notSet")} variant={widgetConfigExists ? "success" : "warning"} />
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0" }}>
-              <span style={{ fontSize: 13, color: UI_COLORS.textMuted }}>Intake Flow</span>
-              <Badge label={intakeFlowExists ? "Configured" : "Not Set"} variant={intakeFlowExists ? "success" : "warning"} />
+              <span style={{ fontSize: 13, color: UI_COLORS.textMuted }}>{t("portal.overview.intakeFlow")}</span>
+              <Badge label={intakeFlowExists ? t("portal.status.configured") : t("portal.status.notSet")} variant={intakeFlowExists ? "success" : "warning"} />
             </div>
           </div>
         </SectionCard>
@@ -154,7 +155,7 @@ export default function AgencyOverviewPage() {
       {/* Recent Leads */}
       {leads.length > 0 && (
         <div style={{ marginTop: 20 }}>
-          <SectionCard title="Son Lead'ler">
+          <SectionCard title={t("portal.overview.recentLeads")}>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {leads.slice(0, 5).map((lead) => (
                 <div key={lead.id} style={{
@@ -162,7 +163,7 @@ export default function AgencyOverviewPage() {
                   padding: "10px 12px", borderRadius: 8, border: `1px solid ${UI_COLORS.border}`,
                 }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: UI_COLORS.textPrimary, flex: 1 }}>
-                    {lead.patientName || "Anonymous"}
+                    {lead.patientName || t("portal.overview.anonymous")}
                   </span>
                   <span style={{ fontSize: 12, color: UI_COLORS.textMuted }}>{lead.country}</span>
                   <Badge label={lead.status.replace(/_/g, " ")} variant={lead.status === "new" ? "info" : "default"} />
@@ -171,7 +172,7 @@ export default function AgencyOverviewPage() {
             </div>
             {leads.length > 5 && (
               <Link href={`${base}/leads`} style={{ display: "block", textAlign: "center", marginTop: 12, fontSize: 13, color: "#10b981", textDecoration: "none" }}>
-                Tüm lead'leri gör →
+                {t("portal.overview.viewAll")}
               </Link>
             )}
           </SectionCard>

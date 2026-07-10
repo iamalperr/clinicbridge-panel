@@ -1,28 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { isSuperAdmin, getRoleDisplayName } from "@/lib/types";
 import { UI_COLORS } from "@/components/ui/ui-shared";
-import { subscribeToAgency } from "@/lib/services/agencyService";
-import type { Agency } from "@/lib/types/agency";
+import { useI18n } from "@/lib/i18n-context";
+import LanguageSwitcher from "@/components/ui/LanguageSwitcher";
 
 export default function AgencyHeader() {
   const { profile } = useAuth();
-  const [agency, setAgency] = useState<Agency | null>(null);
+  const { t } = useI18n();
 
-  const agencyId = profile?.agencyId;
   const superAdmin = isSuperAdmin(profile?.role);
 
-  useEffect(() => {
-    if (!agencyId) return;
-    const unsub = subscribeToAgency(agencyId, setAgency);
-    return () => unsub();
-  }, [agencyId]);
-
-  const agencyName = agency?.name;
-  const headerTitle = superAdmin && !agencyId ? "Network Portal" : agencyName ? `${agencyName} Portal` : "Network Portal";
-  const badgeText = superAdmin ? "SaaS" : "Network";
+  const headerTitle = t("portal.title");
+  const badgeText = superAdmin ? t("portal.badge") : t("portal.badgeNetwork");
   const roleName = getRoleDisplayName(profile?.role);
 
   return (
@@ -58,6 +49,7 @@ export default function AgencyHeader() {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <LanguageSwitcher />
         <div style={{ textAlign: "right" }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: UI_COLORS.textPrimary, lineHeight: 1.2 }}>
             {profile?.name || "User"}

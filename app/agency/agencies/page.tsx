@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { useI18n } from "@/lib/i18n-context";
 import { isSuperAdmin } from "@/lib/types";
 import { subscribeToAllAgencies, createAgency, updateAgency } from "@/lib/services/agencyService";
 import { seedFeelinHealthy } from "@/lib/seed/feelinhealthy";
@@ -22,6 +23,7 @@ import { TREATMENT_CATEGORIES } from "@/lib/types/agency";
 export default function AgenciesPage() {
   const { profile } = useAuth();
   const router = useRouter();
+  const { t } = useI18n();
   const [agencies, setAgencies] = useState<Agency[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -142,10 +144,10 @@ export default function AgenciesPage() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.02em" }}>
-            Agencies
+            {t("portal.agencies.title")}
           </h1>
           <p style={{ fontSize: 14, color: UI_COLORS.textMuted, marginTop: 4 }}>
-            {agencies.length} agencies in the ClinicBridge Network.
+            {agencies.length} {t("portal.agencies.subtitle")}
           </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -160,10 +162,10 @@ export default function AgenciesPage() {
             } catch (err) { console.error(err); alert("Seed failed."); }
             finally { setSeeding(false); }
           }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Database size={14} /> {seeding ? "Seeding..." : "Seed Demo"}</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Database size={14} /> {seeding ? t("portal.agencies.seeding") : t("portal.agencies.seedDemo")}</span>
           </Button>
           <Button onClick={openAdd}>
-            <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Plus size={16} /> Create Agency</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Plus size={16} /> {t("portal.agencies.createAgency")}</span>
           </Button>
         </div>
       </div>
@@ -173,7 +175,7 @@ export default function AgenciesPage() {
         <Search size={16} style={{ position: "absolute", left: 12, top: 11, color: UI_COLORS.textMuted }} />
         <input
           type="text"
-          placeholder="Search agencies..."
+          placeholder={t("portal.agencies.searchPlaceholder")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{
@@ -196,10 +198,10 @@ export default function AgenciesPage() {
         }}>
           <Building2 size={48} color={UI_COLORS.textMuted} style={{ opacity: 0.3 }} />
           <h3 style={{ marginTop: 16, fontSize: 16, fontWeight: 700, color: UI_COLORS.textPrimary }}>
-            {search ? "No agencies match your search" : "No agencies yet"}
+            {search ? t("portal.agencies.noAgenciesMatch") : t("portal.agencies.noAgenciesYet")}
           </h3>
           <p style={{ color: UI_COLORS.textMuted, fontSize: 13, marginTop: 8 }}>
-            Create your first agency to get started.
+            {t("portal.agencies.createFirst")}
           </p>
         </div>
       ) : (
@@ -237,10 +239,10 @@ export default function AgenciesPage() {
                     {a.name}
                   </p>
                   <p style={{ fontSize: 12, color: UI_COLORS.textMuted }}>
-                    {a.productType || "Health Tourism Network"}
+                    {a.productType || t("portal.agencies.healthTourismNetwork")}
                   </p>
                 </div>
-                <Badge label={a.status === "active" ? "Active" : a.status === "trial" ? "Trial" : "Inactive"}
+                <Badge label={a.status === "active" ? t("portal.status.active") : a.status === "trial" ? t("portal.status.trial") : t("portal.status.inactive")}
                   variant={a.status === "active" ? "success" : a.status === "trial" ? "warning" : "default"} dot />
               </div>
 
@@ -279,7 +281,7 @@ export default function AgenciesPage() {
                   onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.9"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
                 >
-                  <ArrowRight size={14} /> Çalışma Alanını Yönet
+                  <ArrowRight size={14} /> {t("portal.agencies.manageWorkspace")}
                 </Link>
                 <div style={{ display: "flex", gap: 6 }}>
                   <button
@@ -291,7 +293,7 @@ export default function AgenciesPage() {
                       display: "flex", alignItems: "center", gap: 4,
                     }}
                   >
-                    <Edit2 size={12} /> Düzenle
+                    <Edit2 size={12} /> {t("portal.agencies.edit")}
                   </button>
                 </div>
               </div>
@@ -301,7 +303,7 @@ export default function AgenciesPage() {
       )}
 
       {/* Create/Edit Modal */}
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editingId ? "Edit Agency" : "Create Agency"}>
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editingId ? t("portal.agencies.editAgency") : t("portal.agencies.createAgency")}>
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <Input label="Agency Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. FeelinHealthy" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
@@ -342,8 +344,8 @@ export default function AgenciesPage() {
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
-            <Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button>
-            <Button onClick={handleSave} isLoading={saving}>{editingId ? "Save Changes" : "Create Agency"}</Button>
+            <Button variant="secondary" onClick={() => setShowModal(false)}>{t("portal.buttons.cancel")}</Button>
+            <Button onClick={handleSave} isLoading={saving}>{editingId ? t("portal.buttons.saveChanges") : t("portal.agencies.createAgency")}</Button>
           </div>
         </div>
       </Modal>

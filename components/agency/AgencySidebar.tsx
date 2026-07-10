@@ -8,6 +8,7 @@ import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 import { isSuperAdmin, isAgencyRole, getRoleDisplayName } from "@/lib/types";
+import { useI18n } from "@/lib/i18n-context";
 import {
   LayoutDashboard,
   Users2,
@@ -133,6 +134,7 @@ function SectionLabel({ children }: { children: string }) {
 
 export default function AgencySidebar() {
   const { profile } = useAuth();
+  const { t } = useI18n();
   const [agency, setAgency] = useState<Agency | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -147,8 +149,8 @@ export default function AgencySidebar() {
 
   // Naming logic
   const agencyName = agency?.name;
-  const headerTitle = superAdmin && !agencyId ? "ClinicBridge Network" : agencyName ? `${agencyName}` : "Network Portal";
-  const headerSubtitle = superAdmin ? "Agency SaaS Platform" : "ClinicBridge Network";
+  const headerTitle = superAdmin && !agencyId ? "ClinicBridge Network" : agencyName ? `${agencyName}` : t("portal.title");
+  const headerSubtitle = superAdmin ? t("portal.subtitle") : "ClinicBridge Network";
   const roleName = getRoleDisplayName(profile?.role);
   const orgName = superAdmin ? "ClinicBridge" : agencyName || "Network";
 
@@ -245,7 +247,7 @@ export default function AgencySidebar() {
             }}
           >
             <ArrowLeft size={14} />
-            Admin Panel
+            {t("portal.backToAdmin").replace("← ", "")}
           </Link>
         </div>
       )}
@@ -261,16 +263,16 @@ export default function AgencySidebar() {
           overflowY: "auto",
         }}
       >
-        <SectionLabel>Overview</SectionLabel>
-        <NavItem href="/agency" label="Dashboard" icon={<LayoutDashboard size={18} />} />
+        <SectionLabel>{t("portal.sidebar.overview")}</SectionLabel>
+        <NavItem href="/agency" label={t("portal.sidebar.dashboard")} icon={<LayoutDashboard size={18} />} />
 
         {/* SuperAdmin-only items */}
         {superAdmin && (
-          <NavItem href="/agency/agencies" label="Agencies" icon={<Briefcase size={18} />} />
+          <NavItem href="/agency/agencies" label={t("portal.sidebar.agencies")} icon={<Briefcase size={18} />} />
         )}
 
-        <SectionLabel>System</SectionLabel>
-        <NavItem href="/agency/settings" label="Settings" icon={<Settings size={18} />} />
+        <SectionLabel>{t("portal.sidebar.system")}</SectionLabel>
+        <NavItem href="/agency/settings" label={t("portal.sidebar.settings")} icon={<Settings size={18} />} />
       </nav>
 
       {/* User & Auth Section */}
@@ -338,13 +340,13 @@ export default function AgencySidebar() {
             background: "var(--bg-card)", border: `1px solid ${UI_COLORS.border}`,
             display: "flex", flexDirection: "column", gap: 2,
           }}>
-            <MenuLink href="/agency/settings" icon={<User size={14} />} label="My Profile" onClick={() => setMenuOpen(false)} />
-            <MenuLink href="/agency/settings" icon={<Settings size={14} />} label="Agency Settings" onClick={() => setMenuOpen(false)} />
+            <MenuLink href="/agency/settings" icon={<User size={14} />} label={t("portal.myProfile")} onClick={() => setMenuOpen(false)} />
+            <MenuLink href="/agency/settings" icon={<Settings size={14} />} label={t("portal.agencySettings")} onClick={() => setMenuOpen(false)} />
 
             {superAdmin && (
               <>
                 <div style={{ height: 1, background: UI_COLORS.border, margin: "4px 8px" }} />
-                <MenuLink href="/clinics" icon={<ArrowLeft size={14} />} label="Back to Admin Panel" onClick={() => setMenuOpen(false)} brand />
+                <MenuLink href="/clinics" icon={<ArrowLeft size={14} />} label={t("portal.backToAdmin")} onClick={() => setMenuOpen(false)} brand />
               </>
             )}
 
@@ -362,7 +364,7 @@ export default function AgencySidebar() {
               onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
             >
               <LogOut size={14} />
-              Sign Out
+              {t("portal.signOut")}
             </button>
           </div>
         )}

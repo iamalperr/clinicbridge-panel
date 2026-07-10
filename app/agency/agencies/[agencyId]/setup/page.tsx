@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useAgencyWorkspace } from "@/components/agency/AgencyWorkspaceContext";
+import { useI18n } from "@/lib/i18n-context";
 import { subscribeToTreatments } from "@/lib/services/treatmentService";
 import { subscribeToAgencyClinics, subscribeToAgency } from "@/lib/services/agencyService";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import SectionCard from "@/components/ui/SectionCard";
 import { UI_COLORS } from "@/components/ui/ui-shared";
 import Link from "next/link";
 import {
@@ -27,6 +27,7 @@ interface SetupStep {
 
 export default function SetupPage() {
   const { agencyId } = useAgencyWorkspace();
+  const { t } = useI18n();
   const base = `/agency/agencies/${agencyId}`;
 
   const [agency, setAgency] = useState<Agency | null>(null);
@@ -66,13 +67,13 @@ export default function SetupPage() {
   const hasConsent = !!(agency?.privacyUrl);
 
   const steps: SetupStep[] = [
-    { key: "profile", label: "Acenta Profili", description: "Acenta adı, domain, desteklenen diller ve iletişim bilgileri.", icon: <Globe size={18} />, done: hasAgencyProfile, href: `${base}/settings` },
-    { key: "treatments", label: "Tedavi Kataloğu", description: "Acenta tarafından sunulan tedavileri tanımlayın.", icon: <Stethoscope size={18} />, done: treatments.length > 0, href: `${base}/treatments` },
-    { key: "clinics", label: "Klinik Ağı", description: "En az 1 klinik bağlayın.", icon: <Building2 size={18} />, done: clinics.length > 0, href: `${base}/clinics` },
-    { key: "matching", label: "AI Eşleştirme Kuralları", description: "Tedavi → klinik eşleştirme kurallarını tanımlayın.", icon: <Brain size={18} />, done: hasMatching, href: `${base}/matching` },
-    { key: "intake", label: "Ön Değerlendirme Akışı", description: "Tedavi bazlı soru akışlarını oluşturun.", icon: <MessageSquare size={18} />, done: hasIntakeFlow, href: `${base}/intake-flow` },
-    { key: "widget", label: "Widget Deneyimi", description: "Widget modu, özellikler ve embed kodunu ayarlayın.", icon: <Code size={18} />, done: hasWidget, href: `${base}/widget` },
-    { key: "consent", label: "KVKK/GDPR Onay URL", description: "Gizlilik politikası ve onay URL'sini girin.", icon: <Shield size={18} />, done: hasConsent, href: `${base}/settings` },
+    { key: "profile", label: t("portal.setup.agencyProfile"), description: t("portal.setup.agencyProfileDesc"), icon: <Globe size={18} />, done: hasAgencyProfile, href: `${base}/settings` },
+    { key: "treatments", label: t("portal.setup.treatmentCatalog"), description: t("portal.setup.treatmentCatalogDesc"), icon: <Stethoscope size={18} />, done: treatments.length > 0, href: `${base}/treatments` },
+    { key: "clinics", label: t("portal.setup.clinicNetwork"), description: t("portal.setup.clinicNetworkDesc"), icon: <Building2 size={18} />, done: clinics.length > 0, href: `${base}/clinics` },
+    { key: "matching", label: t("portal.setup.aiMatchingRules"), description: t("portal.setup.aiMatchingRulesDesc"), icon: <Brain size={18} />, done: hasMatching, href: `${base}/matching` },
+    { key: "intake", label: t("portal.setup.intakeFlowTitle"), description: t("portal.setup.intakeFlowDesc"), icon: <MessageSquare size={18} />, done: hasIntakeFlow, href: `${base}/intake-flow` },
+    { key: "widget", label: t("portal.setup.widgetExperience"), description: t("portal.setup.widgetExperienceDesc"), icon: <Code size={18} />, done: hasWidget, href: `${base}/widget` },
+    { key: "consent", label: t("portal.setup.consentUrl"), description: t("portal.setup.consentUrlDesc"), icon: <Shield size={18} />, done: hasConsent, href: `${base}/settings` },
   ];
 
   const completedSteps = steps.filter((s) => s.done).length;
@@ -94,11 +95,11 @@ export default function SetupPage() {
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
           <Rocket size={22} color="#10b981" />
           <h1 style={{ fontSize: 22, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.02em" }}>
-            Kurulum Sihirbazı
+            {t("portal.setup.title")}
           </h1>
         </div>
         <p style={{ fontSize: 14, color: UI_COLORS.textMuted }}>
-          {agency?.name || "Agency"} çalışma alanını aktif hale getirmek için aşağıdaki adımları tamamlayın.
+          {agency?.name || "Agency"} {t("portal.setup.subtitle")}
         </p>
       </div>
 
@@ -109,7 +110,7 @@ export default function SetupPage() {
       }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
           <span style={{ fontSize: 14, fontWeight: 700, color: UI_COLORS.textPrimary }}>
-            {progressPercent === 100 ? "✅ Kurulum Tamamlandı!" : `${completedSteps} / ${steps.length} adım tamamlandı`}
+            {progressPercent === 100 ? `✅ ${t("portal.setup.completed")}` : `${completedSteps} / ${steps.length} ${t("portal.setup.stepsCompleted")}`}
           </span>
           <span style={{ fontSize: 15, fontWeight: 800, color: progressPercent === 100 ? "#10b981" : "#f59e0b" }}>
             %{progressPercent}
@@ -143,7 +144,6 @@ export default function SetupPage() {
                 if (!step.done) e.currentTarget.style.borderColor = UI_COLORS.border;
               }}
             >
-              {/* Step Number */}
               <span style={{
                 width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
                 display: "flex", alignItems: "center", justifyContent: "center",
@@ -154,12 +154,10 @@ export default function SetupPage() {
                 {step.done ? <CheckCircle2 size={18} /> : idx + 1}
               </span>
 
-              {/* Icon */}
               <span style={{ color: step.done ? "#10b981" : UI_COLORS.textMuted, opacity: step.done ? 1 : 0.5, flexShrink: 0 }}>
                 {step.icon}
               </span>
 
-              {/* Text */}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{
                   fontSize: 14, fontWeight: 700,
@@ -173,7 +171,6 @@ export default function SetupPage() {
                 </p>
               </div>
 
-              {/* Action */}
               {!step.done && <ArrowRight size={16} color={UI_COLORS.textMuted} />}
             </div>
           </Link>
