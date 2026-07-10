@@ -2,6 +2,7 @@
 
 import { useAgencyWorkspace } from "@/components/agency/AgencyWorkspaceContext";
 import { useI18n } from "@/lib/i18n-context";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   subscribeToAgencyClinics,
@@ -21,7 +22,7 @@ import { UI_COLORS } from "@/components/ui/ui-shared";
 import {
   Building2, Plus, Trash2, Loader2, MapPin, Globe, Stethoscope,
   ExternalLink, Edit2, Shield, Star, Clock, Users2, DollarSign,
-  Link2, ChevronRight, X, Check,
+  Link2, ChevronRight, X, Check, FileText,
 } from "lucide-react";
 import type { AgencyClinic, TreatmentCategory, ClinicTreatmentPricing, PriceType } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES } from "@/lib/types/agency";
@@ -100,6 +101,7 @@ function ToggleSwitch({ label, checked, onChange }: { label: string; checked: bo
 export default function AgencyClinicsPage() {
   const { agencyId } = useAgencyWorkspace();
   const { t, language } = useI18n();
+  const router = useRouter();
 
   const [clinics, setClinics] = useState<AgencyClinic[]>([]);
   const [loading, setLoading] = useState(true);
@@ -500,6 +502,13 @@ export default function AgencyClinicsPage() {
                 display: "flex", gap: 6, justifyContent: "space-between",
               }}>
                 <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={(e) => { e.stopPropagation(); router.push(`/agency/agencies/${agencyId}/clinics/${clinic.id}`); }} style={{
+                    padding: "6px 12px", borderRadius: 6, border: `1px solid rgba(16,185,129,0.3)`,
+                    background: "rgba(16,185,129,0.06)", color: "#10b981", fontSize: 12, fontWeight: 600, cursor: "pointer",
+                    display: "flex", alignItems: "center", gap: 4,
+                  }}>
+                    <FileText size={12} /> {t("portal.clinics.profile.manageProfile")}
+                  </button>
                   <button onClick={(e) => { e.stopPropagation(); openEdit(clinic); }} style={{
                     padding: "6px 12px", borderRadius: 6, border: `1px solid ${UI_COLORS.border}`,
                     background: "transparent", color: UI_COLORS.textSecondary, fontSize: 12, fontWeight: 600, cursor: "pointer",

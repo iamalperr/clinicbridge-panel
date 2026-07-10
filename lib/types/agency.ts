@@ -108,20 +108,86 @@ export interface AgencyClinicLocation {
 
 export type AgencyClinicStatus = "active" | "paused" | "inactive";
 
+// ─── Clinic Profile Sub-Types ───────────────────────────────────────────────
+
+export interface ClinicOverview {
+  shortDescription?: string;
+  longDescription?: string;
+  specialties?: string[];
+  highlightedTreatments?: string[];
+  targetPatientProfile?: string;
+  healthTourismExperience?: string;
+  internationalPatientSupport?: boolean;
+  accommodationSupport?: boolean;
+  transferSupport?: boolean;
+  onlineConsultation?: boolean;
+  averageResponseTime?: string;
+  clinicNotes?: string;
+}
+
+export interface ClinicKnowledgeBase {
+  summary?: string;
+  detailedInfo?: string;
+  keySellingPoints?: string[];
+  doNotSay?: string[];
+  treatmentNotes?: string;
+  routingNotes?: string;
+  pricingNotes?: string;
+  medicalDisclaimer?: string;
+  consentNotes?: string;
+}
+
+export interface ClinicLocationDetails {
+  city: string;
+  country: string;
+  district?: string;
+  address?: string;
+  mapLink?: string;
+  nearestAirport?: string;
+  transferSupport?: boolean;
+  accommodationSupport?: boolean;
+  onlineConsultation?: boolean;
+}
+
+export interface ClinicQuoteSettings {
+  quoteEnabled?: boolean;
+  quoteContactEmail?: string;
+  defaultResponseSLA?: number;
+  requiredPatientFields?: string[];
+  requiredDocuments?: string[];
+  consentRequired?: boolean;
+  canReceiveLead?: boolean;
+  manualApprovalRequired?: boolean;
+}
+
+export interface ClinicFAQ {
+  id?: string;
+  question: string;
+  answer: string;
+  treatmentCategory?: string;
+  showOnPublicProfile?: boolean;
+  useInAIAnswers?: boolean;
+  createdAt: any;
+  updatedAt: any;
+}
+
+// ─── Agency Clinic ──────────────────────────────────────────────────────────
+
 export interface AgencyClinic {
   id?: string; // Firestore doc ID
   clinicId: string;
   clinicName: string;
-  clinicSlug?: string; // URL-friendly slug for profile page routing
+  clinicSlug?: string;
   clinicType?: "clinicbridge" | "external";
   branch?: string;
   category?: string;
   location: AgencyClinicLocation;
-  profileUrl?: string; // e.g. https://www.feelinhealthy.com/medicalcenter/...
+  profileUrl?: string;
   website?: string;
   whatsapp?: string;
   contactEmail?: string;
   phone?: string;
+  // Legacy flat fields (kept for backward compat)
   shortDescription?: string;
   longDescription?: string;
   supportedLanguages: string[];
@@ -135,13 +201,18 @@ export interface AgencyClinic {
   experienceYears?: number;
   status: AgencyClinicStatus;
   priority: number;
-  responseSLA?: number; // hours
+  responseSLA?: number;
   leadCapacity?: number;
   quoteEnabled?: boolean;
   quoteContactEmail?: string;
   showInRecommendations?: boolean;
   showPriceRange?: boolean;
   showProfileLink?: boolean;
+  // Nested profile data (single doc read)
+  overview?: ClinicOverview;
+  knowledgeBase?: ClinicKnowledgeBase;
+  locationDetails?: ClinicLocationDetails;
+  quoteSettings?: ClinicQuoteSettings;
   addedAt: any;
   updatedAt: any;
 }
@@ -156,9 +227,13 @@ export interface ClinicTreatmentPricing {
   treatmentName: string;
   priceMin: number;
   priceMax: number;
-  currency: string; // "EUR" | "USD" | "TRY"
+  currency: string;
   priceType: PriceType;
   notes?: string;
+  packageIncludes?: string[];
+  packageExcludes?: string[];
+  showOnPublicProfile?: boolean;
+  allowQuoteRequest?: boolean;
   status: "active" | "inactive";
   createdAt: any;
   updatedAt: any;

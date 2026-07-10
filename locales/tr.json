@@ -348,6 +348,89 @@
         "success": "Klinik acentaya eklendi.",
         "error": "Klinik eklenemedi. Lütfen tekrar deneyin.",
         "updated": "Klinik bilgileri güncellendi."
+      },
+      "profile": {
+        "title": "Klinik Profili",
+        "manageProfile": "Profili Yönet",
+        "backToClinics": "Kliniklere Dön",
+        "saved": "Profil kaydedildi.",
+        "saveFailed": "Profil kaydedilemedi.",
+        "tabs": {
+          "general": "Genel Bilgiler",
+          "overview": "Klinik Özeti",
+          "treatments": "Tedaviler",
+          "pricing": "Fiyatlandırma",
+          "knowledgeBase": "AI Bilgi Kütüphanesi",
+          "faq": "Sık Sorulan Sorular",
+          "location": "Lokasyon",
+          "quoteSettings": "Teklif Ayarları"
+        },
+        "overview": {
+          "shortDescription": "Kısa Açıklama",
+          "longDescription": "Uzun Açıklama",
+          "specialties": "Uzmanlık Alanları",
+          "specialtiesPlaceholder": "Dental Implant, Hollywood Smile, Zirkonyum",
+          "highlightedTreatments": "Öne Çıkan Tedaviler",
+          "highlightedPlaceholder": "All-on-4, All-on-6, Teeth Whitening",
+          "targetPatientProfile": "Hedef Hasta Profili",
+          "healthTourismExperience": "Sağlık Turizmi Deneyimi",
+          "internationalSupport": "Uluslararası Hasta Desteği",
+          "accommodationSupport": "Konaklama Desteği",
+          "transferSupport": "Transfer Desteği",
+          "onlineConsultation": "Online Ön Görüşme",
+          "averageResponseTime": "Ortalama Yanıt Süresi",
+          "clinicNotes": "Klinik Notları"
+        },
+        "knowledgeBase": {
+          "title": "AI Bilgi Kütüphanesi",
+          "description": "AI'ın klinik hakkında cevap verirken kullanacağı bilgiler.",
+          "summary": "Klinik Hakkında Kısa Bilgi",
+          "detailedInfo": "Detaylı Bilgi",
+          "keySellingPoints": "AI Cevaplarında Öne Çıkarılacak Noktalar",
+          "keyPointsPlaceholder": "Her satıra bir madde yazın",
+          "doNotSay": "AI Cevaplarında Söylenmemesi Gerekenler",
+          "doNotSayPlaceholder": "Kesin teşhis koyma, Garanti verme",
+          "treatmentNotes": "Tedavi Bazlı Açıklamalar",
+          "routingNotes": "Hasta Yönlendirme Notları",
+          "pricingNotes": "Fiyatlandırma Notları",
+          "medicalDisclaimer": "Medikal Uyarı Notu",
+          "consentNotes": "KVKK/GDPR Paylaşım Notu"
+        },
+        "faq": {
+          "title": "Sık Sorulan Sorular",
+          "addFaq": "Soru Ekle",
+          "editFaq": "Soruyu Düzenle",
+          "question": "Soru",
+          "answer": "Cevap",
+          "treatmentCategory": "Tedavi Kategorisi (Opsiyonel)",
+          "showOnPublicProfile": "Public Profilde Göster",
+          "useInAIAnswers": "AI Cevaplarında Kullan",
+          "noFaqs": "Henüz sık sorulan soru eklenmedi.",
+          "deleteConfirm": "Bu soruyu silmek istiyor musunuz?"
+        },
+        "location": {
+          "title": "Lokasyon Bilgileri",
+          "city": "Şehir",
+          "country": "Ülke",
+          "district": "İlçe / Bölge",
+          "address": "Açık Adres",
+          "mapLink": "Harita Linki",
+          "nearestAirport": "Yakın Havalimanı",
+          "transferSupport": "Transfer Desteği Var",
+          "accommodationSupport": "Konaklama Desteği Var",
+          "onlineConsultation": "Online Görüşme Var"
+        },
+        "quoteSettings": {
+          "title": "Teklif Ayarları",
+          "quoteEnabled": "Teklif Talebi Alabilir",
+          "quoteContactEmail": "Teklif İletişim E-postası",
+          "defaultResponseSLA": "Varsayılan Yanıt SLA (saat)",
+          "requiredPatientFields": "Zorunlu Hasta Bilgileri",
+          "requiredDocuments": "Gerekli Belgeler",
+          "consentRequired": "Onay Gerekli",
+          "canReceiveLead": "Lead Alabilir",
+          "manualApprovalRequired": "Manuel Onay Gerekli"
+        }
       }
     },
     "treatments": {

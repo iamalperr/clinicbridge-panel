@@ -7,7 +7,7 @@ import {
   MapPin, Star, Globe2, Hotel, Car, Heart, Stethoscope, Eye, Baby,
   Scissors, Sparkles, ChevronRight, ArrowLeft, CheckCircle2,
   Building2, Clock, Award, Shield, Languages, ExternalLink, Send,
-  Phone, Mail, Loader2, X,
+  Phone, Mail, Loader2, X, DollarSign, HelpCircle,
 } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -35,6 +35,12 @@ interface ClinicProfile {
   externalProfileUrl?: string;
   accreditations?: string[];
   services?: string[];
+  // Live profile data
+  overview?: any;
+  knowledgeBase?: any;
+  locationDetails?: any;
+  pricing?: any[];
+  faq?: any[];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -84,6 +90,15 @@ const TX: Record<Lang, Record<string, string>> = {
     "footer.rights": "Tüm hakları saklıdır.",
     "footer.poweredBy": "ClinicBridge AI tarafından desteklenmektedir",
     "profile.viewExternal": "FeelinHealthy Profilini Gör",
+    "pricing.header": "Tedavi Fiyat Aralıkları",
+    "pricing.treatment": "Tedavi",
+    "pricing.range": "Fiyat Aralığı",
+    "pricing.type": "Fiyat Türü",
+    "pricing.estimate": "Tahmini",
+    "pricing.startingFrom": "Başlangıç",
+    "pricing.package": "Paket",
+    "pricing.perUnit": "Birim Başı",
+    "faq.title": "Sık Sorulan Sorular",
   },
   en: {
     "back": "Back to Clinics",
@@ -127,6 +142,15 @@ const TX: Record<Lang, Record<string, string>> = {
     "footer.rights": "All rights reserved.",
     "footer.poweredBy": "Powered by ClinicBridge AI",
     "profile.viewExternal": "View FeelinHealthy Profile",
+    "pricing.header": "Treatment Price Ranges",
+    "pricing.treatment": "Treatment",
+    "pricing.range": "Price Range",
+    "pricing.type": "Price Type",
+    "pricing.estimate": "Estimate",
+    "pricing.startingFrom": "Starting from",
+    "pricing.package": "Package",
+    "pricing.perUnit": "Per Unit",
+    "faq.title": "Frequently Asked Questions",
   },
 };
 
@@ -173,6 +197,8 @@ export default function ClinicProfilePage() {
   const [leadModal, setLeadModal] = useState(false);
   const [leadDone, setLeadDone] = useState(false);
   const [leadSending, setLeadSending] = useState(false);
+  const [clinicPricing, setClinicPricing] = useState<any[]>([]);
+  const [clinicFaqs, setClinicFaqs] = useState<any[]>([]);
 
   const t = (k: string) => TX[lang][k] || k;
 
@@ -191,13 +217,21 @@ export default function ClinicProfilePage() {
               location: c.location ? `${c.location.city}, ${c.location.country}` : "",
               rating: c.rating || 4.8, reviews: c.reviewCount || 0, priceRange: "",
               languages: (c.supportedLanguages || []).map((l: string) => l.toUpperCase()),
-              accommodation: true, transfer: true,
+              accommodation: c.overview?.accommodationSupport || c.locationDetails?.accommodationSupport || true,
+              transfer: c.overview?.transferSupport || c.locationDetails?.transferSupport || true,
               image: "linear-gradient(135deg, #0D9488 0%, #065F46 100%)",
-              specialties: (c.subTreatments || []).map((s: string) => ({ tr: s, en: s })),
-              shortDescription: c.shortDescription ? { tr: c.shortDescription, en: c.shortDescription } : undefined,
-              longDescription: c.longDescription ? { tr: c.longDescription, en: c.longDescription } : undefined,
+              specialties: (c.subTreatments || c.overview?.highlightedTreatments || []).map((s: string) => ({ tr: s, en: s })),
+              shortDescription: (c.overview?.shortDescription || c.shortDescription)
+                ? { tr: c.overview?.shortDescription || c.shortDescription, en: c.overview?.shortDescription || c.shortDescription }
+                : undefined,
+              longDescription: (c.overview?.longDescription || c.longDescription)
+                ? { tr: c.overview?.longDescription || c.longDescription, en: c.overview?.longDescription || c.longDescription }
+                : undefined,
               externalProfileUrl: c.profileUrl || undefined,
               accreditations: c.accreditation || [], services: [],
+              overview: c.overview || {},
+              knowledgeBase: c.knowledgeBase || {},
+              locationDetails: c.locationDetails || {},
             }));
             setAllClinics(mapped);
             const found = mapped.find((c: ClinicProfile) => c.clinicSlug === slug);
@@ -211,6 +245,21 @@ export default function ClinicProfilePage() {
       setLoading(false);
     })();
   }, [slug]);
+
+  // Fetch pricing & FAQ sub-collections for the live clinic
+  useEffect(() => {
+    if (!clinic?.id) return;
+    (async () => {
+      try {
+        const [pRes, fRes] = await Promise.all([
+          fetch(`/api/public/agency/feelinhealthy/clinics/${clinic.id}/pricing`).catch(() => null),
+          fetch(`/api/public/agency/feelinhealthy/clinics/${clinic.id}/faq`).catch(() => null),
+        ]);
+        if (pRes?.ok) { const d = await pRes.json(); setClinicPricing(d.pricing || []); }
+        if (fRes?.ok) { const d = await fRes.json(); setClinicFaqs(d.faq || []); }
+      } catch { /* silent */ }
+    })();
+  }, [clinic?.id]);
 
   const handleLeadSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -365,6 +414,62 @@ export default function ClinicProfilePage() {
                   {clinic.services.map((s, i) => (
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, background: C.bg }}>
                       <CheckCircle2 size={14} color="#22c55e" /><span style={{ fontSize: 13, color: C.text }}>{s}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* PRICING TABLE */}
+            {clinicPricing.length > 0 && (
+              <section className="fu" style={{ marginBottom: 48 }}>
+                <h2 style={{ fontSize: 22, fontWeight: 800, color: C.navy, marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
+                  <DollarSign size={20} color={C.teal} /> {t("pricing.header")}
+                </h2>
+                <p style={{ fontSize: 14, color: C.textSec, marginBottom: 20 }}>{t("pricing.note")}</p>
+                <div style={{ borderRadius: 12, border: `1px solid ${C.border}`, overflow: "hidden" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                    <thead>
+                      <tr style={{ background: C.bg }}>
+                        <th style={{ textAlign: "left", padding: "12px 16px", fontWeight: 700, color: C.navy }}>{t("pricing.treatment")}</th>
+                        <th style={{ textAlign: "right", padding: "12px 16px", fontWeight: 700, color: C.navy }}>{t("pricing.range")}</th>
+                        <th style={{ textAlign: "center", padding: "12px 16px", fontWeight: 700, color: C.navy }}>{t("pricing.type")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clinicPricing.map((p: any, i: number) => {
+                        const ptKey = p.priceType === "starting_from" ? "startingFrom" : p.priceType === "per_unit" ? "perUnit" : p.priceType || "estimate";
+                        return (
+                          <tr key={i} style={{ borderTop: `1px solid ${C.border}` }}>
+                            <td style={{ padding: "12px 16px", fontWeight: 600, color: C.text }}>{p.treatmentName}</td>
+                            <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 700, color: C.teal }}>
+                              {p.priceMin}–{p.priceMax} {p.currency}
+                            </td>
+                            <td style={{ padding: "12px 16px", textAlign: "center" }}>
+                              <span style={{ padding: "3px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: C.tealBg, color: C.teal }}>
+                                {t(`pricing.${ptKey}`)}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+
+            {/* FAQ */}
+            {clinicFaqs.length > 0 && (
+              <section className="fu" style={{ marginBottom: 48 }}>
+                <h2 style={{ fontSize: 22, fontWeight: 800, color: C.navy, marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
+                  <HelpCircle size={20} color={C.teal} /> {t("faq.title")}
+                </h2>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {clinicFaqs.map((faq: any, i: number) => (
+                    <div key={i} style={{ padding: "16px 20px", borderRadius: 12, border: `1px solid ${C.border}`, background: C.bg }}>
+                      <p style={{ fontSize: 14, fontWeight: 700, color: C.navy, marginBottom: 8 }}>{faq.question}</p>
+                      <p style={{ fontSize: 13, color: C.textSec, lineHeight: 1.7 }}>{faq.answer}</p>
                     </div>
                   ))}
                 </div>

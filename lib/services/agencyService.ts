@@ -303,3 +303,88 @@ export async function getClinicBridgeClinics(): Promise<
     };
   });
 }
+
+// ─── Clinic Profile Management ──────────────────────────────────────────────
+
+import type {
+  ClinicOverview,
+  ClinicKnowledgeBase,
+  ClinicLocationDetails,
+  ClinicQuoteSettings,
+  ClinicFAQ,
+} from "@/lib/types/agency";
+
+export async function updateClinicProfile(
+  agencyId: string,
+  clinicDocId: string,
+  data: {
+    overview?: ClinicOverview;
+    knowledgeBase?: ClinicKnowledgeBase;
+    locationDetails?: ClinicLocationDetails;
+    quoteSettings?: ClinicQuoteSettings;
+    [key: string]: any;
+  }
+): Promise<void> {
+  const cleanData = stripUndefined(data as Record<string, any>);
+  await updateDoc(doc(db, "agencies", agencyId, "clinics", clinicDocId), {
+    ...cleanData,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// ─── Clinic FAQ CRUD ────────────────────────────────────────────────────────
+
+export function subscribeToClinicFAQ(
+  agencyId: string,
+  clinicDocId: string,
+  onData: (faqs: ClinicFAQ[]) => void
+): () => void {
+  const q = query(
+    collection(db, "agencies", agencyId, "clinics", clinicDocId, "faq"),
+    orderBy("createdAt", "desc")
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      onData(snap.docs.map((d) => ({ id: d.id, ...d.data() })) as ClinicFAQ[]);
+    },
+    () => onData([])
+  );
+}
+
+export async function addClinicFAQ(
+  agencyId: string,
+  clinicDocId: string,
+  data: Omit<ClinicFAQ, "id" | "createdAt" | "updatedAt">
+): Promise<string> {
+  const colRef = collection(db, "agencies", agencyId, "clinics", clinicDocId, "faq");
+  const docRef = doc(colRef);
+  const cleanData = stripUndefined(data as Record<string, any>);
+  await setDoc(docRef, {
+    ...cleanData,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return docRef.id;
+}
+
+export async function updateClinicFAQ(
+  agencyId: string,
+  clinicDocId: string,
+  faqId: string,
+  data: Partial<ClinicFAQ>
+): Promise<void> {
+  const cleanData = stripUndefined(data as Record<string, any>);
+  await updateDoc(doc(db, "agencies", agencyId, "clinics", clinicDocId, "faq", faqId), {
+    ...cleanData,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteClinicFAQ(
+  agencyId: string,
+  clinicDocId: string,
+  faqId: string
+): Promise<void> {
+  await deleteDoc(doc(db, "agencies", agencyId, "clinics", clinicDocId, "faq", faqId));
+}
