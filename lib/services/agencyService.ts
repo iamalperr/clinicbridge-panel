@@ -115,14 +115,29 @@ export function subscribeToAgencyClinics(
   );
 }
 
+// Helper: recursively strip undefined values (Firestore rejects them)
+function stripUndefined(obj: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === undefined) continue;
+    if (value !== null && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date) && typeof value.toDate !== "function") {
+      result[key] = stripUndefined(value);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
 export async function addClinicToAgency(
   agencyId: string,
   clinicData: Omit<AgencyClinic, "id" | "addedAt" | "updatedAt">
 ): Promise<string> {
   const colRef = collection(db, "agencies", agencyId, "clinics");
   const docRef = doc(colRef);
+  const cleanData = stripUndefined(clinicData as Record<string, any>);
   await setDoc(docRef, {
-    ...clinicData,
+    ...cleanData,
     addedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -141,8 +156,9 @@ export async function updateAgencyClinic(
   docId: string,
   data: Partial<AgencyClinic>
 ): Promise<void> {
+  const cleanData = stripUndefined(data as Record<string, any>);
   await updateDoc(doc(db, "agencies", agencyId, "clinics", docId), {
-    ...data,
+    ...cleanData,
     updatedAt: serverTimestamp(),
   });
 }

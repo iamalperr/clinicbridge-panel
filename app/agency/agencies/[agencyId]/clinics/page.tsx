@@ -218,21 +218,14 @@ export default function AgencyClinicsPage() {
       .replace(/-+/g, "-")
       .replace(/^-|-$/g, "");
 
-    const payload: Omit<AgencyClinic, "id" | "addedAt" | "updatedAt"> = {
+    // Build payload — Firestore rejects undefined values, so we only include non-empty optional fields
+    const payload: Record<string, any> = {
       clinicId: form.clinicId || `ext_${Date.now()}`,
       clinicName: form.clinicName,
       clinicSlug,
       clinicType: form.clinicType,
-      branch: form.branch || undefined,
       category: form.category,
-      location: { city: form.city, country: form.country, address: form.address || undefined },
-      profileUrl: form.profileUrl || undefined,
-      website: form.website || undefined,
-      contactEmail: form.contactEmail || undefined,
-      phone: form.phone || undefined,
-      whatsapp: form.whatsapp || undefined,
-      shortDescription: form.shortDescription || undefined,
-      longDescription: form.longDescription || undefined,
+      location: { city: form.city, country: form.country },
       supportedLanguages: form.supportedLanguages,
       treatmentCategories: form.treatmentCategories,
       subTreatments: form.subTreatments ? form.subTreatments.split(",").map(s => s.trim()).filter(Boolean) : [],
@@ -240,27 +233,57 @@ export default function AgencyClinicsPage() {
       status: "active",
       priority: Number(form.priorityScore) || 80,
       responseSLA: Number(form.responseSLA) || 24,
-      leadCapacity: form.leadCapacity ? Number(form.leadCapacity) : undefined,
       quoteEnabled: form.quoteEnabled,
-      quoteContactEmail: form.quoteContactEmail || undefined,
       showInRecommendations: form.showInRecommendations,
       showPriceRange: form.showPriceRange,
       showProfileLink: form.showProfileLink,
     };
+
+    // Only add optional fields if they have values (prevents Firestore undefined error)
+    if (form.branch) payload.branch = form.branch;
+    if (form.address) payload.location.address = form.address;
+    if (form.profileUrl) payload.profileUrl = form.profileUrl;
+    if (form.website) payload.website = form.website;
+    if (form.contactEmail) payload.contactEmail = form.contactEmail;
+    if (form.phone) payload.phone = form.phone;
+    if (form.whatsapp) payload.whatsapp = form.whatsapp;
+    if (form.shortDescription) payload.shortDescription = form.shortDescription;
+    if (form.longDescription) payload.longDescription = form.longDescription;
+    if (form.leadCapacity) payload.leadCapacity = Number(form.leadCapacity);
+    if (form.quoteContactEmail) payload.quoteContactEmail = form.quoteContactEmail;
+
+    console.log("[AgencyClinics] Saving with agencyId:", agencyId, "payload:", payload);
+
     try {
       if (editingId) {
         await updateAgencyClinic(agencyId, editingId, payload);
       } else {
-        await addClinicToAgency(agencyId, payload);
+        await addClinicToAgency(agencyId, payload as any);
       }
       setShowAddModal(false);
       setForm(emptyForm());
       setSaveError(null);
       setToast({ type: "success", message: t("portal.clinics.toast.success") || "Clinic added to agency." });
       setTimeout(() => setToast(null), 4000);
-    } catch (err) {
+    } catch (err: any) {
+      const errMsg = err?.message || err?.code || String(err);
       console.error("[AgencyClinics] Save failed:", err);
-      setSaveError(t("portal.clinics.toast.error") || "Failed to add clinic. Please try again.");
+      console.error("[AgencyClinics] Error message:", errMsg);
+      console.error("[AgencyClinics] agencyId:", agencyId);
+      console.error("[AgencyClinics] Payload:", JSON.stringify(payload, null, 2));
+
+      // Show specific error to user
+      let userError = t("portal.clinics.toast.error") || "Failed to add clinic.";
+      if (errMsg.includes("permission-denied") || errMsg.includes("PERMISSION_DENIED")) {
+        userError = t("portal.clinics.error.permissionDenied") || "Permission denied. Check Firestore rules.";
+      } else if (errMsg.includes("undefined")) {
+        userError = t("portal.clinics.error.invalidData") || "Invalid data in payload.";
+      } else if (errMsg.includes("not-found") || errMsg.includes("NOT_FOUND")) {
+        userError = t("portal.clinics.error.agencyNotFound") || "Agency not found.";
+      } else if (errMsg.includes("unavailable") || errMsg.includes("network")) {
+        userError = t("portal.clinics.error.networkError") || "Network error. Please try again.";
+      }
+      setSaveError(`${userError} (${errMsg})`);
     }
     setSaving(false);
   };

@@ -338,7 +338,11 @@
         "nameRequired": "Clinic name is required.",
         "locationRequired": "City and country are required.",
         "categoryRequired": "At least one treatment category must be selected.",
-        "languageRequired": "At least one supported language must be selected."
+        "languageRequired": "At least one supported language must be selected.",
+        "permissionDenied": "Permission denied. Check database access rules.",
+        "invalidData": "Could not save clinic due to invalid or missing data.",
+        "agencyNotFound": "Agency not found. Please refresh the page and try again.",
+        "networkError": "Network error occurred. Please try again."
       },
       "toast": {
         "success": "Clinic added to agency.",

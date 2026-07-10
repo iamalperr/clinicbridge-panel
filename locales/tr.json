@@ -338,7 +338,11 @@
         "nameRequired": "Klinik adı zorunludur.",
         "locationRequired": "Şehir ve ülke zorunludur.",
         "categoryRequired": "En az bir tedavi kategorisi seçilmelidir.",
-        "languageRequired": "En az bir desteklenen dil seçilmelidir."
+        "languageRequired": "En az bir desteklenen dil seçilmelidir.",
+        "permissionDenied": "Klinik ekleme yetkiniz yok veya veritabanı izni engellendi.",
+        "invalidData": "Eksik veya geçersiz veri nedeniyle klinik kaydedilemedi.",
+        "agencyNotFound": "Acenta bulunamadı. Lütfen sayfayı yenileyip tekrar deneyin.",
+        "networkError": "Bağlantı hatası oluştu. Lütfen tekrar deneyin."
       },
       "toast": {
         "success": "Klinik acentaya eklendi.",
