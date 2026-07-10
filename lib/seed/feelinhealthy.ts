@@ -28,57 +28,77 @@ const CLINICS = [
     clinicId: "hospitadent-pendik",
     clinicName: "Hospitadent Dental Group Pendik",
     clinicType: "external",
+    category: "dental",
     profileUrl: "https://www.feelinhealthy.com/medicalcenter/hospitadent-dental-group-pendik",
     website: "https://www.hospitadent.com",
+    contactEmail: "info@hospitadent.com",
+    shortDescription: "One of Turkey's largest dental hospital chains with 150+ dentists and JCI accreditation.",
     location: { city: "Istanbul", country: "Turkey", address: "Pendik" },
-    supportedLanguages: ["en", "tr"],
+    supportedLanguages: ["en", "tr", "de", "ar"],
     treatmentCategories: ["dental"],
-    subTreatments: ["Dental Implant", "Zirconium Crowns", "Hollywood Smile", "Root Canal", "Teeth Whitening"],
-    priority: 1, responseSLA: 12, leadCapacity: 50, status: "active",
+    subTreatments: ["Dental Implant", "Zirconium Crowns", "Hollywood Smile", "All-on-4", "All-on-6", "Root Canal", "Teeth Whitening"],
+    targetPatientCountries: ["Germany", "UK", "Netherlands", "France"],
+    accreditation: ["JCI", "ISO 9001"],
+    doctorCount: 150,
+    experienceYears: 17,
+    priority: 90, responseSLA: 24, leadCapacity: 20, status: "active",
+    quoteEnabled: true,
+    quoteContactEmail: "quotes@hospitadent.com",
+    showInRecommendations: true,
+    showPriceRange: true,
+    showProfileLink: true,
   },
   {
     clinicId: "demo-dental-istanbul",
     clinicName: "Demo Dental Istanbul",
     clinicType: "external",
+    category: "dental",
     profileUrl: "https://www.feelinhealthy.com/medicalcenter/demo-dental-istanbul",
     location: { city: "Istanbul", country: "Turkey" },
     supportedLanguages: ["en", "tr", "de"],
     treatmentCategories: ["dental"],
     subTreatments: ["Dental Implant", "Zirconium Crowns"],
-    priority: 2, responseSLA: 24, leadCapacity: 30, status: "active",
+    priority: 75, responseSLA: 24, leadCapacity: 30, status: "active",
+    showInRecommendations: true, showPriceRange: true, showProfileLink: true, quoteEnabled: true,
   },
   {
     clinicId: "demo-hair-istanbul",
     clinicName: "Demo Hair Transplant Istanbul",
     clinicType: "external",
+    category: "hair",
     profileUrl: "https://www.feelinhealthy.com/medicalcenter/demo-hair-istanbul",
     location: { city: "Istanbul", country: "Turkey" },
     supportedLanguages: ["en", "tr", "de", "fr"],
     treatmentCategories: ["hair_transplant"],
     subTreatments: ["FUE Hair Transplant", "DHI Hair Transplant", "Beard Transplant"],
-    priority: 1, responseSLA: 12, leadCapacity: 40, status: "active",
+    priority: 85, responseSLA: 12, leadCapacity: 40, status: "active",
+    showInRecommendations: true, showPriceRange: true, showProfileLink: true, quoteEnabled: true,
   },
   {
     clinicId: "demo-aesthetic-istanbul",
     clinicName: "Demo Aesthetic Clinic Istanbul",
     clinicType: "external",
+    category: "aesthetic",
     profileUrl: "https://www.feelinhealthy.com/medicalcenter/demo-aesthetic-istanbul",
     location: { city: "Istanbul", country: "Turkey" },
     supportedLanguages: ["en", "tr"],
     treatmentCategories: ["aesthetic_surgery"],
     subTreatments: ["Rhinoplasty", "Breast Augmentation", "Liposuction"],
-    priority: 1, responseSLA: 24, leadCapacity: 20, status: "active",
+    priority: 80, responseSLA: 24, leadCapacity: 20, status: "active",
+    showInRecommendations: true, showPriceRange: true, showProfileLink: true, quoteEnabled: true,
   },
   {
     clinicId: "demo-ivf-istanbul",
     clinicName: "Demo IVF Clinic Istanbul",
     clinicType: "external",
+    category: "ivf",
     profileUrl: "https://www.feelinhealthy.com/medicalcenter/demo-ivf-istanbul",
     location: { city: "Istanbul", country: "Turkey" },
     supportedLanguages: ["en", "tr"],
     treatmentCategories: ["ivf", "check_up"],
     subTreatments: ["IVF Treatment", "Health Check-Up"],
-    priority: 1, responseSLA: 24, leadCapacity: 15, status: "active",
+    priority: 80, responseSLA: 24, leadCapacity: 15, status: "active",
+    showInRecommendations: true, showPriceRange: true, showProfileLink: true, quoteEnabled: true,
   },
 ];
 
@@ -174,6 +194,7 @@ export async function seedFeelinHealthy(agencyId: string): Promise<{
   }
 
   // 2. Seed Clinics
+  const clinicDocIds: Record<string, string> = {};
   for (const c of CLINICS) {
     const docRef = doc(collection(db, "agencies", agencyId, "clinics"));
     await setDoc(docRef, {
@@ -181,7 +202,29 @@ export async function seedFeelinHealthy(agencyId: string): Promise<{
       addedAt: ts,
       updatedAt: ts,
     });
+    clinicDocIds[c.clinicId] = docRef.id;
     clinicCount++;
+  }
+
+  // 2b. Seed Hospitadent clinic-level pricing (subcollection)
+  const hospitadentDocId = clinicDocIds["hospitadent-pendik"];
+  if (hospitadentDocId) {
+    const hospPricing = [
+      { treatmentName: "Dental Implant", priceMin: 400, priceMax: 900, currency: "EUR", priceType: "average" },
+      { treatmentName: "Zirconium Crown", priceMin: 180, priceMax: 350, currency: "EUR", priceType: "per_unit" },
+      { treatmentName: "Hollywood Smile", priceMin: 2500, priceMax: 6000, currency: "EUR", priceType: "package" },
+    ];
+    for (const hp of hospPricing) {
+      const pRef = doc(collection(db, "agencies", agencyId, "clinics", hospitadentDocId, "pricing"));
+      await setDoc(pRef, {
+        agencyClinicId: hospitadentDocId,
+        ...hp,
+        notes: undefined,
+        status: "active",
+        createdAt: ts,
+        updatedAt: ts,
+      });
+    }
   }
 
   // 3. Seed Global Pricing (from treatment averages)

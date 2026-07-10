@@ -119,17 +119,47 @@ export interface AgencyClinic {
   profileUrl?: string; // e.g. https://www.feelinhealthy.com/medicalcenter/...
   website?: string;
   whatsapp?: string;
+  contactEmail?: string;
+  phone?: string;
+  shortDescription?: string;
+  longDescription?: string;
   supportedLanguages: string[];
   treatmentCategories: TreatmentCategory[];
   subTreatments?: string[];
+  targetPatientCountries?: string[];
   accreditation?: string[];
   rating?: number;
   reviewCount?: number;
+  doctorCount?: number;
+  experienceYears?: number;
   status: AgencyClinicStatus;
   priority: number;
   responseSLA?: number; // hours
   leadCapacity?: number;
+  quoteEnabled?: boolean;
+  quoteContactEmail?: string;
+  showInRecommendations?: boolean;
+  showPriceRange?: boolean;
+  showProfileLink?: boolean;
   addedAt: any;
+  updatedAt: any;
+}
+
+// ─── Clinic Treatment Pricing ───────────────────────────────────────────────
+
+export type PriceType = "average" | "starting_from" | "package" | "per_unit";
+
+export interface ClinicTreatmentPricing {
+  id?: string;
+  agencyClinicId: string;
+  treatmentName: string;
+  priceMin: number;
+  priceMax: number;
+  currency: string; // "EUR" | "USD" | "TRY"
+  priceType: PriceType;
+  notes?: string;
+  status: "active" | "inactive";
+  createdAt: any;
   updatedAt: any;
 }
 

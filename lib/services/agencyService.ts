@@ -212,3 +212,76 @@ export function subscribeToAgencyDashboard(
     }
   );
 }
+
+// ─── Clinic Treatment Pricing ───────────────────────────────────────────────
+
+import type { ClinicTreatmentPricing } from "@/lib/types/agency";
+
+export function subscribeToClinicPricing(
+  agencyId: string,
+  clinicDocId: string,
+  onData: (pricing: ClinicTreatmentPricing[]) => void
+): () => void {
+  const q = query(
+    collection(db, "agencies", agencyId, "clinics", clinicDocId, "pricing"),
+    orderBy("treatmentName", "asc")
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      onData(snap.docs.map((d) => ({ id: d.id, ...d.data() })) as ClinicTreatmentPricing[]);
+    },
+    () => onData([])
+  );
+}
+
+export async function addClinicPricing(
+  agencyId: string,
+  clinicDocId: string,
+  data: Omit<ClinicTreatmentPricing, "id" | "createdAt" | "updatedAt">
+): Promise<string> {
+  const colRef = collection(db, "agencies", agencyId, "clinics", clinicDocId, "pricing");
+  const docRef = doc(colRef);
+  await setDoc(docRef, {
+    ...data,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return docRef.id;
+}
+
+export async function updateClinicPricing(
+  agencyId: string,
+  clinicDocId: string,
+  pricingId: string,
+  data: Partial<ClinicTreatmentPricing>
+): Promise<void> {
+  await updateDoc(doc(db, "agencies", agencyId, "clinics", clinicDocId, "pricing", pricingId), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteClinicPricing(
+  agencyId: string,
+  clinicDocId: string,
+  pricingId: string
+): Promise<void> {
+  await deleteDoc(doc(db, "agencies", agencyId, "clinics", clinicDocId, "pricing", pricingId));
+}
+
+// ─── ClinicBridge Clinic Listing (for link mode) ────────────────────────────
+
+export async function getClinicBridgeClinics(): Promise<
+  { id: string; name: string; city?: string }[]
+> {
+  const snap = await getDocs(collection(db, "clinicSettings"));
+  return snap.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      name: data.clinicName || data.name || d.id,
+      city: data.city || data.location?.city || undefined,
+    };
+  });
+}
