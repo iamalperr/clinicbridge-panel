@@ -1,0 +1,1080 @@
+"use client";
+
+import { useState, useRef, useEffect } from "react";
+import {
+  Search, MapPin, Stethoscope, Star, Globe2, Hotel, Car, MessageSquare,
+  ChevronRight, Send, Bot, User, Heart, Eye, Baby, Scissors, Sparkles,
+  Phone, Mail, Shield, CheckCircle2, ArrowRight, Menu, X, Languages,
+  Building2, Clock, Award, TrendingUp, Loader2, FileText,
+} from "lucide-react";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LANGUAGE SYSTEM
+// ═══════════════════════════════════════════════════════════════════════════════
+
+type Lang = "tr" | "en";
+
+const TEXTS: Record<Lang, Record<string, string>> = {
+  tr: {
+    // Header
+    "nav.home": "Ana Sayfa",
+    "nav.treatments": "Tedaviler",
+    "nav.clinics": "Klinikler",
+    "nav.destinations": "Destinasyonlar",
+    "nav.howItWorks": "Nasıl Çalışır?",
+    "nav.contact": "İletişim",
+    "nav.login": "Giriş Yap",
+    "nav.signup": "Kayıt Ol",
+
+    // Hero
+    "hero.title": "Doğru Kliniği Yapay Zekâ ile Bulun",
+    "hero.subtitle": "Tedavi ihtiyacınızı anlatın, ClinicBridge AI size en uygun klinikleri ve tedavi seçeneklerini saniyeler içinde önersin.",
+    "hero.treatmentPlaceholder": "Tedavi seçin",
+    "hero.locationPlaceholder": "Lokasyon seçin",
+    "hero.searchBtn": "Klinik Ara",
+    "hero.stats.clinics": "Klinik",
+    "hero.stats.patients": "Hasta Memnuniyeti",
+    "hero.stats.treatments": "Tedavi Kategorisi",
+    "hero.stats.countries": "Ülkeden Hasta",
+
+    // AI Section
+    "ai.title": "Ne tür bir tedavi aradığınızı bize anlatın",
+    "ai.placeholder": "Örneğin: İstanbul'da implant yaptırmak istiyorum. Bütçem 3.000 Euro. İngilizce konuşan ve konaklama desteği veren klinikler önceliğim.",
+    "ai.searchBtn": "Yapay Zekâ ile Klinik Bul",
+    "ai.poweredBy": "ClinicBridge AI tarafından desteklenmektedir",
+    "ai.greeting": "Merhaba! Size en uygun kliniği bulmak için buradayım. Hangi tedaviyi arıyorsunuz?",
+    "ai.analyzing": "Talebinizi analiz ediyorum...",
+    "ai.response1": "Anladım! İstanbul'da diş implantı tedavisi için en uygun klinikleri arıyorsunuz. Bütçeniz yaklaşık 3.000 Euro ve İngilizce konuşan, konaklama destekli klinikler tercih ediyorsunuz.",
+    "ai.response2": "Size 3 klinik önerisi hazırladım. Her birinin AI eşleşme oranı, tahmini fiyat aralığı ve hizmet detaylarını aşağıda görebilirsiniz.",
+    "ai.typing": "ClinicBridge AI yazıyor...",
+
+    // Results
+    "results.title": "AI Klinik Önerileri",
+    "results.subtitle": "ClinicBridge AI tarafından sizin için eşleştirilen klinikler",
+    "results.matchScore": "AI Eşleşme",
+    "results.priceRange": "Tahmini Fiyat",
+    "results.rating": "Puan",
+    "results.languages": "Diller",
+    "results.accommodation": "Konaklama",
+    "results.transfer": "Transfer",
+    "results.included": "Dahil",
+    "results.requestQuote": "Teklif İste",
+    "results.talkToClinic": "Klinikle Görüş",
+    "results.viewDetails": "Detayları Gör",
+
+    // Clinics
+    "clinics.title": "Ağımızdaki Klinikler",
+    "clinics.subtitle": "Türkiye'nin en iyi sağlık turizmi klinikleri ile çalışıyoruz",
+    "clinics.viewAll": "Tüm Klinikleri Gör",
+
+    // Steps
+    "steps.title": "Nasıl Çalışır?",
+    "steps.subtitle": "3 basit adımda doğru kliniği bulun",
+    "steps.step1.title": "İhtiyacınızı Yapay Zekâya Anlatın",
+    "steps.step1.desc": "Tedavi ihtiyacınızı, bütçenizi ve tercihlerinizi doğal dilde yazın. AI sizin için en uygun eşleşmeleri bulsun.",
+    "steps.step2.title": "Klinik ve Teklifleri Karşılaştırın",
+    "steps.step2.desc": "AI tarafından önerilen kliniklerin fiyatlarını, hizmetlerini ve hasta yorumlarını karşılaştırın.",
+    "steps.step3.title": "Kliniğinizi Seçin ve Başlatın",
+    "steps.step3.desc": "Beğendiğiniz kliniği seçin, teklif isteyin ve tedavi sürecini başlatın. Tüm süreç boyunca yanınızdayız.",
+
+    // Treatments
+    "treatments.title": "Tedavi Kategorileri",
+    "treatments.subtitle": "Geniş tedavi yelpazesinde AI destekli klinik eşleştirme",
+    "treatments.dental": "Diş Tedavisi",
+    "treatments.hair": "Saç Ekimi",
+    "treatments.aesthetic": "Estetik Cerrahi",
+    "treatments.eye": "Göz Tedavisi",
+    "treatments.ivf": "Tüp Bebek (IVF)",
+    "treatments.checkup": "Check-Up",
+
+    // Destinations
+    "dest.title": "Destinasyonlar",
+    "dest.subtitle": "Türkiye'nin en popüler sağlık turizmi şehirleri",
+    "dest.istanbul": "İstanbul",
+    "dest.istanbul.desc": "120+ klinik · Avrupa ve Asya'nın buluşma noktası",
+    "dest.antalya": "Antalya",
+    "dest.antalya.desc": "45+ klinik · Tatil ve tedavi bir arada",
+    "dest.izmir": "İzmir",
+    "dest.izmir.desc": "30+ klinik · Ege'nin sağlık merkezi",
+    "dest.explore": "Keşfet",
+
+    // Lead Modal
+    "lead.title": "Teklif Talebi",
+    "lead.subtitle": "Bilgilerinizi bırakın, seçtiğiniz kliniklerden teklif alalım.",
+    "lead.name": "Ad Soyad",
+    "lead.email": "E-posta",
+    "lead.phone": "Telefon",
+    "lead.country": "Ülke",
+    "lead.treatment": "Tedavi",
+    "lead.message": "Mesajınız (opsiyonel)",
+    "lead.consent": "Kişisel verilerimin KVKK/GDPR kapsamında işlenmesini kabul ediyorum.",
+    "lead.submit": "Teklif İste",
+    "lead.submitting": "Gönderiliyor...",
+    "lead.success.title": "Talebiniz Alındı!",
+    "lead.success.desc": "En kısa sürede seçtiğiniz kliniklerden teklifler iletilecektir.",
+    "lead.close": "Kapat",
+
+    // Footer
+    "footer.desc": "ClinicBridge AI destekli sağlık turizmi platformu. Yapay zekâ ile doğru kliniği bulun.",
+    "footer.links": "Hızlı Linkler",
+    "footer.legal": "Yasal",
+    "footer.privacy": "Gizlilik Politikası",
+    "footer.terms": "Kullanım Koşulları",
+    "footer.kvkk": "KVKK Aydınlatma",
+    "footer.contact": "İletişim",
+    "footer.rights": "Tüm hakları saklıdır.",
+    "footer.poweredBy": "ClinicBridge AI tarafından desteklenmektedir",
+  },
+  en: {
+    // Header
+    "nav.home": "Home",
+    "nav.treatments": "Treatments",
+    "nav.clinics": "Clinics",
+    "nav.destinations": "Destinations",
+    "nav.howItWorks": "How It Works",
+    "nav.contact": "Contact",
+    "nav.login": "Login",
+    "nav.signup": "Sign Up",
+
+    // Hero
+    "hero.title": "Find the Right Clinic with AI",
+    "hero.subtitle": "Tell us your treatment needs, and ClinicBridge AI will recommend the best clinics and treatment options in seconds.",
+    "hero.treatmentPlaceholder": "Select treatment",
+    "hero.locationPlaceholder": "Select location",
+    "hero.searchBtn": "Search Clinics",
+    "hero.stats.clinics": "Clinics",
+    "hero.stats.patients": "Patient Satisfaction",
+    "hero.stats.treatments": "Treatment Categories",
+    "hero.stats.countries": "Patient Countries",
+
+    // AI Section
+    "ai.title": "Tell us what treatment you're looking for",
+    "ai.placeholder": "For example: I want to get dental implants in Istanbul. My budget is around €3,000. I prefer English-speaking clinics with accommodation support.",
+    "ai.searchBtn": "Find Clinics with AI",
+    "ai.poweredBy": "Powered by ClinicBridge AI",
+    "ai.greeting": "Hello! I'm here to help you find the perfect clinic. What treatment are you looking for?",
+    "ai.analyzing": "Analyzing your request...",
+    "ai.response1": "Got it! You're looking for dental implant treatment in Istanbul. Your budget is around €3,000, and you prefer English-speaking clinics with accommodation support.",
+    "ai.response2": "I've prepared 3 clinic recommendations for you. You can see each clinic's AI match score, estimated price range, and service details below.",
+    "ai.typing": "ClinicBridge AI is typing...",
+
+    // Results
+    "results.title": "AI Clinic Recommendations",
+    "results.subtitle": "Clinics matched for you by ClinicBridge AI",
+    "results.matchScore": "AI Match",
+    "results.priceRange": "Estimated Price",
+    "results.rating": "Rating",
+    "results.languages": "Languages",
+    "results.accommodation": "Accommodation",
+    "results.transfer": "Transfer",
+    "results.included": "Included",
+    "results.requestQuote": "Request Quote",
+    "results.talkToClinic": "Talk to Clinic",
+    "results.viewDetails": "View Details",
+
+    // Clinics
+    "clinics.title": "Clinics in Our Network",
+    "clinics.subtitle": "We partner with Turkey's best health tourism clinics",
+    "clinics.viewAll": "View All Clinics",
+
+    // Steps
+    "steps.title": "How It Works",
+    "steps.subtitle": "Find the right clinic in 3 simple steps",
+    "steps.step1.title": "Tell AI Your Needs",
+    "steps.step1.desc": "Describe your treatment needs, budget, and preferences in natural language. AI will find the best matches for you.",
+    "steps.step2.title": "Compare Clinics & Offers",
+    "steps.step2.desc": "Compare prices, services, and patient reviews of AI-recommended clinics side by side.",
+    "steps.step3.title": "Choose & Start Your Treatment",
+    "steps.step3.desc": "Select your preferred clinic, request a quote, and start the treatment process. We're with you every step of the way.",
+
+    // Treatments
+    "treatments.title": "Treatment Categories",
+    "treatments.subtitle": "AI-powered clinic matching across a wide range of treatments",
+    "treatments.dental": "Dental",
+    "treatments.hair": "Hair Transplant",
+    "treatments.aesthetic": "Aesthetic Surgery",
+    "treatments.eye": "Eye Treatments",
+    "treatments.ivf": "IVF",
+    "treatments.checkup": "Check-Up",
+
+    // Destinations
+    "dest.title": "Destinations",
+    "dest.subtitle": "Turkey's most popular health tourism cities",
+    "dest.istanbul": "Istanbul",
+    "dest.istanbul.desc": "120+ clinics · Where Europe meets Asia",
+    "dest.antalya": "Antalya",
+    "dest.antalya.desc": "45+ clinics · Vacation and treatment combined",
+    "dest.izmir": "Izmir",
+    "dest.izmir.desc": "30+ clinics · Aegean health hub",
+    "dest.explore": "Explore",
+
+    // Lead Modal
+    "lead.title": "Quote Request",
+    "lead.subtitle": "Leave your details and we'll get quotes from your selected clinics.",
+    "lead.name": "Full Name",
+    "lead.email": "Email",
+    "lead.phone": "Phone",
+    "lead.country": "Country",
+    "lead.treatment": "Treatment",
+    "lead.message": "Message (optional)",
+    "lead.consent": "I consent to the processing of my personal data under GDPR/KVKK.",
+    "lead.submit": "Request Quote",
+    "lead.submitting": "Submitting...",
+    "lead.success.title": "Request Received!",
+    "lead.success.desc": "You will receive quotes from your selected clinics shortly.",
+    "lead.close": "Close",
+
+    // Footer
+    "footer.desc": "AI-powered health tourism platform. Find the right clinic with artificial intelligence.",
+    "footer.links": "Quick Links",
+    "footer.legal": "Legal",
+    "footer.privacy": "Privacy Policy",
+    "footer.terms": "Terms of Service",
+    "footer.kvkk": "KVKK Notice",
+    "footer.contact": "Contact",
+    "footer.rights": "All rights reserved.",
+    "footer.poweredBy": "Powered by ClinicBridge AI",
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DEMO DATA
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface DemoClinic {
+  id: string;
+  name: string;
+  type: { tr: string; en: string };
+  location: string;
+  rating: number;
+  reviews: number;
+  priceRange: string;
+  matchScore?: number;
+  languages: string[];
+  accommodation: boolean;
+  transfer: boolean;
+  image: string;
+  specialties: { tr: string; en: string }[];
+}
+
+const DEMO_CLINICS: DemoClinic[] = [
+  {
+    id: "1", name: "Dentaflow Clinic Istanbul",
+    type: { tr: "Diş Kliniği", en: "Dental Clinic" },
+    location: "İstanbul, Şişli",
+    rating: 4.9, reviews: 1240, priceRange: "€400 – €1,200",
+    matchScore: 96, languages: ["EN", "TR", "DE", "AR"],
+    accommodation: true, transfer: true,
+    image: "linear-gradient(135deg, #0D9488 0%, #0F766E 100%)",
+    specialties: [
+      { tr: "Dental İmplant", en: "Dental Implant" },
+      { tr: "Zirkonyum Kaplama", en: "Zirconium Crown" },
+      { tr: "Hollywood Smile", en: "Hollywood Smile" },
+    ],
+  },
+  {
+    id: "2", name: "MedSmile Dental Center",
+    type: { tr: "Diş Kliniği", en: "Dental Clinic" },
+    location: "Antalya, Lara",
+    rating: 4.8, reviews: 890, priceRange: "€350 – €900",
+    matchScore: 91, languages: ["EN", "TR", "RU"],
+    accommodation: true, transfer: true,
+    image: "linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)",
+    specialties: [
+      { tr: "Dental İmplant", en: "Dental Implant" },
+      { tr: "Diş Beyazlatma", en: "Teeth Whitening" },
+      { tr: "Kanal Tedavisi", en: "Root Canal" },
+    ],
+  },
+  {
+    id: "3", name: "HairLine Turkey",
+    type: { tr: "Saç Ekim Merkezi", en: "Hair Transplant Center" },
+    location: "İstanbul, Levent",
+    rating: 4.9, reviews: 2100, priceRange: "€1,500 – €3,500",
+    languages: ["EN", "TR", "AR", "FR"],
+    accommodation: true, transfer: true,
+    image: "linear-gradient(135deg, #1E293B 0%, #334155 100%)",
+    specialties: [
+      { tr: "FUE Saç Ekimi", en: "FUE Hair Transplant" },
+      { tr: "DHI Saç Ekimi", en: "DHI Hair Transplant" },
+      { tr: "Sakal Ekimi", en: "Beard Transplant" },
+    ],
+  },
+  {
+    id: "4", name: "AesthetiCare Clinic",
+    type: { tr: "Estetik Cerrahi Kliniği", en: "Aesthetic Surgery Clinic" },
+    location: "İstanbul, Nişantaşı",
+    rating: 4.7, reviews: 680, priceRange: "€2,000 – €6,000",
+    languages: ["EN", "TR", "DE"],
+    accommodation: true, transfer: true,
+    image: "linear-gradient(135deg, #7C3AED 0%, #5B21B6 100%)",
+    specialties: [
+      { tr: "Burun Estetiği", en: "Rhinoplasty" },
+      { tr: "Meme Estetiği", en: "Breast Augmentation" },
+      { tr: "Liposuction", en: "Liposuction" },
+    ],
+  },
+  {
+    id: "5", name: "Visionary Eye Center",
+    type: { tr: "Göz Kliniği", en: "Eye Clinic" },
+    location: "İzmir, Alsancak",
+    rating: 4.8, reviews: 540, priceRange: "€800 – €2,500",
+    languages: ["EN", "TR"],
+    accommodation: false, transfer: true,
+    image: "linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)",
+    specialties: [
+      { tr: "Lazer Göz Ameliyatı", en: "Laser Eye Surgery" },
+      { tr: "Katarakt", en: "Cataract Surgery" },
+      { tr: "Göz İçi Lens", en: "Intraocular Lens" },
+    ],
+  },
+  {
+    id: "6", name: "Fertility Plus IVF",
+    type: { tr: "Tüp Bebek Merkezi", en: "IVF Center" },
+    location: "Antalya, Konyaaltı",
+    rating: 4.9, reviews: 760, priceRange: "€2,500 – €5,000",
+    languages: ["EN", "TR", "DE", "RU"],
+    accommodation: true, transfer: true,
+    image: "linear-gradient(135deg, #EC4899 0%, #DB2777 100%)",
+    specialties: [
+      { tr: "Tüp Bebek (IVF)", en: "IVF" },
+      { tr: "Yumurta Dondurma", en: "Egg Freezing" },
+      { tr: "Genetik Tanı", en: "Genetic Diagnosis" },
+    ],
+  },
+];
+
+const TREATMENT_ICONS: Record<string, any> = {
+  dental: Stethoscope,
+  hair: Scissors,
+  aesthetic: Sparkles,
+  eye: Eye,
+  ivf: Baby,
+  checkup: Heart,
+};
+
+const TREATMENTS = ["dental", "hair", "aesthetic", "eye", "ivf", "checkup"];
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// COLORS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const C = {
+  navy: "#0F172A",
+  navyLight: "#1E293B",
+  teal: "#0D9488",
+  tealLight: "#14B8A6",
+  tealBg: "rgba(13, 148, 136, 0.06)",
+  tealBorder: "rgba(13, 148, 136, 0.2)",
+  white: "#FFFFFF",
+  bg: "#F8FAFC",
+  border: "#E2E8F0",
+  text: "#0F172A",
+  textSec: "#475569",
+  textMuted: "#94A3B8",
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN PAGE COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export default function AgencyDemoPage() {
+  const [lang, setLang] = useState<Lang>("tr");
+  const [mobileMenu, setMobileMenu] = useState(false);
+  const [aiInput, setAiInput] = useState("");
+  const [aiMessages, setAiMessages] = useState<{ role: "user" | "ai"; text: string }[]>([]);
+  const [aiTyping, setAiTyping] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const [leadModal, setLeadModal] = useState(false);
+  const [leadClinic, setLeadClinic] = useState("");
+  const [leadSubmitted, setLeadSubmitted] = useState(false);
+  const [leadSubmitting, setLeadSubmitting] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const t = (key: string) => TEXTS[lang][key] || key;
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [aiMessages, aiTyping]);
+
+  const handleAiSubmit = () => {
+    if (!aiInput.trim()) return;
+    const userMsg = aiInput;
+    setAiInput("");
+    setAiMessages((prev) => [...prev, { role: "user", text: userMsg }]);
+    setAiTyping(true);
+
+    setTimeout(() => {
+      setAiMessages((prev) => [...prev, { role: "ai", text: t("ai.response1") }]);
+      setAiTyping(false);
+
+      setTimeout(() => {
+        setAiTyping(true);
+        setTimeout(() => {
+          setAiMessages((prev) => [...prev, { role: "ai", text: t("ai.response2") }]);
+          setAiTyping(false);
+          setShowResults(true);
+        }, 2000);
+      }, 1000);
+    }, 2000);
+  };
+
+  const openLeadModal = (clinicName: string) => {
+    setLeadClinic(clinicName);
+    setLeadSubmitted(false);
+    setLeadModal(true);
+  };
+
+  const handleLeadSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLeadSubmitting(true);
+    setTimeout(() => {
+      setLeadSubmitting(false);
+      setLeadSubmitted(true);
+    }, 1500);
+  };
+
+  const scrollTo = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+    setMobileMenu(false);
+  };
+
+  // ── RENDER ──────────────────────────────────────────────────────────────────
+
+  return (
+    <div style={{ fontFamily: "'Inter', -apple-system, sans-serif", color: C.text, background: C.white, minHeight: "100vh", overflowX: "hidden" }}>
+      <style>{`
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+        .fade-up { animation: fadeUp 0.6s ease-out forwards; }
+        .demo-btn { transition: all 0.2s ease; cursor: pointer; border: none; }
+        .demo-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3); }
+        .card-hover { transition: all 0.3s ease; }
+        .card-hover:hover { transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.1); }
+        .nav-link { transition: color 0.2s; cursor: pointer; background: none; border: none; font-size: 14px; font-weight: 500; color: ${C.textSec}; }
+        .nav-link:hover { color: ${C.teal}; }
+        @media (max-width: 768px) {
+          .desktop-nav { display: none !important; }
+          .mobile-menu-btn { display: flex !important; }
+          .hero-grid { flex-direction: column !important; }
+          .stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
+          .clinics-grid { grid-template-columns: 1fr !important; }
+          .steps-grid { grid-template-columns: 1fr !important; }
+          .treatments-grid { grid-template-columns: repeat(2, 1fr) !important; }
+          .dest-grid { grid-template-columns: 1fr !important; }
+          .footer-grid { grid-template-columns: 1fr !important; }
+          .results-grid { grid-template-columns: 1fr !important; }
+          .section-padding { padding-left: 20px !important; padding-right: 20px !important; }
+        }
+      `}</style>
+
+      {/* ═══════ HEADER ═══════ */}
+      <header style={{
+        position: "sticky", top: 0, zIndex: 1000,
+        background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)",
+        borderBottom: `1px solid ${C.border}`,
+      }}>
+        <div className="section-padding" style={{ maxWidth: 1280, margin: "0 auto", padding: "0 40px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 64 }}>
+          {/* Logo */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Sparkles size={18} color="#fff" />
+            </div>
+            <span style={{ fontSize: 18, fontWeight: 800, color: C.navy, letterSpacing: "-0.03em" }}>
+              Clinic<span style={{ color: C.teal }}>Bridge</span> <span style={{ fontSize: 12, fontWeight: 600, color: C.tealLight, verticalAlign: "super" }}>AI</span>
+            </span>
+          </div>
+
+          {/* Nav */}
+          <nav className="desktop-nav" style={{ display: "flex", alignItems: "center", gap: 24 }}>
+            <button className="nav-link" onClick={() => scrollTo("hero")}>{t("nav.home")}</button>
+            <button className="nav-link" onClick={() => scrollTo("treatments")}>{t("nav.treatments")}</button>
+            <button className="nav-link" onClick={() => scrollTo("clinics")}>{t("nav.clinics")}</button>
+            <button className="nav-link" onClick={() => scrollTo("destinations")}>{t("nav.destinations")}</button>
+            <button className="nav-link" onClick={() => scrollTo("steps")}>{t("nav.howItWorks")}</button>
+            <button className="nav-link" onClick={() => scrollTo("footer")}>{t("nav.contact")}</button>
+          </nav>
+
+          {/* Right */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {/* Lang Switcher */}
+            <div style={{ display: "flex", borderRadius: 8, border: `1px solid ${C.border}`, overflow: "hidden" }}>
+              {(["TR", "EN"] as const).map((l) => (
+                <button key={l} onClick={() => setLang(l.toLowerCase() as Lang)}
+                  style={{
+                    padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", border: "none",
+                    background: lang === l.toLowerCase() ? C.teal : "transparent",
+                    color: lang === l.toLowerCase() ? "#fff" : C.textSec,
+                    transition: "all 0.2s",
+                  }}>{l}</button>
+              ))}
+            </div>
+
+            <button className="desktop-nav nav-link" style={{ display: "inline", padding: "6px 14px", borderRadius: 8, border: `1px solid ${C.border}`, fontWeight: 600, fontSize: 13 }}>
+              {t("nav.login")}
+            </button>
+            <button className="desktop-nav demo-btn" style={{
+              display: "inline", padding: "8px 18px", borderRadius: 8, background: C.teal, color: "#fff", fontSize: 13, fontWeight: 700,
+            }}>{t("nav.signup")}</button>
+
+            <button className="mobile-menu-btn" style={{ display: "none", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer" }}
+              onClick={() => setMobileMenu(!mobileMenu)}>
+              {mobileMenu ? <X size={20} /> : <Menu size={20} />}
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile Menu */}
+        {mobileMenu && (
+          <div style={{ padding: "16px 20px", borderTop: `1px solid ${C.border}`, display: "flex", flexDirection: "column", gap: 12 }}>
+            {["hero", "treatments", "clinics", "destinations", "steps", "footer"].map((id, i) => (
+              <button key={id} className="nav-link" onClick={() => scrollTo(id)} style={{ textAlign: "left", padding: "8px 0", fontSize: 15 }}>
+                {t(`nav.${["home", "treatments", "clinics", "destinations", "howItWorks", "contact"][i]}`)}
+              </button>
+            ))}
+          </div>
+        )}
+      </header>
+
+      {/* ═══════ HERO ═══════ */}
+      <section id="hero" className="section-padding" style={{
+        background: `linear-gradient(180deg, ${C.bg} 0%, ${C.white} 100%)`,
+        padding: "80px 40px 60px",
+      }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto", textAlign: "center" }}>
+          <div className="fade-up" style={{ maxWidth: 800, margin: "0 auto" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 20, background: C.tealBg, border: `1px solid ${C.tealBorder}`, marginBottom: 24 }}>
+              <Sparkles size={14} color={C.teal} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: C.teal }}>ClinicBridge AI</span>
+            </div>
+            <h1 style={{ fontSize: "clamp(32px, 5vw, 52px)", fontWeight: 900, color: C.navy, lineHeight: 1.15, letterSpacing: "-0.03em", marginBottom: 20 }}>
+              {t("hero.title")}
+            </h1>
+            <p style={{ fontSize: "clamp(16px, 2vw, 19px)", color: C.textSec, lineHeight: 1.6, maxWidth: 640, margin: "0 auto" }}>
+              {t("hero.subtitle")}
+            </p>
+          </div>
+
+          {/* Search Bar */}
+          <div className="fade-up" style={{
+            display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center", marginTop: 40,
+            background: C.white, padding: 16, borderRadius: 16, border: `1px solid ${C.border}`,
+            boxShadow: "0 4px 24px rgba(0,0,0,0.06)", maxWidth: 700, margin: "40px auto 0",
+          }}>
+            <div style={{ flex: 1, minWidth: 180, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg }}>
+              <Stethoscope size={18} color={C.teal} />
+              <span style={{ fontSize: 14, color: C.textMuted }}>{t("hero.treatmentPlaceholder")}</span>
+            </div>
+            <div style={{ flex: 1, minWidth: 180, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg }}>
+              <MapPin size={18} color={C.teal} />
+              <span style={{ fontSize: 14, color: C.textMuted }}>{t("hero.locationPlaceholder")}</span>
+            </div>
+            <button className="demo-btn" style={{
+              padding: "12px 28px", borderRadius: 10, background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`,
+              color: "#fff", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", gap: 6,
+            }} onClick={() => scrollTo("ai-section")}>
+              <Search size={16} /> {t("hero.searchBtn")}
+            </button>
+          </div>
+
+          {/* Stats */}
+          <div className="stats-grid fade-up" style={{
+            display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 24, marginTop: 60, maxWidth: 800, margin: "60px auto 0",
+          }}>
+            {[
+              { value: "200+", label: t("hero.stats.clinics") },
+              { value: "98%", label: t("hero.stats.patients") },
+              { value: "10+", label: t("hero.stats.treatments") },
+              { value: "40+", label: t("hero.stats.countries") },
+            ].map((s) => (
+              <div key={s.label} style={{ textAlign: "center" }}>
+                <p style={{ fontSize: 28, fontWeight: 900, color: C.teal, letterSpacing: "-0.02em" }}>{s.value}</p>
+                <p style={{ fontSize: 13, color: C.textMuted, marginTop: 4, fontWeight: 500 }}>{s.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ═══════ AI ASSISTANT SECTION ═══════ */}
+      <section id="ai-section" className="section-padding" style={{ padding: "80px 40px", background: C.white }}>
+        <div style={{ maxWidth: 800, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 40 }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 20, background: C.tealBg, border: `1px solid ${C.tealBorder}`, marginBottom: 16 }}>
+              <Bot size={14} color={C.teal} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: C.teal }}>ClinicBridge AI</span>
+            </div>
+            <h2 style={{ fontSize: "clamp(24px, 4vw, 36px)", fontWeight: 800, color: C.navy, letterSpacing: "-0.02em" }}>
+              {t("ai.title")}
+            </h2>
+          </div>
+
+          {/* Chat Container */}
+          <div style={{
+            background: C.bg, borderRadius: 20, border: `1px solid ${C.border}`,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.06)", overflow: "hidden",
+          }}>
+            {/* Chat Messages */}
+            <div style={{ padding: 24, minHeight: 200, maxHeight: 400, overflowY: "auto" }}>
+              {/* AI Greeting */}
+              {aiMessages.length === 0 && (
+                <div style={{ display: "flex", gap: 12, marginBottom: 16, animation: "slideIn 0.4s ease" }}>
+                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <Bot size={18} color="#fff" />
+                  </div>
+                  <div style={{ background: C.white, padding: "12px 16px", borderRadius: "4px 16px 16px 16px", border: `1px solid ${C.border}`, maxWidth: "85%", fontSize: 14, lineHeight: 1.6, color: C.text }}>
+                    {t("ai.greeting")}
+                  </div>
+                </div>
+              )}
+
+              {aiMessages.map((msg, i) => (
+                <div key={i} style={{
+                  display: "flex", gap: 12, marginBottom: 16,
+                  flexDirection: msg.role === "user" ? "row-reverse" : "row",
+                  animation: "slideIn 0.4s ease",
+                }}>
+                  <div style={{
+                    width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
+                    background: msg.role === "user" ? C.navyLight : `linear-gradient(135deg, ${C.teal}, ${C.navy})`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    {msg.role === "user" ? <User size={18} color="#fff" /> : <Bot size={18} color="#fff" />}
+                  </div>
+                  <div style={{
+                    background: msg.role === "user" ? C.navy : C.white,
+                    color: msg.role === "user" ? "#fff" : C.text,
+                    padding: "12px 16px",
+                    borderRadius: msg.role === "user" ? "16px 4px 16px 16px" : "4px 16px 16px 16px",
+                    border: msg.role === "user" ? "none" : `1px solid ${C.border}`,
+                    maxWidth: "85%", fontSize: 14, lineHeight: 1.6,
+                  }}>
+                    {msg.text}
+                  </div>
+                </div>
+              ))}
+
+              {aiTyping && (
+                <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <Bot size={18} color="#fff" />
+                  </div>
+                  <div style={{ background: C.white, padding: "12px 16px", borderRadius: "4px 16px 16px 16px", border: `1px solid ${C.border}`, fontSize: 13, color: C.teal, display: "flex", alignItems: "center", gap: 8, animation: "pulse 1.5s infinite" }}>
+                    <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+                    {t("ai.typing")}
+                  </div>
+                </div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Input */}
+            <div style={{ padding: "16px 24px", borderTop: `1px solid ${C.border}`, background: C.white }}>
+              <div style={{ display: "flex", gap: 10 }}>
+                <textarea
+                  value={aiInput}
+                  onChange={(e) => setAiInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAiSubmit(); } }}
+                  placeholder={t("ai.placeholder")}
+                  rows={2}
+                  style={{
+                    flex: 1, padding: "12px 16px", borderRadius: 12, border: `1px solid ${C.border}`,
+                    fontSize: 14, resize: "none", outline: "none", fontFamily: "inherit", color: C.text,
+                    background: C.bg, lineHeight: 1.5,
+                  }}
+                />
+                <button className="demo-btn" onClick={handleAiSubmit} disabled={aiTyping}
+                  style={{
+                    padding: "0 24px", borderRadius: 12, background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`,
+                    color: "#fff", fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 8,
+                    opacity: aiTyping ? 0.6 : 1, alignSelf: "flex-end", height: 48,
+                  }}>
+                  <Send size={16} /> {t("ai.searchBtn")}
+                </button>
+              </div>
+              <p style={{ fontSize: 11, color: C.textMuted, marginTop: 8, textAlign: "center" }}>
+                <Sparkles size={10} style={{ display: "inline", verticalAlign: "middle" }} /> {t("ai.poweredBy")}
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ═══════ AI RESULTS ═══════ */}
+      {showResults && (
+        <section className="section-padding fade-up" style={{ padding: "60px 40px 80px", background: C.bg }}>
+          <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+            <div style={{ textAlign: "center", marginBottom: 40 }}>
+              <h2 style={{ fontSize: "clamp(24px, 4vw, 32px)", fontWeight: 800, color: C.navy }}>{t("results.title")}</h2>
+              <p style={{ fontSize: 15, color: C.textSec, marginTop: 8 }}>{t("results.subtitle")}</p>
+            </div>
+            <div className="results-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
+              {DEMO_CLINICS.slice(0, 3).map((clinic) => (
+                <div key={clinic.id} className="card-hover" style={{
+                  background: C.white, borderRadius: 16, border: `1px solid ${C.border}`,
+                  overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.04)",
+                }}>
+                  {/* Card Header */}
+                  <div style={{ height: 100, background: clinic.image, position: "relative", display: "flex", alignItems: "flex-end", padding: 16 }}>
+                    <div style={{
+                      position: "absolute", top: 12, right: 12, padding: "4px 10px", borderRadius: 8,
+                      background: "rgba(255,255,255,0.95)", fontSize: 12, fontWeight: 800, color: C.teal,
+                    }}>
+                      {t("results.matchScore")}: {clinic.matchScore}%
+                    </div>
+                    <h3 style={{ fontSize: 16, fontWeight: 800, color: "#fff", textShadow: "0 1px 4px rgba(0,0,0,0.3)" }}>{clinic.name}</h3>
+                  </div>
+                  {/* Card Body */}
+                  <div style={{ padding: 20 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
+                      <MapPin size={14} color={C.teal} />
+                      <span style={{ fontSize: 13, color: C.textSec }}>{clinic.location}</span>
+                      <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: "#f59e0b" }}>
+                        <Star size={14} fill="#f59e0b" color="#f59e0b" /> {clinic.rating}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                        <span style={{ color: C.textMuted }}>{t("results.priceRange")}</span>
+                        <span style={{ fontWeight: 700, color: C.teal }}>{clinic.priceRange}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                        <span style={{ color: C.textMuted }}>{t("results.languages")}</span>
+                        <span style={{ fontWeight: 600, color: C.text }}>{clinic.languages.join(", ")}</span>
+                      </div>
+                      {clinic.accommodation && (
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                          <span style={{ color: C.textMuted }}>{t("results.accommodation")}</span>
+                          <span style={{ fontWeight: 600, color: "#22c55e" }}>✓ {t("results.included")}</span>
+                        </div>
+                      )}
+                      {clinic.transfer && (
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                          <span style={{ color: C.textMuted }}>{t("results.transfer")}</span>
+                          <span style={{ fontWeight: 600, color: "#22c55e" }}>✓ {t("results.included")}</span>
+                        </div>
+                      )}
+                    </div>
+                    {/* CTA Buttons */}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button className="demo-btn" onClick={() => openLeadModal(clinic.name)}
+                        style={{ flex: 1, padding: "10px 0", borderRadius: 10, background: C.teal, color: "#fff", fontSize: 13, fontWeight: 700 }}>
+                        {t("results.requestQuote")}
+                      </button>
+                      <button className="demo-btn"
+                        style={{ padding: "10px 14px", borderRadius: 10, background: C.bg, color: C.textSec, fontSize: 13, fontWeight: 600, border: `1px solid ${C.border}` }}>
+                        {t("results.viewDetails")}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ═══════ HOW IT WORKS ═══════ */}
+      <section id="steps" className="section-padding" style={{ padding: "80px 40px", background: C.white }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 56 }}>
+            <h2 style={{ fontSize: "clamp(24px, 4vw, 36px)", fontWeight: 800, color: C.navy, letterSpacing: "-0.02em" }}>{t("steps.title")}</h2>
+            <p style={{ fontSize: 16, color: C.textSec, marginTop: 8 }}>{t("steps.subtitle")}</p>
+          </div>
+          <div className="steps-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 32 }}>
+            {[1, 2, 3].map((step) => {
+              const icons = [<MessageSquare key="1" size={28} />, <TrendingUp key="2" size={28} />, <CheckCircle2 key="3" size={28} />];
+              return (
+                <div key={step} className="card-hover" style={{
+                  padding: 32, borderRadius: 20, background: C.bg,
+                  border: `1px solid ${C.border}`, textAlign: "center",
+                }}>
+                  <div style={{
+                    width: 64, height: 64, borderRadius: 16, margin: "0 auto 20px",
+                    background: `linear-gradient(135deg, ${C.tealBg}, rgba(13,148,136,0.12))`,
+                    display: "flex", alignItems: "center", justifyContent: "center", color: C.teal,
+                  }}>
+                    {icons[step - 1]}
+                  </div>
+                  <div style={{
+                    width: 32, height: 32, borderRadius: "50%", margin: "0 auto 16px",
+                    background: C.teal, color: "#fff", fontSize: 14, fontWeight: 800,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>{step}</div>
+                  <h3 style={{ fontSize: 18, fontWeight: 700, color: C.navy, marginBottom: 10 }}>
+                    {t(`steps.step${step}.title`)}
+                  </h3>
+                  <p style={{ fontSize: 14, color: C.textSec, lineHeight: 1.6 }}>
+                    {t(`steps.step${step}.desc`)}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ═══════ TREATMENTS ═══════ */}
+      <section id="treatments" className="section-padding" style={{ padding: "80px 40px", background: C.bg }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 48 }}>
+            <h2 style={{ fontSize: "clamp(24px, 4vw, 36px)", fontWeight: 800, color: C.navy }}>{t("treatments.title")}</h2>
+            <p style={{ fontSize: 16, color: C.textSec, marginTop: 8 }}>{t("treatments.subtitle")}</p>
+          </div>
+          <div className="treatments-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
+            {TREATMENTS.map((key) => {
+              const Icon = TREATMENT_ICONS[key];
+              const colors = ["#0D9488", "#1E293B", "#7C3AED", "#2563EB", "#EC4899", "#F59E0B"];
+              const color = colors[TREATMENTS.indexOf(key)];
+              return (
+                <div key={key} className="card-hover" style={{
+                  padding: 24, borderRadius: 16, background: C.white, border: `1px solid ${C.border}`,
+                  display: "flex", alignItems: "center", gap: 16, cursor: "pointer",
+                }}>
+                  <div style={{
+                    width: 52, height: 52, borderRadius: 14,
+                    background: `${color}14`, display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <Icon size={24} color={color} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <h4 style={{ fontSize: 15, fontWeight: 700, color: C.navy }}>{t(`treatments.${key}`)}</h4>
+                  </div>
+                  <ChevronRight size={18} color={C.textMuted} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ═══════ CLINICS ═══════ */}
+      <section id="clinics" className="section-padding" style={{ padding: "80px 40px", background: C.white }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 48 }}>
+            <h2 style={{ fontSize: "clamp(24px, 4vw, 36px)", fontWeight: 800, color: C.navy }}>{t("clinics.title")}</h2>
+            <p style={{ fontSize: 16, color: C.textSec, marginTop: 8 }}>{t("clinics.subtitle")}</p>
+          </div>
+          <div className="clinics-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
+            {DEMO_CLINICS.map((clinic) => (
+              <div key={clinic.id} className="card-hover" style={{
+                background: C.white, borderRadius: 16, border: `1px solid ${C.border}`,
+                overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.03)",
+              }}>
+                <div style={{ height: 80, background: clinic.image, display: "flex", alignItems: "flex-end", padding: "0 16px 12px" }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.85)", background: "rgba(0,0,0,0.2)", padding: "3px 8px", borderRadius: 6 }}>
+                    {clinic.type[lang]}
+                  </span>
+                </div>
+                <div style={{ padding: "16px 20px" }}>
+                  <h4 style={{ fontSize: 15, fontWeight: 700, color: C.navy, marginBottom: 6 }}>{clinic.name}</h4>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+                    <MapPin size={13} color={C.teal} />
+                    <span style={{ fontSize: 12.5, color: C.textSec }}>{clinic.location}</span>
+                    <span style={{ marginLeft: "auto", fontSize: 12.5, fontWeight: 700, color: "#f59e0b", display: "flex", alignItems: "center", gap: 3 }}>
+                      <Star size={12} fill="#f59e0b" color="#f59e0b" /> {clinic.rating} <span style={{ fontWeight: 400, color: C.textMuted }}>({clinic.reviews})</span>
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 12 }}>
+                    {clinic.specialties.map((s, i) => (
+                      <span key={i} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, background: C.tealBg, color: C.teal, fontWeight: 600 }}>
+                        {s[lang]}
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: C.teal }}>{clinic.priceRange}</span>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {clinic.accommodation && <Hotel size={15} color={C.teal} />}
+                      {clinic.transfer && <Car size={15} color={C.teal} />}
+                      <Globe2 size={15} color={C.teal} />
+                    </div>
+                  </div>
+                  <button className="demo-btn" onClick={() => openLeadModal(clinic.name)}
+                    style={{
+                      width: "100%", marginTop: 14, padding: "10px 0", borderRadius: 10,
+                      background: C.tealBg, border: `1px solid ${C.tealBorder}`,
+                      color: C.teal, fontSize: 13, fontWeight: 700,
+                    }}>
+                    {t("results.requestQuote")}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ═══════ DESTINATIONS ═══════ */}
+      <section id="destinations" className="section-padding" style={{ padding: "80px 40px", background: C.bg }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 48 }}>
+            <h2 style={{ fontSize: "clamp(24px, 4vw, 36px)", fontWeight: 800, color: C.navy }}>{t("dest.title")}</h2>
+            <p style={{ fontSize: 16, color: C.textSec, marginTop: 8 }}>{t("dest.subtitle")}</p>
+          </div>
+          <div className="dest-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
+            {[
+              { key: "istanbul", gradient: "linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #0D9488 100%)", emoji: "🕌" },
+              { key: "antalya", gradient: "linear-gradient(135deg, #0D9488 0%, #14B8A6 50%, #2DD4BF 100%)", emoji: "🏖️" },
+              { key: "izmir", gradient: "linear-gradient(135deg, #2563EB 0%, #3B82F6 50%, #60A5FA 100%)", emoji: "⚓" },
+            ].map((dest) => (
+              <div key={dest.key} className="card-hover" style={{
+                borderRadius: 20, overflow: "hidden", position: "relative", height: 240,
+                background: dest.gradient, cursor: "pointer",
+              }}>
+                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "flex-end", padding: 28 }}>
+                  <span style={{ fontSize: 40, marginBottom: 8 }}>{dest.emoji}</span>
+                  <h3 style={{ fontSize: 24, fontWeight: 800, color: "#fff", marginBottom: 4 }}>{t(`dest.${dest.key}`)}</h3>
+                  <p style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", marginBottom: 16 }}>{t(`dest.${dest.key}.desc`)}</p>
+                  <button className="demo-btn" style={{
+                    alignSelf: "flex-start", padding: "8px 20px", borderRadius: 8,
+                    background: "rgba(255,255,255,0.2)", backdropFilter: "blur(4px)",
+                    color: "#fff", fontSize: 13, fontWeight: 700,
+                    display: "flex", alignItems: "center", gap: 6,
+                  }}>
+                    {t("dest.explore")} <ArrowRight size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ═══════ FOOTER ═══════ */}
+      <footer id="footer" style={{ background: C.navy, color: "rgba(255,255,255,0.7)", padding: "60px 40px 30px" }}>
+        <div className="section-padding" style={{ maxWidth: 1280, margin: "0 auto" }}>
+          <div className="footer-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 40, marginBottom: 40 }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: `linear-gradient(135deg, ${C.teal}, ${C.tealLight})`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Sparkles size={16} color="#fff" />
+                </div>
+                <span style={{ fontSize: 16, fontWeight: 800, color: "#fff" }}>ClinicBridge <span style={{ color: C.tealLight }}>AI</span></span>
+              </div>
+              <p style={{ fontSize: 13, lineHeight: 1.7, maxWidth: 300 }}>{t("footer.desc")}</p>
+            </div>
+            <div>
+              <h4 style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 16 }}>{t("footer.links")}</h4>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {["nav.treatments", "nav.clinics", "nav.destinations", "nav.howItWorks"].map((k) => (
+                  <span key={k} style={{ fontSize: 13, cursor: "pointer" }}>{t(k)}</span>
+                ))}
+              </div>
+            </div>
+            <div>
+              <h4 style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 16 }}>{t("footer.legal")}</h4>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {["footer.privacy", "footer.terms", "footer.kvkk"].map((k) => (
+                  <span key={k} style={{ fontSize: 13, cursor: "pointer" }}>{t(k)}</span>
+                ))}
+              </div>
+            </div>
+            <div>
+              <h4 style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 16 }}>{t("footer.contact")}</h4>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}><Mail size={14} color={C.tealLight} /> info@clinicbridge.ai</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}><Phone size={14} color={C.tealLight} /> +90 212 555 0000</div>
+              </div>
+            </div>
+          </div>
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: 24, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+            <p style={{ fontSize: 12 }}>© 2026 ClinicBridge. {t("footer.rights")}</p>
+            <p style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}>
+              <Sparkles size={10} color={C.tealLight} /> {t("footer.poweredBy")}
+            </p>
+          </div>
+        </div>
+      </footer>
+
+      {/* ═══════ LEAD MODAL ═══════ */}
+      {leadModal && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center",
+          background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)", padding: 20,
+        }} onClick={() => setLeadModal(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{
+            background: C.white, borderRadius: 20, width: "100%", maxWidth: 500,
+            boxShadow: "0 24px 48px rgba(0,0,0,0.15)", overflow: "hidden",
+            animation: "fadeUp 0.3s ease",
+          }}>
+            {leadSubmitted ? (
+              <div style={{ padding: 48, textAlign: "center" }}>
+                <div style={{ width: 64, height: 64, borderRadius: "50%", background: "rgba(34, 197, 94, 0.1)", margin: "0 auto 20px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <CheckCircle2 size={32} color="#22c55e" />
+                </div>
+                <h3 style={{ fontSize: 20, fontWeight: 800, color: C.navy, marginBottom: 8 }}>{t("lead.success.title")}</h3>
+                <p style={{ fontSize: 14, color: C.textSec, marginBottom: 24 }}>{t("lead.success.desc")}</p>
+                <button className="demo-btn" onClick={() => setLeadModal(false)}
+                  style={{ padding: "10px 28px", borderRadius: 10, background: C.teal, color: "#fff", fontSize: 14, fontWeight: 700 }}>
+                  {t("lead.close")}
+                </button>
+              </div>
+            ) : (
+              <>
+                <div style={{ padding: "24px 28px", borderBottom: `1px solid ${C.border}` }}>
+                  <h3 style={{ fontSize: 18, fontWeight: 800, color: C.navy }}>{t("lead.title")}</h3>
+                  <p style={{ fontSize: 13, color: C.textSec, marginTop: 4 }}>{t("lead.subtitle")}</p>
+                  {leadClinic && (
+                    <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 8, background: C.tealBg }}>
+                      <Building2 size={14} color={C.teal} />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: C.teal }}>{leadClinic}</span>
+                    </div>
+                  )}
+                </div>
+                <form onSubmit={handleLeadSubmit} style={{ padding: "24px 28px" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                    {[
+                      { key: "name", type: "text" },
+                      { key: "email", type: "email" },
+                      { key: "phone", type: "tel" },
+                      { key: "country", type: "text" },
+                    ].map(({ key, type }) => (
+                      <div key={key}>
+                        <label style={{ fontSize: 12.5, fontWeight: 600, color: C.textSec, marginBottom: 4, display: "block" }}>{t(`lead.${key}`)}</label>
+                        <input type={type} required style={{
+                          width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${C.border}`,
+                          fontSize: 14, outline: "none", color: C.text, background: C.bg,
+                        }} />
+                      </div>
+                    ))}
+                    <div>
+                      <label style={{ fontSize: 12.5, fontWeight: 600, color: C.textSec, marginBottom: 4, display: "block" }}>{t("lead.message")}</label>
+                      <textarea rows={3} style={{
+                        width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${C.border}`,
+                        fontSize: 14, outline: "none", resize: "none", fontFamily: "inherit", color: C.text, background: C.bg,
+                      }} />
+                    </div>
+                    <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer", fontSize: 12.5, color: C.textSec }}>
+                      <input type="checkbox" required style={{ width: 16, height: 16, marginTop: 2, accentColor: C.teal }} />
+                      {t("lead.consent")}
+                    </label>
+                  </div>
+                  <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+                    <button type="button" onClick={() => setLeadModal(false)}
+                      style={{ flex: 1, padding: "12px 0", borderRadius: 10, background: C.bg, border: `1px solid ${C.border}`, color: C.textSec, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                      {t("lead.close")}
+                    </button>
+                    <button type="submit" className="demo-btn" disabled={leadSubmitting}
+                      style={{
+                        flex: 2, padding: "12px 0", borderRadius: 10,
+                        background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`,
+                        color: "#fff", fontSize: 14, fontWeight: 700,
+                        opacity: leadSubmitting ? 0.7 : 1,
+                      }}>
+                      {leadSubmitting ? t("lead.submitting") : t("lead.submit")}
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}

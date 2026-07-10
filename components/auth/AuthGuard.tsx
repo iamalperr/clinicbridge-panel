@@ -12,7 +12,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!loading) {
-      const PUBLIC_ROUTES = ["/", "/login", "/privacy", "/terms", "/kvkk", "/landing", "/reset-password", "/showcase-demo", "/showcase-patient-questions", "/linkedin-assets", "/social-posts", "/widget-guide"];
+      const PUBLIC_ROUTES = ["/", "/login", "/privacy", "/terms", "/kvkk", "/landing", "/reset-password", "/showcase-demo", "/showcase-patient-questions", "/linkedin-assets", "/social-posts", "/widget-guide", "/agency-demo"];
       const isPublicRoute = PUBLIC_ROUTES.includes(pathname);
       
       if (!user && !isPublicRoute) {
