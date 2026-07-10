@@ -283,7 +283,33 @@ export default function AgenciesPage() {
                 >
                   <ArrowRight size={14} /> {t("portal.agencies.manageWorkspace")}
                 </Link>
-                <div style={{ display: "flex", gap: 6 }}>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <a
+                    href={`/demo/${a.slug || a.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      padding: "7px 12px", borderRadius: 6, border: `1px solid rgba(16, 185, 129, 0.3)`,
+                      background: "rgba(16, 185, 129, 0.06)", color: "#10b981",
+                      fontSize: 12, fontWeight: 600, cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: 4, textDecoration: "none",
+                    }}
+                  >
+                    <Globe size={12} /> Public Demo
+                  </a>
+                  <a
+                    href={`/demo/${a.slug || a.id}-admin`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      padding: "7px 12px", borderRadius: 6, border: `1px solid rgba(99, 102, 241, 0.3)`,
+                      background: "rgba(99, 102, 241, 0.06)", color: "#6366f1",
+                      fontSize: 12, fontWeight: 600, cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: 4, textDecoration: "none",
+                    }}
+                  >
+                    <ExternalLink size={12} /> Admin Demo
+                  </a>
                   <button
                     onClick={() => openEdit(a)}
                     style={{
