@@ -12,14 +12,23 @@ import SectionCard from "@/components/ui/SectionCard";
 import Badge from "@/components/ui/Badge";
 import { UI_COLORS } from "@/components/ui/ui-shared";
 import { Button } from "@/components/ui/Button";
-import { Code, Copy, CheckCircle2, Globe, Building2, AlertCircle, Loader2, Save, MessageSquare, DollarSign, Link2, Shield, FileText } from "lucide-react";
+import { Code, Copy, CheckCircle2, Globe, Building2, AlertCircle, Loader2, Save, MessageSquare, DollarSign, Link2, Shield, FileText, Monitor, Smartphone } from "lucide-react";
 import type { Agency } from "@/lib/types/agency";
 import type { WidgetMode } from "@/lib/types/matching";
 import { WIDGET_MODES } from "@/lib/types/matching";
 import { useI18n } from "@/lib/i18n-context";
 
+type DisplayType = "embedded" | "floating";
+type Alignment = "center" | "left" | "right";
+type ContainerWidth = "compact" | "standard" | "wide";
+type FloatingPosition = "bottom-right" | "bottom-left";
+
 interface WidgetConfig {
   mode: WidgetMode;
+  displayType: DisplayType;
+  alignment: Alignment;
+  containerWidth: ContainerWidth;
+  position: FloatingPosition;
   treatmentSelectorVisible: boolean;
   clinicRecommendationCards: boolean;
   priceRangeEnabled: boolean;
@@ -27,11 +36,14 @@ interface WidgetConfig {
   profileLinkEnabled: boolean;
   consentBeforeQuote: boolean;
   theme: "light" | "dark" | "auto";
-  position: "bottom-right" | "bottom-left";
 }
 
 const DEFAULT_WIDGET_CONFIG: WidgetConfig = {
   mode: "matching_assistant",
+  displayType: "embedded",
+  alignment: "center",
+  containerWidth: "wide",
+  position: "bottom-right",
   treatmentSelectorVisible: true,
   clinicRecommendationCards: true,
   priceRangeEnabled: true,
@@ -39,8 +51,12 @@ const DEFAULT_WIDGET_CONFIG: WidgetConfig = {
   profileLinkEnabled: true,
   consentBeforeQuote: true,
   theme: "light",
-  position: "bottom-right",
 };
+
+/** When mode changes, auto-set the best displayType default */
+function defaultDisplayType(mode: WidgetMode): DisplayType {
+  return mode === "chat" ? "floating" : "embedded";
+}
 
 export default function AgencyWidgetPage() {
   const { profile } = useAuth();
@@ -91,8 +107,25 @@ export default function AgencyWidgetPage() {
   }
 
   const agencySlug = agency.slug || agency.id;
-  const modeAttr = config.mode === "chat" ? "" : ` data-mode="${config.mode.replace("_", "-")}"`;
-  const embedCode = `<script\n  src="https://widget.clinicbridge-ai.com/widget.js"\n  data-agency-id="${agencySlug}"${modeAttr}\n  async>\n</script>`;
+
+  // ─── Embed Code Generation ──────────────────────────────────────────────
+  const buildEmbedCode = () => {
+    const attrs: string[] = [
+      `src="https://widget.clinicbridge-ai.com/widget.js"`,
+      `data-agency-id="${agencySlug}"`,
+    ];
+    if (config.mode !== "chat") attrs.push(`data-mode="${config.mode.replace("_", "-")}"`);
+    attrs.push(`data-display="${config.displayType}"`);
+    if (config.displayType === "embedded") {
+      attrs.push(`data-align="${config.alignment}"`);
+      if (config.containerWidth !== "standard") attrs.push(`data-width="${config.containerWidth}"`);
+    } else {
+      attrs.push(`data-position="${config.position}"`);
+    }
+    attrs.push("async");
+    return `<script\n  ${attrs.join("\n  ")}>\n</script>`;
+  };
+  const embedCode = buildEmbedCode();
 
   const handleCopy = () => {
     navigator.clipboard.writeText(embedCode);
@@ -112,11 +145,63 @@ export default function AgencyWidgetPage() {
     finally { setSaving(false); }
   };
 
-  const widgetModeLabels: Record<WidgetMode, { label: string; desc: string }> = {
-    chat: { label: t("portal.widget.chat"), desc: t("portal.widget.chatDesc") },
-    matching_assistant: { label: t("portal.widget.matchingAssistant"), desc: t("portal.widget.matchingAssistantDesc") },
-    quote_assistant: { label: t("portal.widget.quoteAssistant"), desc: t("portal.widget.quoteAssistantDesc") },
+  const setMode = (mode: WidgetMode) => {
+    setConfig({ ...config, mode, displayType: defaultDisplayType(mode) });
   };
+
+  const widgetModeLabels: Record<WidgetMode, { label: string; desc: string }> = {
+    chat: {
+      label: t("portal.widget.chat"),
+      desc: language === "tr" ? "Klasik sağ alt / sol alt chatbot butonu olarak çalışır." : "Works as a classic floating chatbot button.",
+    },
+    matching_assistant: {
+      label: t("portal.widget.matchingAssistant"),
+      desc: language === "tr" ? "Web sayfası içinde merkezi AI klinik eşleştirme deneyimi olarak çalışır." : "Embedded AI clinic matching experience within the page.",
+    },
+    quote_assistant: {
+      label: t("portal.widget.quoteAssistant"),
+      desc: language === "tr" ? "Klinik önerisi, ön değerlendirme ve teklif talebi akışını birlikte sunar." : "Combines clinic recommendations, assessment and quote request flow.",
+    },
+  };
+
+  // ─── Helper labels ──────────────────────────────────────────────────────
+  const displayLabels: Record<DisplayType, { label: string; desc: string }> = {
+    embedded: {
+      label: language === "tr" ? "Sayfa İçi / Embedded" : "In-Page / Embedded",
+      desc: language === "tr" ? "Sayfanızın içine gömülü olarak çalışır" : "Embedded within your page content",
+    },
+    floating: {
+      label: language === "tr" ? "Yüzen Buton / Floating" : "Floating Button",
+      desc: language === "tr" ? "Sağ alt veya sol alt köşede yüzen buton" : "Floating button in corner",
+    },
+  };
+
+  const alignLabels: Record<Alignment, string> = {
+    center: language === "tr" ? "Ortalanmış" : "Center",
+    left: language === "tr" ? "Sol" : "Left",
+    right: language === "tr" ? "Sağ" : "Right",
+  };
+
+  const widthLabels: Record<ContainerWidth, string> = {
+    compact: language === "tr" ? "Dar" : "Compact",
+    standard: language === "tr" ? "Standart" : "Standard",
+    wide: language === "tr" ? "Geniş" : "Wide",
+  };
+
+  const posLabels: Record<FloatingPosition, string> = {
+    "bottom-right": t("portal.widget.bottomRight"),
+    "bottom-left": t("portal.widget.bottomLeft"),
+  };
+
+  // ─── Pill button helper ─────────────────────────────────────────────────
+  const PillBtn = ({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) => (
+    <button onClick={onClick} style={{
+      flex: 1, padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
+      border: `1px solid ${active ? "#10b981" : UI_COLORS.border}`,
+      background: active ? "rgba(16, 185, 129, 0.08)" : "transparent",
+      color: active ? "#10b981" : UI_COLORS.textMuted, transition: "all 0.15s",
+    }}>{children}</button>
+  );
 
   return (
     <div style={{ padding: "24px 32px", maxWidth: 1000 }}>
@@ -152,6 +237,7 @@ export default function AgencyWidgetPage() {
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <Badge label={widgetModeLabels[config.mode]?.label || config.mode} variant="success" />
+          <Badge label={displayLabels[config.displayType]?.label || config.displayType} variant="info" />
           <Badge label={agency.status === "active" ? t("portal.common.active") : t("portal.common.inactive")} variant={agency.status === "active" ? "success" : "warning"} />
         </div>
       </div>
@@ -164,7 +250,7 @@ export default function AgencyWidgetPage() {
           </p>
           <div style={{ display: "flex", gap: 10 }}>
             {(Object.keys(WIDGET_MODES) as WidgetMode[]).map((mode) => (
-              <button key={mode} onClick={() => setConfig({ ...config, mode })}
+              <button key={mode} onClick={() => setMode(mode)}
                 style={{
                   flex: 1, padding: "14px 16px", borderRadius: 12, textAlign: "left", cursor: "pointer",
                   border: `1px solid ${config.mode === mode ? "#10b981" : UI_COLORS.border}`,
@@ -178,6 +264,86 @@ export default function AgencyWidgetPage() {
               </button>
             ))}
           </div>
+        </SectionCard>
+
+        {/* Display Type */}
+        <SectionCard title={language === "tr" ? "Görüntüleme Tipi" : "Display Type"}>
+          <p style={{ fontSize: 12.5, color: UI_COLORS.textMuted, marginBottom: 12 }}>
+            {language === "tr"
+              ? "Widget'ın web sayfasında nasıl görüneceğini belirleyin."
+              : "Choose how the widget appears on your website."}
+          </p>
+          <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+            {(["embedded", "floating"] as DisplayType[]).map((dt) => (
+              <button key={dt} onClick={() => setConfig({ ...config, displayType: dt })}
+                style={{
+                  flex: 1, padding: "14px 16px", borderRadius: 12, textAlign: "left", cursor: "pointer",
+                  border: `1px solid ${config.displayType === dt ? "#10b981" : UI_COLORS.border}`,
+                  background: config.displayType === dt ? "rgba(16, 185, 129, 0.06)" : "transparent",
+                  transition: "all 0.15s",
+                }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  {dt === "embedded" ? <Monitor size={16} color={config.displayType === dt ? "#10b981" : UI_COLORS.textMuted} /> : <Smartphone size={16} color={config.displayType === dt ? "#10b981" : UI_COLORS.textMuted} />}
+                  <span style={{ fontSize: 14, fontWeight: 700, color: config.displayType === dt ? "#10b981" : UI_COLORS.textPrimary }}>
+                    {displayLabels[dt].label}
+                  </span>
+                </div>
+                <p style={{ fontSize: 11.5, color: UI_COLORS.textMuted }}>{displayLabels[dt].desc}</p>
+              </button>
+            ))}
+          </div>
+
+          {/* Conditional sub-options */}
+          {config.displayType === "embedded" ? (
+            <div style={{ display: "flex", gap: 16 }}>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 8 }}>
+                  {language === "tr" ? "Hizalama" : "Alignment"}
+                </p>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {(["center", "left", "right"] as Alignment[]).map((a) => (
+                    <PillBtn key={a} active={config.alignment === a} onClick={() => setConfig({ ...config, alignment: a })}>
+                      {alignLabels[a]}
+                    </PillBtn>
+                  ))}
+                </div>
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 8 }}>
+                  {language === "tr" ? "Container Genişliği" : "Container Width"}
+                </p>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {(["compact", "standard", "wide"] as ContainerWidth[]).map((w) => (
+                    <PillBtn key={w} active={config.containerWidth === w} onClick={() => setConfig({ ...config, containerWidth: w })}>
+                      {widthLabels[w]}
+                    </PillBtn>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 8 }}>
+                {t("portal.widget.position")}
+              </p>
+              <div style={{ display: "flex", gap: 8, maxWidth: 300 }}>
+                {(["bottom-right", "bottom-left"] as FloatingPosition[]).map((p) => (
+                  <PillBtn key={p} active={config.position === p} onClick={() => setConfig({ ...config, position: p })}>
+                    {posLabels[p]}
+                  </PillBtn>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Mode hint */}
+          {config.mode !== "chat" && config.displayType === "floating" && (
+            <p style={{ fontSize: 11.5, color: "#f59e0b", marginTop: 10, fontStyle: "italic" }}>
+              {language === "tr"
+                ? "⚠ Eşleştirme / Teklif Asistanı modları sayfa içi (embedded) görünümde en iyi çalışır."
+                : "⚠ Matching / Quote Assistant modes work best with embedded display."}
+            </p>
+          )}
         </SectionCard>
 
         {/* Feature Toggles */}
@@ -202,36 +368,16 @@ export default function AgencyWidgetPage() {
           </div>
         </SectionCard>
 
-        {/* Appearance */}
+        {/* Appearance — Theme */}
         <SectionCard title={t("portal.widget.appearance")}>
-          <div style={{ display: "flex", gap: 16 }}>
-            <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 8 }}>{t("portal.widget.theme")}</p>
-              <div style={{ display: "flex", gap: 8 }}>
-                {(["light", "dark", "auto"] as const).map((thm) => (
-                  <button key={thm} onClick={() => setConfig({ ...config, theme: thm })}
-                    style={{
-                      flex: 1, padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
-                      border: `1px solid ${config.theme === thm ? "#10b981" : UI_COLORS.border}`,
-                      background: config.theme === thm ? "rgba(16, 185, 129, 0.08)" : "transparent",
-                      color: config.theme === thm ? "#10b981" : UI_COLORS.textMuted, textTransform: "capitalize",
-                    }}>{thm}</button>
-                ))}
-              </div>
-            </div>
-            <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 8 }}>{t("portal.widget.position")}</p>
-              <div style={{ display: "flex", gap: 8 }}>
-                {(["bottom-right", "bottom-left"] as const).map((p) => (
-                  <button key={p} onClick={() => setConfig({ ...config, position: p })}
-                    style={{
-                      flex: 1, padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
-                      border: `1px solid ${config.position === p ? "#10b981" : UI_COLORS.border}`,
-                      background: config.position === p ? "rgba(16, 185, 129, 0.08)" : "transparent",
-                      color: config.position === p ? "#10b981" : UI_COLORS.textMuted,
-                    }}>{p === "bottom-right" ? t("portal.widget.bottomRight") : t("portal.widget.bottomLeft")}</button>
-                ))}
-              </div>
+          <div>
+            <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 8 }}>{t("portal.widget.theme")}</p>
+            <div style={{ display: "flex", gap: 8, maxWidth: 300 }}>
+              {(["light", "dark", "auto"] as const).map((thm) => (
+                <PillBtn key={thm} active={config.theme === thm} onClick={() => setConfig({ ...config, theme: thm })}>
+                  {thm === "light" ? (language === "tr" ? "Açık" : "Light") : thm === "dark" ? (language === "tr" ? "Koyu" : "Dark") : (language === "tr" ? "Otomatik" : "Auto")}
+                </PillBtn>
+              ))}
             </div>
           </div>
         </SectionCard>
