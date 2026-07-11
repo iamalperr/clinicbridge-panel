@@ -305,33 +305,60 @@ export default function FeelinHealthyLive() {
     return results;
   }, [clinics, matchingCfg]);
 
-  const sendAi = () => {
+  const sendAi = async () => {
     if (!aiInput.trim() || aiTyping) return;
     const msg = aiInput;
     setAiInput("");
     setAiMsgs((p) => [...p, { role: "user", text: msg }]);
     setAiTyping(true);
 
-    setTimeout(() => {
-      const results = doMatch(msg);
-      const cat = extractCategory(msg);
-      const catLabel = cat ? t(`cat.${cat}`) : "";
+    console.log("[CB-DEMO] ===== NEW REQUEST =====");
+    console.log("[CB-DEMO] Version: v3-openai-demo");
+    console.log("[CB-DEMO] Message:", msg);
 
-      if (results.length > 0) {
-        const cityMatch = extractCity(msg);
-        const reply = lang === "tr"
-          ? `Anladım! ${catLabel ? catLabel + " tedavisi" : "Tedaviniz"} için ${cityMatch ? cityMatch.charAt(0).toUpperCase() + cityMatch.slice(1) + "'da" : ""} ${results.length} uygun klinik buldum.`
-          : `Got it! I found ${results.length} matching clinic(s) for ${catLabel || "your treatment"}${cityMatch ? " in " + cityMatch.charAt(0).toUpperCase() + cityMatch.slice(1) : ""}.`;
-        setAiMsgs((p) => [...p, { role: "ai", text: reply }]);
-        setTimeout(() => {
-          setAiMsgs((p) => [...p, { role: "ai", text: t("ai.found") }]);
-          setAiTyping(false);
-        }, 800);
-      } else {
-        setAiMsgs((p) => [...p, { role: "ai", text: t("ai.noMatch") }]);
-        setAiTyping(false);
+    try {
+      const res = await fetch(`/api/public/agency/${SLUG}/matching-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: msg,
+          history: aiMsgs.slice(-10).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text })),
+          sessionContext: {},
+        }),
+      });
+
+      console.log("[CB-DEMO] Response status:", res.status);
+
+      if (!res.ok) throw new Error(`API error ${res.status}`);
+      const data = await res.json();
+
+      console.log("[CB-DEMO] Response type:", data.type);
+      console.log("[CB-DEMO] Clinics:", data.clinics?.length || 0);
+
+      // Show AI reply text
+      setAiMsgs((p) => [...p, { role: "ai", text: data.reply || "Yanıt alınamadı." }]);
+
+      // If clinic recommendations came, update matched clinics for the results section
+      if (data.clinics && data.clinics.length > 0) {
+        // Map API clinics to the format the results section expects
+        const apiClinics = data.clinics;
+        const matchedIds = apiClinics.map((c: any) => c.clinicId);
+        const matched = clinics.filter((c) => matchedIds.includes(c.id));
+        if (matched.length > 0) {
+          setMatchedClinics(matched);
+        }
       }
-    }, 1500);
+    } catch (err) {
+      console.error("[CB-DEMO] ERROR:", err);
+      setAiMsgs((p) => [...p, {
+        role: "ai",
+        text: lang === "tr"
+          ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin."
+          : "We're experiencing a technical issue. Please try again."
+      }]);
+    } finally {
+      setAiTyping(false);
+    }
   };
 
   // ── PRICING HELPERS ──

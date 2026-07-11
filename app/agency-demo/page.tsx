@@ -540,19 +540,38 @@ export default function AgencyDemoPage() {
     // Track history for context
     const newHistory = [...chatHistory, { role: "user", content: userMsg }];
 
+    const apiEndpoint = "/api/public/agency/feelinhealthy/matching-chat";
+    const requestPayload = {
+      message: userMsg,
+      history: newHistory.slice(-10),
+      sessionContext: sessionCtx,
+    };
+
+    console.log("[CB-MATCHING] ===== NEW REQUEST =====");
+    console.log("[CB-MATCHING] Version: v3-openai");
+    console.log("[CB-MATCHING] Endpoint:", apiEndpoint);
+    console.log("[CB-MATCHING] Payload:", JSON.stringify(requestPayload).slice(0, 500));
+
     try {
-      const res = await fetch("/api/public/agency/feelinhealthy/matching-chat", {
+      const res = await fetch(apiEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: userMsg,
-          history: newHistory.slice(-10),
-          sessionContext: sessionCtx,
-        }),
+        body: JSON.stringify(requestPayload),
       });
+
+      console.log("[CB-MATCHING] Response status:", res.status);
 
       if (!res.ok) throw new Error(`API error ${res.status}`);
       const data = await res.json();
+
+      console.log("[CB-MATCHING] Response type:", data.type);
+      console.log("[CB-MATCHING] Response reply:", (data.reply || "").slice(0, 200));
+      console.log("[CB-MATCHING] Clinics count:", data.clinics?.length || 0);
+      if (data.clinics?.length > 0) {
+        console.log("[CB-MATCHING] First clinic:", data.clinics[0].clinicName);
+        console.log("[CB-MATCHING] First clinic prices:", data.clinics[0].matchedPrices?.length || 0);
+      }
+      console.log("[CB-MATCHING] Session ctx:", JSON.stringify(data.sessionContext || {}).slice(0, 200));
 
       const aiMsg: ChatMessage = {
         id: nextMsgId(),
@@ -569,7 +588,7 @@ export default function AgencyDemoPage() {
       if (data.type === "clinic_recommendations" && data.clinics?.length > 0) setShowResults(true);
 
     } catch (err) {
-      console.error("[matching-chat] Error:", err);
+      console.error("[CB-MATCHING] ERROR:", err);
       setAiMessages((prev) => [...prev, {
         id: nextMsgId(), role: "ai", type: "text",
         text: lang === "tr"
