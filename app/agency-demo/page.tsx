@@ -1,9 +1,54 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { parseIntent, type SessionContext } from "@/lib/matching/intentParser";
-import { matchClinics, findClinicByName, type ClinicPricingItem, type DemoClinicInput, type ClinicRecommendation } from "@/lib/matching/clinicMatcher";
-import { buildMatchingResponse, buildClinicAnswerResponse, buildPricingResponse, buildDoctorResponse, buildUserMessage, type ChatMessage } from "@/lib/matching/responseBuilder";
+
+/* ── Chat Message Types (inline — no external dependency) ── */
+interface MatchedPrice {
+  subTreatmentName: string;
+  priceMin: number;
+  priceMax: number;
+  currency: string;
+  priceType: string;
+  duration: string;
+}
+
+interface ClinicRec {
+  clinicId: string;
+  clinicName: string;
+  clinicSlug: string;
+  clinicType: string;
+  location: string;
+  rating: number;
+  reviews: number;
+  matchScore: number;
+  matchedPrices: MatchedPrice[];
+  supportedLanguages: string[];
+  reason: string;
+  profilePath: string;
+  accommodation: boolean;
+  transfer: boolean;
+  shortDescription: string;
+}
+
+interface ChatMessage {
+  id: string;
+  role: "user" | "ai";
+  type: string;
+  text: string;
+  clinics?: ClinicRec[];
+}
+
+interface SessionContext {
+  lastTreatmentCategory?: string;
+  lastSubTreatment?: string;
+  lastLocation?: string;
+  lastRecommendedClinicIds?: string[];
+  lastFocusedClinicId?: string;
+  lastFocusedClinicName?: string;
+}
+
+let _msgId = 0;
+function nextMsgId() { return `msg_${Date.now()}_${++_msgId}`; }
 import Link from "next/link";
 import {
   Search, MapPin, Stethoscope, Star, Globe2, Hotel, Car, MessageSquare,
@@ -43,13 +88,11 @@ const TEXTS: Record<Lang, Record<string, string>> = {
 
     // AI Section
     "ai.title": "Ne tür bir tedavi aradığınızı bize anlatın",
-    "ai.placeholder": "Örneğin: İstanbul'da implant yaptırmak istiyorum. Bütçem 3.000 Euro. İngilizce konuşan ve konaklama desteği veren klinikler önceliğim.",
-    "ai.searchBtn": "Yapay Zekâ ile Klinik Bul",
+    "ai.placeholder": "Örn: Antalya'da implant yaptırmak istiyorum. 3000 EUR bütçem var. İngilizce destek ve transfer önemli.",
+    "ai.searchBtn": "AI ile Klinik Bul",
     "ai.poweredBy": "ClinicBridge AI tarafından desteklenmektedir",
-    "ai.greeting": "Merhaba! Size en uygun kliniği bulmak için buradayım. Hangi tedaviyi arıyorsunuz?",
+    "ai.greeting": "Merhaba! 👋 Tedavi ihtiyacınızı bana anlatın; lokasyon, bütçe ve tercihlerinize göre size en uygun klinikleri fiyat aralıklarıyla birlikte önereyim.",
     "ai.analyzing": "Talebinizi analiz ediyorum...",
-    "ai.response1": "Anladım! İstanbul'da diş implantı tedavisi için en uygun klinikleri arıyorsunuz. Bütçeniz yaklaşık 3.000 Euro ve İngilizce konuşan, konaklama destekli klinikler tercih ediyorsunuz.",
-    "ai.response2": "Size 3 klinik önerisi hazırladım. Her birinin AI eşleşme oranı, tahmini fiyat aralığı ve hizmet detaylarını aşağıda görebilirsiniz.",
     "ai.typing": "ClinicBridge AI yazıyor...",
 
     // Results
@@ -154,13 +197,11 @@ const TEXTS: Record<Lang, Record<string, string>> = {
 
     // AI Section
     "ai.title": "Tell us what treatment you're looking for",
-    "ai.placeholder": "For example: I want to get dental implants in Istanbul. My budget is around €3,000. I prefer English-speaking clinics with accommodation support.",
-    "ai.searchBtn": "Find Clinics with AI",
+    "ai.placeholder": "Example: I want dental implants in Antalya. My budget is 3000 EUR. English support and transfer are important.",
+    "ai.searchBtn": "Find Clinic with AI",
     "ai.poweredBy": "Powered by ClinicBridge AI",
-    "ai.greeting": "Hello! I'm here to help you find the perfect clinic. What treatment are you looking for?",
+    "ai.greeting": "Hello! 👋 Tell me your treatment need, preferred location, and budget. I'll match you with suitable clinics and show estimated prices, clinic details, and quote options.",
     "ai.analyzing": "Analyzing your request...",
-    "ai.response1": "Got it! You're looking for dental implant treatment in Istanbul. Your budget is around €3,000, and you prefer English-speaking clinics with accommodation support.",
-    "ai.response2": "I've prepared 3 clinic recommendations for you. You can see each clinic's AI match score, estimated price range, and service details below.",
     "ai.typing": "ClinicBridge AI is typing...",
 
     // Results
@@ -442,13 +483,13 @@ export default function AgencyDemoPage() {
   const [leadSubmitted, setLeadSubmitted] = useState(false);
   const [leadSubmitting, setLeadSubmitting] = useState(false);
   const [clinics, setClinics] = useState<DemoClinic[]>(FALLBACK_CLINICS);
-  const [allPricing, setAllPricing] = useState<ClinicPricingItem[]>([]);
   const [sessionCtx, setSessionCtx] = useState<SessionContext>({});
+  const [chatHistory, setChatHistory] = useState<{ role: string; content: string }[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const t = (key: string) => TEXTS[lang][key] || key;
 
-  // Fetch live clinic data, fallback to demo data
+  // Fetch live clinic data for results section
   useEffect(() => {
     (async () => {
       try {
@@ -480,15 +521,6 @@ export default function AgencyDemoPage() {
         }
       } catch { /* fallback to FALLBACK_CLINICS */ }
     })();
-    // Fetch pricing data
-    (async () => {
-      try {
-        const res = await fetch("/api/public/agency/feelinhealthy/pricing");
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.pricing) setAllPricing(data.pricing);
-      } catch { /* no pricing available */ }
-    })();
   }, []);
 
   useEffect(() => {
@@ -499,83 +531,54 @@ export default function AgencyDemoPage() {
     if (!aiInput.trim()) return;
     const userMsg = aiInput;
     setAiInput("");
-    setAiMessages((prev) => [...prev, buildUserMessage(userMsg)]);
+
+    // Add user message to chat
+    const userChatMsg: ChatMessage = { id: nextMsgId(), role: "user", type: "text", text: userMsg };
+    setAiMessages((prev) => [...prev, userChatMsg]);
     setAiTyping(true);
 
-    // Small delay for UX
-    await new Promise((r) => setTimeout(r, 800 + Math.random() * 700));
+    // Track history for context
+    const newHistory = [...chatHistory, { role: "user", content: userMsg }];
 
-    const knownNames = clinics.map((c) => c.name);
-    const intent = parseIntent(userMsg, sessionCtx, knownNames);
-    const clinicsInput = clinics as unknown as DemoClinicInput[];
+    try {
+      const res = await fetch("/api/public/agency/feelinhealthy/matching-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: userMsg,
+          history: newHistory.slice(-10),
+          sessionContext: sessionCtx,
+        }),
+      });
 
-    let response: ChatMessage;
-    const newCtx = { ...sessionCtx };
+      if (!res.ok) throw new Error(`API error ${res.status}`);
+      const data = await res.json();
 
-    switch (intent.type) {
-      case "matching": {
-        const recs = matchClinics(intent, clinicsInput, allPricing, 3);
-        response = buildMatchingResponse(intent, recs);
-        if (recs.length > 0) {
-          newCtx.lastRecommendedClinicIds = recs.map((r) => r.clinicId);
-          newCtx.lastFocusedClinicId = recs[0].clinicId;
-          newCtx.lastFocusedClinicName = recs[0].clinicName;
-          setShowResults(true);
-        }
-        if (intent.treatmentCategory) newCtx.lastTreatmentCategory = intent.treatmentCategory;
-        if (intent.subTreatment) newCtx.lastSubTreatment = intent.subTreatment;
-        if (intent.location) newCtx.lastLocation = intent.location;
-        break;
-      }
-      case "clinic_question": {
-        const clinic = intent.clinicName ? findClinicByName(intent.clinicName, clinicsInput) : undefined;
-        if (clinic) {
-          const cPricing = allPricing.filter((p) => p.clinicId === clinic.id || (p.clinicName && p.clinicName.toLowerCase() === clinic.name.toLowerCase()));
-          response = buildClinicAnswerResponse(intent, clinic, cPricing);
-          newCtx.lastFocusedClinicId = clinic.id;
-          newCtx.lastFocusedClinicName = clinic.name;
-        } else {
-          response = { id: `msg_${Date.now()}`, role: "ai", type: "text", text: lang === "tr" ? "Belirttiğiniz klinik sistemde bulunamadı. Lütfen klinik adını kontrol edin." : "The specified clinic was not found. Please check the clinic name." };
-        }
-        break;
-      }
-      case "pricing_question": {
-        const clinic = intent.clinicName ? findClinicByName(intent.clinicName, clinicsInput) : (sessionCtx.lastFocusedClinicName ? findClinicByName(sessionCtx.lastFocusedClinicName, clinicsInput) : undefined);
-        let relevantPricing = allPricing;
-        if (clinic) {
-          relevantPricing = allPricing.filter((p) => p.clinicId === clinic.id || (p.clinicName && p.clinicName.toLowerCase() === clinic.name.toLowerCase()));
-        }
-        if (intent.subTreatment) {
-          const subLower = intent.subTreatment.toLowerCase();
-          const filtered = relevantPricing.filter((p) => (p.subTreatmentName || p.treatmentName || "").toLowerCase().includes(subLower));
-          if (filtered.length > 0) relevantPricing = filtered;
-        }
-        response = buildPricingResponse(intent, clinic, relevantPricing.slice(0, 8));
-        if (clinic) { newCtx.lastFocusedClinicId = clinic.id; newCtx.lastFocusedClinicName = clinic.name; }
-        break;
-      }
-      case "doctor_question": {
-        const clinic = intent.clinicName ? findClinicByName(intent.clinicName, clinicsInput) : (sessionCtx.lastFocusedClinicName ? findClinicByName(sessionCtx.lastFocusedClinicName, clinicsInput) : undefined);
-        let doctors: any[] = [];
-        if (clinic) {
-          try {
-            const res = await fetch(`/api/public/agency/feelinhealthy/clinics/${clinic.id}/doctors`);
-            if (res.ok) { const d = await res.json(); doctors = d.doctors || []; }
-          } catch { /* no doctors */ }
-          newCtx.lastFocusedClinicId = clinic.id;
-          newCtx.lastFocusedClinicName = clinic.name;
-        }
-        response = buildDoctorResponse(intent, clinic, doctors);
-        break;
-      }
-      default: {
-        response = { id: `msg_${Date.now()}`, role: "ai", type: "text", text: lang === "tr" ? "Size nasıl yardımcı olabilirim? Hangi tedaviyi aradığınızı, lokasyonunuzu veya bütçenizi paylaşabilirsiniz. Ayrıca belirli bir klinik hakkında soru sorabilirsiniz." : "How can I help you? You can share the treatment you're looking for, your preferred location, or budget. You can also ask about a specific clinic." };
-      }
+      const aiMsg: ChatMessage = {
+        id: nextMsgId(),
+        role: "ai",
+        type: data.type || "text",
+        text: data.reply || "Bir sorun oluştu.",
+        clinics: data.clinics || undefined,
+      };
+
+      setAiMessages((prev) => [...prev, aiMsg]);
+      setChatHistory([...newHistory, { role: "assistant", content: data.reply }]);
+
+      if (data.sessionContext) setSessionCtx(data.sessionContext);
+      if (data.type === "clinic_recommendations" && data.clinics?.length > 0) setShowResults(true);
+
+    } catch (err) {
+      console.error("[matching-chat] Error:", err);
+      setAiMessages((prev) => [...prev, {
+        id: nextMsgId(), role: "ai", type: "text",
+        text: lang === "tr"
+          ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin."
+          : "We're experiencing a technical issue. Please try again.",
+      }]);
+    } finally {
+      setAiTyping(false);
     }
-
-    setSessionCtx(newCtx);
-    setAiMessages((prev) => [...prev, response]);
-    setAiTyping(false);
   };
 
   const openLeadModal = (clinicName: string) => {
