@@ -258,8 +258,9 @@ export async function addClinicPricing(
 ): Promise<string> {
   const colRef = collection(db, "agencies", agencyId, "clinics", clinicDocId, "pricing");
   const docRef = doc(colRef);
+  const cleanData = stripUndefined(data as Record<string, any>);
   await setDoc(docRef, {
-    ...data,
+    ...cleanData,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -272,8 +273,9 @@ export async function updateClinicPricing(
   pricingId: string,
   data: Partial<ClinicTreatmentPricing>
 ): Promise<void> {
+  const cleanData = stripUndefined(data as Record<string, any>);
   await updateDoc(doc(db, "agencies", agencyId, "clinics", clinicDocId, "pricing", pricingId), {
-    ...data,
+    ...cleanData,
     updatedAt: serverTimestamp(),
   });
 }

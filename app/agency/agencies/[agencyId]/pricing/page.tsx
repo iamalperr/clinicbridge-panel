@@ -52,6 +52,11 @@ export default function PricingPage() {
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const showToast = (type: "success" | "error", message: string) => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   const catLabel = (cat: string) => TREATMENT_CATEGORIES[cat as TreatmentCategory]?.[language === "tr" ? "tr" : "en"] || cat;
 
@@ -106,36 +111,79 @@ export default function PricingPage() {
   };
 
   const handleSave = async () => {
-    if (!agencyId || (!form.subTreatmentName && !form.treatmentName) || !form.priceMin) return;
+    // Validation
+    const subName = form.subTreatmentName || form.treatmentName;
+    if (!agencyId) {
+      showToast("error", language === "tr" ? "Acenta bilgisi bulunamadı." : "Agency not found.");
+      return;
+    }
+    if (!subName) {
+      showToast("error", language === "tr" ? "Alt tedavi / işlem adı zorunludur." : "Sub treatment name is required.");
+      return;
+    }
+    if (!form.priceMin || isNaN(Number(form.priceMin))) {
+      showToast("error", language === "tr" ? "Min fiyat geçerli bir sayı olmalıdır." : "Min price must be a valid number.");
+      return;
+    }
     setSaving(true);
     try {
-      const data: any = {
-        treatmentId: form.treatmentId || (form.subTreatmentName || form.treatmentName).toLowerCase().replace(/[^a-z0-9]+/g, "_"),
-        treatmentName: form.subTreatmentName || form.treatmentName,
-        subTreatmentName: form.subTreatmentName || form.treatmentName || undefined,
-        priceGroup: form.priceGroup || undefined,
-        duration: form.duration || undefined,
+      // Build payload — use empty string instead of undefined to prevent Firestore errors
+      const data: Record<string, any> = {
+        treatmentId: form.treatmentId || subName.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
+        treatmentName: subName,
+        subTreatmentName: subName,
         category: form.category,
-        clinicId: form.clinicId || undefined,
-        clinicName: form.clinicName || undefined,
         priceMin: Number(form.priceMin),
-        priceMax: Number(form.priceMax),
-        currency: form.currency,
-        priceType: form.priceType,
-        packageDetails: form.packageDetails || undefined,
-        notes: form.notes || undefined,
-        status: form.status,
+        priceMax: Number(form.priceMax) || Number(form.priceMin),
+        currency: form.currency || "EUR",
+        priceType: form.priceType || "package",
+        status: form.status || "active",
+        showOnPublicProfile: true,
+        allowQuoteRequest: true,
       };
-      if (editingId) { await updatePricing(agencyId, editingId, data); }
-      else { await createPricing(agencyId, data); }
+      // Optional fields — only include if not empty
+      if (form.priceGroup) data.priceGroup = form.priceGroup;
+      if (form.duration) data.duration = form.duration;
+      if (form.clinicId) data.clinicId = form.clinicId;
+      if (form.clinicName) data.clinicName = form.clinicName;
+      if (form.packageDetails) data.packageDetails = form.packageDetails;
+      if (form.notes) data.notes = form.notes;
+
+      console.log("[PricingPage] handleSave payload:", { agencyId, editingId, data });
+
+      if (editingId) {
+        await updatePricing(agencyId, editingId, data);
+      } else {
+        await createPricing(agencyId, data);
+      }
+      setForm(EMPTY_FORM);
+      setEditingId(null);
       setShowModal(false);
-    } catch (err) { console.error("Failed to save pricing:", err); }
-    finally { setSaving(false); }
+      showToast("success", language === "tr" ? "Fiyat başarıyla kaydedildi." : "Pricing saved successfully.");
+    } catch (err: any) {
+      console.error("[PricingPage] Failed to save pricing:", err, { agencyId, form });
+      const code = err?.code || "";
+      let msg = language === "tr" ? "Fiyat eklenemedi. Lütfen tekrar deneyin." : "Failed to save pricing. Please try again.";
+      if (code === "permission-denied" || code === "PERMISSION_DENIED") {
+        msg = language === "tr" ? "Fiyat ekleme yetkiniz yok veya veritabanı izni engellendi." : "Permission denied.";
+      } else if (code === "invalid-argument" || (err?.message || "").includes("undefined")) {
+        msg = language === "tr" ? "Eksik veya geçersiz veri nedeniyle fiyat kaydedilemedi." : "Invalid data — check required fields.";
+      }
+      showToast("error", msg);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = async (id: string) => {
     if (!agencyId || !confirm(t("portal.pricing.deleteConfirm"))) return;
-    try { await deletePricing(agencyId, id); } catch (err) { console.error(err); }
+    try {
+      await deletePricing(agencyId, id);
+      showToast("success", language === "tr" ? "Fiyat silindi." : "Pricing deleted.");
+    } catch (err) {
+      console.error("[PricingPage] Failed to delete pricing:", err);
+      showToast("error", language === "tr" ? "Fiyat silinemedi." : "Failed to delete.");
+    }
   };
 
   const selectTreatment = (tid: string) => {
@@ -332,6 +380,19 @@ export default function PricingPage() {
           </div>
         </div>
       </Modal>
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position: "fixed", bottom: 24, right: 24, zIndex: 9999,
+          padding: "12px 20px", borderRadius: 10, fontSize: 13, fontWeight: 600,
+          background: toast.type === "success" ? "#10b981" : "#ef4444",
+          color: "#fff", boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
+          animation: "slideUp 0.3s ease",
+        }}>
+          {toast.message}
+        </div>
+      )}
+      <style>{`@keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }`}</style>
     </div>
   );
 }

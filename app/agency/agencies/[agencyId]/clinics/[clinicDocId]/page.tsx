@@ -325,37 +325,40 @@ export default function ClinicProfilePage() {
     if (!pricingForm.subTreatmentName) return;
     setSaving(true);
     try {
-      const payload = {
+      const payload: Record<string, any> = {
         agencyClinicId: clinicDocId,
-        treatmentName: pricingForm.subTreatmentName, // backward compat
+        treatmentName: pricingForm.subTreatmentName,
         subTreatmentName: pricingForm.subTreatmentName,
-        treatmentCategoryName: pricingForm.treatmentCategoryName || undefined,
-        priceGroup: pricingForm.priceGroup || undefined,
         priceMin: Number(pricingForm.priceMin) || 0,
-        priceMax: Number(pricingForm.priceMax) || 0,
-        currency: pricingForm.currency,
-        priceType: pricingForm.priceType,
-        duration: pricingForm.duration || undefined,
-        notes: pricingForm.notes || undefined,
-        packageDetails: pricingForm.packageDetails || undefined,
+        priceMax: Number(pricingForm.priceMax) || Number(pricingForm.priceMin) || 0,
+        currency: pricingForm.currency || "EUR",
+        priceType: pricingForm.priceType || "package",
         showOnPublicProfile: pricingForm.showOnPublicProfile,
         allowQuoteRequest: pricingForm.allowQuoteRequest,
         status: "active" as const,
       };
+      // Only include optional fields if they have values
+      if (pricingForm.treatmentCategoryName) payload.treatmentCategoryName = pricingForm.treatmentCategoryName;
+      if (pricingForm.priceGroup) payload.priceGroup = pricingForm.priceGroup;
+      if (pricingForm.duration) payload.duration = pricingForm.duration;
+      if (pricingForm.notes) payload.notes = pricingForm.notes;
+      if (pricingForm.packageDetails) payload.packageDetails = pricingForm.packageDetails;
+
+      console.log("[ClinicProfile] handleAddPricing payload:", { agencyId, clinicDocId, editingPricingId, payload });
+
       if (editingPricingId) {
-        const { ...updatePayload } = payload;
         await updateDoc(doc(db, "agencies", agencyId, "clinics", clinicDocId, "pricing", editingPricingId), {
-          ...updatePayload,
+          ...payload,
           updatedAt: serverTimestamp(),
         });
       } else {
-        await addClinicPricing(agencyId, clinicDocId, payload);
+        await addClinicPricing(agencyId, clinicDocId, payload as any);
       }
       resetPricingForm();
       setShowPricingForm(false);
       showToast("success", t("portal.clinics.profile.saved"));
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error("[ClinicProfile] Failed to save pricing:", err, { agencyId, clinicDocId, pricingForm });
       showToast("error", t("portal.clinics.profile.saveFailed"));
     }
     setSaving(false);
