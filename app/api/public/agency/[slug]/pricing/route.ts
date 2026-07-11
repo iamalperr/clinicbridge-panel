@@ -69,10 +69,13 @@ export async function GET(
           clinicId: clinicDoc.id,
           clinicName: clinicData.clinicName,
           treatmentName: p.treatmentName,
+          subTreatmentName: p.subTreatmentName || p.treatmentName,
+          priceGroup: p.priceGroup || null,
           priceMin: p.priceMin,
           priceMax: p.priceMax,
           currency: p.currency || "EUR",
           priceType: p.priceType || "average",
+          duration: p.duration || null,
           notes: p.notes || null,
         });
       }

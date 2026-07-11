@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { parseIntent, type SessionContext } from "@/lib/matching/intentParser";
+import { matchClinics, findClinicByName, type ClinicPricingItem, type DemoClinicInput, type ClinicRecommendation } from "@/lib/matching/clinicMatcher";
+import { buildMatchingResponse, buildClinicAnswerResponse, buildPricingResponse, buildDoctorResponse, buildUserMessage, type ChatMessage } from "@/lib/matching/responseBuilder";
 import Link from "next/link";
 import {
   Search, MapPin, Stethoscope, Star, Globe2, Hotel, Car, MessageSquare,
@@ -431,7 +434,7 @@ export default function AgencyDemoPage() {
   const [lang, setLang] = useState<Lang>("tr");
   const [mobileMenu, setMobileMenu] = useState(false);
   const [aiInput, setAiInput] = useState("");
-  const [aiMessages, setAiMessages] = useState<{ role: "user" | "ai"; text: string }[]>([]);
+  const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const [aiTyping, setAiTyping] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [leadModal, setLeadModal] = useState(false);
@@ -439,6 +442,8 @@ export default function AgencyDemoPage() {
   const [leadSubmitted, setLeadSubmitted] = useState(false);
   const [leadSubmitting, setLeadSubmitting] = useState(false);
   const [clinics, setClinics] = useState<DemoClinic[]>(FALLBACK_CLINICS);
+  const [allPricing, setAllPricing] = useState<ClinicPricingItem[]>([]);
+  const [sessionCtx, setSessionCtx] = useState<SessionContext>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const t = (key: string) => TEXTS[lang][key] || key;
@@ -475,32 +480,102 @@ export default function AgencyDemoPage() {
         }
       } catch { /* fallback to FALLBACK_CLINICS */ }
     })();
+    // Fetch pricing data
+    (async () => {
+      try {
+        const res = await fetch("/api/public/agency/feelinhealthy/pricing");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.pricing) setAllPricing(data.pricing);
+      } catch { /* no pricing available */ }
+    })();
   }, []);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [aiMessages, aiTyping]);
 
-  const handleAiSubmit = () => {
+  const handleAiSubmit = async () => {
     if (!aiInput.trim()) return;
     const userMsg = aiInput;
     setAiInput("");
-    setAiMessages((prev) => [...prev, { role: "user", text: userMsg }]);
+    setAiMessages((prev) => [...prev, buildUserMessage(userMsg)]);
     setAiTyping(true);
 
-    setTimeout(() => {
-      setAiMessages((prev) => [...prev, { role: "ai", text: t("ai.response1") }]);
-      setAiTyping(false);
+    // Small delay for UX
+    await new Promise((r) => setTimeout(r, 800 + Math.random() * 700));
 
-      setTimeout(() => {
-        setAiTyping(true);
-        setTimeout(() => {
-          setAiMessages((prev) => [...prev, { role: "ai", text: t("ai.response2") }]);
-          setAiTyping(false);
+    const knownNames = clinics.map((c) => c.name);
+    const intent = parseIntent(userMsg, sessionCtx, knownNames);
+    const clinicsInput = clinics as unknown as DemoClinicInput[];
+
+    let response: ChatMessage;
+    const newCtx = { ...sessionCtx };
+
+    switch (intent.type) {
+      case "matching": {
+        const recs = matchClinics(intent, clinicsInput, allPricing, 3);
+        response = buildMatchingResponse(intent, recs);
+        if (recs.length > 0) {
+          newCtx.lastRecommendedClinicIds = recs.map((r) => r.clinicId);
+          newCtx.lastFocusedClinicId = recs[0].clinicId;
+          newCtx.lastFocusedClinicName = recs[0].clinicName;
           setShowResults(true);
-        }, 2000);
-      }, 1000);
-    }, 2000);
+        }
+        if (intent.treatmentCategory) newCtx.lastTreatmentCategory = intent.treatmentCategory;
+        if (intent.subTreatment) newCtx.lastSubTreatment = intent.subTreatment;
+        if (intent.location) newCtx.lastLocation = intent.location;
+        break;
+      }
+      case "clinic_question": {
+        const clinic = intent.clinicName ? findClinicByName(intent.clinicName, clinicsInput) : undefined;
+        if (clinic) {
+          const cPricing = allPricing.filter((p) => p.clinicId === clinic.id || (p.clinicName && p.clinicName.toLowerCase() === clinic.name.toLowerCase()));
+          response = buildClinicAnswerResponse(intent, clinic, cPricing);
+          newCtx.lastFocusedClinicId = clinic.id;
+          newCtx.lastFocusedClinicName = clinic.name;
+        } else {
+          response = { id: `msg_${Date.now()}`, role: "ai", type: "text", text: lang === "tr" ? "Belirttiğiniz klinik sistemde bulunamadı. Lütfen klinik adını kontrol edin." : "The specified clinic was not found. Please check the clinic name." };
+        }
+        break;
+      }
+      case "pricing_question": {
+        const clinic = intent.clinicName ? findClinicByName(intent.clinicName, clinicsInput) : (sessionCtx.lastFocusedClinicName ? findClinicByName(sessionCtx.lastFocusedClinicName, clinicsInput) : undefined);
+        let relevantPricing = allPricing;
+        if (clinic) {
+          relevantPricing = allPricing.filter((p) => p.clinicId === clinic.id || (p.clinicName && p.clinicName.toLowerCase() === clinic.name.toLowerCase()));
+        }
+        if (intent.subTreatment) {
+          const subLower = intent.subTreatment.toLowerCase();
+          const filtered = relevantPricing.filter((p) => (p.subTreatmentName || p.treatmentName || "").toLowerCase().includes(subLower));
+          if (filtered.length > 0) relevantPricing = filtered;
+        }
+        response = buildPricingResponse(intent, clinic, relevantPricing.slice(0, 8));
+        if (clinic) { newCtx.lastFocusedClinicId = clinic.id; newCtx.lastFocusedClinicName = clinic.name; }
+        break;
+      }
+      case "doctor_question": {
+        const clinic = intent.clinicName ? findClinicByName(intent.clinicName, clinicsInput) : (sessionCtx.lastFocusedClinicName ? findClinicByName(sessionCtx.lastFocusedClinicName, clinicsInput) : undefined);
+        let doctors: any[] = [];
+        if (clinic) {
+          try {
+            const res = await fetch(`/api/public/agency/feelinhealthy/clinics/${clinic.id}/doctors`);
+            if (res.ok) { const d = await res.json(); doctors = d.doctors || []; }
+          } catch { /* no doctors */ }
+          newCtx.lastFocusedClinicId = clinic.id;
+          newCtx.lastFocusedClinicName = clinic.name;
+        }
+        response = buildDoctorResponse(intent, clinic, doctors);
+        break;
+      }
+      default: {
+        response = { id: `msg_${Date.now()}`, role: "ai", type: "text", text: lang === "tr" ? "Size nasıl yardımcı olabilirim? Hangi tedaviyi aradığınızı, lokasyonunuzu veya bütçenizi paylaşabilirsiniz. Ayrıca belirli bir klinik hakkında soru sorabilirsiniz." : "How can I help you? You can share the treatment you're looking for, your preferred location, or budget. You can also ask about a specific clinic." };
+      }
+    }
+
+    setSessionCtx(newCtx);
+    setAiMessages((prev) => [...prev, response]);
+    setAiTyping(false);
   };
 
   const openLeadModal = (clinicName: string) => {
@@ -714,8 +789,8 @@ export default function AgencyDemoPage() {
                 </div>
               )}
 
-              {aiMessages.map((msg, i) => (
-                <div key={i} style={{
+              {aiMessages.map((msg) => (
+                <div key={msg.id} style={{
                   display: "flex", gap: 12, marginBottom: 16,
                   flexDirection: msg.role === "user" ? "row-reverse" : "row",
                   animation: "slideIn 0.4s ease",
@@ -727,15 +802,92 @@ export default function AgencyDemoPage() {
                   }}>
                     {msg.role === "user" ? <User size={18} color="#fff" /> : <Bot size={18} color="#fff" />}
                   </div>
-                  <div style={{
-                    background: msg.role === "user" ? C.navy : C.white,
-                    color: msg.role === "user" ? "#fff" : C.text,
-                    padding: "12px 16px",
-                    borderRadius: msg.role === "user" ? "16px 4px 16px 16px" : "4px 16px 16px 16px",
-                    border: msg.role === "user" ? "none" : `1px solid ${C.border}`,
-                    maxWidth: "85%", fontSize: 14, lineHeight: 1.6,
-                  }}>
-                    {msg.text}
+                  <div style={{ maxWidth: "88%", minWidth: 0 }}>
+                    {/* Text bubble */}
+                    <div style={{
+                      background: msg.role === "user" ? C.navy : C.white,
+                      color: msg.role === "user" ? "#fff" : C.text,
+                      padding: "12px 16px",
+                      borderRadius: msg.role === "user" ? "16px 4px 16px 16px" : "4px 16px 16px 16px",
+                      border: msg.role === "user" ? "none" : `1px solid ${C.border}`,
+                      fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap",
+                    }}>
+                      {msg.text}
+                    </div>
+                    {/* Clinic recommendation cards */}
+                    {msg.clinics && msg.clinics.length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
+                        {msg.clinics.map((rec) => (
+                          <div key={rec.clinicId} style={{
+                            background: C.white, borderRadius: 14, border: `1px solid ${C.border}`,
+                            overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                          }}>
+                            {/* Card header */}
+                            <div style={{ padding: "14px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <div>
+                                <p style={{ fontSize: 15, fontWeight: 700, color: C.navy }}>{rec.clinicName}</p>
+                                <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 3 }}>
+                                  <span style={{ fontSize: 12, color: C.textSec, display: "flex", alignItems: "center", gap: 3 }}><MapPin size={11} /> {rec.location}</span>
+                                  {rec.clinicType && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: C.tealBg, color: C.teal, fontWeight: 600 }}>{rec.clinicType}</span>}
+                                </div>
+                              </div>
+                              {rec.matchScore > 0 && (
+                                <div style={{ background: C.tealBg, border: `1px solid ${C.tealBorder}`, borderRadius: 8, padding: "4px 10px", textAlign: "center" }}>
+                                  <span style={{ fontSize: 16, fontWeight: 800, color: C.teal }}>{rec.matchScore}%</span>
+                                  <p style={{ fontSize: 9, color: C.teal, fontWeight: 600 }}>AI {lang === "tr" ? "Eşleşme" : "Match"}</p>
+                                </div>
+                              )}
+                            </div>
+                            {/* Prices */}
+                            {rec.matchedPrices.length > 0 && (
+                              <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}` }}>
+                                <p style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", marginBottom: 6, letterSpacing: 0.5 }}>{lang === "tr" ? "Tahmini Fiyatlar" : "Estimated Prices"}</p>
+                                {rec.matchedPrices.map((p, pi) => (
+                                  <div key={pi} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0", fontSize: 13 }}>
+                                    <span style={{ color: C.text }}>{p.subTreatmentName}</span>
+                                    <span style={{ fontWeight: 700, color: C.teal }}>
+                                      {p.priceMin === p.priceMax ? `${p.priceMin} ${p.currency}` : `${p.priceMin}–${p.priceMax} ${p.currency}`}
+                                      {p.duration && <span style={{ fontWeight: 400, color: C.textMuted, fontSize: 11 }}> · {p.duration}</span>}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {/* Languages + Reason */}
+                            <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}` }}>
+                              {rec.supportedLanguages.length > 0 && (
+                                <div style={{ display: "flex", gap: 4, marginBottom: 6, flexWrap: "wrap" }}>
+                                  {rec.supportedLanguages.map((l) => (
+                                    <span key={l} style={{ fontSize: 10, padding: "1px 5px", borderRadius: 3, background: "rgba(99,102,241,0.08)", color: "#6366f1", fontWeight: 600 }}>{l}</span>
+                                  ))}
+                                </div>
+                              )}
+                              {rec.reason && <p style={{ fontSize: 12, color: C.textSec, fontStyle: "italic" }}>💡 {rec.reason}</p>}
+                            </div>
+                            {/* Actions */}
+                            <div style={{ padding: "10px 16px", display: "flex", gap: 8 }}>
+                              <a href={rec.profilePath} style={{
+                                flex: 1, padding: "8px 0", borderRadius: 8, fontSize: 12, fontWeight: 700, textAlign: "center",
+                                background: C.tealBg, color: C.teal, border: `1px solid ${C.tealBorder}`, textDecoration: "none",
+                              }}>
+                                {lang === "tr" ? "Daha Fazla Bilgi" : "More Info"}
+                              </a>
+                              <button onClick={() => openLeadModal(rec.clinicName)} style={{
+                                flex: 1, padding: "8px 0", borderRadius: 8, fontSize: 12, fontWeight: 700,
+                                background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer",
+                              }}>
+                                {lang === "tr" ? "Teklif İste" : "Request Quote"}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        {msg.type === "clinic_recommendations" && (
+                          <p style={{ fontSize: 11, color: C.textMuted, textAlign: "center", fontStyle: "italic" }}>
+                            {lang === "tr" ? "Fiyatlar tahminidir; kesin fiyat klinik değerlendirmesine göre değişebilir." : "Prices are estimates; final pricing depends on clinical evaluation."}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
