@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useI18n } from "@/lib/i18n-context";
 import {
@@ -130,10 +130,22 @@ export default function ClinicProfilePage() {
   // Pricing
   const [pricing, setPricing] = useState<ClinicTreatmentPricing[]>([]);
   const [showPricingForm, setShowPricingForm] = useState(false);
+  const [editingPricingId, setEditingPricingId] = useState<string | null>(null);
   const [pricingForm, setPricingForm] = useState({
-    treatmentName: "", priceMin: "", priceMax: "", currency: "EUR",
-    priceType: "average" as PriceType, notes: "", showOnPublicProfile: true, allowQuoteRequest: true,
+    subTreatmentName: "", treatmentCategoryName: "", priceGroup: "",
+    priceMin: "", priceMax: "", currency: "EUR",
+    priceType: "package" as PriceType, duration: "", notes: "",
+    packageDetails: "", showOnPublicProfile: true, allowQuoteRequest: true,
   });
+  const resetPricingForm = () => {
+    setPricingForm({
+      subTreatmentName: "", treatmentCategoryName: "", priceGroup: "",
+      priceMin: "", priceMax: "", currency: "EUR",
+      priceType: "package", duration: "", notes: "",
+      packageDetails: "", showOnPublicProfile: true, allowQuoteRequest: true,
+    });
+    setEditingPricingId(null);
+  };
 
   // FAQ
   const [faqs, setFaqs] = useState<ClinicFAQ[]>([]);
@@ -310,22 +322,36 @@ export default function ClinicProfilePage() {
   };
 
   const handleAddPricing = async () => {
-    if (!pricingForm.treatmentName) return;
+    if (!pricingForm.subTreatmentName) return;
     setSaving(true);
     try {
-      await addClinicPricing(agencyId, clinicDocId, {
+      const payload = {
         agencyClinicId: clinicDocId,
-        treatmentName: pricingForm.treatmentName,
+        treatmentName: pricingForm.subTreatmentName, // backward compat
+        subTreatmentName: pricingForm.subTreatmentName,
+        treatmentCategoryName: pricingForm.treatmentCategoryName || undefined,
+        priceGroup: pricingForm.priceGroup || undefined,
         priceMin: Number(pricingForm.priceMin) || 0,
         priceMax: Number(pricingForm.priceMax) || 0,
         currency: pricingForm.currency,
         priceType: pricingForm.priceType,
+        duration: pricingForm.duration || undefined,
         notes: pricingForm.notes || undefined,
+        packageDetails: pricingForm.packageDetails || undefined,
         showOnPublicProfile: pricingForm.showOnPublicProfile,
         allowQuoteRequest: pricingForm.allowQuoteRequest,
-        status: "active",
-      });
-      setPricingForm({ treatmentName: "", priceMin: "", priceMax: "", currency: "EUR", priceType: "average", notes: "", showOnPublicProfile: true, allowQuoteRequest: true });
+        status: "active" as const,
+      };
+      if (editingPricingId) {
+        const { ...updatePayload } = payload;
+        await updateDoc(doc(db, "agencies", agencyId, "clinics", clinicDocId, "pricing", editingPricingId), {
+          ...updatePayload,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await addClinicPricing(agencyId, clinicDocId, payload);
+      }
+      resetPricingForm();
       setShowPricingForm(false);
       showToast("success", t("portal.clinics.profile.saved"));
     } catch (err) {
@@ -333,6 +359,25 @@ export default function ClinicProfilePage() {
       showToast("error", t("portal.clinics.profile.saveFailed"));
     }
     setSaving(false);
+  };
+
+  const openEditPricing = (p: ClinicTreatmentPricing) => {
+    setEditingPricingId(p.id || null);
+    setPricingForm({
+      subTreatmentName: p.subTreatmentName || p.treatmentName || "",
+      treatmentCategoryName: p.treatmentCategoryName || "",
+      priceGroup: p.priceGroup || "",
+      priceMin: String(p.priceMin || ""),
+      priceMax: String(p.priceMax || ""),
+      currency: p.currency || "EUR",
+      priceType: p.priceType || "package",
+      duration: p.duration || "",
+      notes: p.notes || "",
+      packageDetails: p.packageDetails || "",
+      showOnPublicProfile: p.showOnPublicProfile ?? true,
+      allowQuoteRequest: p.allowQuoteRequest ?? true,
+    });
+    setShowPricingForm(true);
   };
 
   const handleAddFAQ = async () => {
@@ -625,38 +670,96 @@ export default function ClinicProfilePage() {
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
               <SectionTitle icon={<DollarSign size={18} />} title={t("portal.clinics.profile.tabs.pricing")} />
-              <Button variant="secondary" onClick={() => setShowPricingForm(!showPricingForm)} style={{ fontSize: 12 }}>
+              <Button variant="secondary" onClick={() => { if (showPricingForm) { resetPricingForm(); setShowPricingForm(false); } else setShowPricingForm(true); }} style={{ fontSize: 12 }}>
                 {showPricingForm ? <X size={12} /> : <Plus size={12} />}
                 {showPricingForm ? t("portal.buttons.cancel") : t("portal.clinics.pricing.addPricing")}
               </Button>
             </div>
 
-            {showPricingForm && (
-              <div style={{ padding: 16, borderRadius: 10, border: "1px solid rgba(16,185,129,0.2)", background: "rgba(16,185,129,0.02)", marginBottom: 16 }}>
-                <Input label={t("portal.clinics.pricing.treatmentName")} value={pricingForm.treatmentName} onChange={(e) => setPricingForm(p => ({ ...p, treatmentName: e.target.value }))} placeholder="Dental Implant" />
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 8 }}>
-                  <Input label={t("portal.clinics.pricing.priceMin")} value={pricingForm.priceMin} onChange={(e) => setPricingForm(p => ({ ...p, priceMin: e.target.value }))} placeholder="400" />
-                  <Input label={t("portal.clinics.pricing.priceMax")} value={pricingForm.priceMax} onChange={(e) => setPricingForm(p => ({ ...p, priceMax: e.target.value }))} placeholder="900" />
-                  <Input label={t("portal.clinics.pricing.currency")} value={pricingForm.currency} onChange={(e) => setPricingForm(p => ({ ...p, currency: e.target.value }))} />
-                </div>
-                <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-                  {(["average", "starting_from", "package", "per_unit"] as PriceType[]).map((pt) => (
-                    <button key={pt} type="button" onClick={() => setPricingForm(p => ({ ...p, priceType: pt }))} style={{
-                      padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer",
-                      border: `1px solid ${pricingForm.priceType === pt ? "#10b981" : UI_COLORS.border}`,
-                      background: pricingForm.priceType === pt ? "rgba(16,185,129,0.1)" : "transparent",
-                      color: pricingForm.priceType === pt ? "#10b981" : UI_COLORS.textSecondary,
-                    }}>{t(`portal.clinics.pricing.${pt === "starting_from" ? "startingFrom" : pt === "per_unit" ? "perUnit" : pt}`)}</button>
-                  ))}
-                </div>
-                <div style={{ marginTop: 8 }}>
+            {showPricingForm && (() => {
+              const subTreatmentOptions = (clinic?.subTreatments || []);
+              const ptMap: Record<string, string> = {
+                average: t("portal.clinics.pricing.average"),
+                starting_from: t("portal.clinics.pricing.startingFrom"),
+                package: t("portal.clinics.pricing.package"),
+                per_unit: t("portal.clinics.pricing.perUnit"),
+                per_tooth: t("portal.clinics.pricing.perTooth"),
+                per_session: t("portal.clinics.pricing.perSession"),
+                per_jaw: t("portal.clinics.pricing.perJaw"),
+              };
+              return (
+                <div style={{ padding: 20, borderRadius: 12, border: "1px solid rgba(16,185,129,0.2)", background: "rgba(16,185,129,0.02)", marginBottom: 20 }}>
+                  <h4 style={{ fontSize: 14, fontWeight: 700, color: UI_COLORS.textPrimary, marginBottom: 12 }}>
+                    {editingPricingId ? t("portal.clinics.pricing.editPricing") : t("portal.clinics.pricing.addPricing")}
+                  </h4>
+
+                  {/* Sub Treatment selection */}
+                  <div style={{ marginBottom: 12 }}>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 6 }}>{t("portal.clinics.pricing.subTreatment")}</p>
+                    {subTreatmentOptions.length > 0 ? (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                        {subTreatmentOptions.map((st) => {
+                          const sel = pricingForm.subTreatmentName === st;
+                          return (
+                            <button key={st} type="button" onClick={() => setPricingForm(p => ({ ...p, subTreatmentName: st }))} style={{
+                              padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                              border: `1px solid ${sel ? "#10b981" : UI_COLORS.border}`,
+                              background: sel ? "rgba(16,185,129,0.1)" : "transparent",
+                              color: sel ? "#10b981" : UI_COLORS.textSecondary,
+                            }}>{st}</button>
+                          );
+                        })}
+                        <button type="button" onClick={() => setPricingForm(p => ({ ...p, subTreatmentName: "" }))} style={{
+                          padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                          border: `1px dashed ${UI_COLORS.border}`, background: "transparent", color: UI_COLORS.textMuted,
+                        }}>{t("portal.clinics.pricing.manualEntry")}</button>
+                      </div>
+                    ) : null}
+                    {(subTreatmentOptions.length === 0 || pricingForm.subTreatmentName === "") && (
+                      <Input label="" value={pricingForm.subTreatmentName} onChange={(e) => setPricingForm(p => ({ ...p, subTreatmentName: e.target.value }))} placeholder="All-on-4 Diş İmplantları" />
+                    )}
+                  </div>
+
+                  {/* Price Group + Duration */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                    <Input label={t("portal.clinics.pricing.priceGroup")} value={pricingForm.priceGroup} onChange={(e) => setPricingForm(p => ({ ...p, priceGroup: e.target.value }))} placeholder={t("portal.clinics.pricing.priceGroupPlaceholder")} />
+                    <Input label={t("portal.clinics.pricing.duration")} value={pricingForm.duration} onChange={(e) => setPricingForm(p => ({ ...p, duration: e.target.value }))} placeholder={t("portal.clinics.pricing.durationPlaceholder")} />
+                  </div>
+
+                  {/* Price fields */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+                    <Input label={t("portal.clinics.pricing.priceMin")} value={pricingForm.priceMin} onChange={(e) => setPricingForm(p => ({ ...p, priceMin: e.target.value }))} placeholder="360" />
+                    <Input label={t("portal.clinics.pricing.priceMax")} value={pricingForm.priceMax} onChange={(e) => setPricingForm(p => ({ ...p, priceMax: e.target.value }))} placeholder="360" />
+                    <Input label={t("portal.clinics.pricing.currency")} value={pricingForm.currency} onChange={(e) => setPricingForm(p => ({ ...p, currency: e.target.value }))} />
+                  </div>
+
+                  {/* Price Type */}
+                  <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+                    {(["package", "average", "starting_from", "per_unit", "per_tooth", "per_session", "per_jaw"] as PriceType[]).map((pt) => (
+                      <button key={pt} type="button" onClick={() => setPricingForm(p => ({ ...p, priceType: pt }))} style={{
+                        padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                        border: `1px solid ${pricingForm.priceType === pt ? "#10b981" : UI_COLORS.border}`,
+                        background: pricingForm.priceType === pt ? "rgba(16,185,129,0.1)" : "transparent",
+                        color: pricingForm.priceType === pt ? "#10b981" : UI_COLORS.textSecondary,
+                      }}>{ptMap[pt] || pt}</button>
+                    ))}
+                  </div>
+
+                  {/* Notes + Package Details */}
                   <Input label={t("portal.clinics.pricing.notes")} value={pricingForm.notes} onChange={(e) => setPricingForm(p => ({ ...p, notes: e.target.value }))} placeholder="..." />
+                  <div style={{ marginTop: 8 }}>
+                    <Input label={t("portal.clinics.pricing.packageDetails")} value={pricingForm.packageDetails} onChange={(e) => setPricingForm(p => ({ ...p, packageDetails: e.target.value }))} placeholder="..." />
+                  </div>
+
+                  <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                    <Button variant="secondary" onClick={() => { resetPricingForm(); setShowPricingForm(false); }}>{t("portal.buttons.cancel")}</Button>
+                    <Button onClick={handleAddPricing} isLoading={saving}>
+                      <Save size={14} /> {editingPricingId ? t("portal.buttons.saveChanges") : t("portal.clinics.pricing.addPricing")}
+                    </Button>
+                  </div>
                 </div>
-                <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
-                  <Button onClick={handleAddPricing} isLoading={saving}><Plus size={14} /> {t("portal.clinics.pricing.addPricing")}</Button>
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             {pricing.length === 0 && !showPricingForm && (
               <div style={{ textAlign: "center", padding: 40, color: UI_COLORS.textMuted }}>
@@ -665,19 +768,58 @@ export default function ClinicProfilePage() {
               </div>
             )}
 
-            {pricing.map((p) => (
-              <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderRadius: 10, border: `1px solid ${UI_COLORS.border}`, marginBottom: 8 }}>
-                <div>
-                  <p style={{ fontSize: 14, fontWeight: 700, color: UI_COLORS.textPrimary }}>{p.treatmentName}</p>
-                  <p style={{ fontSize: 12, color: UI_COLORS.textMuted }}>
-                    {p.priceMin}–{p.priceMax} {p.currency} · {p.priceType}
-                    {p.notes && ` · ${p.notes}`}
-                  </p>
+            {/* Grouped pricing display */}
+            {(() => {
+              const groups = new Map<string, ClinicTreatmentPricing[]>();
+              pricing.forEach((p) => {
+                const g = p.priceGroup || "—";
+                if (!groups.has(g)) groups.set(g, []);
+                groups.get(g)!.push(p);
+              });
+              const ptLabel = (pt: string) => {
+                const m: Record<string, string> = { average: t("portal.clinics.pricing.average"), starting_from: t("portal.clinics.pricing.startingFrom"), package: t("portal.clinics.pricing.package"), per_unit: t("portal.clinics.pricing.perUnit"), per_tooth: t("portal.clinics.pricing.perTooth"), per_session: t("portal.clinics.pricing.perSession"), per_jaw: t("portal.clinics.pricing.perJaw") };
+                return m[pt] || pt;
+              };
+              return Array.from(groups.entries()).map(([group, items]) => (
+                <div key={group} style={{ marginBottom: 16 }}>
+                  {group !== "—" && <p style={{ fontSize: 12, fontWeight: 700, color: "#10b981", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>{group}</p>}
+                  <div style={{ borderRadius: 10, border: `1px solid ${UI_COLORS.border}`, overflow: "hidden" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ background: "rgba(16,185,129,0.03)" }}>
+                          <th style={{ textAlign: "left", padding: "10px 14px", fontWeight: 700, color: UI_COLORS.textPrimary }}>{t("portal.clinics.pricing.subTreatment")}</th>
+                          <th style={{ textAlign: "right", padding: "10px 14px", fontWeight: 700, color: UI_COLORS.textPrimary }}>{t("portal.clinics.pricing.priceMin")}</th>
+                          <th style={{ textAlign: "center", padding: "10px 14px", fontWeight: 700, color: UI_COLORS.textPrimary }}>{t("portal.clinics.pricing.duration")}</th>
+                          <th style={{ textAlign: "center", padding: "10px 14px", fontWeight: 700, color: UI_COLORS.textPrimary }}>{t("portal.clinics.pricing.priceType")}</th>
+                          <th style={{ width: 80 }}></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.map((p) => (
+                          <tr key={p.id} style={{ borderTop: `1px solid ${UI_COLORS.border}` }}>
+                            <td style={{ padding: "10px 14px", fontWeight: 600, color: UI_COLORS.textPrimary }}>{p.subTreatmentName || p.treatmentName}</td>
+                            <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, color: "#10b981" }}>
+                              {p.priceMin === p.priceMax ? `${p.priceMin} ${p.currency}` : `${p.priceMin}–${p.priceMax} ${p.currency}`}
+                            </td>
+                            <td style={{ padding: "10px 14px", textAlign: "center", color: UI_COLORS.textMuted }}>{p.duration || "—"}</td>
+                            <td style={{ padding: "10px 14px", textAlign: "center" }}>
+                              <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 600, background: "rgba(16,185,129,0.06)", color: "#10b981" }}>{ptLabel(p.priceType)}</span>
+                            </td>
+                            <td style={{ padding: "10px 8px", textAlign: "right" }}>
+                              <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                                <button onClick={() => openEditPricing(p)} style={{ background: "none", border: "none", cursor: "pointer", color: UI_COLORS.textMuted, padding: 4 }}><Edit2 size={13} /></button>
+                                <button onClick={() => { if (confirm(t("portal.clinics.pricing.deleteConfirm"))) deleteClinicPricing(agencyId, clinicDocId, p.id!); }}
+                                  style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", padding: 4 }}><Trash2 size={13} /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-                <button onClick={() => { if (confirm(t("portal.clinics.pricing.deleteConfirm"))) deleteClinicPricing(agencyId, clinicDocId, p.id!); }}
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444" }}><Trash2 size={14} /></button>
-              </div>
-            ))}
+              ));
+            })()}
           </div>
         )}
 

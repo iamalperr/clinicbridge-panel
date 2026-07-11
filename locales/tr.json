@@ -311,7 +311,15 @@
       "pricing": {
         "title": "Fiyatlandırma",
         "addPricing": "Fiyat Ekle",
+        "editPricing": "Fiyatı Düzenle",
         "treatmentName": "Tedavi Adı",
+        "treatmentCategory": "Tedavi Kategorisi",
+        "subTreatment": "Alt Tedavi / İşlem",
+        "selectSubTreatment": "Alt tedavi seçin",
+        "priceGroup": "Fiyat Grubu",
+        "priceGroupPlaceholder": "İmplant, Taç, Kaplamalar...",
+        "duration": "Süre",
+        "durationPlaceholder": "3 Gün, 7 Gün",
         "priceMin": "Min Fiyat",
         "priceMax": "Max Fiyat",
         "currency": "Para Birimi",
@@ -320,9 +328,14 @@
         "startingFrom": "Başlangıç",
         "package": "Paket",
         "perUnit": "Birim Başı",
+        "perTooth": "Diş Başına",
+        "perSession": "Seans Başına",
+        "perJaw": "Çene Başına",
         "notes": "Notlar",
+        "packageDetails": "Paket Detayları",
         "noPricing": "Henüz fiyatlandırma eklenmedi",
-        "deleteConfirm": "Bu fiyatlandırmayı silmek istiyor musunuz?"
+        "deleteConfirm": "Bu fiyatlandırmayı silmek istiyor musunuz?",
+        "manualEntry": "Manuel giriş"
       },
       "clinicTypes": {
         "dental": "Diş Kliniği",

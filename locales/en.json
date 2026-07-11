@@ -311,7 +311,15 @@
       "pricing": {
         "title": "Pricing",
         "addPricing": "Add Pricing",
+        "editPricing": "Edit Pricing",
         "treatmentName": "Treatment Name",
+        "treatmentCategory": "Treatment Category",
+        "subTreatment": "Sub Treatment / Procedure",
+        "selectSubTreatment": "Select sub treatment",
+        "priceGroup": "Price Group",
+        "priceGroupPlaceholder": "Implant, Crowns, Veneers...",
+        "duration": "Duration",
+        "durationPlaceholder": "3 Days, 7 Days",
         "priceMin": "Min Price",
         "priceMax": "Max Price",
         "currency": "Currency",
@@ -320,9 +328,14 @@
         "startingFrom": "Starting From",
         "package": "Package",
         "perUnit": "Per Unit",
+        "perTooth": "Per Tooth",
+        "perSession": "Per Session",
+        "perJaw": "Per Jaw",
         "notes": "Notes",
+        "packageDetails": "Package Details",
         "noPricing": "No pricing added yet",
-        "deleteConfirm": "Delete this pricing entry?"
+        "deleteConfirm": "Delete this pricing entry?",
+        "manualEntry": "Manual entry"
       },
       "clinicTypes": {
         "dental": "Dental Clinic",

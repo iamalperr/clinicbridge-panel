@@ -23,13 +23,16 @@ import { useI18n } from "@/lib/i18n-context";
 const EMPTY_FORM = {
   treatmentId: "",
   treatmentName: "",
+  subTreatmentName: "",
+  priceGroup: "",
+  duration: "",
   category: "dental" as TreatmentCategory,
   clinicId: "",
   clinicName: "",
   priceMin: "",
   priceMax: "",
   currency: "EUR",
-  priceType: "average" as ClinicTreatmentPrice["priceType"],
+  priceType: "package" as ClinicTreatmentPrice["priceType"],
   packageDetails: "",
   notes: "",
   status: "active" as "active" | "inactive",
@@ -88,7 +91,11 @@ export default function PricingPage() {
 
   const openEdit = (p: ClinicTreatmentPrice) => {
     setForm({
-      treatmentId: p.treatmentId, treatmentName: p.treatmentName, category: p.category,
+      treatmentId: p.treatmentId, treatmentName: p.treatmentName,
+      subTreatmentName: (p as any).subTreatmentName || p.treatmentName || "",
+      priceGroup: (p as any).priceGroup || "",
+      duration: (p as any).duration || "",
+      category: p.category,
       clinicId: p.clinicId || "", clinicName: p.clinicName || "",
       priceMin: p.priceMin.toString(), priceMax: p.priceMax.toString(),
       currency: p.currency, priceType: p.priceType,
@@ -99,12 +106,15 @@ export default function PricingPage() {
   };
 
   const handleSave = async () => {
-    if (!agencyId || !form.treatmentName || !form.priceMin) return;
+    if (!agencyId || (!form.subTreatmentName && !form.treatmentName) || !form.priceMin) return;
     setSaving(true);
     try {
       const data: any = {
-        treatmentId: form.treatmentId || form.treatmentName.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
-        treatmentName: form.treatmentName,
+        treatmentId: form.treatmentId || (form.subTreatmentName || form.treatmentName).toLowerCase().replace(/[^a-z0-9]+/g, "_"),
+        treatmentName: form.subTreatmentName || form.treatmentName,
+        subTreatmentName: form.subTreatmentName || form.treatmentName || undefined,
+        priceGroup: form.priceGroup || undefined,
+        duration: form.duration || undefined,
         category: form.category,
         clinicId: form.clinicId || undefined,
         clinicName: form.clinicName || undefined,
@@ -145,12 +155,26 @@ export default function PricingPage() {
       starting_from: t("portal.pricing.startingFrom"),
       package: t("portal.pricing.package"),
       per_unit: t("portal.pricing.perUnit"),
+      per_tooth: language === "tr" ? "Diş Başına" : "Per Tooth",
+      per_session: language === "tr" ? "Seans Başına" : "Per Session",
+      per_jaw: language === "tr" ? "Çene Başına" : "Per Jaw",
     };
     return map[pt] || pt;
   };
 
+  // selected clinic sub-treatments
+  const selectedClinicSubTreatments = form.clinicId
+    ? (clinics.find((c) => c.clinicId === form.clinicId || c.id === form.clinicId)?.subTreatments || [])
+    : [];
+
   const renderPricingTable = (items: ClinicTreatmentPrice[], title: string, isClinicTable: boolean) => {
     if (items.length === 0) return null;
+    const groups = new Map<string, ClinicTreatmentPrice[]>();
+    items.forEach((p) => {
+      const g = (p as any).priceGroup || "—";
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g)!.push(p);
+    });
     return (
       <div style={{ background: "var(--bg-card)", borderRadius: 14, border: `1px solid ${UI_COLORS.border}`, overflow: "hidden", marginBottom: 20 }}>
         <div style={{ padding: "14px 20px", borderBottom: `1px solid ${UI_COLORS.border}`, display: "flex", alignItems: "center", gap: 8 }}>
@@ -158,43 +182,51 @@ export default function PricingPage() {
           <span style={{ fontSize: 14, fontWeight: 700, color: UI_COLORS.textPrimary }}>{title}</span>
           <span style={{ fontSize: 12, color: UI_COLORS.textMuted }}>({items.length})</span>
         </div>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-          <thead>
-            <tr style={{ borderBottom: `1px solid ${UI_COLORS.border}` }}>
-              {[t("portal.pricing.treatment"), t("portal.pricing.category"), ...(isClinicTable ? [t("portal.pricing.clinic")] : []), t("portal.pricing.priceRange"), t("portal.pricing.type"), t("portal.pricing.status"), ""].map((h) => (
-                <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: UI_COLORS.textMuted }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((p) => (
-              <tr key={p.id} style={{ borderBottom: `1px solid ${UI_COLORS.border}`, transition: "background 0.15s" }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(16, 185, 129, 0.03)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
-                <td style={{ padding: "12px 14px", fontWeight: 600, color: UI_COLORS.textPrimary }}>{p.treatmentName}</td>
-                <td style={{ padding: "12px 14px", color: UI_COLORS.textMuted, fontSize: 12 }}>
-                  {catLabel(p.category)}
-                </td>
-                {isClinicTable && <td style={{ padding: "12px 14px", color: UI_COLORS.textSecondary }}>{p.clinicName}</td>}
-                <td style={{ padding: "12px 14px" }}>
-                  <span style={{ fontWeight: 700, color: "#10b981" }}>{p.priceMin}–{p.priceMax} {p.currency}</span>
-                </td>
-                <td style={{ padding: "12px 14px", color: UI_COLORS.textMuted, fontSize: 12 }}>{priceTypeLabel(p.priceType)}</td>
-                <td style={{ padding: "12px 14px" }}><Badge label={p.status === "active" ? t("portal.common.active") : t("portal.common.inactive")} variant={p.status === "active" ? "success" : "warning"} /></td>
-                <td style={{ padding: "12px 14px" }}>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={() => openEdit(p)} style={{ padding: "5px 8px", borderRadius: 6, border: `1px solid ${UI_COLORS.border}`, background: "var(--bg-card)", color: UI_COLORS.textMuted, cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", gap: 3 }}>
-                      <Edit2 size={11} /> {t("portal.common.edit")}
-                    </button>
-                    <button onClick={() => handleDelete(p.id)} style={{ padding: "5px 8px", borderRadius: 6, border: `1px solid ${UI_COLORS.border}`, background: "var(--bg-card)", color: "#ef4444", cursor: "pointer", fontSize: 11 }}>
-                      <Trash2 size={11} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {Array.from(groups.entries()).map(([group, gItems]) => (
+          <div key={group}>
+            {group !== "—" && (
+              <div style={{ padding: "8px 20px", background: "rgba(16,185,129,0.03)", borderBottom: `1px solid ${UI_COLORS.border}` }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#10b981", textTransform: "uppercase", letterSpacing: 0.5 }}>{group}</span>
+              </div>
+            )}
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${UI_COLORS.border}` }}>
+                  {[t("portal.pricing.treatment"), ...(isClinicTable ? [t("portal.pricing.clinic")] : []), t("portal.pricing.priceRange"), language === "tr" ? "Süre" : "Duration", t("portal.pricing.type"), ""].map((h) => (
+                    <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: UI_COLORS.textMuted }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {gItems.map((p) => (
+                  <tr key={p.id} style={{ borderBottom: `1px solid ${UI_COLORS.border}`, transition: "background 0.15s" }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(16, 185, 129, 0.03)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
+                    <td style={{ padding: "12px 14px", fontWeight: 600, color: UI_COLORS.textPrimary }}>{(p as any).subTreatmentName || p.treatmentName}</td>
+                    {isClinicTable && <td style={{ padding: "12px 14px", color: UI_COLORS.textSecondary }}>{p.clinicName}</td>}
+                    <td style={{ padding: "12px 14px" }}>
+                      <span style={{ fontWeight: 700, color: "#10b981" }}>
+                        {p.priceMin === p.priceMax ? `${p.priceMin} ${p.currency}` : `${p.priceMin}–${p.priceMax} ${p.currency}`}
+                      </span>
+                    </td>
+                    <td style={{ padding: "12px 14px", color: UI_COLORS.textMuted, fontSize: 12 }}>{(p as any).duration || "—"}</td>
+                    <td style={{ padding: "12px 14px", color: UI_COLORS.textMuted, fontSize: 12 }}>{priceTypeLabel(p.priceType)}</td>
+                    <td style={{ padding: "12px 14px" }}>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button onClick={() => openEdit(p)} style={{ padding: "5px 8px", borderRadius: 6, border: `1px solid ${UI_COLORS.border}`, background: "var(--bg-card)", color: UI_COLORS.textMuted, cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", gap: 3 }}>
+                          <Edit2 size={11} /> {t("portal.common.edit")}
+                        </button>
+                        <button onClick={() => handleDelete(p.id)} style={{ padding: "5px 8px", borderRadius: 6, border: `1px solid ${UI_COLORS.border}`, background: "var(--bg-card)", color: "#ef4444", cursor: "pointer", fontSize: 11 }}>
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
       </div>
     );
   };
@@ -241,31 +273,57 @@ export default function PricingPage() {
 
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editingId ? t("portal.pricing.editPricing") : t("portal.pricing.addPricing")}>
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {treatments.length > 0 ? (
-            <Select label={t("portal.pricing.treatment")} value={form.treatmentId} onChange={(e) => selectTreatment(e.target.value)}
-              options={[{ label: t("portal.pricing.selectTreatment"), value: "" }, ...treatments.map((tr) => ({ label: `${tr.name} (${catLabel(tr.category)})`, value: tr.id }))]} />
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <Input label={t("portal.pricing.treatmentName")} value={form.treatmentName} onChange={(e) => setForm({ ...form, treatmentName: e.target.value })} placeholder={t("portal.pricing.treatmentNamePlaceholder")} />
-              <Select label={t("portal.pricing.category")} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value as TreatmentCategory })}
-                options={Object.entries(TREATMENT_CATEGORIES).map(([k, v]) => ({ label: language === "tr" ? v.tr : v.en, value: k }))} />
-            </div>
-          )}
+          {/* Clinic Selection */}
           <Select label={t("portal.pricing.clinicOptional")} value={form.clinicId} onChange={(e) => selectClinic(e.target.value)}
             options={[{ label: t("portal.pricing.globalAllClinics"), value: "" }, ...clinics.map((c) => ({ label: c.clinicName, value: c.clinicId }))]} />
+
+          {/* Sub Treatment picker */}
+          <div>
+            <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 6 }}>{language === "tr" ? "Alt Tedavi / İşlem" : "Sub Treatment / Procedure"}</p>
+            {selectedClinicSubTreatments.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                {selectedClinicSubTreatments.map((st) => {
+                  const sel = form.subTreatmentName === st;
+                  return (
+                    <button key={st} type="button" onClick={() => setForm({ ...form, subTreatmentName: st })} style={{
+                      padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                      border: `1px solid ${sel ? "#10b981" : UI_COLORS.border}`,
+                      background: sel ? "rgba(16,185,129,0.1)" : "transparent",
+                      color: sel ? "#10b981" : UI_COLORS.textSecondary,
+                    }}>{st}</button>
+                  );
+                })}
+              </div>
+            )}
+            <Input label="" value={form.subTreatmentName} onChange={(e) => setForm({ ...form, subTreatmentName: e.target.value })} placeholder="All-on-4 Diş İmplantları" />
+          </div>
+
+          {/* Price Group + Duration */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <Input label={language === "tr" ? "Fiyat Grubu" : "Price Group"} value={form.priceGroup} onChange={(e) => setForm({ ...form, priceGroup: e.target.value })} placeholder={language === "tr" ? "İmplant, Taç, Kaplamalar..." : "Implant, Crowns, Veneers..."} />
+            <Input label={language === "tr" ? "Süre" : "Duration"} value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} placeholder={language === "tr" ? "3 Gün" : "3 Days"} />
+          </div>
+
+          {/* Price fields */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
-            <Input label={t("portal.pricing.priceMin")} value={form.priceMin} onChange={(e) => setForm({ ...form, priceMin: e.target.value })} placeholder="400" />
-            <Input label={t("portal.pricing.priceMax")} value={form.priceMax} onChange={(e) => setForm({ ...form, priceMax: e.target.value })} placeholder="900" />
+            <Input label={t("portal.pricing.priceMin")} value={form.priceMin} onChange={(e) => setForm({ ...form, priceMin: e.target.value })} placeholder="360" />
+            <Input label={t("portal.pricing.priceMax")} value={form.priceMax} onChange={(e) => setForm({ ...form, priceMax: e.target.value })} placeholder="360" />
             <Select label={t("portal.pricing.currency")} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}
               options={[{ label: "EUR", value: "EUR" }, { label: "USD", value: "USD" }, { label: "GBP", value: "GBP" }, { label: "TRY", value: "TRY" }]} />
           </div>
+
+          {/* Price Type */}
           <Select label={t("portal.pricing.priceType")} value={form.priceType} onChange={(e) => setForm({ ...form, priceType: e.target.value as ClinicTreatmentPrice["priceType"] })}
             options={[
+              { label: t("portal.pricing.package"), value: "package" },
               { label: t("portal.pricing.average"), value: "average" },
               { label: t("portal.pricing.startingFrom"), value: "starting_from" },
-              { label: t("portal.pricing.package"), value: "package" },
               { label: t("portal.pricing.perUnit"), value: "per_unit" },
+              { label: language === "tr" ? "Diş Başına" : "Per Tooth", value: "per_tooth" },
+              { label: language === "tr" ? "Seans Başına" : "Per Session", value: "per_session" },
+              { label: language === "tr" ? "Çene Başına" : "Per Jaw", value: "per_jaw" },
             ]} />
+
           <Input label={t("portal.pricing.packageDetails")} value={form.packageDetails} onChange={(e) => setForm({ ...form, packageDetails: e.target.value })} placeholder={t("portal.pricing.packageDetailsPlaceholder")} />
           <Input label={t("portal.pricing.notes")} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder={t("portal.pricing.notesPlaceholder")} />
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>

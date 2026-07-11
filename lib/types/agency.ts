@@ -248,19 +248,27 @@ export interface AgencyClinic {
 
 // ─── Clinic Treatment Pricing ───────────────────────────────────────────────
 
-export type PriceType = "average" | "starting_from" | "package" | "per_unit";
+export type PriceType = "average" | "starting_from" | "package" | "per_unit" | "per_tooth" | "per_session" | "per_jaw";
 
 export interface ClinicTreatmentPricing {
   id?: string;
   agencyClinicId: string;
-  treatmentName: string;
+  // Category + sub-treatment
+  treatmentCategoryName?: string;
+  subTreatmentName?: string;
+  priceGroup?: string; // İmplant, Taç, Protezler, Kaplamalar, etc.
+  treatmentName: string; // display name (backward compat)
+  // Pricing
   priceMin: number;
   priceMax: number;
   currency: string;
   priceType: PriceType;
+  duration?: string; // "3 Gün", "7 Gün"
+  // Details
   notes?: string;
   packageIncludes?: string[];
   packageExcludes?: string[];
+  packageDetails?: string;
   showOnPublicProfile?: boolean;
   allowQuoteRequest?: boolean;
   status: "active" | "inactive";

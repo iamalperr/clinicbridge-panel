@@ -56,7 +56,7 @@ const TX: Record<Lang, Record<string, string>> = {
     "treatments.title": "Tedaviler & Hizmetler",
     "treatments.sub": "Bu kliniğin sunduğu tedavi seçenekleri",
     "pricing.title": "Fiyat Aralığı",
-    "pricing.note": "Fiyatlar tedavi planına ve klinik değerlendirmesine göre değişebilir.",
+
     "pricing.ask": "Detaylı fiyat bilgisi için teklif isteyin.",
     "langs.title": "Desteklenen Diller",
     "accred.title": "Akreditasyonlar & Rozetler",
@@ -91,13 +91,19 @@ const TX: Record<Lang, Record<string, string>> = {
     "footer.poweredBy": "ClinicBridge AI tarafından desteklenmektedir",
     "profile.viewExternal": "FeelinHealthy Profilini Gör",
     "pricing.header": "Tedavi Fiyat Aralıkları",
-    "pricing.treatment": "Tedavi",
-    "pricing.range": "Fiyat Aralığı",
+    "pricing.treatment": "İşlem",
+    "pricing.range": "Ücret",
+    "pricing.duration": "Süre",
     "pricing.type": "Fiyat Türü",
     "pricing.estimate": "Tahmini",
+    "pricing.average": "Ortalama",
     "pricing.startingFrom": "Başlangıç",
     "pricing.package": "Paket",
     "pricing.perUnit": "Birim Başı",
+    "pricing.perTooth": "Diş Başına",
+    "pricing.perSession": "Seans Başına",
+    "pricing.perJaw": "Çene Başına",
+    "pricing.note": "Fiyatlar klinik tarafından paylaşılan tahmini bilgilerdir. Kesin fiyat klinik değerlendirmesi sonrası netleşir.",
     "faq.title": "Sık Sorulan Sorular",
     "doctors.title": "Doktorlar",
     "doctors.noDoctors": "Doktor bilgisi henüz eklenmedi.",
@@ -110,7 +116,6 @@ const TX: Record<Lang, Record<string, string>> = {
     "treatments.title": "Treatments & Services",
     "treatments.sub": "Treatment options offered by this clinic",
     "pricing.title": "Price Range",
-    "pricing.note": "Prices may vary based on treatment plan and clinic evaluation.",
     "pricing.ask": "Request a quote for detailed pricing.",
     "langs.title": "Supported Languages",
     "accred.title": "Accreditations & Badges",
@@ -145,13 +150,19 @@ const TX: Record<Lang, Record<string, string>> = {
     "footer.poweredBy": "Powered by ClinicBridge AI",
     "profile.viewExternal": "View FeelinHealthy Profile",
     "pricing.header": "Treatment Price Ranges",
-    "pricing.treatment": "Treatment",
-    "pricing.range": "Price Range",
+    "pricing.treatment": "Procedure",
+    "pricing.range": "Price",
+    "pricing.duration": "Duration",
     "pricing.type": "Price Type",
-    "pricing.estimate": "Estimate",
-    "pricing.startingFrom": "Starting from",
+    "pricing.estimate": "Estimated",
+    "pricing.average": "Average",
+    "pricing.startingFrom": "Starting From",
     "pricing.package": "Package",
     "pricing.perUnit": "Per Unit",
+    "pricing.perTooth": "Per Tooth",
+    "pricing.perSession": "Per Session",
+    "pricing.perJaw": "Per Jaw",
+    "pricing.note": "Prices are clinic estimates; final pricing depends on clinical evaluation.",
     "faq.title": "Frequently Asked Questions",
     "doctors.title": "Doctors",
     "doctors.noDoctors": "No doctor information added yet.",
@@ -427,44 +438,54 @@ export default function ClinicProfilePage() {
               </section>
             )}
 
-            {/* PRICING TABLE */}
-            {clinicPricing.length > 0 && (
-              <section className="fu" style={{ marginBottom: 48 }}>
-                <h2 style={{ fontSize: 22, fontWeight: 800, color: C.navy, marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
-                  <DollarSign size={20} color={C.teal} /> {t("pricing.header")}
-                </h2>
-                <p style={{ fontSize: 14, color: C.textSec, marginBottom: 20 }}>{t("pricing.note")}</p>
-                <div style={{ borderRadius: 12, border: `1px solid ${C.border}`, overflow: "hidden" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-                    <thead>
-                      <tr style={{ background: C.bg }}>
-                        <th style={{ textAlign: "left", padding: "12px 16px", fontWeight: 700, color: C.navy }}>{t("pricing.treatment")}</th>
-                        <th style={{ textAlign: "right", padding: "12px 16px", fontWeight: 700, color: C.navy }}>{t("pricing.range")}</th>
-                        <th style={{ textAlign: "center", padding: "12px 16px", fontWeight: 700, color: C.navy }}>{t("pricing.type")}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {clinicPricing.map((p: any, i: number) => {
-                        const ptKey = p.priceType === "starting_from" ? "startingFrom" : p.priceType === "per_unit" ? "perUnit" : p.priceType || "estimate";
-                        return (
-                          <tr key={i} style={{ borderTop: `1px solid ${C.border}` }}>
-                            <td style={{ padding: "12px 16px", fontWeight: 600, color: C.text }}>{p.treatmentName}</td>
-                            <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 700, color: C.teal }}>
-                              {p.priceMin}–{p.priceMax} {p.currency}
-                            </td>
-                            <td style={{ padding: "12px 16px", textAlign: "center" }}>
-                              <span style={{ padding: "3px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: C.tealBg, color: C.teal }}>
-                                {t(`pricing.${ptKey}`)}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            )}
+            {/* PRICING TABLE — Grouped by priceGroup */}
+            {clinicPricing.length > 0 && (() => {
+              const ptKeyMap: Record<string, string> = { starting_from: "startingFrom", per_unit: "perUnit", per_tooth: "perTooth", per_session: "perSession", per_jaw: "perJaw" };
+              const groups = new Map<string, any[]>();
+              clinicPricing.forEach((p: any) => {
+                const g = p.priceGroup || "—";
+                if (!groups.has(g)) groups.set(g, []);
+                groups.get(g)!.push(p);
+              });
+              return (
+                <section className="fu" style={{ marginBottom: 48 }}>
+                  <h2 style={{ fontSize: 22, fontWeight: 800, color: C.navy, marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
+                    <DollarSign size={20} color={C.teal} /> {t("pricing.header")}
+                  </h2>
+                  <p style={{ fontSize: 14, color: C.textSec, marginBottom: 20 }}>{t("pricing.note")}</p>
+
+                  {Array.from(groups.entries()).map(([group, items]) => (
+                    <div key={group} style={{ marginBottom: 20 }}>
+                      {group !== "—" && (
+                        <p style={{ fontSize: 14, fontWeight: 700, color: C.navy, marginBottom: 8, paddingLeft: 2 }}>{group}</p>
+                      )}
+                      <div style={{ borderRadius: 12, border: `1px solid ${C.border}`, overflow: "hidden" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                          <thead>
+                            <tr style={{ background: C.bg }}>
+                              <th style={{ textAlign: "left", padding: "12px 16px", fontWeight: 700, color: C.navy }}>{t("pricing.treatment")}</th>
+                              <th style={{ textAlign: "right", padding: "12px 16px", fontWeight: 700, color: C.navy }}>{t("pricing.range")}</th>
+                              <th style={{ textAlign: "center", padding: "12px 16px", fontWeight: 700, color: C.navy }}>{t("pricing.duration")}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {items.map((p: any, i: number) => (
+                              <tr key={i} style={{ borderTop: `1px solid ${C.border}` }}>
+                                <td style={{ padding: "12px 16px", fontWeight: 600, color: C.text }}>{p.subTreatmentName || p.treatmentName}</td>
+                                <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 700, color: C.teal }}>
+                                  {p.priceMin === p.priceMax ? `${p.priceMin} ${p.currency}` : `${p.priceMin}–${p.priceMax} ${p.currency}`}
+                                </td>
+                                <td style={{ padding: "12px 16px", textAlign: "center", color: C.textMuted }}>{p.duration || "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </section>
+              );
+            })()}
 
             {/* FAQ */}
             {clinicFaqs.length > 0 && (
