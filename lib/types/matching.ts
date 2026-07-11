@@ -44,14 +44,17 @@ export type IntakeQuestionType =
   | "email"
   | "number";
 
+/** Localizable string — plain string (legacy) or { tr, en } object */
+export type LocalizedString = string | { tr: string; en: string };
+
 export interface IntakeQuestionOption {
-  label: string;
+  label: LocalizedString;
   value: string;
 }
 
 export interface IntakeQuestion {
   id: string;
-  questionText: string;
+  questionText: LocalizedString;
   questionType: IntakeQuestionType;
   options?: IntakeQuestionOption[];
   required: boolean;
@@ -61,6 +64,13 @@ export interface IntakeQuestion {
     questionId: string;
     value: string;
   };
+}
+
+/** Resolve a LocalizedString to the current language */
+export function resolveLocalized(val: LocalizedString | undefined, lang: string): string {
+  if (!val) return "";
+  if (typeof val === "string") return val;
+  return (lang === "tr" ? val.tr : val.en) || val.en || val.tr || "";
 }
 
 // ─── Clinic Treatment Pricing ───────────────────────────────────────────────

@@ -17,7 +17,8 @@ import {
 } from "lucide-react";
 import type { TreatmentCategory } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES } from "@/lib/types/agency";
-import type { IntakeQuestion, IntakeQuestionType } from "@/lib/types/matching";
+import type { IntakeQuestion, IntakeQuestionType, LocalizedString } from "@/lib/types/matching";
+import { resolveLocalized } from "@/lib/types/matching";
 import { useI18n } from "@/lib/i18n-context";
 
 interface IntakeFlowConfig {
@@ -44,56 +45,64 @@ const DEFAULT_CONFIG: IntakeFlowConfig = {
   categoryFlows: {},
 };
 
+// ─── Bilingual default flows ────────────────────────────────────────────────
+
 const DEFAULT_DENTAL_FLOW: IntakeQuestion[] = [
-  { id: "d1", questionText: "What dental treatment are you interested in?", questionType: "select", options: [
-    { label: "Dental Implant", value: "dental_implant" },
-    { label: "Zirconium Crowns", value: "zirconium_crowns" },
-    { label: "Hollywood Smile", value: "hollywood_smile" },
-    { label: "Root Canal", value: "root_canal" },
-    { label: "Teeth Whitening", value: "teeth_whitening" },
-    { label: "Other", value: "other" },
+  { id: "d1", questionText: { tr: "Hangi diş tedavisiyle ilgileniyorsunuz?", en: "What dental treatment are you interested in?" }, questionType: "select", options: [
+    { label: { tr: "Dental İmplant", en: "Dental Implant" }, value: "dental_implant" },
+    { label: { tr: "Zirkonyum Taç", en: "Zirconium Crowns" }, value: "zirconium_crowns" },
+    { label: { tr: "Hollywood Gülümsemesi", en: "Hollywood Smile" }, value: "hollywood_smile" },
+    { label: { tr: "Kanal Tedavisi", en: "Root Canal" }, value: "root_canal" },
+    { label: { tr: "Diş Beyazlatma", en: "Teeth Whitening" }, value: "teeth_whitening" },
+    { label: { tr: "Diğer", en: "Other" }, value: "other" },
   ], required: true, order: 1, saveAsField: "subTreatment" },
-  { id: "d2", questionText: "Do you have a recent dental X-ray?", questionType: "select", options: [
-    { label: "Yes", value: "yes" }, { label: "No", value: "no" },
+  { id: "d2", questionText: { tr: "Güncel bir diş röntgeniniz veya panoramik filminiz var mı?", en: "Do you have a recent dental X-ray?" }, questionType: "select", options: [
+    { label: { tr: "Evet, var", en: "Yes, I have" }, value: "yes" },
+    { label: { tr: "Hayır, yok", en: "No, I don't" }, value: "no" },
+    { label: { tr: "Emin değilim", en: "Not sure" }, value: "unsure" },
   ], required: false, order: 2, saveAsField: "hasXray" },
-  { id: "d3", questionText: "How many teeth are affected?", questionType: "text", required: false, order: 3, saveAsField: "affectedTeeth" },
-  { id: "d4", questionText: "Which country are you traveling from?", questionType: "text", required: true, order: 4, saveAsField: "country" },
-  { id: "d5", questionText: "When are you planning to travel?", questionType: "date", required: false, order: 5, saveAsField: "travelDate" },
-  { id: "d6", questionText: "Would you like to compare multiple clinics?", questionType: "select", options: [
-    { label: "Yes, show me options", value: "yes" }, { label: "Just the best match", value: "no" },
+  { id: "d3", questionText: { tr: "Kaç dişiniz için tedavi düşünüyorsunuz?", en: "How many teeth are affected?" }, questionType: "text", required: false, order: 3, saveAsField: "affectedTeeth" },
+  { id: "d4", questionText: { tr: "Hangi ülkeden başvuru yapıyorsunuz?", en: "Which country are you traveling from?" }, questionType: "text", required: true, order: 4, saveAsField: "country" },
+  { id: "d5", questionText: { tr: "Ne zaman seyahat etmeyi planlıyorsunuz?", en: "When are you planning to travel?" }, questionType: "date", required: false, order: 5, saveAsField: "travelDate" },
+  { id: "d6", questionText: { tr: "Birden fazla kliniği karşılaştırmak ister misiniz?", en: "Would you like to compare multiple clinics?" }, questionType: "select", options: [
+    { label: { tr: "Evet, birkaç kliniği karşılaştırmak istiyorum", en: "Yes, I want to compare multiple clinics" }, value: "yes" },
+    { label: { tr: "Hayır, en uygun kliniği önerin", en: "No, recommend the most suitable clinic" }, value: "no" },
+    { label: { tr: "Emin değilim", en: "Not sure" }, value: "unsure" },
   ], required: false, order: 6, saveAsField: "compareMode" },
 ];
 
 const DEFAULT_HAIR_FLOW: IntakeQuestion[] = [
-  { id: "h1", questionText: "Which hair transplant technique are you interested in?", questionType: "select", options: [
-    { label: "FUE Hair Transplant", value: "fue" },
-    { label: "DHI Hair Transplant", value: "dhi" },
-    { label: "Beard Transplant", value: "beard" },
-    { label: "Eyebrow Transplant", value: "eyebrow" },
-    { label: "Not sure", value: "unsure" },
+  { id: "h1", questionText: { tr: "Hangi saç ekimi tekniğiyle ilgileniyorsunuz?", en: "Which hair transplant technique are you interested in?" }, questionType: "select", options: [
+    { label: { tr: "FUE Saç Ekimi", en: "FUE Hair Transplant" }, value: "fue" },
+    { label: { tr: "DHI Saç Ekimi", en: "DHI Hair Transplant" }, value: "dhi" },
+    { label: { tr: "Sakal Ekimi", en: "Beard Transplant" }, value: "beard" },
+    { label: { tr: "Kaş Ekimi", en: "Eyebrow Transplant" }, value: "eyebrow" },
+    { label: { tr: "Emin değilim", en: "Not sure" }, value: "unsure" },
   ], required: true, order: 1, saveAsField: "subTreatment" },
-  { id: "h2", questionText: "Have you had a previous hair transplant?", questionType: "select", options: [
-    { label: "Yes", value: "yes" }, { label: "No", value: "no" },
+  { id: "h2", questionText: { tr: "Daha önce saç ekimi yaptırdınız mı?", en: "Have you had a previous hair transplant?" }, questionType: "select", options: [
+    { label: { tr: "Evet", en: "Yes" }, value: "yes" }, { label: { tr: "Hayır", en: "No" }, value: "no" },
   ], required: false, order: 2, saveAsField: "previousTransplant" },
-  { id: "h3", questionText: "Do you have recent photos of your hair?", questionType: "select", options: [
-    { label: "Yes", value: "yes" }, { label: "No", value: "no" },
+  { id: "h3", questionText: { tr: "Saçınızın güncel fotoğrafları var mı?", en: "Do you have recent photos of your hair?" }, questionType: "select", options: [
+    { label: { tr: "Evet", en: "Yes" }, value: "yes" }, { label: { tr: "Hayır", en: "No" }, value: "no" },
   ], required: false, order: 3, saveAsField: "hasPhotos" },
-  { id: "h4", questionText: "Which country are you traveling from?", questionType: "text", required: true, order: 4, saveAsField: "country" },
-  { id: "h5", questionText: "Preferred travel date?", questionType: "date", required: false, order: 5, saveAsField: "travelDate" },
+  { id: "h4", questionText: { tr: "Hangi ülkeden başvuru yapıyorsunuz?", en: "Which country are you traveling from?" }, questionType: "text", required: true, order: 4, saveAsField: "country" },
+  { id: "h5", questionText: { tr: "Ne zaman seyahat etmeyi planlıyorsunuz?", en: "Preferred travel date?" }, questionType: "date", required: false, order: 5, saveAsField: "travelDate" },
 ];
 
 const DEFAULT_AESTHETIC_FLOW: IntakeQuestion[] = [
-  { id: "a1", questionText: "What aesthetic procedure are you interested in?", questionType: "select", options: [
-    { label: "Rhinoplasty", value: "rhinoplasty" },
-    { label: "Breast Augmentation", value: "breast_aug" },
-    { label: "Liposuction", value: "liposuction" },
-    { label: "Tummy Tuck", value: "tummy_tuck" },
-    { label: "Facelift", value: "facelift" },
-    { label: "Other", value: "other" },
+  { id: "a1", questionText: { tr: "Hangi estetik işlemle ilgileniyorsunuz?", en: "What aesthetic procedure are you interested in?" }, questionType: "select", options: [
+    { label: { tr: "Burun Estetiği", en: "Rhinoplasty" }, value: "rhinoplasty" },
+    { label: { tr: "Meme Büyütme", en: "Breast Augmentation" }, value: "breast_aug" },
+    { label: { tr: "Liposuction", en: "Liposuction" }, value: "liposuction" },
+    { label: { tr: "Karın Germe", en: "Tummy Tuck" }, value: "tummy_tuck" },
+    { label: { tr: "Yüz Germe", en: "Facelift" }, value: "facelift" },
+    { label: { tr: "Diğer", en: "Other" }, value: "other" },
   ], required: true, order: 1, saveAsField: "subTreatment" },
-  { id: "a2", questionText: "Which country are you traveling from?", questionType: "text", required: true, order: 2, saveAsField: "country" },
-  { id: "a3", questionText: "Preferred travel date?", questionType: "date", required: false, order: 3, saveAsField: "travelDate" },
+  { id: "a2", questionText: { tr: "Hangi ülkeden başvuru yapıyorsunuz?", en: "Which country are you traveling from?" }, questionType: "text", required: true, order: 2, saveAsField: "country" },
+  { id: "a3", questionText: { tr: "Ne zaman seyahat etmeyi planlıyorsunuz?", en: "Preferred travel date?" }, questionType: "date", required: false, order: 3, saveAsField: "travelDate" },
 ];
+
+// ─── Component ──────────────────────────────────────────────────────────────
 
 export default function AIConfigPage() {
   const { profile } = useAuth();
@@ -105,9 +114,12 @@ export default function AIConfigPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [activeCat, setActiveCat] = useState<TreatmentCategory>("dental");
-  const [newQ, setNewQ] = useState({ text: "", type: "text" as IntakeQuestionType, required: false });
+  const [newQ, setNewQ] = useState({ textTr: "", textEn: "", type: "text" as IntakeQuestionType, required: false });
 
   const catLabel = (cat: string) => TREATMENT_CATEGORIES[cat as TreatmentCategory]?.[language === "tr" ? "tr" : "en"] || cat;
+
+  /** Resolve a LocalizedString for current panel language */
+  const loc = (val: LocalizedString | undefined): string => resolveLocalized(val, language);
 
   useEffect(() => {
     if (!agencyId) { setLoading(false); return; }
@@ -138,17 +150,19 @@ export default function AIConfigPage() {
   };
 
   const addQuestion = () => {
-    if (!newQ.text.trim()) return;
+    const trText = newQ.textTr.trim();
+    const enText = newQ.textEn.trim();
+    if (!trText && !enText) return;
     const flow = getFlow(activeCat);
     const q: IntakeQuestion = {
       id: `q_${Date.now()}`,
-      questionText: newQ.text,
+      questionText: (trText && enText) ? { tr: trText, en: enText } : (trText || enText),
       questionType: newQ.type,
       required: newQ.required,
       order: flow.length + 1,
     };
     setFlow(activeCat, [...flow, q]);
-    setNewQ({ text: "", type: "text", required: false });
+    setNewQ({ textTr: "", textEn: "", type: "text", required: false });
   };
 
   const removeQuestion = (qid: string) => {
@@ -303,11 +317,22 @@ export default function AIConfigPage() {
                   <GripVertical size={14} color={UI_COLORS.textMuted} style={{ opacity: 0.4, flexShrink: 0 }} />
                   <span style={{ fontSize: 12, fontWeight: 700, color: UI_COLORS.textMuted, width: 24, flexShrink: 0 }}>{idx + 1}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 13, color: UI_COLORS.textPrimary }}>{q.questionText}</p>
-                    <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                    <p style={{ fontSize: 13, color: UI_COLORS.textPrimary }}>{loc(q.questionText)}</p>
+                    {/* Show other language as subtitle */}
+                    {typeof q.questionText === "object" && (
+                      <p style={{ fontSize: 11, color: UI_COLORS.textMuted, marginTop: 2, fontStyle: "italic" }}>
+                        {language === "tr" ? q.questionText.en : q.questionText.tr}
+                      </p>
+                    )}
+                    <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
                       <span style={{ fontSize: 10.5, padding: "1px 6px", borderRadius: 4, background: "rgba(16, 185, 129, 0.08)", color: "#10b981", fontWeight: 600 }}>{q.questionType}</span>
                       {q.required && <span style={{ fontSize: 10.5, padding: "1px 6px", borderRadius: 4, background: "rgba(239, 68, 68, 0.08)", color: "#ef4444", fontWeight: 600 }}>{t("portal.intakeFlow.required")}</span>}
                       {q.saveAsField && <span style={{ fontSize: 10.5, padding: "1px 6px", borderRadius: 4, background: "rgba(99, 102, 241, 0.08)", color: "#6366f1", fontWeight: 600 }}>→ {q.saveAsField}</span>}
+                      {q.options && q.options.length > 0 && (
+                        <span style={{ fontSize: 10.5, padding: "1px 6px", borderRadius: 4, background: "rgba(245, 158, 11, 0.08)", color: "#f59e0b", fontWeight: 600 }}>
+                          {q.options.map((o) => loc(o.label)).join(", ")}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <button onClick={() => removeQuestion(q.id)}
@@ -319,21 +344,36 @@ export default function AIConfigPage() {
             )}
           </div>
 
-          {/* Add Question */}
-          <div style={{ display: "flex", gap: 8 }}>
-            <input type="text" value={newQ.text} onChange={(e) => setNewQ({ ...newQ, text: e.target.value })}
-              onKeyDown={(e) => e.key === "Enter" && addQuestion()}
-              placeholder={t("portal.intakeFlow.addQuestionPlaceholder")}
-              style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: `1px solid ${UI_COLORS.border}`, fontSize: 13, background: "var(--bg-app)", color: UI_COLORS.textPrimary, outline: "none" }} />
-            <select value={newQ.type} onChange={(e) => setNewQ({ ...newQ, type: e.target.value as IntakeQuestionType })}
-              style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${UI_COLORS.border}`, fontSize: 12, background: "var(--bg-card)", color: UI_COLORS.textPrimary, cursor: "pointer" }}>
-              {(["text", "select", "multi_select", "date", "file", "phone", "email", "number"] as IntakeQuestionType[]).map((tp) => (
-                <option key={tp} value={tp}>{tp.replace("_", " ")}</option>
-              ))}
-            </select>
-            <Button variant="secondary" onClick={addQuestion}>
-              <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Plus size={14} /> {t("portal.intakeFlow.addQuestion")}</span>
-            </Button>
+          {/* Add Question — dual language inputs */}
+          <div style={{ padding: 14, borderRadius: 10, border: `1px dashed ${UI_COLORS.border}`, background: "var(--bg-app)" }}>
+            <p style={{ fontSize: 12, fontWeight: 700, color: UI_COLORS.textMuted, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>
+              {t("portal.intakeFlow.addQuestion")}
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+              <input type="text" value={newQ.textTr} onChange={(e) => setNewQ({ ...newQ, textTr: e.target.value })}
+                placeholder={language === "tr" ? "Soru metni (TR)" : "Question text (TR)"}
+                style={{ padding: "8px 12px", borderRadius: 8, border: `1px solid ${UI_COLORS.border}`, fontSize: 13, background: "var(--bg-card)", color: UI_COLORS.textPrimary, outline: "none" }} />
+              <input type="text" value={newQ.textEn} onChange={(e) => setNewQ({ ...newQ, textEn: e.target.value })}
+                onKeyDown={(e) => e.key === "Enter" && addQuestion()}
+                placeholder={language === "tr" ? "Question text (EN)" : "Question text (EN)"}
+                style={{ padding: "8px 12px", borderRadius: 8, border: `1px solid ${UI_COLORS.border}`, fontSize: 13, background: "var(--bg-card)", color: UI_COLORS.textPrimary, outline: "none" }} />
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <select value={newQ.type} onChange={(e) => setNewQ({ ...newQ, type: e.target.value as IntakeQuestionType })}
+                style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${UI_COLORS.border}`, fontSize: 12, background: "var(--bg-card)", color: UI_COLORS.textPrimary, cursor: "pointer" }}>
+                {(["text", "select", "multi_select", "date", "file", "phone", "email", "number"] as IntakeQuestionType[]).map((tp) => (
+                  <option key={tp} value={tp}>{tp.replace("_", " ")}</option>
+                ))}
+              </select>
+              <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: UI_COLORS.textMuted, cursor: "pointer" }}>
+                <input type="checkbox" checked={newQ.required} onChange={(e) => setNewQ({ ...newQ, required: e.target.checked })} />
+                {t("portal.intakeFlow.required")}
+              </label>
+              <div style={{ flex: 1 }} />
+              <Button variant="secondary" onClick={addQuestion}>
+                <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Plus size={14} /> {t("portal.intakeFlow.addQuestion")}</span>
+              </Button>
+            </div>
           </div>
         </SectionCard>
 
