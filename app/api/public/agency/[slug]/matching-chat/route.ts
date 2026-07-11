@@ -125,8 +125,11 @@ function scoreClinic(
     reasons.push(lang === "tr" ? `${intent.location} bölgesinde` : `Located in ${intent.location}`);
   }
 
-  // Get matched prices
-  const cPrices = pricing.filter((p: any) => p.clinicId === clinic.id);
+  // Get matched prices — match by clinicId or clinicName
+  const cPrices = pricing.filter((p: any) =>
+    p.clinicId === clinic.id ||
+    (p.clinicName && clinic.clinicName && p.clinicName.toLowerCase() === clinic.clinicName.toLowerCase())
+  );
   let matchedPrices: MatchedPrice[] = [];
 
   if (intent.subTreatment) {
@@ -229,32 +232,33 @@ export async function POST(
       .map((d) => ({ id: d.id, ...d.data() }))
       .filter((c: any) => c.status === "active");
 
-    // Load pricing for all clinics
+    // Load pricing — agency-level collection: agencies/{agencyId}/pricing
+    // Each pricing doc has a clinicId field linking it to a clinic
     const allPricing: any[] = [];
-    for (const clinic of allClinics) {
-      const pSnap = await adminDb.collection("agencies").doc(agencyId)
-        .collection("clinics").doc(clinic.id)
-        .collection("pricing").get();
-      for (const pDoc of pSnap.docs) {
-        const p = pDoc.data();
-        if (p.status === "inactive") continue;
-        allPricing.push({
-          id: pDoc.id,
-          clinicId: clinic.id,
-          clinicName: (clinic as any).clinicName,
-          treatmentName: p.treatmentName,
-          subTreatmentName: p.subTreatmentName || p.treatmentName,
-          priceGroup: p.priceGroup || null,
-          priceMin: p.priceMin,
-          priceMax: p.priceMax,
-          currency: p.currency || "EUR",
-          priceType: p.priceType || "average",
-          duration: p.duration || null,
-        });
-      }
+    const pricingSnap = await adminDb.collection("agencies").doc(agencyId)
+      .collection("pricing").get();
+    for (const pDoc of pricingSnap.docs) {
+      const p = pDoc.data();
+      if (p.status === "inactive") continue;
+      allPricing.push({
+        id: pDoc.id,
+        clinicId: p.clinicId || "",
+        clinicName: p.clinicName || "",
+        treatmentName: p.treatmentName || "",
+        subTreatmentName: p.subTreatmentName || p.treatmentName || "",
+        priceGroup: p.priceGroup || null,
+        priceMin: p.priceMin || 0,
+        priceMax: p.priceMax || 0,
+        currency: p.currency || "EUR",
+        priceType: p.priceType || "average",
+        duration: p.duration || null,
+      });
     }
 
     console.log(`[matching-chat] Agency: ${slug}, Clinics: ${allClinics.length}, Pricing: ${allPricing.length}`);
+    if (allPricing.length > 0) {
+      console.log(`[matching-chat] Sample pricing:`, JSON.stringify(allPricing[0]));
+    }
 
     /* ── 2. Build clinic context for OpenAI ── */
     const clinicContext = buildClinicContext(allClinics, allPricing);
@@ -419,7 +423,7 @@ JSON FORMATI:
       }
 
       if (clinic) {
-        const cPricing = allPricing.filter((p: any) => p.clinicId === clinic.id);
+        const cPricing = allPricing.filter((p: any) => p.clinicId === clinic.id || (p.clinicName && clinic.clinicName && p.clinicName.toLowerCase() === clinic.clinicName.toLowerCase()));
         newCtx.lastFocusedClinicId = clinic.id;
         newCtx.lastFocusedClinicName = clinic.clinicName;
 
@@ -468,7 +472,7 @@ JSON FORMATI:
       }
 
       let relevantPricing = clinic
-        ? allPricing.filter((p: any) => p.clinicId === clinic.id)
+        ? allPricing.filter((p: any) => p.clinicId === clinic.id || (p.clinicName && clinic.clinicName && p.clinicName.toLowerCase() === clinic.clinicName.toLowerCase()))
         : allPricing;
 
       if (parsed.subTreatment) {
