@@ -19,6 +19,10 @@ import {
   addClinicDoctor,
   updateClinicDoctor,
   deleteClinicDoctor,
+  subscribeToClinicKnowledgeBase,
+  addClinicKnowledgeRecord,
+  updateClinicKnowledgeRecord,
+  deleteClinicKnowledgeRecord,
 } from "@/lib/services/agencyService";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -34,6 +38,7 @@ import type {
   AgencyClinic, ClinicOverview, ClinicKnowledgeBase,
   ClinicLocationDetails, ClinicQuoteSettings, ClinicFAQ, ClinicDoctor,
   ClinicTreatmentPricing, TreatmentCategory, PriceType,
+  AgencyKnowledgeRecord, AgencyKnowledgeCategory, AgencyKnowledgeLanguage, AgencyKnowledgePriority
 } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES } from "@/lib/types/agency";
 
@@ -94,7 +99,7 @@ const TAB_ICONS: Record<TabKey, React.ReactNode> = {
   overview: <FileText size={14} />,
   treatments: <Stethoscope size={14} />,
   pricing: <DollarSign size={14} />,
-  doctors: <UserCircle size={14} />,
+  doctors: <Stethoscope size={14} />,
   knowledgeBase: <Brain size={14} />,
   faq: <HelpCircle size={14} />,
   location: <MapPin size={14} />,
@@ -117,8 +122,7 @@ export default function ClinicProfilePage() {
 
   // Form state per section
   const [overview, setOverview] = useState<ClinicOverview>({});
-  const [kb, setKb] = useState<ClinicKnowledgeBase>({});
-  const [loc, setLoc] = useState<ClinicLocationDetails>({ city: "", country: "" });
+  const [loc, setLoc] = useState<ClinicLocationDetails>({ city: "", country: "", address: "" });
   const [qs, setQs] = useState<ClinicQuoteSettings>({});
   const [generalForm, setGeneralForm] = useState({
     clinicName: "", clinicSlug: "", category: "", website: "", profileUrl: "",
@@ -175,6 +179,30 @@ export default function ClinicProfilePage() {
     setEditingDoctorId(null);
   };
 
+  // AI Knowledge Base
+  const [kbRecords, setKbRecords] = useState<AgencyKnowledgeRecord[]>([]);
+  const [showKbForm, setShowKbForm] = useState(false);
+  const [editingKbId, setEditingKbId] = useState<string | null>(null);
+  
+  interface KbFormState {
+    title: string;
+    category: AgencyKnowledgeCategory;
+    language: AgencyKnowledgeLanguage;
+    content: string;
+    isActive: boolean;
+    priority: AgencyKnowledgePriority;
+  }
+  
+  const [kbForm, setKbForm] = useState<KbFormState>({
+    title: "", category: "Klinik Genel Bilgi",
+    language: "TR", content: "",
+    isActive: true, priority: "Normal",
+  });
+  const resetKbForm = () => {
+    setKbForm({ title: "", category: "Klinik Genel Bilgi", language: "TR", content: "", isActive: true, priority: "Normal" });
+    setEditingKbId(null);
+  };
+
   // ─── Load clinic data ─────────────────────────────────────────────────
   useEffect(() => {
     if (!agencyId || !clinicDocId) return;
@@ -206,7 +234,6 @@ export default function ClinicProfilePage() {
             shortDescription: data.shortDescription || "",
             longDescription: data.longDescription || "",
           });
-          setKb(data.knowledgeBase || {});
           setLoc(data.locationDetails || { city: data.location?.city || "", country: data.location?.country || "", address: data.location?.address || "" });
           setQs(data.quoteSettings || { quoteEnabled: data.quoteEnabled, quoteContactEmail: data.quoteContactEmail });
         }
@@ -233,6 +260,12 @@ export default function ClinicProfilePage() {
   useEffect(() => {
     if (!agencyId || !clinicDocId) return;
     return subscribeToClinicDoctors(agencyId, clinicDocId, setDoctors);
+  }, [agencyId, clinicDocId]);
+
+  // Knowledge Base subscription
+  useEffect(() => {
+    if (!agencyId || !clinicDocId) return;
+    return subscribeToClinicKnowledgeBase(agencyId, clinicDocId, setKbRecords);
   }, [agencyId, clinicDocId]);
 
   // ─── Save Handlers ────────────────────────────────────────────────────
@@ -282,14 +315,25 @@ export default function ClinicProfilePage() {
     setSaving(false);
   };
 
-  const handleSaveKB = async () => {
+  const handleSaveKbRecord = async () => {
+    if (!kbForm.title.trim() || !kbForm.content.trim()) {
+      showToast("error", "Başlık ve içerik zorunludur.");
+      return;
+    }
     setSaving(true);
     try {
-      await updateClinicProfile(agencyId, clinicDocId, { knowledgeBase: kb });
-      showToast("success", t("portal.clinics.profile.saved"));
+      if (editingKbId) {
+        await updateClinicKnowledgeRecord(agencyId, clinicDocId, editingKbId, kbForm);
+        showToast("success", "Kayıt güncellendi");
+      } else {
+        await addClinicKnowledgeRecord(agencyId, clinicDocId, { ...kbForm, agencyId, clinicId: clinicDocId });
+        showToast("success", "Kayıt eklendi");
+      }
+      resetKbForm();
+      setShowKbForm(false);
     } catch (err) {
       console.error(err);
-      showToast("error", t("portal.clinics.profile.saveFailed"));
+      showToast("error", "Kayıt işlemi başarısız");
     }
     setSaving(false);
   };
@@ -1003,24 +1047,130 @@ export default function ClinicProfilePage() {
         )}
 
         {/* ═══ TAB: KNOWLEDGE BASE ═══ */}
+        {/* ═══ TAB: KNOWLEDGE BASE (NEW) ═══ */}
         {activeTab === "knowledgeBase" && (
           <div>
-            <SectionTitle icon={<Brain size={18} />} title={t("portal.clinics.profile.knowledgeBase.title")} />
-            <p style={{ fontSize: 13, color: UI_COLORS.textMuted, marginBottom: 16 }}>{t("portal.clinics.profile.knowledgeBase.description")}</p>
-
-            <TextArea label={t("portal.clinics.profile.knowledgeBase.summary")} value={kb.summary || ""} onChange={(v) => setKb(p => ({ ...p, summary: v }))} rows={2} />
-            <TextArea label={t("portal.clinics.profile.knowledgeBase.detailedInfo")} value={kb.detailedInfo || ""} onChange={(v) => setKb(p => ({ ...p, detailedInfo: v }))} rows={5} />
-            <TextArea label={t("portal.clinics.profile.knowledgeBase.keySellingPoints")} value={(kb.keySellingPoints || []).join("\n")} onChange={(v) => setKb(p => ({ ...p, keySellingPoints: v.split("\n").filter(Boolean) }))} placeholder={t("portal.clinics.profile.knowledgeBase.keyPointsPlaceholder")} rows={4} />
-            <TextArea label={t("portal.clinics.profile.knowledgeBase.doNotSay")} value={(kb.doNotSay || []).join("\n")} onChange={(v) => setKb(p => ({ ...p, doNotSay: v.split("\n").filter(Boolean) }))} placeholder={t("portal.clinics.profile.knowledgeBase.doNotSayPlaceholder")} rows={3} />
-            <TextArea label={t("portal.clinics.profile.knowledgeBase.treatmentNotes")} value={kb.treatmentNotes || ""} onChange={(v) => setKb(p => ({ ...p, treatmentNotes: v }))} rows={3} />
-            <TextArea label={t("portal.clinics.profile.knowledgeBase.routingNotes")} value={kb.routingNotes || ""} onChange={(v) => setKb(p => ({ ...p, routingNotes: v }))} rows={2} />
-            <TextArea label={t("portal.clinics.profile.knowledgeBase.pricingNotes")} value={kb.pricingNotes || ""} onChange={(v) => setKb(p => ({ ...p, pricingNotes: v }))} rows={2} />
-            <TextArea label={t("portal.clinics.profile.knowledgeBase.medicalDisclaimer")} value={kb.medicalDisclaimer || ""} onChange={(v) => setKb(p => ({ ...p, medicalDisclaimer: v }))} rows={2} />
-            <TextArea label={t("portal.clinics.profile.knowledgeBase.consentNotes")} value={kb.consentNotes || ""} onChange={(v) => setKb(p => ({ ...p, consentNotes: v }))} rows={2} />
-
-            <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end" }}>
-              <Button onClick={handleSaveKB} isLoading={saving}><Save size={14} /> {t("portal.buttons.saveChanges")}</Button>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <div>
+                <SectionTitle icon={<Brain size={18} />} title="AI Bilgi Havuzu" />
+                <p style={{ fontSize: 13, color: UI_COLORS.textMuted, marginTop: 4 }}>AI asistanın bu klinik hakkında doğru yanıt verebilmesi için klinik bilgilerini buradan yönetin.</p>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Button variant="secondary" onClick={async () => {
+                  if(!confirm("Hospitadent örnek verilerini yüklemek istiyor musunuz? (Bu işlem mevcut tüm kayıtları silmez, üzerine ekler)")) return;
+                  setSaving(true);
+                  try {
+                    const records = [
+                      { title: "Hospitadent Alanya Klinik Özeti", category: "Klinik Genel Bilgi" as AgencyKnowledgeCategory, language: "TR" as AgencyKnowledgeLanguage, content: "Hospitadent Dental Group Alanya, 2021 yılında Dental Group Hospitadent’in 11. şubesi olarak Alanya’da açılmış bir diş kliniğidir. Alanya’nın merkezi konumunda, modern ve konforlu bir klinik ortamında ağız ve diş sağlığı hizmetleri sunar. Klinik; dental implant, zirkonyum kaplama, dijital gülüş tasarımı, laminate veneer, bonding, diş beyazlatma, panoramik röntgen ve dental tomografi gibi tedavi ve tanı hizmetleriyle öne çıkar.", isActive: true, priority: "Normal" as AgencyKnowledgePriority },
+                      { title: "Hospitadent Alanya Sağlık Turizmi Desteği", category: "Hasta Destek Hizmetleri" as AgencyKnowledgeCategory, language: "TR" as AgencyKnowledgeLanguage, content: "Hospitadent Alanya, yerel ve uluslararası hastalara hizmet verebilecek şekilde konumlandırılmıştır. Klinik Gazipaşa Havalimanı’na yakın konumdadır ve çevredeki turistik bölgelere erişim kolaydır. Sistem kayıtlarında ücretsiz panoramik röntgen ve dental tomografi, VIP havalimanı transfer desteği ve çok dilli hasta desteği bilgileri yer almaktadır.", isActive: true, priority: "Normal" as AgencyKnowledgePriority },
+                      { title: "Hospitadent Alanya Tedavileri", category: "Tedaviler" as AgencyKnowledgeCategory, language: "TR" as AgencyKnowledgeLanguage, content: "Klinikte dental implant, All-on-4, All-on-6, zirkonyum kaplama, Hollywood Smile, laminate veneer, bonding uygulamaları, diş beyazlatma, panoramik röntgen ve dental tomografi gibi diş tedavileri sunulmaktadır. Kesin tedavi planı doktor muayenesi ve klinik değerlendirme sonrası oluşturulmalıdır.", isActive: true, priority: "Normal" as AgencyKnowledgePriority },
+                      { title: "Hospitadent Alanya Yanıt Kuralları", category: "Yanıt Kuralları" as AgencyKnowledgeCategory, language: "TR" as AgencyKnowledgeLanguage, content: "AI asistan, Hospitadent Alanya hakkında cevap verirken kesin teşhis koymamalı, tedavi garantisi vermemeli ve nihai fiyatı kesin ifade etmemelidir. Fiyatlar tahmini olarak aktarılmalı ve kesin fiyatın klinik değerlendirme sonrası netleşeceği belirtilmelidir. Hasta röntgen, teşhis veya muayene bilgisi paylaşmadıysa ön değerlendirme için ek bilgi istenmelidir.", isActive: true, priority: "Yüksek" as AgencyKnowledgePriority },
+                      { title: "Hospitadent Alanya Söylenmemesi Gerekenler", category: "Söylenmemesi Gerekenler" as AgencyKnowledgeCategory, language: "TR" as AgencyKnowledgeLanguage, content: "Kesin tedavi garantisi verme. Kesin teşhis koyma. Fiyatların değişmeyeceğini söyleme. Doktor muayenesi olmadan tedavi süresi veya başarı oranı hakkında kesin ifade kullanma. Klinik adına hukuki, medikal veya finansal taahhüt verme.", isActive: true, priority: "Yüksek" as AgencyKnowledgePriority }
+                    ];
+                    for (const r of records) await addClinicKnowledgeRecord(agencyId, clinicDocId, { ...r, agencyId, clinicId: clinicDocId });
+                    showToast("success", "Örnek veriler yüklendi!");
+                  } catch (e) {
+                    console.error(e);
+                    showToast("error", "Yükleme başarısız oldu.");
+                  }
+                  setSaving(false);
+                }} isLoading={saving}><Brain size={14} /> Örnek Veri Yükle</Button>
+                <Button onClick={() => { resetKbForm(); setShowKbForm(true); }}><Plus size={14} /> AI'ya Bilgi Ekle</Button>
+              </div>
             </div>
+
+            <div style={{ background: UI_COLORS.bgCard, borderRadius: 12, border: `1px solid ${UI_COLORS.border}`, overflow: "hidden" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, textAlign: "left" }}>
+                <thead>
+                  <tr style={{ background: "rgba(0,0,0,0.02)", borderBottom: `1px solid ${UI_COLORS.border}` }}>
+                    <th style={{ padding: "12px 16px", color: UI_COLORS.textSecondary, fontWeight: 600 }}>Bilgi Başlığı</th>
+                    <th style={{ padding: "12px 16px", color: UI_COLORS.textSecondary, fontWeight: 600 }}>Kategori</th>
+                    <th style={{ padding: "12px 16px", color: UI_COLORS.textSecondary, fontWeight: 600 }}>Dil</th>
+                    <th style={{ padding: "12px 16px", color: UI_COLORS.textSecondary, fontWeight: 600 }}>Durum</th>
+                    <th style={{ padding: "12px 16px", color: UI_COLORS.textSecondary, fontWeight: 600, width: 80 }}>İşlemler</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {kbRecords.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ padding: "30px 16px", textAlign: "center", color: UI_COLORS.textMuted }}>Kayıt bulunamadı. Lütfen AI'ya bilgi ekleyin.</td>
+                    </tr>
+                  ) : (
+                    kbRecords.map((r) => (
+                      <tr key={r.id} style={{ borderBottom: `1px solid ${UI_COLORS.border}` }}>
+                        <td style={{ padding: "12px 16px", fontWeight: 500, color: UI_COLORS.textPrimary }}>{r.title}</td>
+                        <td style={{ padding: "12px 16px", color: UI_COLORS.textSecondary }}>{r.category}</td>
+                        <td style={{ padding: "12px 16px" }}><Badge variant="info" label={r.language} /></td>
+                        <td style={{ padding: "12px 16px" }}>
+                          {r.isActive ? <Badge variant="success" label="Aktif" /> : <Badge variant="default" label="Pasif" />}
+                        </td>
+                        <td style={{ padding: "12px 16px" }}>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button onClick={() => { setKbForm({ title: r.title, category: r.category, language: r.language, content: r.content, isActive: r.isActive, priority: r.priority }); setEditingKbId(r.id!); setShowKbForm(true); }} style={{ background: "none", border: "none", cursor: "pointer", color: UI_COLORS.brand }}><Edit2 size={14} /></button>
+                            <button onClick={() => { if (confirm("Bu bilgiyi silmek istediğinize emin misiniz?")) deleteClinicKnowledgeRecord(agencyId, clinicDocId, r.id!); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444" }}><Trash2 size={14} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* KB Form Modal */}
+            <Modal isOpen={showKbForm} onClose={() => setShowKbForm(false)} title={editingKbId ? "Bilgi Düzenle" : "AI Bilgisi Ekle"}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: UI_COLORS.textSecondary, marginBottom: 4 }}>Bilgi Başlığı</label>
+                  <Input value={kbForm.title} onChange={(e) => setKbForm(p => ({ ...p, title: e.target.value }))} placeholder="Örn: Hospitadent Alanya Klinik Özeti" />
+                </div>
+                <div style={{ display: "flex", gap: 16 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: UI_COLORS.textSecondary, marginBottom: 4 }}>Kategori</label>
+                    <select value={kbForm.category} onChange={(e) => setKbForm(p => ({ ...p, category: e.target.value as AgencyKnowledgeCategory }))} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${UI_COLORS.border}`, fontSize: 13, background: UI_COLORS.bgCard, color: UI_COLORS.textPrimary }}>
+                      <option value="Klinik Genel Bilgi">Klinik Genel Bilgi</option>
+                      <option value="Tedaviler">Tedaviler</option>
+                      <option value="Fiyatlandırma Notları">Fiyatlandırma Notları</option>
+                      <option value="Doktorlar">Doktorlar</option>
+                      <option value="Hasta Destek Hizmetleri">Hasta Destek Hizmetleri</option>
+                      <option value="Transfer / Konaklama">Transfer / Konaklama</option>
+                      <option value="Çalışma Saatleri">Çalışma Saatleri</option>
+                      <option value="Sık Sorulan Sorular">Sık Sorulan Sorular</option>
+                      <option value="Yanıt Kuralları">Yanıt Kuralları</option>
+                      <option value="Söylenmemesi Gerekenler">Söylenmemesi Gerekenler</option>
+                      <option value="Diğer">Diğer</option>
+                    </select>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: UI_COLORS.textSecondary, marginBottom: 4 }}>Dil</label>
+                    <select value={kbForm.language} onChange={(e) => setKbForm(p => ({ ...p, language: e.target.value as AgencyKnowledgeLanguage }))} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${UI_COLORS.border}`, fontSize: 13, background: UI_COLORS.bgCard, color: UI_COLORS.textPrimary }}>
+                      <option value="TR">Türkçe (TR)</option>
+                      <option value="EN">İngilizce (EN)</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <TextArea label="İçerik" value={kbForm.content} onChange={(v) => setKbForm(p => ({ ...p, content: v }))} rows={6} placeholder="AI'ın kullanması için bilgiyi buraya detaylıca yazın..." />
+                </div>
+                <div style={{ display: "flex", gap: 16 }}>
+                  <div style={{ flex: 1, padding: 12, border: `1px solid ${UI_COLORS.border}`, borderRadius: 8 }}>
+                    <ToggleSwitch label="AI Cevaplarında Kullanılsın mı?" checked={kbForm.isActive} onChange={(v) => setKbForm(p => ({ ...p, isActive: v }))} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: UI_COLORS.textSecondary, marginBottom: 4 }}>Öncelik</label>
+                    <select value={kbForm.priority} onChange={(e) => setKbForm(p => ({ ...p, priority: e.target.value as AgencyKnowledgePriority }))} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${UI_COLORS.border}`, fontSize: 13, background: UI_COLORS.bgCard, color: UI_COLORS.textPrimary }}>
+                      <option value="Düşük">Düşük</option>
+                      <option value="Normal">Normal</option>
+                      <option value="Yüksek">Yüksek</option>
+                    </select>
+                  </div>
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
+                  <Button variant="secondary" onClick={() => setShowKbForm(false)}>İptal</Button>
+                  <Button onClick={handleSaveKbRecord} isLoading={saving}><Save size={14} /> {editingKbId ? "Güncelle" : "Ekle"}</Button>
+                </div>
+              </div>
+            </Modal>
           </div>
         )}
 

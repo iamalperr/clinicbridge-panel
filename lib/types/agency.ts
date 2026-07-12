@@ -351,3 +351,35 @@ export const EMPTY_AGENCY_METRICS: AgencyDashboardMetrics = {
   leadsByLanguage: {},
   leadsByStatus: {} as Record<LeadStatus, number>,
 };
+
+// ─── AI Knowledge Base ──────────────────────────────────────────────────────
+
+export type AgencyKnowledgeCategory = 
+  | "Klinik Genel Bilgi"
+  | "Tedaviler"
+  | "Fiyatlandırma Notları"
+  | "Doktorlar"
+  | "Hasta Destek Hizmetleri"
+  | "Transfer / Konaklama"
+  | "Çalışma Saatleri"
+  | "Sık Sorulan Sorular"
+  | "Yanıt Kuralları"
+  | "Söylenmemesi Gerekenler"
+  | "Diğer";
+
+export type AgencyKnowledgeLanguage = "TR" | "EN";
+export type AgencyKnowledgePriority = "Düşük" | "Normal" | "Yüksek";
+
+export interface AgencyKnowledgeRecord {
+  id?: string;
+  agencyId: string;
+  clinicId: string;
+  title: string;
+  category: AgencyKnowledgeCategory;
+  language: AgencyKnowledgeLanguage;
+  content: string;
+  isActive: boolean;
+  priority: AgencyKnowledgePriority;
+  createdAt?: any;
+  updatedAt?: any;
+}

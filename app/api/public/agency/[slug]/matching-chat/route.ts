@@ -56,7 +56,7 @@ interface SessionContext {
    HELPERS
 ═══════════════════════════════════════════════════════════════════════════ */
 
-function buildClinicContext(clinics: any[], pricing: any[]): string {
+function buildClinicContext(clinics: any[], pricing: any[], knowledgeRecords: any[] = []): string {
   const lines: string[] = [];
   for (const c of clinics) {
     const cPrices = pricing.filter((p: any) => p.clinicId === c.id);
@@ -71,6 +71,16 @@ function buildClinicContext(clinics: any[], pricing: any[]): string {
     const specs = (c.subTreatments || c.treatments || []).join(", ");
     const overview = c.overview || c.shortDescription || "";
 
+    const cKb = knowledgeRecords.filter(k => k.clinicId === c.id && k.isActive !== false);
+    
+    // Sort KB by priority (Yüksek > Normal > Düşük)
+    const priorityWeight: Record<string, number> = { "Yüksek": 3, "Normal": 2, "Düşük": 1 };
+    cKb.sort((a, b) => (priorityWeight[b.priority] || 2) - (priorityWeight[a.priority] || 2));
+
+    const kbStr = cKb.length > 0 
+      ? cKb.map(k => `  [${k.category}] ${k.title}:\n  ${k.content}`).join("\n\n")
+      : "";
+
     lines.push(`CLINIC: ${c.clinicName} (ID: ${c.id})
 Slug: ${c.clinicSlug || c.id}
 Type: ${c.category || c.clinicType || ""}
@@ -81,6 +91,8 @@ Treatments: ${specs}
 Accommodation: ${c.accommodation !== false ? "Yes" : "No"}
 Transfer: ${c.transfer !== false ? "Yes" : "No"}
 Overview: ${overview}
+Knowledge Base (AI Bilgi Havuzu):
+${kbStr}
 Pricing:
 ${priceStr}`);
   }
@@ -255,13 +267,26 @@ export async function POST(
       });
     }
 
-    console.log(`[matching-chat] Agency: ${slug}, Clinics: ${allClinics.length}, Pricing: ${allPricing.length}`);
+    // Load AI Knowledge Base records for active clinics
+    const allKbRecords: any[] = [];
+    for (const c of allClinics) {
+      const kbSnap = await adminDb.collection("agencies").doc(agencyId)
+        .collection("clinics").doc(c.id).collection("knowledgeBase").get();
+      for (const kDoc of kbSnap.docs) {
+        const kData = kDoc.data();
+        if (kData.isActive !== false) {
+          allKbRecords.push({ id: kDoc.id, clinicId: c.id, ...kData });
+        }
+      }
+    }
+
+    console.log(`[matching-chat] Agency: ${slug}, Clinics: ${allClinics.length}, Pricing: ${allPricing.length}, KB Records: ${allKbRecords.length}`);
     if (allPricing.length > 0) {
       console.log(`[matching-chat] Sample pricing:`, JSON.stringify(allPricing[0]));
     }
 
     /* ── 2. Build clinic context for OpenAI ── */
-    const clinicContext = buildClinicContext(allClinics, allPricing);
+    const clinicContext = buildClinicContext(allClinics, allPricing, allKbRecords);
 
     /* ── 3. Build session context hint ── */
     const ctx: SessionContext = sessionContext;
