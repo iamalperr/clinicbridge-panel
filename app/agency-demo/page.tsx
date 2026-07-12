@@ -477,7 +477,7 @@ export default function AgencyDemoPage() {
   const [aiInput, setAiInput] = useState("");
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const [aiTyping, setAiTyping] = useState(false);
-  const [showResults, setShowResults] = useState(false);
+
   const [leadModal, setLeadModal] = useState(false);
   const [leadClinic, setLeadClinic] = useState("");
   const [leadSubmitted, setLeadSubmitted] = useState(false);
@@ -485,7 +485,7 @@ export default function AgencyDemoPage() {
   const [clinics, setClinics] = useState<DemoClinic[]>(FALLBACK_CLINICS);
   const [sessionCtx, setSessionCtx] = useState<SessionContext>({});
   const [chatHistory, setChatHistory] = useState<{ role: string; content: string }[]>([]);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+
 
   const t = (key: string) => TEXTS[lang][key] || key;
 
@@ -523,8 +523,12 @@ export default function AgencyDemoPage() {
     })();
   }, []);
 
+  const chatContainerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Scroll only within chat container, never page-level
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
   }, [aiMessages, aiTyping]);
 
   const handleAiSubmit = async () => {
@@ -585,7 +589,7 @@ export default function AgencyDemoPage() {
       setChatHistory([...newHistory, { role: "assistant", content: data.reply }]);
 
       if (data.sessionContext) setSessionCtx(data.sessionContext);
-      if (data.type === "clinic_recommendations" && data.clinics?.length > 0) setShowResults(true);
+      // Clinic cards are rendered inline in chat — no separate results section needed
 
     } catch (err) {
       console.error("[CB-MATCHING] ERROR:", err);
@@ -798,7 +802,7 @@ export default function AgencyDemoPage() {
             boxShadow: "0 8px 32px rgba(0,0,0,0.06)", overflow: "hidden",
           }}>
             {/* Chat Messages */}
-            <div style={{ padding: 24, minHeight: 200, maxHeight: 400, overflowY: "auto" }}>
+            <div ref={chatContainerRef} style={{ padding: 24, minHeight: 200, maxHeight: 600, overflowY: "auto" }}>
               {/* AI Greeting */}
               {aiMessages.length === 0 && (
                 <div style={{ display: "flex", gap: 12, marginBottom: 16, animation: "slideIn 0.4s ease" }}>
@@ -925,7 +929,7 @@ export default function AgencyDemoPage() {
                   </div>
                 </div>
               )}
-              <div ref={chatEndRef} />
+              {/* scroll handled by chatContainerRef */}
             </div>
 
             {/* Input */}
@@ -960,81 +964,7 @@ export default function AgencyDemoPage() {
         </div>
       </section>
 
-      {/* ═══════ AI RESULTS ═══════ */}
-      {showResults && (
-        <section className="section-padding fade-up" style={{ padding: "60px 40px 80px", background: C.bg }}>
-          <div style={{ maxWidth: 1280, margin: "0 auto" }}>
-            <div style={{ textAlign: "center", marginBottom: 40 }}>
-              <h2 style={{ fontSize: "clamp(24px, 4vw, 32px)", fontWeight: 800, color: C.navy }}>{t("results.title")}</h2>
-              <p style={{ fontSize: 15, color: C.textSec, marginTop: 8 }}>{t("results.subtitle")}</p>
-            </div>
-            <div className="results-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
-              {clinics.slice(0, 3).map((clinic) => (
-                <div key={clinic.id} className="card-hover" style={{
-                  background: C.white, borderRadius: 16, border: `1px solid ${C.border}`,
-                  overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.04)",
-                }}>
-                  {/* Card Header */}
-                  <div style={{ height: 100, background: clinic.image, position: "relative", display: "flex", alignItems: "flex-end", padding: 16 }}>
-                    {clinic.matchScore && (
-                      <div style={{
-                        position: "absolute", top: 12, right: 12, padding: "4px 10px", borderRadius: 8,
-                        background: "rgba(255,255,255,0.95)", fontSize: 12, fontWeight: 800, color: C.teal,
-                      }}>
-                        {t("results.matchScore")}: {clinic.matchScore}%
-                      </div>
-                    )}
-                    <h3 style={{ fontSize: 16, fontWeight: 800, color: "#fff", textShadow: "0 1px 4px rgba(0,0,0,0.3)" }}>{clinic.name}</h3>
-                  </div>
-                  {/* Card Body */}
-                  <div style={{ padding: 20 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
-                      <MapPin size={14} color={C.teal} />
-                      <span style={{ fontSize: 13, color: C.textSec }}>{clinic.location}</span>
-                      <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: "#f59e0b" }}>
-                        <Star size={14} fill="#f59e0b" color="#f59e0b" /> {clinic.rating}
-                      </span>
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                        <span style={{ color: C.textMuted }}>{t("results.priceRange")}</span>
-                        <span style={{ fontWeight: 700, color: C.teal }}>{clinic.priceRange}</span>
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                        <span style={{ color: C.textMuted }}>{t("results.languages")}</span>
-                        <span style={{ fontWeight: 600, color: C.text }}>{clinic.languages.join(", ")}</span>
-                      </div>
-                      {clinic.accommodation && (
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                          <span style={{ color: C.textMuted }}>{t("results.accommodation")}</span>
-                          <span style={{ fontWeight: 600, color: "#22c55e" }}>✓ {t("results.included")}</span>
-                        </div>
-                      )}
-                      {clinic.transfer && (
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                          <span style={{ color: C.textMuted }}>{t("results.transfer")}</span>
-                          <span style={{ fontWeight: 600, color: "#22c55e" }}>✓ {t("results.included")}</span>
-                        </div>
-                      )}
-                    </div>
-                    {/* CTA Buttons */}
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button className="demo-btn" onClick={() => openLeadModal(clinic.name)}
-                        style={{ flex: 1, padding: "10px 0", borderRadius: 10, background: C.teal, color: "#fff", fontSize: 13, fontWeight: 700 }}>
-                        {t("results.requestQuote")}
-                      </button>
-                      <Link href={`/agency-demo/medicalcenter/${clinic.clinicSlug}`}
-                        style={{ padding: "10px 14px", borderRadius: 10, background: C.bg, color: C.textSec, fontSize: 13, fontWeight: 600, border: `1px solid ${C.border}`, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
-                        <ExternalLink size={12} /> {t("results.viewProfile")}
-                      </Link>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
+      {/* AI Results section removed — clinic cards now render inline in chat */}
 
       {/* ═══════ HOW IT WORKS ═══════ */}
       <section id="steps" className="section-padding" style={{ padding: "80px 40px", background: C.white }}>

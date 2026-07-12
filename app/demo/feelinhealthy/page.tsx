@@ -234,7 +234,7 @@ export default function FeelinHealthyLive() {
 
   // AI Chat
   const [aiInput, setAiInput] = useState("");
-  const [aiMsgs, setAiMsgs] = useState<{ role: "user" | "ai"; text: string }[]>([]);
+  const [aiMsgs, setAiMsgs] = useState<{ role: "user" | "ai"; text: string; type?: string; clinics?: any[] }[]>([]);
   const [aiTyping, setAiTyping] = useState(false);
   const [matchedClinics, setMatchedClinics] = useState<ClinicData[]>([]);
   const [matchedCategory, setMatchedCategory] = useState<string | null>(null);
@@ -281,7 +281,13 @@ export default function FeelinHealthyLive() {
     load();
   }, []);
 
-  useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: "smooth" }); }, [aiMsgs, aiTyping]);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // Scroll only within chat container, never page-level
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [aiMsgs, aiTyping]);
 
   // ── AI MATCHING ──
 
@@ -336,18 +342,13 @@ export default function FeelinHealthyLive() {
       console.log("[CB-DEMO] Clinics:", data.clinics?.length || 0);
 
       // Show AI reply text
-      setAiMsgs((p) => [...p, { role: "ai", text: data.reply || "Yanıt alınamadı." }]);
-
-      // If clinic recommendations came, update matched clinics for the results section
-      if (data.clinics && data.clinics.length > 0) {
-        // Map API clinics to the format the results section expects
-        const apiClinics = data.clinics;
-        const matchedIds = apiClinics.map((c: any) => c.clinicId);
-        const matched = clinics.filter((c) => matchedIds.includes(c.id));
-        if (matched.length > 0) {
-          setMatchedClinics(matched);
-        }
-      }
+      const replyMsg: { role: "ai"; text: string; type?: string; clinics?: any[] } = {
+        role: "ai",
+        text: data.reply || "Yanıt alınamadı.",
+        type: data.type || "text",
+        clinics: data.clinics || undefined,
+      };
+      setAiMsgs((p) => [...p, replyMsg]);
     } catch (err) {
       console.error("[CB-DEMO] ERROR:", err);
       setAiMsgs((p) => [...p, {
@@ -425,7 +426,7 @@ export default function FeelinHealthyLive() {
     setLeadSending(false);
   };
 
-  const openLead = (cl: ClinicData) => { setLeadClinic(cl); setLeadDone(false); setLeadModal(true); };
+  const openLead = (cl: ClinicData | null) => { setLeadClinic(cl); setLeadDone(false); setLeadModal(true); };
   const scrollTo = (id: string) => { document.getElementById(id)?.scrollIntoView({ behavior: "smooth" }); setMobileMenu(false); };
 
   // ── LOADING / ERROR ──
@@ -567,7 +568,7 @@ export default function FeelinHealthyLive() {
             <p style={{ fontSize: 15, color: C.textSec, marginTop: 8 }}>{t("ai.sub")}</p>
           </div>
           <div style={{ background: C.bg, borderRadius: 20, border: `1px solid ${C.border}`, boxShadow: "0 8px 32px rgba(0,0,0,0.05)", overflow: "hidden" }}>
-            <div style={{ padding: 24, minHeight: 200, maxHeight: 400, overflowY: "auto" }}>
+            <div ref={chatContainerRef} style={{ padding: 24, minHeight: 200, maxHeight: 600, overflowY: "auto" }}>
               {aiMsgs.length === 0 && (
                 <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
                   <div style={{ width: 36, height: 36, borderRadius: "50%", background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Bot size={18} color="#fff" /></div>
@@ -579,7 +580,66 @@ export default function FeelinHealthyLive() {
                   <div style={{ width: 36, height: 36, borderRadius: "50%", flexShrink: 0, background: m.role === "user" ? C.navyLight : `linear-gradient(135deg, ${C.primary}, ${C.navy})`, display: "flex", alignItems: "center", justifyContent: "center" }}>
                     {m.role === "user" ? <User size={18} color="#fff" /> : <Bot size={18} color="#fff" />}
                   </div>
-                  <div style={{ background: m.role === "user" ? C.navy : C.white, color: m.role === "user" ? "#fff" : C.text, padding: "12px 16px", borderRadius: m.role === "user" ? "16px 4px 16px 16px" : "4px 16px 16px 16px", border: m.role === "user" ? "none" : `1px solid ${C.border}`, maxWidth: "85%", fontSize: 14, lineHeight: 1.6 }}>{m.text}</div>
+                  <div style={{ maxWidth: "85%", display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ background: m.role === "user" ? C.navy : C.white, color: m.role === "user" ? "#fff" : C.text, padding: "12px 16px", borderRadius: m.role === "user" ? "16px 4px 16px 16px" : "4px 16px 16px 16px", border: m.role === "user" ? "none" : `1px solid ${C.border}`, fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{m.text}</div>
+                    {/* Inline clinic cards */}
+                    {m.clinics && m.clinics.length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        {m.clinics.map((rec: any) => (
+                          <div key={rec.clinicId} style={{ background: C.white, borderRadius: 14, border: `1px solid ${C.border}`, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+                            {/* Card header */}
+                            <div style={{ padding: "12px 14px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <div>
+                                <p style={{ fontSize: 14, fontWeight: 700, color: C.navy }}>{rec.clinicName}</p>
+                                <span style={{ fontSize: 11, color: C.textSec, display: "flex", alignItems: "center", gap: 3, marginTop: 2 }}><MapPin size={10} /> {rec.location}</span>
+                              </div>
+                              {rec.matchScore > 0 && (
+                                <div style={{ background: C.primaryBg, border: `1px solid ${C.primaryBorder}`, borderRadius: 8, padding: "3px 8px", textAlign: "center" }}>
+                                  <span style={{ fontSize: 14, fontWeight: 800, color: C.primary }}>{rec.matchScore}%</span>
+                                  <p style={{ fontSize: 8, color: C.primary, fontWeight: 600 }}>AI {lang === "tr" ? "Eşleşme" : "Match"}</p>
+                                </div>
+                              )}
+                            </div>
+                            {/* Prices */}
+                            {rec.matchedPrices && rec.matchedPrices.length > 0 && (
+                              <div style={{ padding: "8px 14px", borderBottom: `1px solid ${C.border}` }}>
+                                <p style={{ fontSize: 10, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", marginBottom: 4, letterSpacing: 0.5 }}>{lang === "tr" ? "Tahmini Fiyatlar" : "Estimated Prices"}</p>
+                                {rec.matchedPrices.map((p: any, pi: number) => (
+                                  <div key={pi} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "2px 0", fontSize: 12 }}>
+                                    <span style={{ color: C.text }}>{p.subTreatmentName}</span>
+                                    <span style={{ fontWeight: 700, color: C.primary }}>
+                                      {p.priceMin === p.priceMax ? `${p.priceMin} ${p.currency}` : `${p.priceMin}–${p.priceMax} ${p.currency}`}
+                                      {p.duration && <span style={{ fontWeight: 400, color: C.textMuted, fontSize: 10 }}> · {p.duration}</span>}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {/* Languages + Reason */}
+                            {rec.reason && (
+                              <div style={{ padding: "6px 14px", borderBottom: `1px solid ${C.border}` }}>
+                                <p style={{ fontSize: 11, color: C.textSec, fontStyle: "italic" }}>💡 {rec.reason}</p>
+                              </div>
+                            )}
+                            {/* Actions */}
+                            <div style={{ padding: "8px 14px", display: "flex", gap: 6 }}>
+                              <a href={rec.profilePath || "#"} style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, textAlign: "center", background: C.primaryBg, color: C.primary, border: `1px solid ${C.primaryBorder}`, textDecoration: "none" }}>
+                                {lang === "tr" ? "Daha Fazla Bilgi" : "More Info"}
+                              </a>
+                              <button onClick={() => openLead(null)} style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}>
+                                {lang === "tr" ? "Teklif İste" : "Request Quote"}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        {(m.type === "clinic_recommendations" || m.type === "clinic_answer") && (
+                          <p style={{ fontSize: 10, color: C.textMuted, textAlign: "center", fontStyle: "italic" }}>
+                            {lang === "tr" ? "Fiyatlar tahminidir; kesin fiyat klinik değerlendirmesine göre değişebilir." : "Prices are estimates; final pricing depends on clinical evaluation."}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
               {aiTyping && (
@@ -590,7 +650,7 @@ export default function FeelinHealthyLive() {
                   </div>
                 </div>
               )}
-              <div ref={chatEnd} />
+              {/* scroll handled by chatContainerRef */}
             </div>
             <div style={{ padding: "16px 24px", borderTop: `1px solid ${C.border}`, background: C.white }}>
               <div style={{ display: "flex", gap: 10 }}>
@@ -606,63 +666,7 @@ export default function FeelinHealthyLive() {
         </div>
       </section>
 
-      {/* AI RESULTS — LIVE */}
-      {matchedClinics.length > 0 && (
-        <section className="sp fu" style={{ padding: "60px 40px 80px", background: C.bg }}>
-          <div style={{ maxWidth: 1280, margin: "0 auto" }}>
-            <div style={{ textAlign: "center", marginBottom: 40 }}>
-              <h2 style={{ fontSize: "clamp(24px,4vw,32px)", fontWeight: 800, color: C.navy }}>{t("rec.title")}</h2>
-              <p style={{ fontSize: 15, color: C.textSec, marginTop: 8 }}>{t("rec.sub")}</p>
-            </div>
-            <div className="rg" style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(matchedClinics.length, 3)}, 1fr)`, gap: 24 }}>
-              {matchedClinics.map((cl) => {
-                const price = getClinicPrice(cl.id, matchedCategory);
-                const catColor = CATEGORY_COLORS[cl.treatmentCategories?.[0] || "other"] || C.primary;
-                return (
-                  <div key={cl.id} className="ch" style={{ background: C.white, borderRadius: 16, border: `1px solid ${C.border}`, overflow: "hidden" }}>
-                    <div style={{ height: 80, background: `linear-gradient(135deg, ${catColor}, ${catColor}cc)`, display: "flex", alignItems: "flex-end", padding: 16 }}>
-                      <h3 style={{ fontSize: 16, fontWeight: 800, color: "#fff", textShadow: "0 1px 4px rgba(0,0,0,.3)" }}>{cl.clinicName}</h3>
-                    </div>
-                    <div style={{ padding: 20 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
-                        <MapPin size={14} color={C.primary} /><span style={{ fontSize: 13, color: C.textSec }}>{cl.location?.city}, {cl.location?.country}</span>
-                        {cl.rating && <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: "#f59e0b" }}><Star size={14} fill="#f59e0b" color="#f59e0b" /> {cl.rating}</span>}
-                      </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14, fontSize: 13 }}>
-                        {showPrice && (
-                          <div style={{ display: "flex", justifyContent: "space-between" }}>
-                            <span style={{ color: C.textMuted }}>{t("rec.price")}</span>
-                            <span style={{ fontWeight: 700, color: C.primary }}>{price ? `€${price.min.toLocaleString()} – €${price.max.toLocaleString()}` : t("rec.noPrice")}</span>
-                          </div>
-                        )}
-                        <div style={{ display: "flex", justifyContent: "space-between" }}>
-                          <span style={{ color: C.textMuted }}>{t("rec.langs")}</span>
-                          <span style={{ fontWeight: 600 }}>{cl.supportedLanguages?.map((l) => l.toUpperCase()).join(", ") || "—"}</span>
-                        </div>
-                      </div>
-                      {cl.subTreatments && cl.subTreatments.length > 0 && (
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 14 }}>
-                          {cl.subTreatments.slice(0, 4).map((s, i) => (
-                            <span key={i} style={{ fontSize: 10.5, padding: "2px 7px", borderRadius: 5, background: C.primaryBg, color: C.primary, fontWeight: 600 }}>{s}</span>
-                          ))}
-                        </div>
-                      )}
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <button className="btn" onClick={() => openLead(cl)} style={{ flex: 1, padding: "10px 0", borderRadius: 10, background: C.primary, color: "#fff", fontSize: 13, fontWeight: 700 }}>{t("rec.quote")}</button>
-                        {showProfile && cl.profileUrl && (
-                          <a href={cl.profileUrl} target="_blank" rel="noopener noreferrer" className="btn" style={{ padding: "10px 14px", borderRadius: 10, background: C.bg, color: C.textSec, fontSize: 13, fontWeight: 600, border: `1px solid ${C.border}`, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
-                            <ExternalLink size={12} /> {t("rec.profile")}
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-      )}
+      {/* AI Results section removed — clinic cards now render inline in chat */}
 
       {/* HOW IT WORKS */}
       <section id="steps" className="sp" style={{ padding: "80px 40px", background: C.white }}>
