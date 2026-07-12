@@ -23,6 +23,8 @@ import {
   addClinicKnowledgeRecord,
   updateClinicKnowledgeRecord,
   deleteClinicKnowledgeRecord,
+  subscribeToClinicAIConfig,
+  updateClinicAIConfig,
 } from "@/lib/services/agencyService";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -38,7 +40,7 @@ import type {
   AgencyClinic, ClinicOverview, ClinicKnowledgeBase,
   ClinicLocationDetails, ClinicQuoteSettings, ClinicFAQ, ClinicDoctor,
   ClinicTreatmentPricing, TreatmentCategory, PriceType,
-  AgencyKnowledgeRecord, AgencyKnowledgeCategory, AgencyKnowledgeLanguage, AgencyKnowledgePriority
+  AgencyKnowledgeCategory, AgencyKnowledgeLanguage, AgencyKnowledgePriority, AgencyKnowledgeRecord, AgencyClinicAIConfig
 } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES } from "@/lib/types/agency";
 
@@ -91,7 +93,7 @@ function SectionTitle({ icon, title }: { icon: React.ReactNode; title: string })
 }
 
 // ─── Tab Definition ─────────────────────────────────────────────────────────
-const TAB_KEYS = ["general", "overview", "treatments", "pricing", "doctors", "knowledgeBase", "faq", "location", "quoteSettings"] as const;
+const TAB_KEYS = ["general", "overview", "treatments", "pricing", "doctors", "aiPrompt", "knowledgeBase", "faq", "location", "settings"] as const;
 type TabKey = typeof TAB_KEYS[number];
 
 const TAB_ICONS: Record<TabKey, React.ReactNode> = {
@@ -100,10 +102,24 @@ const TAB_ICONS: Record<TabKey, React.ReactNode> = {
   treatments: <Stethoscope size={14} />,
   pricing: <DollarSign size={14} />,
   doctors: <Stethoscope size={14} />,
-  knowledgeBase: <Brain size={14} />,
+  aiPrompt: <Brain size={14} />,
+  knowledgeBase: <FileText size={14} />,
   faq: <HelpCircle size={14} />,
   location: <MapPin size={14} />,
-  quoteSettings: <Settings size={14} />,
+  settings: <Settings size={14} />,
+};
+
+const TAB_LABELS: Record<TabKey, { tr: string; en: string }> = {
+  general: { tr: "Genel Bilgiler", en: "General" },
+  overview: { tr: "Klinik Özeti", en: "Overview" },
+  treatments: { tr: "Tedaviler", en: "Treatments" },
+  pricing: { tr: "Fiyatlandırma", en: "Pricing" },
+  doctors: { tr: "Doktorlar", en: "Doctors" },
+  aiPrompt: { tr: "AI Prompt Studio", en: "AI Prompt Studio" },
+  knowledgeBase: { tr: "AI Bilgi Havuzu", en: "AI Knowledge" },
+  faq: { tr: "SSS", en: "FAQ" },
+  location: { tr: "Lokasyon", en: "Location" },
+  settings: { tr: "Klinik Ayarları", en: "Clinic Settings" },
 };
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -124,6 +140,18 @@ export default function ClinicProfilePage() {
   const [overview, setOverview] = useState<ClinicOverview>({});
   const [loc, setLoc] = useState<ClinicLocationDetails>({ city: "", country: "", address: "" });
   const [qs, setQs] = useState<ClinicQuoteSettings>({});
+  
+  // AI Config
+  const [aiConfig, setAiConfig] = useState<AgencyClinicAIConfig | null>(null);
+  const [aiConfigForm, setAiConfigForm] = useState<Partial<AgencyClinicAIConfig>>({
+    assistantName: "", persona: "", tone: "Professional",
+    greetingMessageTR: "", greetingMessageEN: "",
+    responseRules: [], forbiddenClaims: [],
+    leadCollectionMode: "moderate", recommendationBehavior: "direct_recommend",
+    pricingBehavior: "show_exact", languageBehavior: "user_lang",
+    customSystemPrompt: ""
+  });
+  
   const [generalForm, setGeneralForm] = useState({
     clinicName: "", clinicSlug: "", category: "", website: "", profileUrl: "",
     contactEmail: "", phone: "", whatsapp: "", branch: "",
@@ -268,6 +296,14 @@ export default function ClinicProfilePage() {
     return subscribeToClinicKnowledgeBase(agencyId, clinicDocId, setKbRecords);
   }, [agencyId, clinicDocId]);
 
+  useEffect(() => {
+    if (!agencyId || !clinicDocId) return;
+    return subscribeToClinicAIConfig(agencyId, clinicDocId, (cfg) => {
+      setAiConfig(cfg);
+      if (cfg) setAiConfigForm(cfg);
+    });
+  }, [agencyId, clinicDocId]);
+
   // ─── Save Handlers ────────────────────────────────────────────────────
   const showToast = (type: "success" | "error", message: string) => {
     setToast({ type, message });
@@ -363,6 +399,19 @@ export default function ClinicProfilePage() {
       showToast("error", t("portal.clinics.profile.saveFailed"));
     }
     setSaving(false);
+  };
+
+  const handleSaveAIConfig = async () => {
+    setSaving(true);
+    try {
+      await updateClinicAIConfig(agencyId, clinicDocId, aiConfigForm);
+      showToast("success", "AI ayarları başarıyla kaydedildi.");
+    } catch (err) {
+      console.error(err);
+      showToast("error", "AI ayarları kaydedilirken hata oluştu.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleAddPricing = async () => {
@@ -576,7 +625,7 @@ export default function ClinicProfilePage() {
               transition: "all 0.2s", whiteSpace: "nowrap",
             }}
           >
-            {TAB_ICONS[tab]} {t(`portal.clinics.profile.tabs.${tab}`)}
+            {TAB_ICONS[tab]} {TAB_LABELS[tab][(language?.toLowerCase() as "tr" | "en") || "tr"] || TAB_LABELS[tab].tr}
           </button>
         ))}
       </div>
@@ -664,9 +713,6 @@ export default function ClinicProfilePage() {
 
             <div style={{ borderRadius: 10, border: `1px solid ${UI_COLORS.border}`, padding: 14, marginTop: 8 }}>
               <ToggleSwitch label={t("portal.clinics.profile.overview.internationalSupport")} checked={overview.internationalPatientSupport ?? false} onChange={(v) => setOverview(p => ({ ...p, internationalPatientSupport: v }))} />
-              <ToggleSwitch label={t("portal.clinics.profile.overview.accommodationSupport")} checked={overview.accommodationSupport ?? false} onChange={(v) => setOverview(p => ({ ...p, accommodationSupport: v }))} />
-              <ToggleSwitch label={t("portal.clinics.profile.overview.transferSupport")} checked={overview.transferSupport ?? false} onChange={(v) => setOverview(p => ({ ...p, transferSupport: v }))} />
-              <ToggleSwitch label={t("portal.clinics.profile.overview.onlineConsultation")} checked={overview.onlineConsultation ?? false} onChange={(v) => setOverview(p => ({ ...p, onlineConsultation: v }))} />
             </div>
 
             <div style={{ marginTop: 12 }}>
@@ -1046,8 +1092,92 @@ export default function ClinicProfilePage() {
           </div>
         )}
 
+        {/* ═══ TAB: AI PROMPT STUDIO ═══ */}
+        {activeTab === "aiPrompt" && (
+          <div>
+            <SectionTitle icon={<Brain size={18} />} title="AI Prompt Studio" />
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ fontSize: 13, color: UI_COLORS.textSecondary, marginBottom: 12 }}>
+                Asistanın genel karakterini, üslubunu ve çalışma prensiplerini buradan ayarlayabilirsiniz.
+              </p>
+              
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <Input label="Asistan Adı (Opsiyonel)" value={aiConfigForm.assistantName || ""} onChange={(e) => setAiConfigForm(p => ({ ...p, assistantName: e.target.value }))} placeholder="Örn: Dr. Asistan, Melis" />
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted }}>Karakter / Üslup</label>
+                  <select
+                    value={aiConfigForm.tone || "Professional"}
+                    onChange={(e) => setAiConfigForm(p => ({ ...p, tone: e.target.value }))}
+                    style={{
+                      padding: "10px 12px", borderRadius: 8, border: `1px solid ${UI_COLORS.border}`,
+                      background: "rgba(255,255,255,0.03)", color: UI_COLORS.textPrimary, fontSize: 13
+                    }}
+                  >
+                    <option value="Professional">Profesyonel & Kurumsal</option>
+                    <option value="Friendly">Samimi & Arkadaşça</option>
+                    <option value="Empathetic">Empatik & Güven Verici</option>
+                    <option value="Medical">Tıbbi & Ciddi</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <TextArea label="Karşılama Mesajı (TR)" value={aiConfigForm.greetingMessageTR || ""} onChange={(v) => setAiConfigForm(p => ({ ...p, greetingMessageTR: v }))} rows={2} placeholder="Kullanıcıları ilk karşılayacak mesaj..." />
+                <TextArea label="Karşılama Mesajı (EN)" value={aiConfigForm.greetingMessageEN || ""} onChange={(v) => setAiConfigForm(p => ({ ...p, greetingMessageEN: v }))} rows={2} placeholder="Welcome message for EN users..." />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted }}>Lead Toplama Modu</label>
+                  <select
+                    value={aiConfigForm.leadCollectionMode || "moderate"}
+                    onChange={(e) => setAiConfigForm(p => ({ ...p, leadCollectionMode: e.target.value as any }))}
+                    style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${UI_COLORS.border}`, background: "rgba(255,255,255,0.03)", color: UI_COLORS.textPrimary, fontSize: 13 }}
+                  >
+                    <option value="light">Esnek (Sadece gerektiğinde sor)</option>
+                    <option value="moderate">Orta (Bilgi verdikten sonra iste)</option>
+                    <option value="aggressive">Agresif (Fiyat/Detay için zorunlu kıl)</option>
+                  </select>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted }}>Fiyat Gösterim Davranışı</label>
+                  <select
+                    value={aiConfigForm.pricingBehavior || "show_exact"}
+                    onChange={(e) => setAiConfigForm(p => ({ ...p, pricingBehavior: e.target.value as any }))}
+                    style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${UI_COLORS.border}`, background: "rgba(255,255,255,0.03)", color: UI_COLORS.textPrimary, fontSize: 13 }}
+                  >
+                    <option value="show_exact">Net Fiyatı Göster (Eğer varsa)</option>
+                    <option value="show_range">Min-Max Aralığını Göster</option>
+                    <option value="fallback_quote">Bilgi Yoksa Teklife Yönlendir</option>
+                    <option value="quote_only">Asla Fiyat Verme, Teklif İste</option>
+                  </select>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted }}>Klinik Önerme Davranışı</label>
+                  <select
+                    value={aiConfigForm.recommendationBehavior || "direct_recommend"}
+                    onChange={(e) => setAiConfigForm(p => ({ ...p, recommendationBehavior: e.target.value as any }))}
+                    style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${UI_COLORS.border}`, background: "rgba(255,255,255,0.03)", color: UI_COLORS.textPrimary, fontSize: 13 }}
+                  >
+                    <option value="direct_recommend">Direkt Öner</option>
+                    <option value="ask_first">Önce Onay İste (Önereyim mi?)</option>
+                    <option value="always_alternatives">Her Zaman Alternatif Sun</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <TextArea label="Özel Sistem Prompt'u (Opsiyonel)" value={aiConfigForm.customSystemPrompt || ""} onChange={(v) => setAiConfigForm(p => ({ ...p, customSystemPrompt: v }))} rows={4} placeholder="Asistana özel ekstra kurallar eklemek için..." />
+              </div>
+            </div>
+            
+            <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end" }}>
+              <Button onClick={handleSaveAIConfig} isLoading={saving}><Save size={14} /> {t("portal.buttons.saveChanges")}</Button>
+            </div>
+          </div>
+        )}
+
         {/* ═══ TAB: KNOWLEDGE BASE ═══ */}
-        {/* ═══ TAB: KNOWLEDGE BASE (NEW) ═══ */}
         {activeTab === "knowledgeBase" && (
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
@@ -1249,10 +1379,10 @@ export default function ClinicProfilePage() {
           </div>
         )}
 
-        {/* ═══ TAB: QUOTE SETTINGS ═══ */}
-        {activeTab === "quoteSettings" && (
+        {/* ═══ TAB: SETTINGS ═══ */}
+        {activeTab === "settings" && (
           <div>
-            <SectionTitle icon={<Settings size={18} />} title={t("portal.clinics.profile.quoteSettings.title")} />
+            <SectionTitle icon={<Settings size={18} />} title={t("portal.clinics.profile.quoteSettings.title") || "Ayarlar"} />
             <div style={{ borderRadius: 10, border: `1px solid ${UI_COLORS.border}`, padding: 14, marginBottom: 16 }}>
               <ToggleSwitch label={t("portal.clinics.profile.quoteSettings.quoteEnabled")} checked={qs.quoteEnabled ?? false} onChange={(v) => setQs(p => ({ ...p, quoteEnabled: v }))} />
               <ToggleSwitch label={t("portal.clinics.profile.quoteSettings.canReceiveLead")} checked={qs.canReceiveLead ?? true} onChange={(v) => setQs(p => ({ ...p, canReceiveLead: v }))} />

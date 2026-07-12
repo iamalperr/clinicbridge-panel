@@ -56,7 +56,7 @@ interface SessionContext {
    HELPERS
 ═══════════════════════════════════════════════════════════════════════════ */
 
-function buildClinicContext(clinics: any[], pricing: any[], knowledgeRecords: any[] = []): string {
+function buildClinicContext(clinics: any[], pricing: any[], knowledgeRecords: any[] = [], aiConfigs: any[] = []): string {
   const lines: string[] = [];
   for (const c of clinics) {
     const cPrices = pricing.filter((p: any) => p.clinicId === c.id);
@@ -81,6 +81,14 @@ function buildClinicContext(clinics: any[], pricing: any[], knowledgeRecords: an
       ? cKb.map(k => `  [${k.category}] ${k.title}:\n  ${k.content}`).join("\n\n")
       : "";
 
+    const cAi = aiConfigs.find(a => a.clinicId === c.id) || {};
+    const aiStr = `Assistant Name: ${cAi.assistantName || "AI Asistan"}
+Tone: ${cAi.tone || "Professional"}
+Pricing Behavior: ${cAi.pricingBehavior || "show_exact"}
+Recommendation Behavior: ${cAi.recommendationBehavior || "direct_recommend"}
+Lead Collection: ${cAi.leadCollectionMode || "moderate"}
+Custom Rules: ${cAi.customSystemPrompt || "Yok"}`;
+
     lines.push(`CLINIC: ${c.clinicName} (ID: ${c.id})
 Slug: ${c.clinicSlug || c.id}
 Type: ${c.category || c.clinicType || ""}
@@ -91,8 +99,13 @@ Treatments: ${specs}
 Accommodation: ${c.accommodation !== false ? "Yes" : "No"}
 Transfer: ${c.transfer !== false ? "Yes" : "No"}
 Overview: ${overview}
+
+AI Configuration:
+${aiStr}
+
 Knowledge Base (AI Bilgi Havuzu):
 ${kbStr}
+
 Pricing:
 ${priceStr}`);
   }
@@ -268,8 +281,11 @@ export async function POST(
     }
 
     // Load AI Knowledge Base records for active clinics
+    // Load AI Knowledge Base records and AI Configs for active clinics
     const allKbRecords: any[] = [];
+    const allAiConfigs: any[] = [];
     for (const c of allClinics) {
+      // Fetch Knowledge Base
       const kbSnap = await adminDb.collection("agencies").doc(agencyId)
         .collection("clinics").doc(c.id).collection("knowledgeBase").get();
       for (const kDoc of kbSnap.docs) {
@@ -278,15 +294,22 @@ export async function POST(
           allKbRecords.push({ id: kDoc.id, clinicId: c.id, ...kData });
         }
       }
+      
+      // Fetch AI Config
+      const aiSnap = await adminDb.collection("agencies").doc(agencyId)
+        .collection("clinics").doc(c.id).collection("aiConfig").doc("main").get();
+      if (aiSnap.exists) {
+        allAiConfigs.push({ clinicId: c.id, ...aiSnap.data() });
+      }
     }
 
-    console.log(`[matching-chat] Agency: ${slug}, Clinics: ${allClinics.length}, Pricing: ${allPricing.length}, KB Records: ${allKbRecords.length}`);
+    console.log(`[matching-chat] Agency: ${slug}, Clinics: ${allClinics.length}, Pricing: ${allPricing.length}, KB Records: ${allKbRecords.length}, AI Configs: ${allAiConfigs.length}`);
     if (allPricing.length > 0) {
       console.log(`[matching-chat] Sample pricing:`, JSON.stringify(allPricing[0]));
     }
 
     /* ── 2. Build clinic context for OpenAI ── */
-    const clinicContext = buildClinicContext(allClinics, allPricing, allKbRecords);
+    const clinicContext = buildClinicContext(allClinics, allPricing, allKbRecords, allAiConfigs);
 
     /* ── 3. Build session context hint ── */
     const ctx: SessionContext = sessionContext;

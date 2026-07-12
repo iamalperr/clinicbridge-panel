@@ -200,6 +200,26 @@ export interface ClinicDoctor {
   updatedAt: any;
 }
 
+// ─── AI Config (Prompt Studio) ──────────────────────────────────────────────
+
+export interface AgencyClinicAIConfig {
+  id?: string;
+  assistantName?: string;
+  persona?: string;
+  tone?: string;
+  greetingMessageTR?: string;
+  greetingMessageEN?: string;
+  responseRules?: string[];
+  forbiddenClaims?: string[];
+  leadCollectionMode?: "light" | "moderate" | "aggressive";
+  recommendationBehavior?: "ask_first" | "direct_recommend" | "always_alternatives" | "strict_match";
+  pricingBehavior?: "show_exact" | "show_range" | "quote_only" | "fallback_quote";
+  languageBehavior?: "user_lang" | "default_tr" | "default_en";
+  customSystemPrompt?: string;
+  createdAt?: any;
+  updatedAt?: any;
+}
+
 // ─── Agency Clinic ──────────────────────────────────────────────────────────
 
 export interface AgencyClinic {

@@ -28,6 +28,7 @@ import type {
   TreatmentCategory,
   EMPTY_AGENCY_METRICS,
   AgencyKnowledgeRecord,
+  AgencyClinicAIConfig,
 } from "@/lib/types/agency";
 
 // ─── Agency CRUD ────────────────────────────────────────────────────────────
@@ -519,4 +520,45 @@ export async function deleteClinicKnowledgeRecord(
   recordId: string
 ): Promise<void> {
   await deleteDoc(doc(db, "agencies", agencyId, "clinics", clinicDocId, "knowledgeBase", recordId));
+}
+
+// ─── AI Config (Prompt Studio) ──────────────────────────────────────────────
+
+export function subscribeToClinicAIConfig(
+  agencyId: string,
+  clinicDocId: string,
+  onData: (config: AgencyClinicAIConfig | null) => void
+) {
+  const q = doc(db, "agencies", agencyId, "clinics", clinicDocId, "aiConfig", "main");
+  return onSnapshot(q, (snapshot) => {
+    if (snapshot.exists()) {
+      onData({ id: snapshot.id, ...snapshot.data() } as AgencyClinicAIConfig);
+    } else {
+      onData(null);
+    }
+  });
+}
+
+export async function getClinicAIConfig(
+  agencyId: string,
+  clinicDocId: string
+): Promise<AgencyClinicAIConfig | null> {
+  const snapshot = await getDoc(doc(db, "agencies", agencyId, "clinics", clinicDocId, "aiConfig", "main"));
+  if (snapshot.exists()) {
+    return { id: snapshot.id, ...snapshot.data() } as AgencyClinicAIConfig;
+  }
+  return null;
+}
+
+export async function updateClinicAIConfig(
+  agencyId: string,
+  clinicDocId: string,
+  data: Partial<AgencyClinicAIConfig>
+): Promise<void> {
+  const docRef = doc(db, "agencies", agencyId, "clinics", clinicDocId, "aiConfig", "main");
+  const cleanData = stripUndefined(data as Record<string, any>);
+  await setDoc(docRef, {
+    ...cleanData,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
 }
