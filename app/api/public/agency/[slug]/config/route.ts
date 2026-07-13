@@ -48,6 +48,11 @@ export async function GET(
     const widgetDoc = await configRef.doc("widget").get();
     const widget = widgetDoc.exists ? widgetDoc.data() : null;
 
+    // Read AI config (from aiConfig/main)
+    const aiConfigRef = adminDb.collection("agencies").doc(agencyId).collection("aiConfig").doc("main");
+    const aiConfigDoc = await aiConfigRef.get();
+    const aiConfig = aiConfigDoc.exists ? aiConfigDoc.data() : null;
+
     return NextResponse.json({
       matching: matching ? {
         routingMode: matching.routingMode || "assisted",
@@ -66,6 +71,11 @@ export async function GET(
         widgetMode: widget.widgetMode || "matching_assistant",
         ctaOptions: widget.ctaOptions || [],
         openingMessage: widget.openingMessage || null,
+      } : null,
+      aiConfig: aiConfig ? {
+        assistantName: aiConfig.assistantName || null,
+        greetingMessageTR: aiConfig.greetingMessageTR || null,
+        greetingMessageEN: aiConfig.greetingMessageEN || null,
       } : null,
     }, { headers: CORS });
   } catch (err) {

@@ -479,6 +479,7 @@ export default function AgencyDemoPage() {
   const [aiInput, setAiInput] = useState("");
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const [aiTyping, setAiTyping] = useState(false);
+  const [aiCfg, setAiCfg] = useState<any>(null);
 
   const [leadModal, setLeadModal] = useState(false);
   const [leadClinic, setLeadClinic] = useState("");
@@ -523,7 +524,29 @@ export default function AgencyDemoPage() {
         }
       } catch { /* fallback to FALLBACK_CLINICS */ }
     })();
+
+    // Fetch AI config
+    (async () => {
+      try {
+        const res = await fetch("/api/public/agency/feelinhealthy/config");
+        if (res.ok) {
+          const data = await res.json();
+          setAiCfg(data.aiConfig || null);
+          if (data.aiConfig) {
+            console.log("[CB-DEMO] aiConfig loaded", { assistantName: data.aiConfig.assistantName, greetingMessageSource: "agency-aiConfig" });
+          } else {
+            console.log("[CB-DEMO] aiConfig not found, fallback greeting used");
+          }
+        }
+      } catch (err) {
+        console.error("[CB-DEMO] Error loading aiConfig:", err);
+      }
+    })();
   }, []);
+
+
+  
+  const welcomeMsg = (lang === "tr" ? aiCfg?.greetingMessageTR : aiCfg?.greetingMessageEN) || t("ai.greeting");
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -837,7 +860,7 @@ export default function AgencyDemoPage() {
                     <Bot size={18} color="#fff" />
                   </div>
                   <div style={{ background: C.white, padding: "12px 16px", borderRadius: "4px 16px 16px 16px", border: `1px solid ${C.border}`, maxWidth: "85%", fontSize: 14, lineHeight: 1.6, color: C.text }}>
-                    {t("ai.greeting")}
+                    {welcomeMsg}
                   </div>
                 </div>
               )}

@@ -229,6 +229,7 @@ export default function FeelinHealthyLive() {
   const [pricing, setPricing] = useState<PricingItem[]>([]);
   const [matchingCfg, setMatchingCfg] = useState<MatchingConfig | null>(null);
   const [widgetCfg, setWidgetCfg] = useState<WidgetConfig | null>(null);
+  const [aiCfg, setAiCfg] = useState<any>(null);
   const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState(false);
 
@@ -274,6 +275,14 @@ export default function FeelinHealthyLive() {
         setPricing(prData.pricing || []);
         setMatchingCfg(cfData.matching || null);
         setWidgetCfg(cfData.widget || null);
+        setAiCfg(cfData.aiConfig || null);
+
+        if (cfData.aiConfig) {
+          console.log("[CB-DEMO] aiConfig loaded", { assistantName: cfData.aiConfig.assistantName, greetingMessageSource: "agency-aiConfig" });
+        } else {
+          console.log("[CB-DEMO] aiConfig not found, fallback greeting used");
+        }
+
       } catch {
         setDataError(true);
       }
