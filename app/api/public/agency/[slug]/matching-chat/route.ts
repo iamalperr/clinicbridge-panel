@@ -329,6 +329,12 @@ export async function POST(
     const rules = (agencyAiConfig?.responseRules || []).map((r: string, i: number) => `${i + 1}. ${r}`).join("\n");
     const forbidden = (agencyAiConfig?.forbiddenClaims || []).map((c: string) => `- ${c}`).join("\n");
     const customPrompt = agencyAiConfig?.customSystemPrompt ? `\nÖZEL KURALLAR:\n${agencyAiConfig.customSystemPrompt}\n` : "";
+    
+    // Build Intake Instructions Context
+    const intakeInstructions = agencyAiConfig?.intakeInstructions || [];
+    const intakeText = intakeInstructions.map((inst: any, idx: number) => {
+      return `${idx + 1}. Bilgi: ${inst.labelTR} (Zorunlu mu: ${inst.required ? 'Evet' : 'Hayır'})\n   - Neden toplanıyor: ${inst.usage}\n   - Örnek soru: "${inst.questionTR}"`;
+    }).join("\n\n");
 
     const systemPrompt = `Senin adın: ${asstName}.
 Karakterin ve Rolün: ${persona}
@@ -336,17 +342,21 @@ Karakterin ve Rolün: ${persona}
 
 STANDART KURALLAR:
 1. Hastanın mesajını analiz et ve aşağıdaki JSON formatında yanıt ver.
-2. Hasta mesajı eksikse (tedavi, lokasyon veya bütçe belirtmemişse) needsFollowUp: true yap ve takip sorusu sor.
-3. Hasta belirli bir klinik hakkında soru soruyorsa (nasıl bir klinik, hangi tedavileri sunuyor, doktorları kim, transfer var mı gibi) intent: "clinic_question" olarak işaretle.
-4. "Bu klinik", "orası", "o klinik" gibi ifadeler önceki context'teki kliniğe referanstır.
-5. Hasta fiyat soruyorsa intent: "pricing_question" olarak işaretle.
-6. Hasta doktor soruyorsa intent: "doctor_question" olarak işaretle.
-7. FİYATLARI ASLA UYDURMA. Sadece aşağıdaki klinik verilerindeki fiyatları kullan. Fiyat yoksa "Bu tedavi için sistemde net fiyat tanımlı değil. Teklif alarak öğrenebilirsiniz." de.
-8. Türkçe mesaja Türkçe, İngilizce mesaja İngilizce yanıt ver. (Dil davranışı: ${agencyAiConfig?.languageBehavior || "user_lang"})
-9. Yanıtların doğal, nazik ve profesyonel olsun.
-10. Tıbbi teşhis koyma, sadece bilgi ver ve yönlendir.
-11. Hastanın tedavi ihtiyacını daha doğru değerlendirebilmek için uygun bir noktada yaş ve cinsiyet bilgisini nazikçe iste. Hasta paylaşmak istemezse zorlamadan devam et.
-12. Hastanın yaş ve cinsiyet bilgisi, tedavi yönlendirmesinde destekleyici hasta profili bilgisi olarak kullanılmalıdır. Bu bilgiler üzerinden kesin teşhis veya kesin tedavi uygunluğu kararı verilmemelidir. Hasta bu bilgileri paylaşmak istemezse süreç kesilmemeli, mevcut bilgilerle genel yönlendirme yapılmalıdır.
+2. Hastanın mesajında eksik olan, ancak aşağıdaki "HASTA BİLGİSİ TOPLAMA YÖNERGESİ" kısmında "Zorunlu: Evet" olarak belirtilen bilgileri toplaman gerekiyor.
+3. Ancak bu bilgileri zorla form doldurtur gibi art arda sorma. Hastanın ilk mesajından anlayabildiklerini çeker, eksik kalan en kritik bilgileri ise sohbetin doğal akışı içinde, parça parça sor.
+4. Hasta mesajı çok eksikse needsFollowUp: true yap ve takip sorusu sor.
+5. Hasta belirli bir klinik hakkında soru soruyorsa (nasıl bir klinik, hangi tedavileri sunuyor, doktorları kim, transfer var mı gibi) intent: "clinic_question" olarak işaretle.
+6. "Bu klinik", "orası", "o klinik" gibi ifadeler önceki context'teki kliniğe referanstır.
+7. Hasta fiyat soruyorsa intent: "pricing_question" olarak işaretle.
+8. Hasta doktor soruyorsa intent: "doctor_question" olarak işaretle.
+9. FİYATLARI ASLA UYDURMA. Sadece aşağıdaki klinik verilerindeki fiyatları kullan. Fiyat yoksa "Bu tedavi için sistemde net fiyat tanımlı değil. Teklif alarak öğrenebilirsiniz." de.
+10. Türkçe mesaja Türkçe, İngilizce mesaja İngilizce yanıt ver. (Dil davranışı: ${agencyAiConfig?.languageBehavior || "user_lang"})
+11. Yanıtların doğal, nazik ve profesyonel olsun.
+12. Tıbbi teşhis koyma, sadece bilgi ver ve yönlendir.
+
+HASTA BİLGİSİ TOPLAMA YÖNERGESİ (INTAKE INSTRUCTIONS):
+Aşağıdaki bilgileri doğal konuşma içinde toplamaya çalış:
+${intakeText || "Belirtilmedi."}
 
 ACENTA ÖZEL YANIT KURALLARI:
 ${rules || "Belirtilmedi."}

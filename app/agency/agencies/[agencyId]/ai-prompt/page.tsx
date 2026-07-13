@@ -5,11 +5,24 @@ import { useAgencyWorkspace } from "@/components/agency/AgencyWorkspaceContext";
 import { useI18n } from "@/lib/i18n-context";
 import { subscribeToAgencyAIConfig, updateAgencyAIConfig } from "@/lib/services/agencyService";
 import type { AgencyAIConfig } from "@/lib/types/agency";
-import { Brain, Save, Plus, X } from "lucide-react";
+import { Brain, Save, Plus, X, MessageSquare } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { UI_COLORS } from "@/components/ui/ui-shared";
+import type { AIIntakeInstruction } from "@/lib/types/agency";
+
+const DEFAULT_INTAKE_INSTRUCTIONS: AIIntakeInstruction[] = [
+  { key: "treatmentNeed", labelTR: "Tedavi veya Şikayet", labelEN: "Treatment or Concern", questionTR: "Hangi tedavi veya şikayet için destek istiyorsunuz?", questionEN: "What treatment or concern would you like help with?", required: true, type: "text", usage: "Hastanın ne aradığını anlamak için" },
+  { key: "patientAge", labelTR: "Yaş", labelEN: "Age", questionTR: "Size daha doğru bir yönlendirme yapabilmem için yaşınızı öğrenebilir miyim?", questionEN: "To provide more accurate guidance, may I know your age?", required: false, type: "number", usage: "Ön değerlendirme kalitesini artırmak için" },
+  { key: "patientGender", labelTR: "Cinsiyet", labelEN: "Gender", questionTR: "Dilerseniz cinsiyetinizi de paylaşabilir misiniz?", questionEN: "If you feel comfortable, could you please share your gender?", required: false, type: "select", usage: "Destekleyici hasta profili bilgisi" },
+  { key: "patientLocation", labelTR: "Bulunduğu Ülke/Şehir", labelEN: "Current Location", questionTR: "Hangi ülkeden veya şehirden yazıyorsunuz?", questionEN: "Which country or city are you contacting us from?", required: true, type: "text", usage: "Lokasyon bazlı yönlendirme" },
+  { key: "preferredLocation", labelTR: "Tercih Edilen Lokasyon", labelEN: "Preferred Location", questionTR: "Tedavi için tercih ettiğiniz şehir veya lokasyon var mı?", questionEN: "Do you have a preferred city or location for treatment?", required: false, type: "text", usage: "Doğru klinik lokasyonunu belirlemek için" },
+  { key: "budget", labelTR: "Bütçe", labelEN: "Budget", questionTR: "Yaklaşık bir bütçeniz var mı?", questionEN: "Do you have an approximate budget?", required: false, type: "text", usage: "Fiyat/Bütçe eşleşmesi için" },
+  { key: "hasXrayOrDiagnosis", labelTR: "Röntgen/Teşhis Durumu", labelEN: "X-ray / Diagnosis", questionTR: "Daha önce röntgen, muayene veya teşhis aldınız mı?", questionEN: "Have you had an X-ray, examination, or diagnosis before?", required: false, type: "text", usage: "Tıbbi durumu anlamak için" },
+  { key: "travelDate", labelTR: "Seyahat Tarihi", labelEN: "Travel Date", questionTR: "Tedavi için ne zaman seyahat etmeyi planlıyorsunuz?", questionEN: "When are you planning to travel for treatment?", required: false, type: "text", usage: "Randevu ve planlama için" },
+  { key: "supportNeeds", labelTR: "Destek İhtiyaçları", labelEN: "Support Needs", questionTR: "Transfer, konaklama veya yabancı dil desteği sizin için önemli mi?", questionEN: "Do you need support with transfer, accommodation, or language assistance?", required: false, type: "text", usage: "Paket teklifleri hazırlamak için" }
+];
 
 function SectionTitle({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (
@@ -40,6 +53,7 @@ export default function AgencyAIPromptPage() {
     pricingBehavior: "show_exact",
     recommendationBehavior: "direct_recommend",
     languageBehavior: "user_lang",
+    intakeInstructions: DEFAULT_INTAKE_INSTRUCTIONS,
     customSystemPrompt: "",
   });
   
@@ -49,6 +63,9 @@ export default function AgencyAIPromptPage() {
   useEffect(() => {
     return subscribeToAgencyAIConfig(agencyId, (cfg) => {
       if (cfg) {
+        if (!cfg.intakeInstructions || cfg.intakeInstructions.length === 0) {
+          cfg.intakeInstructions = DEFAULT_INTAKE_INSTRUCTIONS;
+        }
         setConfig(cfg);
       }
     });
@@ -92,6 +109,14 @@ export default function AgencyAIPromptPage() {
       const arr = [...(prev[type] || [])];
       arr.splice(index, 1);
       return { ...prev, [type]: arr };
+    });
+  };
+
+  const handleUpdateIntake = (index: number, field: keyof AIIntakeInstruction, value: any) => {
+    setConfig(prev => {
+      const arr = [...(prev.intakeInstructions || [])];
+      arr[index] = { ...arr[index], [field]: value };
+      return { ...prev, intakeInstructions: arr };
     });
   };
 
@@ -222,6 +247,53 @@ export default function AgencyAIPromptPage() {
               <option value="default_tr">Varsayılan TR</option>
               <option value="default_en">Varsayılan EN</option>
             </select>
+          </div>
+        </div>
+
+        <SectionTitle icon={<MessageSquare size={18} />} title="Hasta Bilgisi Toplama Akışı (Intake Instructions)" />
+        <div style={{ marginBottom: 24 }}>
+          <p style={{ fontSize: 13, color: UI_COLORS.textSecondary, marginBottom: 16 }}>
+            AI asistanı bu bilgileri zorla form doldurtur gibi sormaz. Kullanıcının ilk mesajından anlayabildiklerini çeker, eksik kalan kritik bilgileri ise sohbetin doğal akışı içinde sorar.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {config.intakeInstructions?.map((item, idx) => (
+              <div key={idx} style={{ padding: 16, border: `1px solid ${UI_COLORS.border}`, borderRadius: 8, background: "var(--bg-app)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: UI_COLORS.textPrimary }}>{item.labelTR}</span>
+                    <span style={{ fontSize: 11, background: "rgba(0,0,0,0.05)", padding: "2px 6px", borderRadius: 4, color: UI_COLORS.textMuted }}>{item.key}</span>
+                  </div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: UI_COLORS.textSecondary }}>
+                    <input 
+                      type="checkbox" 
+                      checked={item.required} 
+                      onChange={(e) => handleUpdateIntake(idx, "required", e.target.checked)} 
+                    />
+                    Zorunlu Sor
+                  </label>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 4, display: "block" }}>Örnek Soru (TR)</label>
+                    <input 
+                      type="text" 
+                      value={item.questionTR} 
+                      onChange={(e) => handleUpdateIntake(idx, "questionTR", e.target.value)}
+                      style={{ width: "100%", padding: "6px 10px", borderRadius: 6, border: `1px solid ${UI_COLORS.border}`, background: "rgba(255,255,255,0.02)", color: UI_COLORS.textPrimary, fontSize: 13 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 4, display: "block" }}>Örnek Soru (EN)</label>
+                    <input 
+                      type="text" 
+                      value={item.questionEN} 
+                      onChange={(e) => handleUpdateIntake(idx, "questionEN", e.target.value)}
+                      style={{ width: "100%", padding: "6px 10px", borderRadius: 6, border: `1px solid ${UI_COLORS.border}`, background: "rgba(255,255,255,0.02)", color: UI_COLORS.textPrimary, fontSize: 13 }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 

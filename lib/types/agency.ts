@@ -202,6 +202,17 @@ export interface ClinicDoctor {
 
 // ─── AI Config (Prompt Studio) ──────────────────────────────────────────────
 
+export interface AIIntakeInstruction {
+  key: string;
+  labelTR: string;
+  labelEN: string;
+  questionTR: string;
+  questionEN: string;
+  required: boolean;
+  type: string;
+  usage: string;
+}
+
 export interface AgencyAIConfig {
   id?: string;
   assistantName?: string;
@@ -209,6 +220,7 @@ export interface AgencyAIConfig {
   tone?: string;
   greetingMessageTR?: string;
   greetingMessageEN?: string;
+  intakeInstructions?: AIIntakeInstruction[];
   responseRules?: string[];
   forbiddenClaims?: string[];
   leadCollectionMode?: "light" | "moderate" | "aggressive";
