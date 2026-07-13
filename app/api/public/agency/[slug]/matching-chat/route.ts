@@ -280,10 +280,12 @@ export async function POST(
       });
     }
 
+    // Load Agency AI Config
+    const aiSnap = await adminDb.collection("agencies").doc(agencyId).collection("aiConfig").doc("main").get();
+    const agencyAiConfig = aiSnap.exists ? aiSnap.data() : null;
+
     // Load AI Knowledge Base records for active clinics
-    // Load AI Knowledge Base records and AI Configs for active clinics
     const allKbRecords: any[] = [];
-    const allAiConfigs: any[] = [];
     for (const c of allClinics) {
       // Fetch Knowledge Base
       const kbSnap = await adminDb.collection("agencies").doc(agencyId)
@@ -294,22 +296,15 @@ export async function POST(
           allKbRecords.push({ id: kDoc.id, clinicId: c.id, ...kData });
         }
       }
-      
-      // Fetch AI Config
-      const aiSnap = await adminDb.collection("agencies").doc(agencyId)
-        .collection("clinics").doc(c.id).collection("aiConfig").doc("main").get();
-      if (aiSnap.exists) {
-        allAiConfigs.push({ clinicId: c.id, ...aiSnap.data() });
-      }
     }
 
-    console.log(`[matching-chat] Agency: ${slug}, Clinics: ${allClinics.length}, Pricing: ${allPricing.length}, KB Records: ${allKbRecords.length}, AI Configs: ${allAiConfigs.length}`);
+    console.log(`[matching-chat] Agency: ${slug}, Clinics: ${allClinics.length}, Pricing: ${allPricing.length}, KB Records: ${allKbRecords.length}`);
     if (allPricing.length > 0) {
       console.log(`[matching-chat] Sample pricing:`, JSON.stringify(allPricing[0]));
     }
 
     /* ── 2. Build clinic context for OpenAI ── */
-    const clinicContext = buildClinicContext(allClinics, allPricing, allKbRecords, allAiConfigs);
+    const clinicContext = buildClinicContext(allClinics, allPricing, allKbRecords);
 
     /* ── 3. Build session context hint ── */
     const ctx: SessionContext = sessionContext;
@@ -325,9 +320,19 @@ export async function POST(
     }
 
     /* ── 4. OpenAI Call: Intent Extraction + Response ── */
-    const systemPrompt = `Sen bir sağlık turizmi AI asistanısın. Görevin hastaların doğru kliniği bulmasına yardımcı olmak.
+    /* ── 4. OpenAI Call: Intent Extraction + Response ── */
+    const asstName = agencyAiConfig?.assistantName || "AI Asistan";
+    const persona = agencyAiConfig?.persona || "Sen bir sağlık turizmi AI asistanısın. Görevin hastaların doğru kliniği bulmasına yardımcı olmak.";
+    const tone = agencyAiConfig?.tone || "Professional";
+    const rules = (agencyAiConfig?.responseRules || []).map((r: string, i: number) => `${i + 1}. ${r}`).join("\n");
+    const forbidden = (agencyAiConfig?.forbiddenClaims || []).map((c: string) => `- ${c}`).join("\n");
+    const customPrompt = agencyAiConfig?.customSystemPrompt ? `\nÖZEL KURALLAR:\n${agencyAiConfig.customSystemPrompt}\n` : "";
 
-KURALLAR:
+    const systemPrompt = `Senin adın: ${asstName}.
+Karakterin ve Rolün: ${persona}
+Üslubun: ${tone}
+
+STANDART KURALLAR:
 1. Hastanın mesajını analiz et ve aşağıdaki JSON formatında yanıt ver.
 2. Hasta mesajı eksikse (tedavi, lokasyon veya bütçe belirtmemişse) needsFollowUp: true yap ve takip sorusu sor.
 3. Hasta belirli bir klinik hakkında soru soruyorsa (nasıl bir klinik, hangi tedavileri sunuyor, doktorları kim, transfer var mı gibi) intent: "clinic_question" olarak işaretle.
@@ -335,10 +340,16 @@ KURALLAR:
 5. Hasta fiyat soruyorsa intent: "pricing_question" olarak işaretle.
 6. Hasta doktor soruyorsa intent: "doctor_question" olarak işaretle.
 7. FİYATLARI ASLA UYDURMA. Sadece aşağıdaki klinik verilerindeki fiyatları kullan. Fiyat yoksa "Bu tedavi için sistemde net fiyat tanımlı değil. Teklif alarak öğrenebilirsiniz." de.
-8. Türkçe mesaja Türkçe, İngilizce mesaja İngilizce yanıt ver.
+8. Türkçe mesaja Türkçe, İngilizce mesaja İngilizce yanıt ver. (Dil davranışı: ${agencyAiConfig?.languageBehavior || "user_lang"})
 9. Yanıtların doğal, nazik ve profesyonel olsun.
 10. Tıbbi teşhis koyma, sadece bilgi ver ve yönlendir.
 
+ACENTA ÖZEL YANIT KURALLARI:
+${rules || "Belirtilmedi."}
+
+SÖYLENMEMESİ GEREKENLER (YASAKLI İFADELER):
+${forbidden || "Belirtilmedi."}
+${customPrompt}
 MEVCUT KLİNİKLER VE FİYATLAR:
 
 ${clinicContext}

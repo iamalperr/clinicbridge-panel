@@ -202,7 +202,7 @@ export interface ClinicDoctor {
 
 // ─── AI Config (Prompt Studio) ──────────────────────────────────────────────
 
-export interface AgencyClinicAIConfig {
+export interface AgencyAIConfig {
   id?: string;
   assistantName?: string;
   persona?: string;

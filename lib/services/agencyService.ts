@@ -28,7 +28,7 @@ import type {
   TreatmentCategory,
   EMPTY_AGENCY_METRICS,
   AgencyKnowledgeRecord,
-  AgencyClinicAIConfig,
+  AgencyAIConfig,
 } from "@/lib/types/agency";
 
 // ─── Agency CRUD ────────────────────────────────────────────────────────────
@@ -522,43 +522,43 @@ export async function deleteClinicKnowledgeRecord(
   await deleteDoc(doc(db, "agencies", agencyId, "clinics", clinicDocId, "knowledgeBase", recordId));
 }
 
-// ─── AI Config (Prompt Studio) ──────────────────────────────────────────────
+// ─── AI Config (Agency Level) ──────────────────────────────────────────────────
 
-export function subscribeToClinicAIConfig(
+export function subscribeToAgencyAIConfig(
   agencyId: string,
-  clinicDocId: string,
-  onData: (config: AgencyClinicAIConfig | null) => void
+  onData: (config: AgencyAIConfig | null) => void
 ) {
-  const q = doc(db, "agencies", agencyId, "clinics", clinicDocId, "aiConfig", "main");
-  return onSnapshot(q, (snapshot) => {
+  const docRef = doc(db, "agencies", agencyId, "aiConfig", "main");
+  return onSnapshot(docRef, (snapshot) => {
     if (snapshot.exists()) {
-      onData({ id: snapshot.id, ...snapshot.data() } as AgencyClinicAIConfig);
+      onData({ id: snapshot.id, ...snapshot.data() } as AgencyAIConfig);
     } else {
       onData(null);
     }
   });
 }
 
-export async function getClinicAIConfig(
-  agencyId: string,
-  clinicDocId: string
-): Promise<AgencyClinicAIConfig | null> {
-  const snapshot = await getDoc(doc(db, "agencies", agencyId, "clinics", clinicDocId, "aiConfig", "main"));
+export async function getAgencyAIConfig(
+  agencyId: string
+): Promise<AgencyAIConfig | null> {
+  const docRef = doc(db, "agencies", agencyId, "aiConfig", "main");
+  const snapshot = await getDoc(docRef);
   if (snapshot.exists()) {
-    return { id: snapshot.id, ...snapshot.data() } as AgencyClinicAIConfig;
+    return { id: snapshot.id, ...snapshot.data() } as AgencyAIConfig;
   }
   return null;
 }
 
-export async function updateClinicAIConfig(
+export async function updateAgencyAIConfig(
   agencyId: string,
-  clinicDocId: string,
-  data: Partial<AgencyClinicAIConfig>
+  data: Partial<AgencyAIConfig>
 ): Promise<void> {
-  const docRef = doc(db, "agencies", agencyId, "clinics", clinicDocId, "aiConfig", "main");
-  const cleanData = stripUndefined(data as Record<string, any>);
-  await setDoc(docRef, {
-    ...cleanData,
-    updatedAt: serverTimestamp(),
-  }, { merge: true });
+  const docRef = doc(db, "agencies", agencyId, "aiConfig", "main");
+  await setDoc(
+    docRef,
+    { ...data, updatedAt: serverTimestamp() },
+    { merge: true }
+  );
 }
+
+
