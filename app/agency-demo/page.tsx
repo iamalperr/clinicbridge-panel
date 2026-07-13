@@ -496,7 +496,7 @@ export default function AgencyDemoPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/public/agency/feelinhealthy/clinics");
+        const res = await fetch("/api/public/agency/feelinhealthy/clinics", { cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
         if (data.clinics && data.clinics.length > 0) {
@@ -528,7 +528,7 @@ export default function AgencyDemoPage() {
     // Fetch AI config
     (async () => {
       try {
-        const res = await fetch("/api/public/agency/feelinhealthy/config");
+        const res = await fetch("/api/public/agency/feelinhealthy/config", { cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
           setAiCfg(data.aiConfig || null);

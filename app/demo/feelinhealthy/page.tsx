@@ -256,9 +256,10 @@ export default function FeelinHealthyLive() {
     async function load() {
       try {
         const base = `/api/public/agency/${SLUG}`;
+        const fetchOpts = { cache: "no-store" as RequestCache };
         const [agRes, trRes, clRes, prRes, cfRes] = await Promise.all([
-          fetch(base), fetch(`${base}/treatments`), fetch(`${base}/clinics`),
-          fetch(`${base}/pricing`), fetch(`${base}/config`),
+          fetch(base, fetchOpts), fetch(`${base}/treatments`, fetchOpts), fetch(`${base}/clinics`, fetchOpts),
+          fetch(`${base}/pricing`, fetchOpts), fetch(`${base}/config`, fetchOpts),
         ]);
 
         if (!agRes.ok) { setDataError(true); setDataLoading(false); return; }
