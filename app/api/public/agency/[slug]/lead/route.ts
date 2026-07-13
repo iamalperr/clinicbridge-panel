@@ -48,6 +48,8 @@ export async function POST(
       patientName: body.patientName || null,
       patientEmail: body.patientEmail || null,
       patientPhone: body.patientPhone || null,
+      patientAge: body.patientAge || null,
+      patientGender: body.patientGender || null,
       country: body.country || "Unknown",
       language: body.language || "en",
       treatmentCategory: body.treatmentCategory || "other",

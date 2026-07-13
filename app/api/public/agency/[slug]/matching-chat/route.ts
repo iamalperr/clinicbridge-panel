@@ -50,6 +50,8 @@ interface SessionContext {
   lastRecommendedClinicIds?: string[];
   lastFocusedClinicId?: string;
   lastFocusedClinicName?: string;
+  patientAge?: number;
+  patientGender?: string;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -343,6 +345,8 @@ STANDART KURALLAR:
 8. Türkçe mesaja Türkçe, İngilizce mesaja İngilizce yanıt ver. (Dil davranışı: ${agencyAiConfig?.languageBehavior || "user_lang"})
 9. Yanıtların doğal, nazik ve profesyonel olsun.
 10. Tıbbi teşhis koyma, sadece bilgi ver ve yönlendir.
+11. Hastanın tedavi ihtiyacını daha doğru değerlendirebilmek için uygun bir noktada yaş ve cinsiyet bilgisini nazikçe iste. Hasta paylaşmak istemezse zorlamadan devam et.
+12. Hastanın yaş ve cinsiyet bilgisi, tedavi yönlendirmesinde destekleyici hasta profili bilgisi olarak kullanılmalıdır. Bu bilgiler üzerinden kesin teşhis veya kesin tedavi uygunluğu kararı verilmemelidir. Hasta bu bilgileri paylaşmak istemezse süreç kesilmemeli, mevcut bilgilerle genel yönlendirme yapılmalıdır.
 
 ACENTA ÖZEL YANIT KURALLARI:
 ${rules || "Belirtilmedi."}
@@ -365,6 +369,8 @@ JSON FORMATI:
   "budgetAmount": number | null,
   "budgetCurrency": string | null,
   "clinicName": string | null,
+  "patientAge": number | null,
+  "patientGender": "Kadın" | "Erkek" | "Belirtmek istemiyorum" | "Diğer" | null,
   "needsFollowUp": boolean,
   "replyText": "Doğal dilde AI yanıtı"
 }
@@ -412,6 +418,8 @@ JSON FORMATI:
     if (parsed.treatmentCategory) newCtx.lastTreatmentCategory = parsed.treatmentCategory;
     if (parsed.subTreatment) newCtx.lastSubTreatment = parsed.subTreatment;
     if (parsed.location) newCtx.lastLocation = parsed.location;
+    if (parsed.patientAge !== undefined && parsed.patientAge !== null) newCtx.patientAge = parsed.patientAge;
+    if (parsed.patientGender) newCtx.patientGender = parsed.patientGender;
 
     /* ── 5. Handle each intent type ── */
 

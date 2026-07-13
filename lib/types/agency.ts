@@ -317,6 +317,8 @@ export interface Lead {
   patientName: string | null;
   patientEmail: string | null;
   patientPhone: string | null;
+  patientAge?: number | null;
+  patientGender?: string | null;
   country: string;
   language: string;
 

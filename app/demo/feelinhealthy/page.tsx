@@ -238,6 +238,7 @@ export default function FeelinHealthyLive() {
   const [aiTyping, setAiTyping] = useState(false);
   const [matchedClinics, setMatchedClinics] = useState<ClinicData[]>([]);
   const [matchedCategory, setMatchedCategory] = useState<string | null>(null);
+  const [sessionCtx, setSessionCtx] = useState<any>({});
 
   // Lead Modal
   const [leadModal, setLeadModal] = useState(false);
@@ -329,7 +330,7 @@ export default function FeelinHealthyLive() {
         body: JSON.stringify({
           message: msg,
           history: aiMsgs.slice(-10).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text })),
-          sessionContext: {},
+          sessionContext: sessionCtx,
         }),
       });
 
@@ -349,6 +350,7 @@ export default function FeelinHealthyLive() {
         clinics: data.clinics || undefined,
       };
       setAiMsgs((p) => [...p, replyMsg]);
+      if (data.sessionContext) setSessionCtx(data.sessionContext);
     } catch (err) {
       console.error("[CB-DEMO] ERROR:", err);
       setAiMsgs((p) => [...p, {
@@ -391,7 +393,9 @@ export default function FeelinHealthyLive() {
           patientPhone: form.get("phone"),
           country: form.get("country"),
           language: lang,
-          treatmentCategory: matchedCategory || "other",
+          patientAge: sessionCtx.patientAge,
+          patientGender: sessionCtx.patientGender,
+          treatmentCategory: matchedCategory || sessionCtx.lastTreatmentCategory || "other",
           conversationSummary: aiMsgs.map((m) => `${m.role}: ${m.text}`).join("\n"),
           consentStatus: "accepted",
           source: "widget",

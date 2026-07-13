@@ -45,6 +45,8 @@ interface SessionContext {
   lastRecommendedClinicIds?: string[];
   lastFocusedClinicId?: string;
   lastFocusedClinicName?: string;
+  patientAge?: number;
+  patientGender?: string;
 }
 
 let _msgId = 0;
@@ -610,13 +612,38 @@ export default function AgencyDemoPage() {
     setLeadModal(true);
   };
 
-  const handleLeadSubmit = (e: React.FormEvent) => {
+  const handleLeadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLeadSubmitting(true);
-    setTimeout(() => {
-      setLeadSubmitting(false);
+    
+    const form = new FormData(e.target as HTMLFormElement);
+    try {
+      await fetch("/api/public/agency/feelinhealthy/lead", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patientName: form.get("name"),
+          patientEmail: form.get("email"),
+          patientPhone: form.get("phone"),
+          patientAge: sessionCtx.patientAge,
+          patientGender: sessionCtx.patientGender,
+          country: form.get("country"),
+          language: lang,
+          treatmentCategory: sessionCtx.lastTreatmentCategory || "other",
+          conversationSummary: chatHistory.map((m) => `${m.role}: ${m.content}`).join("\n"),
+          consentStatus: "accepted",
+          source: "widget",
+          sourceUrl: window.location.href,
+        }),
+      });
       setLeadSubmitted(true);
-    }, 1500);
+    } catch (err) {
+      console.error("[CB-DEMO] ERROR submitting lead:", err);
+      // Fallback UI
+      setLeadSubmitted(true);
+    } finally {
+      setLeadSubmitting(false);
+    }
   };
 
   const scrollTo = (id: string) => {

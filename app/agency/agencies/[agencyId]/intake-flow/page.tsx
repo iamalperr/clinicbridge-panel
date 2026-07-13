@@ -48,6 +48,13 @@ const DEFAULT_CONFIG: IntakeFlowConfig = {
 // ─── Bilingual default flows ────────────────────────────────────────────────
 
 const DEFAULT_DENTAL_FLOW: IntakeQuestion[] = [
+  { id: "ag1", questionText: { tr: "Yaşınızı öğrenebilir miyim?", en: "May I know your age?" }, questionType: "number", required: true, order: 1, saveAsField: "patientAge" },
+  { id: "ag2", questionText: { tr: "Cinsiyetinizi paylaşır mısınız?", en: "Could you please share your gender?" }, questionType: "select", options: [
+    { label: { tr: "Kadın", en: "Female" }, value: "female" },
+    { label: { tr: "Erkek", en: "Male" }, value: "male" },
+    { label: { tr: "Belirtmek istemiyorum", en: "Prefer not to say" }, value: "prefer_not_to_say" },
+    { label: { tr: "Diğer", en: "Other" }, value: "other" }
+  ], required: true, order: 2, saveAsField: "patientGender" },
   { id: "d1", questionText: { tr: "Hangi diş tedavisiyle ilgileniyorsunuz?", en: "What dental treatment are you interested in?" }, questionType: "select", options: [
     { label: { tr: "Dental İmplant", en: "Dental Implant" }, value: "dental_implant" },
     { label: { tr: "Zirkonyum Taç", en: "Zirconium Crowns" }, value: "zirconium_crowns" },
@@ -55,41 +62,55 @@ const DEFAULT_DENTAL_FLOW: IntakeQuestion[] = [
     { label: { tr: "Kanal Tedavisi", en: "Root Canal" }, value: "root_canal" },
     { label: { tr: "Diş Beyazlatma", en: "Teeth Whitening" }, value: "teeth_whitening" },
     { label: { tr: "Diğer", en: "Other" }, value: "other" },
-  ], required: true, order: 1, saveAsField: "subTreatment" },
+  ], required: true, order: 3, saveAsField: "subTreatment" },
   { id: "d2", questionText: { tr: "Güncel bir diş röntgeniniz veya panoramik filminiz var mı?", en: "Do you have a recent dental X-ray?" }, questionType: "select", options: [
     { label: { tr: "Evet, var", en: "Yes, I have" }, value: "yes" },
     { label: { tr: "Hayır, yok", en: "No, I don't" }, value: "no" },
     { label: { tr: "Emin değilim", en: "Not sure" }, value: "unsure" },
-  ], required: false, order: 2, saveAsField: "hasXray" },
-  { id: "d3", questionText: { tr: "Kaç dişiniz için tedavi düşünüyorsunuz?", en: "How many teeth are affected?" }, questionType: "text", required: false, order: 3, saveAsField: "affectedTeeth" },
-  { id: "d4", questionText: { tr: "Hangi ülkeden başvuru yapıyorsunuz?", en: "Which country are you traveling from?" }, questionType: "text", required: true, order: 4, saveAsField: "country" },
-  { id: "d5", questionText: { tr: "Ne zaman seyahat etmeyi planlıyorsunuz?", en: "When are you planning to travel?" }, questionType: "date", required: false, order: 5, saveAsField: "travelDate" },
+  ], required: false, order: 4, saveAsField: "hasXray" },
+  { id: "d3", questionText: { tr: "Kaç dişiniz için tedavi düşünüyorsunuz?", en: "How many teeth are affected?" }, questionType: "text", required: false, order: 5, saveAsField: "affectedTeeth" },
+  { id: "d4", questionText: { tr: "Hangi ülkeden başvuru yapıyorsunuz?", en: "Which country are you traveling from?" }, questionType: "text", required: true, order: 6, saveAsField: "country" },
+  { id: "d5", questionText: { tr: "Ne zaman seyahat etmeyi planlıyorsunuz?", en: "When are you planning to travel?" }, questionType: "date", required: false, order: 7, saveAsField: "travelDate" },
   { id: "d6", questionText: { tr: "Birden fazla kliniği karşılaştırmak ister misiniz?", en: "Would you like to compare multiple clinics?" }, questionType: "select", options: [
     { label: { tr: "Evet, birkaç kliniği karşılaştırmak istiyorum", en: "Yes, I want to compare multiple clinics" }, value: "yes" },
     { label: { tr: "Hayır, en uygun kliniği önerin", en: "No, recommend the most suitable clinic" }, value: "no" },
     { label: { tr: "Emin değilim", en: "Not sure" }, value: "unsure" },
-  ], required: false, order: 6, saveAsField: "compareMode" },
+  ], required: false, order: 8, saveAsField: "compareMode" },
 ];
 
 const DEFAULT_HAIR_FLOW: IntakeQuestion[] = [
+  { id: "ag1", questionText: { tr: "Yaşınızı öğrenebilir miyim?", en: "May I know your age?" }, questionType: "number", required: true, order: 1, saveAsField: "patientAge" },
+  { id: "ag2", questionText: { tr: "Cinsiyetinizi paylaşır mısınız?", en: "Could you please share your gender?" }, questionType: "select", options: [
+    { label: { tr: "Kadın", en: "Female" }, value: "female" },
+    { label: { tr: "Erkek", en: "Male" }, value: "male" },
+    { label: { tr: "Belirtmek istemiyorum", en: "Prefer not to say" }, value: "prefer_not_to_say" },
+    { label: { tr: "Diğer", en: "Other" }, value: "other" }
+  ], required: true, order: 2, saveAsField: "patientGender" },
   { id: "h1", questionText: { tr: "Hangi saç ekimi tekniğiyle ilgileniyorsunuz?", en: "Which hair transplant technique are you interested in?" }, questionType: "select", options: [
     { label: { tr: "FUE Saç Ekimi", en: "FUE Hair Transplant" }, value: "fue" },
     { label: { tr: "DHI Saç Ekimi", en: "DHI Hair Transplant" }, value: "dhi" },
     { label: { tr: "Sakal Ekimi", en: "Beard Transplant" }, value: "beard" },
     { label: { tr: "Kaş Ekimi", en: "Eyebrow Transplant" }, value: "eyebrow" },
     { label: { tr: "Emin değilim", en: "Not sure" }, value: "unsure" },
-  ], required: true, order: 1, saveAsField: "subTreatment" },
+  ], required: true, order: 3, saveAsField: "subTreatment" },
   { id: "h2", questionText: { tr: "Daha önce saç ekimi yaptırdınız mı?", en: "Have you had a previous hair transplant?" }, questionType: "select", options: [
     { label: { tr: "Evet", en: "Yes" }, value: "yes" }, { label: { tr: "Hayır", en: "No" }, value: "no" },
-  ], required: false, order: 2, saveAsField: "previousTransplant" },
+  ], required: false, order: 4, saveAsField: "previousTransplant" },
   { id: "h3", questionText: { tr: "Saçınızın güncel fotoğrafları var mı?", en: "Do you have recent photos of your hair?" }, questionType: "select", options: [
     { label: { tr: "Evet", en: "Yes" }, value: "yes" }, { label: { tr: "Hayır", en: "No" }, value: "no" },
-  ], required: false, order: 3, saveAsField: "hasPhotos" },
-  { id: "h4", questionText: { tr: "Hangi ülkeden başvuru yapıyorsunuz?", en: "Which country are you traveling from?" }, questionType: "text", required: true, order: 4, saveAsField: "country" },
-  { id: "h5", questionText: { tr: "Ne zaman seyahat etmeyi planlıyorsunuz?", en: "Preferred travel date?" }, questionType: "date", required: false, order: 5, saveAsField: "travelDate" },
+  ], required: false, order: 5, saveAsField: "hasPhotos" },
+  { id: "h4", questionText: { tr: "Hangi ülkeden başvuru yapıyorsunuz?", en: "Which country are you traveling from?" }, questionType: "text", required: true, order: 6, saveAsField: "country" },
+  { id: "h5", questionText: { tr: "Ne zaman seyahat etmeyi planlıyorsunuz?", en: "Preferred travel date?" }, questionType: "date", required: false, order: 7, saveAsField: "travelDate" },
 ];
 
 const DEFAULT_AESTHETIC_FLOW: IntakeQuestion[] = [
+  { id: "ag1", questionText: { tr: "Yaşınızı öğrenebilir miyim?", en: "May I know your age?" }, questionType: "number", required: true, order: 1, saveAsField: "patientAge" },
+  { id: "ag2", questionText: { tr: "Cinsiyetinizi paylaşır mısınız?", en: "Could you please share your gender?" }, questionType: "select", options: [
+    { label: { tr: "Kadın", en: "Female" }, value: "female" },
+    { label: { tr: "Erkek", en: "Male" }, value: "male" },
+    { label: { tr: "Belirtmek istemiyorum", en: "Prefer not to say" }, value: "prefer_not_to_say" },
+    { label: { tr: "Diğer", en: "Other" }, value: "other" }
+  ], required: true, order: 2, saveAsField: "patientGender" },
   { id: "a1", questionText: { tr: "Hangi estetik işlemle ilgileniyorsunuz?", en: "What aesthetic procedure are you interested in?" }, questionType: "select", options: [
     { label: { tr: "Burun Estetiği", en: "Rhinoplasty" }, value: "rhinoplasty" },
     { label: { tr: "Meme Büyütme", en: "Breast Augmentation" }, value: "breast_aug" },
@@ -97,9 +118,9 @@ const DEFAULT_AESTHETIC_FLOW: IntakeQuestion[] = [
     { label: { tr: "Karın Germe", en: "Tummy Tuck" }, value: "tummy_tuck" },
     { label: { tr: "Yüz Germe", en: "Facelift" }, value: "facelift" },
     { label: { tr: "Diğer", en: "Other" }, value: "other" },
-  ], required: true, order: 1, saveAsField: "subTreatment" },
-  { id: "a2", questionText: { tr: "Hangi ülkeden başvuru yapıyorsunuz?", en: "Which country are you traveling from?" }, questionType: "text", required: true, order: 2, saveAsField: "country" },
-  { id: "a3", questionText: { tr: "Ne zaman seyahat etmeyi planlıyorsunuz?", en: "Preferred travel date?" }, questionType: "date", required: false, order: 3, saveAsField: "travelDate" },
+  ], required: true, order: 3, saveAsField: "subTreatment" },
+  { id: "a2", questionText: { tr: "Hangi ülkeden başvuru yapıyorsunuz?", en: "Which country are you traveling from?" }, questionType: "text", required: true, order: 4, saveAsField: "country" },
+  { id: "a3", questionText: { tr: "Ne zaman seyahat etmeyi planlıyorsunuz?", en: "Preferred travel date?" }, questionType: "date", required: false, order: 5, saveAsField: "travelDate" },
 ];
 
 // ─── Component ──────────────────────────────────────────────────────────────
