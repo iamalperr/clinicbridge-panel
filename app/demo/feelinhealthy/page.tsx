@@ -464,7 +464,7 @@ export default function FeelinHealthyLive() {
     );
   }
 
-  const welcomeMsg = widgetCfg?.welcomeMessage || (lang === "tr"
+  const welcomeMsg = (lang === "tr" ? aiCfg?.greetingMessageTR : aiCfg?.greetingMessageEN) || widgetCfg?.welcomeMessage || (lang === "tr"
     ? `Merhaba! 👋 Ben ${agency.name} AI asistanınızım. Hangi tedaviyi arıyorsunuz?`
     : `Hello! 👋 I'm your ${agency.name} AI assistant. What treatment are you looking for?`);
 
