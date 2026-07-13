@@ -390,6 +390,7 @@ STANDART KURALLAR:
 9. Türkçe mesaja Türkçe, İngilizce mesaja İngilizce yanıt ver. (Dil davranışı: ${agencyAiConfig?.languageBehavior || "user_lang"})
 10. Tıbbi teşhis koyma.
 11. KVKK ONAYI: Telefon almadan veya teklif oluşturmadan hemen önce şu onayı al: "Bilgilerinizi klinik ve ekibimizle paylaşmamı onaylıyor musunuz?" Eğer hasta evet derse quoteConsent: true yap.
+12. KAPANIŞ (COMPLETED): Eğer kullanıcı teşekkür, tamam, görüşürüz gibi kapanış mesajı verirse ve lead/quote request zaten tamamlanmışsa (leadStage === 'quote_request_created' veya 'completed'), yeni öneri veya lead toplama akışı başlatma. Sadece kibar kapanış cevabı ver ve intent olarak "conversation_completed" dön.
 
 HASTA BİLGİSİ TOPLAMA YÖNERGESİ (INTAKE INSTRUCTIONS):
 ${intakeText || "Belirtilmedi."}
@@ -407,7 +408,7 @@ ${contextHint}
 
 JSON FORMATI:
 {
-  "intent": "clinic_recommendation" | "clinic_selected" | "clinic_question" | "pricing_question" | "doctor_question" | "lead_capture" | "general",
+  "intent": "clinic_recommendation" | "clinic_selected" | "clinic_question" | "pricing_question" | "doctor_question" | "lead_capture" | "conversation_completed" | "general",
   "language": "tr" | "en",
   "treatmentCategory": string | null,
   "subTreatment": string | null,
@@ -487,6 +488,7 @@ JSON FORMATI:
     if (parsed.intent === "clinic_recommendation" || parsed.intent === "clinic_matching") newCtx.leadStage = "recommendation";
     if (parsed.intent === "clinic_selected") newCtx.leadStage = "clinic_selected";
     if (parsed.intent === "lead_capture") newCtx.leadStage = "lead_capture";
+    if (parsed.intent === "conversation_completed") newCtx.leadStage = "completed";
     
     if (parsed.shouldCreateLead && !ctx.quoteConsent && parsed.quoteConsent) {
       newCtx.quoteConsent = true;
@@ -494,8 +496,22 @@ JSON FORMATI:
 
     /* ── 5. Handle each intent type ── */
 
+    // --- CONVERSATION COMPLETED ---
+    if (parsed.intent === "conversation_completed") {
+      return NextResponse.json({
+        reply: parsed.replyText || "Rica ederim. Talebiniz ilgili kliniğe iletilmek üzere kaydedildi. Klinik ekibi sizinle en kısa sürede iletişime geçecektir. Sağlıklı günler dilerim.",
+        type: "text",
+        sessionContext: newCtx,
+        showClinicCards: false,
+        leadStatus: newCtx.leadStage,
+        shouldCreateNewLead: false,
+        shouldUpdateLead: false
+      }, { headers: CORS });
+    }
+
     // --- SHOULD CREATE LEAD ---
-    if (parsed.shouldCreateLead) {
+    const leadAlreadyCreated = ctx.leadStage === "quote_request_created" || ctx.leadStage === "completed";
+    if (parsed.shouldCreateLead && !leadAlreadyCreated) {
       newCtx.leadStage = "quote_request_created";
       const now = new Date().toISOString();
       try {
