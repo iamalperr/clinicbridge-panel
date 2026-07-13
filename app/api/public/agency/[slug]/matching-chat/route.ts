@@ -52,6 +52,7 @@ interface SessionContext {
   patientCountry?: string;
   patientAge?: number;
   patientGender?: string;
+  travelDate?: string;
   quoteConsent?: boolean;
   missingLeadField?: string;
 
@@ -233,10 +234,23 @@ export async function POST(
   try {
     const { slug } = await params;
     const body = await req.json();
-    const { message, history = [], sessionContext = {} } = body;
+    const { message, action, history = [], sessionContext = {} } = body;
 
-    if (!message) {
-      return NextResponse.json({ error: "message is required" }, { status: 400, headers: CORS });
+    let finalMessage = message;
+
+    // Handle system actions
+    if (action) {
+      if (action.type === "clinic_selected") {
+        finalMessage = `[SİSTEM AKSİYONU: Kullanıcı arayüzden 'Bu Klinikle Devam Et' butonuna tıklayarak '${action.clinicName}' kliniğini seçti. Lütfen bu seçimi doğal ve profesyonel bir şekilde onayla, klinik hakkında çok kısa bilgi ver ve ardından HEMEN lead toplama aşamasının İLK sorusu olan Ad Soyad bilgisini iste.]`;
+      } else if (action.type === "clinic_info") {
+        finalMessage = `[SİSTEM AKSİYONU: Kullanıcı arayüzden 'Daha Fazla Bilgi' butonuna tıklayarak '${action.clinicName}' hakkında bilgi istedi. Lütfen klinik hakkında genel bilgi ver, öne çıkan özelliklerini veya doktorlarını sırala. En sonda bu klinikle devam etmek isteyip istemediğini sor. (Henüz lead toplamaya başlama)]`;
+      } else if (action.type === "lead_capture") {
+        finalMessage = `[SİSTEM AKSİYONU: Kullanıcı arayüzden 'Teklif İste' butonuna tıklayarak '${action.clinicName}' kliniği için teklif almak istediğini belirtti. Lütfen HEMEN lead toplama aşamasının İLK sorusu olan Ad Soyad bilgisini iste.]`;
+      }
+    }
+
+    if (!finalMessage) {
+      return NextResponse.json({ error: "message or action is required" }, { status: 400, headers: CORS });
     }
 
     if (!process.env.OPENAI_API_KEY) {
@@ -358,8 +372,17 @@ STANDART KURALLAR:
 1. Hastanın mesajını analiz et ve aşağıdaki JSON formatında yanıt ver.
 2. PASİF KAPANIS YAPMA. "Daha fazla bilgi isterseniz buradayım" gibi zayıf kapanışlar yerine, hastayı daima bir sonraki lead (kayıt) adımına yönlendir.
 3. KLİNİK SEÇİMİ: Eğer hasta "Hospitadent ile devam edelim", "Bu klinik iyi", "[Klinik Adı] hakkında bilgi ver", "İlk klinik olsun" gibi sözler söylerse intent: "clinic_selected" yap ve o kliniğin adını "selectedClinicName", ID'sini "selectedClinicId" olarak set et. 
-4. LEAD TOPLAMA: Hasta bir klinik seçtiğinde veya tavsiye istediğinde yavaş yavaş "lead_capture" aşamasına geç. Bilgileri asla aynı anda sorma. Sırasıyla 1 eksik bilgiyi sor:
-   Önerilen sıra: Ad Soyad -> Telefon -> Ülke -> Yaş -> Cinsiyet -> KVKK Onayı.
+4. LEAD TOPLAMA: Hasta bir klinik seçtiğinde veya tavsiye istediğinde yavaş yavaş "lead_capture" aşamasına geç. Bilgileri asla aynı anda sorma. Sırasıyla SADECE 1 eksik bilgiyi sor.
+   Sıra KESİNLİKLE şöyle olmalı: 
+   1. Ad Soyad (patientName)
+   2. Telefon / WhatsApp (patientPhone)
+   3. Ülke (patientCountry)
+   4. Yaş (patientAge)
+   5. Cinsiyet (patientGender)
+   6. Tedavi Detayı (treatmentCategory / subTreatment)
+   7. Bütçe (budgetAmount)
+   8. Seyahat Tarihi (travelDate)
+   9. KVKK/GDPR Onayı (quoteConsent)
 5. "missingLeadField" alanına sıradaki sorman gereken 1 alanı yaz.
 6. HASTA BİLGİ VERDİKÇE JSON içinde ilgili alanı (patientName, patientPhone vb.) doldur.
 7. Tüm lead bilgileri tamamsa ve KVKK onayı alındıysa "shouldCreateLead": true dön.
@@ -399,15 +422,18 @@ JSON FORMATI:
   "patientCountry": string | null,
   "patientAge": number | null,
   "patientGender": "Kadın" | "Erkek" | "Belirtmek istemiyorum" | "Diğer" | null,
+  "travelDate": string | null,
   "quoteConsent": boolean | null,
-  "missingLeadField": "patientName" | "patientPhone" | "patientCountry" | "patientAge" | "patientGender" | "quoteConsent" | null,
+  "missingLeadField": "patientName" | "patientPhone" | "patientCountry" | "patientAge" | "patientGender" | "travelDate" | "quoteConsent" | null,
   "shouldCreateLead": boolean,
+  "showClinicCards": boolean,
   "replyText": "Doğal dilde proaktif, yönlendirici AI yanıtı"
 }
 
 ÖNEMLİ:
 - replyText alanı hastaya gösterilecek yanıttır. Eğer "clinic_selected" ise, o klinik hakkında 1-2 cümle kısa ve olumlu bilgi verip HEMEN missingLeadField ile ilgili soruyu sorarak lead alımına geç.
-- clinic_recommendation intent'inde replyText sadece kısa giriş olmalı.`;
+- clinic_recommendation intent'inde replyText sadece kısa giriş olmalı.
+- showClinicCards: Sadece "clinic_recommendation" veya klinik listesi sunulması gereken durumlarda true yap. "clinic_selected", "lead_capture", "clinic_info" gibi durumlarda KESİNLİKLE false yap ki kartlar ekranda tekrar etmesin.`;
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -422,7 +448,7 @@ JSON FORMATI:
           role: h.role as "user" | "assistant",
           content: typeof h.content === "string" ? h.content : JSON.stringify(h.content),
         })),
-        { role: "user", content: message },
+        { role: "user", content: finalMessage },
       ],
     });
 
@@ -454,6 +480,7 @@ JSON FORMATI:
     if (parsed.patientCountry) newCtx.patientCountry = parsed.patientCountry;
     if (parsed.patientAge !== undefined && parsed.patientAge !== null) newCtx.patientAge = parsed.patientAge;
     if (parsed.patientGender) newCtx.patientGender = parsed.patientGender;
+    if (parsed.travelDate) newCtx.travelDate = parsed.travelDate;
     if (parsed.quoteConsent !== undefined && parsed.quoteConsent !== null) newCtx.quoteConsent = parsed.quoteConsent;
     if (parsed.missingLeadField) newCtx.missingLeadField = parsed.missingLeadField;
     
@@ -504,6 +531,7 @@ JSON FORMATI:
         reply: parsed.replyText || "Teşekkürler, bilgilerinizi aldık. İlgili klinik ekibimiz en kısa sürede sizinle iletişime geçecektir.",
         type: "lead_created",
         sessionContext: newCtx,
+        showClinicCards: parsed.showClinicCards === true,
       }, { headers: CORS });
     }
 
@@ -513,6 +541,7 @@ JSON FORMATI:
         reply: parsed.replyText || "Lütfen gerekli bilgileri paylaşır mısınız?",
         type: "text",
         sessionContext: newCtx,
+        showClinicCards: parsed.showClinicCards === true,
       }, { headers: CORS });
     }
 
@@ -558,6 +587,7 @@ JSON FORMATI:
         type: "clinic_recommendations",
         clinics: recommendations,
         sessionContext: newCtx,
+        showClinicCards: true, // always true for recommendations unless AI explicitly says false, but let's enforce true.
       }, { headers: CORS });
     }
 
@@ -601,6 +631,7 @@ JSON FORMATI:
           type: "clinic_answer",
           clinics: [miniCard],
           sessionContext: newCtx,
+          showClinicCards: parsed.showClinicCards === true,
         }, { headers: CORS });
       }
 
@@ -610,6 +641,7 @@ JSON FORMATI:
           : "The specified clinic was not found."),
         type: "text",
         sessionContext: newCtx,
+        showClinicCards: parsed.showClinicCards === true,
       }, { headers: CORS });
     }
 
@@ -733,6 +765,7 @@ JSON FORMATI:
         : "How can I help you? Share the treatment you're looking for, your preferred location, or budget."),
       type: "text",
       sessionContext: newCtx,
+      showClinicCards: parsed.showClinicCards === true,
     }, { headers: CORS });
 
   } catch (err: any) {

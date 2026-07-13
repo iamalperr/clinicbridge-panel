@@ -235,7 +235,7 @@ export default function FeelinHealthyLive() {
 
   // AI Chat
   const [aiInput, setAiInput] = useState("");
-  const [aiMsgs, setAiMsgs] = useState<{ role: "user" | "ai"; text: string; type?: string; clinics?: any[] }[]>([]);
+  const [aiMsgs, setAiMsgs] = useState<{ role: "user" | "ai"; text: string; type?: string; clinics?: any[]; showClinicCards?: boolean }[]>([]);
   const [aiTyping, setAiTyping] = useState(false);
   const [matchedClinics, setMatchedClinics] = useState<ClinicData[]>([]);
   const [matchedCategory, setMatchedCategory] = useState<string | null>(null);
@@ -322,14 +322,42 @@ export default function FeelinHealthyLive() {
     return results;
   }, [clinics, matchingCfg]);
 
-  const handleProceedWithClinic = (clinicName: string) => {
-    const msg = lang === "tr" ? `${clinicName} ile devam etmek istiyorum.` : `I want to proceed with ${clinicName}.`;
-    setAiInput(msg);
-    // Use setTimeout to allow state to settle, then sendAi equivalent
-    setTimeout(() => {
-      const sendBtn = document.getElementById("ai-send-btn");
-      if (sendBtn) sendBtn.click();
-    }, 50);
+  const sendSystemAction = async (type: string, clinicName: string, clinicId: string) => {
+    if (aiTyping) return;
+    setAiTyping(true);
+
+    try {
+      const res = await fetch(`/api/public/agency/${SLUG}/matching-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: { type, clinicName, clinicId },
+          history: aiMsgs.slice(-10).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text })),
+          sessionContext: sessionCtx,
+        }),
+      });
+
+      if (!res.ok) throw new Error(`API error ${res.status}`);
+      const data = await res.json();
+
+      const replyMsg: { role: "ai"; text: string; type?: string; clinics?: any[]; showClinicCards?: boolean } = {
+        role: "ai",
+        text: data.reply || "Yanıt alınamadı.",
+        type: data.type || "text",
+        clinics: data.clinics || undefined,
+        showClinicCards: data.showClinicCards,
+      };
+      setAiMsgs((p) => [...p, replyMsg]);
+      if (data.sessionContext) setSessionCtx(data.sessionContext);
+    } catch (err) {
+      console.error("[CB-DEMO] ERROR:", err);
+      setAiMsgs((p) => [...p, {
+        role: "ai",
+        text: lang === "tr" ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin." : "We're experiencing a technical issue. Please try again."
+      }]);
+    } finally {
+      setAiTyping(false);
+    }
   };
 
   const sendAi = async () => {
@@ -363,11 +391,12 @@ export default function FeelinHealthyLive() {
       console.log("[CB-DEMO] Clinics:", data.clinics?.length || 0);
 
       // Show AI reply text
-      const replyMsg: { role: "ai"; text: string; type?: string; clinics?: any[] } = {
+      const replyMsg: { role: "ai"; text: string; type?: string; clinics?: any[]; showClinicCards?: boolean } = {
         role: "ai",
         text: data.reply || "Yanıt alınamadı.",
         type: data.type || "text",
         clinics: data.clinics || undefined,
+        showClinicCards: data.showClinicCards,
       };
       setAiMsgs((p) => [...p, replyMsg]);
       if (data.sessionContext) setSessionCtx(data.sessionContext);
@@ -607,7 +636,7 @@ export default function FeelinHealthyLive() {
                   <div style={{ maxWidth: "85%", display: "flex", flexDirection: "column", gap: 8 }}>
                     <div style={{ background: m.role === "user" ? C.navy : C.white, color: m.role === "user" ? "#fff" : C.text, padding: "12px 16px", borderRadius: m.role === "user" ? "16px 4px 16px 16px" : "4px 16px 16px 16px", border: m.role === "user" ? "none" : `1px solid ${C.border}`, fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{m.text}</div>
                     {/* Inline clinic cards */}
-                    {m.clinics && m.clinics.length > 0 && (
+                    {m.clinics && m.clinics.length > 0 && m.showClinicCards !== false && (
                       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                         {m.clinics.map((rec: any) => (
                           <div key={rec.clinicId} style={{ background: C.white, borderRadius: 14, border: `1px solid ${C.border}`, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
@@ -647,14 +676,14 @@ export default function FeelinHealthyLive() {
                             )}
                             {/* Actions */}
                             <div style={{ padding: "8px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
-                              <button onClick={() => handleProceedWithClinic(rec.clinicName)} style={{ width: "100%", padding: "8px 0", borderRadius: 6, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}>
+                              <button onClick={() => sendSystemAction("clinic_selected", rec.clinicName, rec.clinicId || rec.id)} style={{ width: "100%", padding: "8px 0", borderRadius: 6, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}>
                                 {lang === "tr" ? "Bu Klinikle Devam Et" : "Proceed with this Clinic"}
                               </button>
                               <div style={{ display: "flex", gap: 6 }}>
-                                <a href={rec.profilePath || "#"} style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, textAlign: "center", background: C.primaryBg, color: C.primary, border: `1px solid ${C.primaryBorder}`, textDecoration: "none" }}>
+                                <button onClick={() => sendSystemAction("clinic_info", rec.clinicName, rec.clinicId || rec.id)} style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, textAlign: "center", background: C.primaryBg, color: C.primary, border: `1px solid ${C.primaryBorder}`, cursor: "pointer" }}>
                                   {lang === "tr" ? "Daha Fazla Bilgi" : "More Info"}
-                                </a>
-                                <button onClick={() => openLead(null)} style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, background: C.white, color: C.navy, border: `1px solid ${C.border}`, cursor: "pointer" }}>
+                                </button>
+                                <button onClick={() => sendSystemAction("lead_capture", rec.clinicName, rec.clinicId || rec.id)} style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, background: C.white, color: C.navy, border: `1px solid ${C.border}`, cursor: "pointer" }}>
                                   {lang === "tr" ? "Teklif İste" : "Request Quote"}
                                 </button>
                               </div>
