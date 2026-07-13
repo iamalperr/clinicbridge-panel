@@ -322,6 +322,16 @@ export default function FeelinHealthyLive() {
     return results;
   }, [clinics, matchingCfg]);
 
+  const handleProceedWithClinic = (clinicName: string) => {
+    const msg = lang === "tr" ? `${clinicName} ile devam etmek istiyorum.` : `I want to proceed with ${clinicName}.`;
+    setAiInput(msg);
+    // Use setTimeout to allow state to settle, then sendAi equivalent
+    setTimeout(() => {
+      const sendBtn = document.getElementById("ai-send-btn");
+      if (sendBtn) sendBtn.click();
+    }, 50);
+  };
+
   const sendAi = async () => {
     if (!aiInput.trim() || aiTyping) return;
     const msg = aiInput;
@@ -636,13 +646,18 @@ export default function FeelinHealthyLive() {
                               </div>
                             )}
                             {/* Actions */}
-                            <div style={{ padding: "8px 14px", display: "flex", gap: 6 }}>
-                              <a href={rec.profilePath || "#"} style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, textAlign: "center", background: C.primaryBg, color: C.primary, border: `1px solid ${C.primaryBorder}`, textDecoration: "none" }}>
-                                {lang === "tr" ? "Daha Fazla Bilgi" : "More Info"}
-                              </a>
-                              <button onClick={() => openLead(null)} style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}>
-                                {lang === "tr" ? "Teklif İste" : "Request Quote"}
+                            <div style={{ padding: "8px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+                              <button onClick={() => handleProceedWithClinic(rec.clinicName)} style={{ width: "100%", padding: "8px 0", borderRadius: 6, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}>
+                                {lang === "tr" ? "Bu Klinikle Devam Et" : "Proceed with this Clinic"}
                               </button>
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <a href={rec.profilePath || "#"} style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, textAlign: "center", background: C.primaryBg, color: C.primary, border: `1px solid ${C.primaryBorder}`, textDecoration: "none" }}>
+                                  {lang === "tr" ? "Daha Fazla Bilgi" : "More Info"}
+                                </a>
+                                <button onClick={() => openLead(null)} style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, background: C.white, color: C.navy, border: `1px solid ${C.border}`, cursor: "pointer" }}>
+                                  {lang === "tr" ? "Teklif İste" : "Request Quote"}
+                                </button>
+                              </div>
                             </div>
                           </div>
                         ))}

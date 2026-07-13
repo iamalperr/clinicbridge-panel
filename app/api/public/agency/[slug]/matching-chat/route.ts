@@ -44,14 +44,23 @@ interface ClinicRecommendation {
 }
 
 interface SessionContext {
+  leadStage?: string; // discovery | recommendation | clinic_selected | lead_capture | quote_request_created
+  selectedClinicId?: string;
+  selectedClinicName?: string;
+  patientName?: string;
+  patientPhone?: string;
+  patientCountry?: string;
+  patientAge?: number;
+  patientGender?: string;
+  quoteConsent?: boolean;
+  missingLeadField?: string;
+
   lastTreatmentCategory?: string;
   lastSubTreatment?: string;
   lastLocation?: string;
   lastRecommendedClinicIds?: string[];
   lastFocusedClinicId?: string;
   lastFocusedClinicName?: string;
-  patientAge?: number;
-  patientGender?: string;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -310,15 +319,20 @@ export async function POST(
 
     /* ── 3. Build session context hint ── */
     const ctx: SessionContext = sessionContext;
-    let contextHint = "";
+    let contextHint = `\nMEVCUT KONUŞMA DURUMU (SESSION CONTEXT):
+- Aşama (leadStage): ${ctx.leadStage || "discovery"}
+- Seçilen Klinik (selectedClinicName): ${ctx.selectedClinicName || "Yok"}
+- Toplanan Bilgiler:
+  * Ad Soyad: ${ctx.patientName || "Yok"}
+  * Telefon: ${ctx.patientPhone || "Yok"}
+  * Ülke: ${ctx.patientCountry || "Yok"}
+  * Yaş: ${ctx.patientAge || "Yok"}
+  * Cinsiyet: ${ctx.patientGender || "Yok"}
+  * KVKK/GDPR Onayı: ${ctx.quoteConsent ? "Evet" : "Yok"}
+- İlgi Alanı: Tedavi: ${ctx.lastTreatmentCategory || "Bilinmiyor"}, Alt Tedavi: ${ctx.lastSubTreatment || "Bilinmiyor"}, Lokasyon: ${ctx.lastLocation || "Bilinmiyor"}
+`;
     if (ctx.lastFocusedClinicName) {
-      contextHint += `\nPrevious context: The patient was last looking at "${ctx.lastFocusedClinicName}" (ID: ${ctx.lastFocusedClinicId}).`;
-    }
-    if (ctx.lastTreatmentCategory) {
-      contextHint += ` Previous treatment interest: ${ctx.lastTreatmentCategory}.`;
-    }
-    if (ctx.lastSubTreatment) {
-      contextHint += ` Sub-treatment: ${ctx.lastSubTreatment}.`;
+      contextHint += `- En son incelenen klinik: "${ctx.lastFocusedClinicName}" (ID: ${ctx.lastFocusedClinicId}).\n`;
     }
 
     /* ── 4. OpenAI Call: Intent Extraction + Response ── */
@@ -342,36 +356,35 @@ Karakterin ve Rolün: ${persona}
 
 STANDART KURALLAR:
 1. Hastanın mesajını analiz et ve aşağıdaki JSON formatında yanıt ver.
-2. Hastanın mesajında eksik olan, ancak aşağıdaki "HASTA BİLGİSİ TOPLAMA YÖNERGESİ" kısmında "Zorunlu: Evet" olarak belirtilen bilgileri toplaman gerekiyor.
-3. Ancak bu bilgileri zorla form doldurtur gibi art arda sorma. Hastanın ilk mesajından anlayabildiklerini çeker, eksik kalan en kritik bilgileri ise sohbetin doğal akışı içinde, parça parça sor.
-4. Hasta mesajı çok eksikse needsFollowUp: true yap ve takip sorusu sor.
-5. Hasta belirli bir klinik hakkında soru soruyorsa (nasıl bir klinik, hangi tedavileri sunuyor, doktorları kim, transfer var mı gibi) intent: "clinic_question" olarak işaretle.
-6. "Bu klinik", "orası", "o klinik" gibi ifadeler önceki context'teki kliniğe referanstır.
-7. Hasta fiyat soruyorsa intent: "pricing_question" olarak işaretle.
-8. Hasta doktor soruyorsa intent: "doctor_question" olarak işaretle.
-9. FİYATLARI ASLA UYDURMA. Sadece aşağıdaki klinik verilerindeki fiyatları kullan. Fiyat yoksa "Bu tedavi için sistemde net fiyat tanımlı değil. Teklif alarak öğrenebilirsiniz." de.
-10. Türkçe mesaja Türkçe, İngilizce mesaja İngilizce yanıt ver. (Dil davranışı: ${agencyAiConfig?.languageBehavior || "user_lang"})
-11. Yanıtların doğal, nazik ve profesyonel olsun.
-12. Tıbbi teşhis koyma, sadece bilgi ver ve yönlendir.
+2. PASİF KAPANIS YAPMA. "Daha fazla bilgi isterseniz buradayım" gibi zayıf kapanışlar yerine, hastayı daima bir sonraki lead (kayıt) adımına yönlendir.
+3. KLİNİK SEÇİMİ: Eğer hasta "Hospitadent ile devam edelim", "Bu klinik iyi", "[Klinik Adı] hakkında bilgi ver", "İlk klinik olsun" gibi sözler söylerse intent: "clinic_selected" yap ve o kliniğin adını "selectedClinicName", ID'sini "selectedClinicId" olarak set et. 
+4. LEAD TOPLAMA: Hasta bir klinik seçtiğinde veya tavsiye istediğinde yavaş yavaş "lead_capture" aşamasına geç. Bilgileri asla aynı anda sorma. Sırasıyla 1 eksik bilgiyi sor:
+   Önerilen sıra: Ad Soyad -> Telefon -> Ülke -> Yaş -> Cinsiyet -> KVKK Onayı.
+5. "missingLeadField" alanına sıradaki sorman gereken 1 alanı yaz.
+6. HASTA BİLGİ VERDİKÇE JSON içinde ilgili alanı (patientName, patientPhone vb.) doldur.
+7. Tüm lead bilgileri tamamsa ve KVKK onayı alındıysa "shouldCreateLead": true dön.
+8. FİYATLARI ASLA UYDURMA. Aşağıdaki verilerden çek.
+9. Türkçe mesaja Türkçe, İngilizce mesaja İngilizce yanıt ver. (Dil davranışı: ${agencyAiConfig?.languageBehavior || "user_lang"})
+10. Tıbbi teşhis koyma.
+11. KVKK ONAYI: Telefon almadan veya teklif oluşturmadan hemen önce şu onayı al: "Bilgilerinizi klinik ve ekibimizle paylaşmamı onaylıyor musunuz?" Eğer hasta evet derse quoteConsent: true yap.
 
 HASTA BİLGİSİ TOPLAMA YÖNERGESİ (INTAKE INSTRUCTIONS):
-Aşağıdaki bilgileri doğal konuşma içinde toplamaya çalış:
 ${intakeText || "Belirtilmedi."}
 
 ACENTA ÖZEL YANIT KURALLARI:
 ${rules || "Belirtilmedi."}
-
 SÖYLENMEMESİ GEREKENLER (YASAKLI İFADELER):
 ${forbidden || "Belirtilmedi."}
 ${customPrompt}
-MEVCUT KLİNİKLER VE FİYATLAR:
 
+MEVCUT KLİNİKLER VE FİYATLAR:
 ${clinicContext}
+
 ${contextHint}
 
 JSON FORMATI:
 {
-  "intent": "clinic_matching" | "clinic_question" | "pricing_question" | "doctor_question" | "followup" | "general",
+  "intent": "clinic_recommendation" | "clinic_selected" | "clinic_question" | "pricing_question" | "doctor_question" | "lead_capture" | "general",
   "language": "tr" | "en",
   "treatmentCategory": string | null,
   "subTreatment": string | null,
@@ -379,18 +392,22 @@ JSON FORMATI:
   "budgetAmount": number | null,
   "budgetCurrency": string | null,
   "clinicName": string | null,
+  "selectedClinicId": string | null,
+  "selectedClinicName": string | null,
+  "patientName": string | null,
+  "patientPhone": string | null,
+  "patientCountry": string | null,
   "patientAge": number | null,
   "patientGender": "Kadın" | "Erkek" | "Belirtmek istemiyorum" | "Diğer" | null,
-  "needsFollowUp": boolean,
-  "replyText": "Doğal dilde AI yanıtı"
+  "quoteConsent": boolean | null,
+  "missingLeadField": "patientName" | "patientPhone" | "patientCountry" | "patientAge" | "patientGender" | "quoteConsent" | null,
+  "shouldCreateLead": boolean,
+  "replyText": "Doğal dilde proaktif, yönlendirici AI yanıtı"
 }
 
 ÖNEMLİ:
-- replyText alanı hastaya gösterilecek doğal dildeki yanıttır.
-- clinic_matching intent'inde replyText kısa bir giriş olmalı (ör: "Antalya'da implant tedavisi için uygun klinikleri listeledim."). Klinik detaylarını replyText'e yazma, kartlardan gösterilecek.
-- followup intent'inde replyText takip sorularını içermeli.
-- clinic_question intent'inde replyText klinik hakkında detaylı bilgi vermeli (klinik verisinden).
-- pricing_question intent'inde replyText fiyat bilgisini içermeli (sadece gerçek veriden).`;
+- replyText alanı hastaya gösterilecek yanıttır. Eğer "clinic_selected" ise, o klinik hakkında 1-2 cümle kısa ve olumlu bilgi verip HEMEN missingLeadField ile ilgili soruyu sorarak lead alımına geç.
+- clinic_recommendation intent'inde replyText sadece kısa giriş olmalı.`;
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -428,22 +445,79 @@ JSON FORMATI:
     if (parsed.treatmentCategory) newCtx.lastTreatmentCategory = parsed.treatmentCategory;
     if (parsed.subTreatment) newCtx.lastSubTreatment = parsed.subTreatment;
     if (parsed.location) newCtx.lastLocation = parsed.location;
+    
+    // Update lead states
+    if (parsed.selectedClinicId) newCtx.selectedClinicId = parsed.selectedClinicId;
+    if (parsed.selectedClinicName) newCtx.selectedClinicName = parsed.selectedClinicName;
+    if (parsed.patientName) newCtx.patientName = parsed.patientName;
+    if (parsed.patientPhone) newCtx.patientPhone = parsed.patientPhone;
+    if (parsed.patientCountry) newCtx.patientCountry = parsed.patientCountry;
     if (parsed.patientAge !== undefined && parsed.patientAge !== null) newCtx.patientAge = parsed.patientAge;
     if (parsed.patientGender) newCtx.patientGender = parsed.patientGender;
+    if (parsed.quoteConsent !== undefined && parsed.quoteConsent !== null) newCtx.quoteConsent = parsed.quoteConsent;
+    if (parsed.missingLeadField) newCtx.missingLeadField = parsed.missingLeadField;
+    
+    if (parsed.intent === "clinic_recommendation" || parsed.intent === "clinic_matching") newCtx.leadStage = "recommendation";
+    if (parsed.intent === "clinic_selected") newCtx.leadStage = "clinic_selected";
+    if (parsed.intent === "lead_capture") newCtx.leadStage = "lead_capture";
+    
+    if (parsed.shouldCreateLead && !ctx.quoteConsent && parsed.quoteConsent) {
+      newCtx.quoteConsent = true;
+    }
 
     /* ── 5. Handle each intent type ── */
 
-    // --- FOLLOW-UP ---
-    if (parsed.intent === "followup" || parsed.needsFollowUp) {
+    // --- SHOULD CREATE LEAD ---
+    if (parsed.shouldCreateLead) {
+      newCtx.leadStage = "quote_request_created";
+      const now = new Date().toISOString();
+      try {
+        const leadDoc = {
+          agencyId,
+          clinicId: newCtx.selectedClinicId || null,
+          patientName: newCtx.patientName || "Bilinmiyor",
+          patientEmail: null,
+          patientPhone: newCtx.patientPhone || null,
+          patientAge: newCtx.patientAge || null,
+          patientGender: newCtx.patientGender || null,
+          country: newCtx.patientCountry || "Unknown",
+          language: parsed.language || "tr",
+          treatmentCategory: newCtx.lastTreatmentCategory || "other",
+          treatmentSubcategory: newCtx.lastSubTreatment || null,
+          urgency: "medium",
+          conversationSummary: "AI Chat üzerinden lead toplandı.",
+          aiExtractedNotes: parsed.replyText || "",
+          consentStatus: newCtx.quoteConsent ? "accepted" : "pending",
+          consentTimestamp: newCtx.quoteConsent ? now : null,
+          status: "new",
+          statusHistory: [{ status: "new", changedAt: now, note: "Lead created from AI chat" }],
+          source: "ai_chat",
+          createdAt: now,
+          updatedAt: now,
+        };
+        await adminDb.collection("agencies").doc(agencyId).collection("leads").add(leadDoc);
+        console.log("[matching-chat] Lead successfully created.");
+      } catch (err) {
+        console.error("[matching-chat] Error creating lead:", err);
+      }
       return NextResponse.json({
-        reply: parsed.replyText || "Hangi tedaviyi arıyorsunuz?",
+        reply: parsed.replyText || "Teşekkürler, bilgilerinizi aldık. İlgili klinik ekibimiz en kısa sürede sizinle iletişime geçecektir.",
+        type: "lead_created",
+        sessionContext: newCtx,
+      }, { headers: CORS });
+    }
+
+    // --- FOLLOW-UP OR LEAD CAPTURE ---
+    if (parsed.intent === "followup" || parsed.needsFollowUp || parsed.intent === "lead_capture") {
+      return NextResponse.json({
+        reply: parsed.replyText || "Lütfen gerekli bilgileri paylaşır mısınız?",
         type: "text",
         sessionContext: newCtx,
       }, { headers: CORS });
     }
 
-    // --- CLINIC MATCHING ---
-    if (parsed.intent === "clinic_matching") {
+    // --- CLINIC MATCHING OR RECOMMENDATION ---
+    if (parsed.intent === "clinic_matching" || parsed.intent === "clinic_recommendation") {
       const scored = allClinics
         .map((clinic: any) => {
           const { score, reason, matchedPrices } = scoreClinic(clinic, allPricing, parsed);
@@ -487,9 +561,9 @@ JSON FORMATI:
       }, { headers: CORS });
     }
 
-    // --- CLINIC QUESTION ---
-    if (parsed.intent === "clinic_question") {
-      const clinicName = parsed.clinicName || ctx.lastFocusedClinicName;
+    // --- CLINIC SELECTED OR CLINIC QUESTION ---
+    if (parsed.intent === "clinic_question" || parsed.intent === "clinic_selected") {
+      const clinicName = parsed.selectedClinicName || parsed.clinicName || ctx.lastFocusedClinicName;
       let clinic: any = null;
       if (clinicName) {
         const nameLower = clinicName.toLowerCase();

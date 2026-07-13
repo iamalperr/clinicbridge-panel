@@ -556,7 +556,16 @@ export default function AgencyDemoPage() {
     }
   }, [aiMessages, aiTyping]);
 
-  const handleAiSubmit = async () => {
+  const handleProceedWithClinic = (clinicName: string) => {
+    const msg = lang === "tr" ? `${clinicName} ile devam etmek istiyorum.` : `I want to proceed with ${clinicName}.`;
+    setAiInput(msg);
+    setTimeout(() => {
+      const sendBtn = document.getElementById("agency-ai-send-btn");
+      if (sendBtn) sendBtn.click();
+    }, 50);
+  };
+
+  const sendAi = async () => {
     if (!aiInput.trim()) return;
     const userMsg = aiInput;
     setAiInput("");
@@ -576,11 +585,6 @@ export default function AgencyDemoPage() {
       sessionContext: sessionCtx,
     };
 
-    console.log("[CB-MATCHING] ===== NEW REQUEST =====");
-    console.log("[CB-MATCHING] Version: v3-openai");
-    console.log("[CB-MATCHING] Endpoint:", apiEndpoint);
-    console.log("[CB-MATCHING] Payload:", JSON.stringify(requestPayload).slice(0, 500));
-
     try {
       const res = await fetch(apiEndpoint, {
         method: "POST",
@@ -588,19 +592,8 @@ export default function AgencyDemoPage() {
         body: JSON.stringify(requestPayload),
       });
 
-      console.log("[CB-MATCHING] Response status:", res.status);
-
       if (!res.ok) throw new Error(`API error ${res.status}`);
       const data = await res.json();
-
-      console.log("[CB-MATCHING] Response type:", data.type);
-      console.log("[CB-MATCHING] Response reply:", (data.reply || "").slice(0, 200));
-      console.log("[CB-MATCHING] Clinics count:", data.clinics?.length || 0);
-      if (data.clinics?.length > 0) {
-        console.log("[CB-MATCHING] First clinic:", data.clinics[0].clinicName);
-        console.log("[CB-MATCHING] First clinic prices:", data.clinics[0].matchedPrices?.length || 0);
-      }
-      console.log("[CB-MATCHING] Session ctx:", JSON.stringify(data.sessionContext || {}).slice(0, 200));
 
       const aiMsg: ChatMessage = {
         id: nextMsgId(),
@@ -614,10 +607,8 @@ export default function AgencyDemoPage() {
       setChatHistory([...newHistory, { role: "assistant", content: data.reply }]);
 
       if (data.sessionContext) setSessionCtx(data.sessionContext);
-      // Clinic cards are rendered inline in chat — no separate results section needed
 
     } catch (err) {
-      console.error("[CB-MATCHING] ERROR:", err);
       setAiMessages((prev) => [...prev, {
         id: nextMsgId(), role: "ai", type: "text",
         text: lang === "tr"
@@ -941,19 +932,24 @@ export default function AgencyDemoPage() {
                               {rec.reason && <p style={{ fontSize: 12, color: C.textSec, fontStyle: "italic" }}>💡 {rec.reason}</p>}
                             </div>
                             {/* Actions */}
-                            <div style={{ padding: "10px 16px", display: "flex", gap: 8 }}>
-                              <a href={rec.profilePath} style={{
-                                flex: 1, padding: "8px 0", borderRadius: 8, fontSize: 12, fontWeight: 700, textAlign: "center",
-                                background: C.tealBg, color: C.teal, border: `1px solid ${C.tealBorder}`, textDecoration: "none",
-                              }}>
-                                {lang === "tr" ? "Daha Fazla Bilgi" : "More Info"}
-                              </a>
-                              <button onClick={() => openLeadModal(rec.clinicName)} style={{
-                                flex: 1, padding: "8px 0", borderRadius: 8, fontSize: 12, fontWeight: 700,
-                                background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer",
-                              }}>
-                                {lang === "tr" ? "Teklif İste" : "Request Quote"}
+                            <div style={{ padding: "10px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+                              <button onClick={() => handleProceedWithClinic(rec.clinicName)} style={{ width: "100%", padding: "10px 0", borderRadius: 8, fontSize: 13, fontWeight: 700, background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}>
+                                {lang === "tr" ? "Bu Klinikle Devam Et" : "Proceed with this Clinic"}
                               </button>
+                              <div style={{ display: "flex", gap: 8 }}>
+                                <a href={rec.profilePath} style={{
+                                  flex: 1, padding: "8px 0", borderRadius: 8, fontSize: 12, fontWeight: 700, textAlign: "center",
+                                  background: C.tealBg, color: C.teal, border: `1px solid ${C.tealBorder}`, textDecoration: "none",
+                                }}>
+                                  {lang === "tr" ? "Daha Fazla Bilgi" : "More Info"}
+                                </a>
+                                <button onClick={() => openLeadModal(rec.clinicName)} style={{
+                                  flex: 1, padding: "8px 0", borderRadius: 8, fontSize: 12, fontWeight: 700,
+                                  background: C.white, color: C.navy, border: `1px solid ${C.border}`, cursor: "pointer",
+                                }}>
+                                  {lang === "tr" ? "Teklif İste" : "Request Quote"}
+                                </button>
+                              </div>
                             </div>
                           </div>
                         ))}
@@ -988,7 +984,7 @@ export default function AgencyDemoPage() {
                 <textarea
                   value={aiInput}
                   onChange={(e) => setAiInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAiSubmit(); } }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAi(); } }}
                   placeholder={t("ai.placeholder")}
                   rows={2}
                   style={{
@@ -997,7 +993,9 @@ export default function AgencyDemoPage() {
                     background: C.bg, lineHeight: 1.5,
                   }}
                 />
-                <button className="demo-btn" onClick={handleAiSubmit} disabled={aiTyping}
+                <button 
+                  id="agency-ai-send-btn"
+                  className="demo-btn" onClick={sendAi} disabled={aiTyping}
                   style={{
                     padding: "0 24px", borderRadius: 12, background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`,
                     color: "#fff", fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 8,
