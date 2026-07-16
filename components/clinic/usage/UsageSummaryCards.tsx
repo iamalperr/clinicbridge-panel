@@ -7,8 +7,14 @@ import { DollarSign, MessageSquare, Zap, Target, Clock, Activity } from "lucide-
 import { formatNumber } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n-context";
 
+
+interface ExtendedAIUsageSummary extends AIUsageSummary {
+  totalMessages?: number;
+  resolvedConversations?: number;
+}
+
 interface Props {
-  summary: AIUsageSummary;
+  summary: ExtendedAIUsageSummary;
   showCosts: boolean;
 }
 
@@ -33,47 +39,53 @@ export default function UsageSummaryCards({ summary, showCosts }: Props) {
       gap: 20,
       marginBottom: 30
     }}>
-      {showCosts && (
-        <StatCard
-          label="Toplam Maliyet (USD)"
-          value={`$${summary.totalCostUsd.toFixed(2)}`}
-          icon={<DollarSign size={20} />}
-          trend={summary.previousPeriod ? calcTrend(summary.totalCostUsd, summary.previousPeriod.totalCostUsd) : undefined}
-          subtext={`Ortalama $${summary.avgCostPerRequest.toFixed(4)} / istek`}
-        />
-      )}
-      
       <StatCard
-        label="Toplam Token"
-        value={formatNumber(summary.totalTokens)}
-        icon={<Zap size={20} />}
-        trend={summary.previousPeriod ? calcTrend(summary.totalTokens, summary.previousPeriod.totalTokens) : undefined}
-        subtext={`${formatNumber(summary.inputTokens)} Girdi | ${formatNumber(summary.outputTokens)} Çıktı`}
+        label="Toplam Görüşme"
+        value={formatNumber(summary.totalConversations)}
+        icon={<MessageSquare size={20} />}
+        trend={summary.previousPeriod ? calcTrend(summary.totalConversations, summary.previousPeriod.totalConversations) : undefined}
+        subtext={summary.resolvedConversations !== undefined ? `${formatNumber(summary.resolvedConversations)} Çözümlenen` : undefined}
+      />
+
+      <StatCard
+        label="Toplam Mesaj"
+        value={formatNumber(summary.totalMessages || 0)}
+        icon={<MessageSquare size={20} />}
       />
 
       <StatCard
         label="AI İstekleri"
-        value={formatNumber(summary.totalRequests)}
+        value={summary.totalRequests > 0 ? formatNumber(summary.totalRequests) : (summary.totalConversations > 0 ? "—" : "0")}
         icon={<Activity size={20} />}
         trend={summary.previousPeriod ? calcTrend(summary.totalRequests, summary.previousPeriod.totalRequests) : undefined}
-        subtext={`${formatNumber(summary.successfulRequests)} Başarılı | ${formatNumber(summary.failedRequests)} Başarısız`}
+        subtext={summary.totalRequests > 0 ? `${formatNumber(summary.successfulRequests)} Başarılı | ${formatNumber(summary.failedRequests)} Başarısız` : "Henüz takip edilmiyor"}
       />
 
       <StatCard
-        label="AI Görüşmeleri"
-        value={formatNumber(summary.totalConversations)}
-        icon={<MessageSquare size={20} />}
-        trend={summary.previousPeriod ? calcTrend(summary.totalConversations, summary.previousPeriod.totalConversations) : undefined}
-        subtext={showCosts ? `Görüşme başı ortalama $${summary.avgCostPerConversation.toFixed(3)}` : undefined}
+        label="Toplam Token"
+        value={summary.totalRequests > 0 ? formatNumber(summary.totalTokens) : (summary.totalConversations > 0 ? "—" : "0")}
+        icon={<Zap size={20} />}
+        trend={summary.previousPeriod ? calcTrend(summary.totalTokens, summary.previousPeriod.totalTokens) : undefined}
+        subtext={summary.totalRequests > 0 ? `${formatNumber(summary.inputTokens)} Girdi | ${formatNumber(summary.outputTokens)} Çıktı` : "Veri yok"}
       />
+
+      {showCosts && (
+        <StatCard
+          label="AI Maliyeti (USD)"
+          value={summary.totalRequests > 0 ? `$${summary.totalCostUsd.toFixed(2)}` : (summary.totalConversations > 0 ? "—" : "$0.00")}
+          icon={<DollarSign size={20} />}
+          trend={summary.previousPeriod ? calcTrend(summary.totalCostUsd, summary.previousPeriod.totalCostUsd) : undefined}
+          subtext={summary.totalRequests > 0 ? `Ortalama $${summary.avgCostPerRequest.toFixed(4)} / istek` : "Veri yok"}
+        />
+      )}
 
       <StatCard
         label="Ortalama Yanıt Süresi"
-        value={`${(summary.avgDurationMs / 1000).toFixed(2)}s`}
+        value={summary.totalRequests > 0 ? `${(summary.avgDurationMs / 1000).toFixed(2)}s` : "—"}
         icon={<Clock size={20} />}
       />
       
-      {showCosts && (
+      {showCosts && summary.totalRequests > 0 && (
         <StatCard
           label="Tasarruf Edilen (Önbellek)"
           value={formatNumber(summary.cachedInputTokens)}

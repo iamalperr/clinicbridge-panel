@@ -3,6 +3,12 @@ import { getAdminDb } from "@/lib/firebase-admin";
 import { requireClinicAccess } from "@/lib/services/apiAuth";
 import type { AIUsageSummary } from "@/lib/types/aiUsage";
 
+// Extend the type locally if we need to return additional metrics like totalMessages
+export interface ExtendedAIUsageSummary extends AIUsageSummary {
+  totalMessages?: number;
+  resolvedConversations?: number;
+}
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ clinicId: string }> }
@@ -54,27 +60,30 @@ export async function GET(
       totalDurationMs += data.totalDurationMs || 0;
     });
 
-    // To get accurate conversation count, we must query the actual usage records and group by conversationId
-    // For large datasets, this might be slow, but for clinic level it's usually fine
-    const rawSnap = await adminDb.collection("aiUsage")
-      .where("clinicId", "==", clinicId)
+    // Get accurate conversation and message counts from conversationLogs
+    const convSnap = await adminDb.collection("clinics").doc(clinicId).collection("conversationLogs")
       .where("createdAt", ">=", `${startDateStr}T00:00:00.000Z`)
       .where("createdAt", "<=", `${endDateStr}T23:59:59.999Z`)
-      .select("conversationId")
       .get();
 
-    const uniqueConversations = new Set<string>();
-    rawSnap.docs.forEach(doc => {
-      const convId = doc.data().conversationId;
-      if (convId) uniqueConversations.add(convId);
+    let totalConversations = 0;
+    let totalMessages = 0;
+    let resolvedConversations = 0;
+
+    convSnap.docs.forEach(doc => {
+      totalConversations++;
+      const data = doc.data();
+      totalMessages += data.totalMessages || 0;
+      if (data.status === "appointment" || data.status === "answered" || data.status === "resolved") {
+        resolvedConversations++;
+      }
     });
 
-    const totalConversations = uniqueConversations.size;
     const avgCostPerConversation = totalConversations > 0 ? totalCostUsd / totalConversations : 0;
     const avgCostPerRequest = totalRequests > 0 ? totalCostUsd / totalRequests : 0;
     const avgDurationMs = successfulRequests > 0 ? totalDurationMs / successfulRequests : 0;
 
-    const summary: AIUsageSummary = {
+    const summary: ExtendedAIUsageSummary = {
       totalCostUsd,
       totalTokens,
       inputTokens,
@@ -84,6 +93,8 @@ export async function GET(
       successfulRequests,
       failedRequests,
       totalConversations,
+      totalMessages,
+      resolvedConversations,
       avgCostPerConversation,
       avgCostPerRequest,
       avgDurationMs,

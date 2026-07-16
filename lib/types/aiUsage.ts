@@ -157,6 +157,7 @@ export interface AIUsageTimeseriesPoint {
   cachedInputTokens: number;
   requestCount: number;
   conversationCount: number;
+  messageCount: number;
   failedCount: number;
   avgDurationMs: number;
 }

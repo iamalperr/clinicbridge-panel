@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import SectionCard from "@/components/ui/SectionCard";
 import { Button } from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
@@ -27,7 +29,9 @@ export default function UsageRecordsTable({
   showCosts,
   onExportCsv
 }: Props) {
-  
+  const params = useParams();
+  const clinicId = params.clinicId as string;
+
   const formatDate = (isoString: string) => {
     try {
       const d = new Date(isoString);
@@ -43,14 +47,21 @@ export default function UsageRecordsTable({
     <SectionCard 
       title="İstek Kayıtları" 
       action={
-        <Button variant="secondary" onClick={onExportCsv}>
-          <Download size={14} /> CSV İndir
-        </Button>
+        <div style={{ display: "flex", gap: 12 }}>
+          <Link href={`/clinics/${clinicId}/logs`} style={{ textDecoration: "none" }}>
+            <Button variant="secondary">
+              Görüşme Kayıtlarını Gör <ChevronRight size={14} />
+            </Button>
+          </Link>
+          <Button variant="secondary" onClick={onExportCsv}>
+            <Download size={14} /> CSV İndir
+          </Button>
+        </div>
       }
     >
       {records.length === 0 ? (
         <div style={{ padding: 40, textAlign: "center", color: UI_COLORS.textMuted }}>
-          Bu tarih aralığında kayıt bulunamadı.
+          Henüz AI istek kaydı bulunmuyor.
         </div>
       ) : (
         <div style={{ overflowX: "auto" }}>

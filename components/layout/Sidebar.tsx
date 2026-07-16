@@ -114,7 +114,7 @@ export default function Sidebar() {
           <NavItem href="/demo-requests" label="Demo Talepleri" icon={<ClipboardList size={18} />} />
         )}
         {isSuperAdmin(profile?.role) && (
-          <NavItem href="/analytics/ai-usage" label="AI Maliyet & Kullanım" icon={<Zap size={18} />} />
+          <NavItem href="/analytics/ai-usage" label="AI Kullanımı" icon={<Zap size={18} />} />
         )}
         {isSuperAdmin(profile?.role) && (
           <NavItem href="/agency" label={t("nav.portal")} icon={<Globe size={18} />} />

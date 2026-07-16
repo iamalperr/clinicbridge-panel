@@ -11,13 +11,15 @@ interface Props {
   showCosts: boolean;
 }
 
-type MetricType = "totalCostUsd" | "totalTokens" | "requestCount";
+type MetricType = "conversationCount" | "messageCount" | "totalTokens" | "requestCount" | "totalCostUsd";
 
 export default function UsageChart({ data, showCosts }: Props) {
-  const [selectedMetric, setSelectedMetric] = useState<MetricType>(showCosts ? "totalCostUsd" : "totalTokens");
+  const [selectedMetric, setSelectedMetric] = useState<MetricType>("conversationCount");
 
   const values = data.map(d => d[selectedMetric]);
   const maxVal = Math.max(...values, 1); // Avoid division by zero
+  const sumTokens = data.reduce((acc, curr) => acc + curr.totalTokens, 0);
+  const sumConversations = data.reduce((acc, curr) => acc + curr.conversationCount, 0);
 
   const formatValue = (val: number, metric: MetricType) => {
     if (metric === "totalCostUsd") return `$${val.toFixed(2)}`;
@@ -34,8 +36,8 @@ export default function UsageChart({ data, showCosts }: Props) {
 
   return (
     <SectionCard title="Kullanım Grafiği">
-      <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
-        {(["totalTokens", "requestCount"] as const).map(metric => (
+      <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
+        {(["conversationCount", "messageCount", "requestCount", "totalTokens"] as const).map(metric => (
           <button
             key={metric}
             onClick={() => setSelectedMetric(metric)}
@@ -51,7 +53,10 @@ export default function UsageChart({ data, showCosts }: Props) {
               transition: UI_COMMON_STYLES.transition
             }}
           >
-            {getMetricLabel(metric)}
+            {metric === "conversationCount" && "Görüşmeler"}
+            {metric === "messageCount" && "Mesajlar"}
+            {metric === "requestCount" && "AI İstekleri"}
+            {metric === "totalTokens" && "Token Kullanımı"}
           </button>
         ))}
         {showCosts && (
@@ -74,9 +79,13 @@ export default function UsageChart({ data, showCosts }: Props) {
         )}
       </div>
 
-      {data.length === 0 ? (
+      {data.length === 0 || (sumConversations === 0 && sumTokens === 0) ? (
         <div style={{ height: 250, display: "flex", alignItems: "center", justifyContent: "center", color: UI_COLORS.textMuted }}>
-          Bu tarih aralığında veri bulunmuyor.
+          Bu tarih aralığında henüz görüşme veya AI kullanım verisi bulunmuyor.
+        </div>
+      ) : (sumTokens === 0 && (selectedMetric === "totalTokens" || selectedMetric === "totalCostUsd" || selectedMetric === "requestCount")) ? (
+        <div style={{ height: 250, display: "flex", alignItems: "center", justifyContent: "center", color: UI_COLORS.textMuted, textAlign: "center", padding: "0 20px" }}>
+          Bu dönemde görüşme kayıtları bulunuyor ancak token ve maliyet takibi henüz mevcut değil. Lütfen "Görüşmeler" metriğini seçin.
         </div>
       ) : (
         <div style={{ height: 250, display: "flex", alignItems: "flex-end", gap: "2px", position: "relative", paddingTop: 20 }}>

@@ -19,7 +19,7 @@ import UsageLimits from "@/components/clinic/usage/UsageLimits";
 
 import type { AIUsageSummary, AIUsageTimeseriesPoint, AIUsageBreakdowns, AIUsageRecordRow } from "@/lib/types/aiUsage";
 
-type DateRange = "today" | "yesterday" | "7d" | "30d" | "this_month" | "last_month";
+type DateRange = "today" | "yesterday" | "7d" | "30d" | "this_month" | "last_month" | "all_time";
 
 const DATE_OPTIONS: { label: string; value: DateRange }[] = [
   { label: "Bugün", value: "today" },
@@ -28,6 +28,7 @@ const DATE_OPTIONS: { label: string; value: DateRange }[] = [
   { label: "Son 30 Gün", value: "30d" },
   { label: "Bu Ay", value: "this_month" },
   { label: "Geçen Ay", value: "last_month" },
+  { label: "Tüm Zamanlar", value: "all_time" },
 ];
 
 function getDateParams(range: DateRange) {
@@ -65,6 +66,10 @@ function getDateParams(range: DateRange) {
       start.setMonth(start.getMonth() - 1, 1);
       start.setHours(0, 0, 0, 0);
       end.setDate(0); // last day of previous month
+      end.setHours(23, 59, 59, 999);
+      break;
+    case "all_time":
+      start = new Date("2020-01-01T00:00:00Z");
       end.setHours(23, 59, 59, 999);
       break;
   }
@@ -238,10 +243,10 @@ export default function AIUsagePage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
         <div>
           <h2 style={{ fontSize: 22, fontWeight: 800, color: UI_COLORS.textPrimary }}>
-            AI Kullanım & Maliyet Takibi
+            AI Kullanımı
           </h2>
           <p style={{ fontSize: 14, color: UI_COLORS.textMuted, marginTop: 4 }}>
-            OpenAI API istekleri, token harcamaları ve model bazlı kırılımlar
+            Kliniğin yapay zekâ kullanımını, görüşme trafiğini ve tüketim detaylarını takip edin.
           </p>
         </div>
         <div style={{ width: 160 }}>
@@ -251,6 +256,18 @@ export default function AIUsagePage() {
             options={DATE_OPTIONS}
           />
         </div>
+      </div>
+
+      <div style={{ 
+        padding: "12px 16px", 
+        background: "rgba(99, 102, 241, 0.05)", 
+        borderLeft: `4px solid ${UI_COLORS.brand}`, 
+        borderRadius: 8,
+        fontSize: 13,
+        color: UI_COLORS.textSecondary,
+        lineHeight: 1.5
+      }}>
+        <strong>Bilgi:</strong> Klinik bazlı AI kullanım takibi 16 Temmuz 2026 tarihinde başlatıldı. Bu tarihten önceki görüşmelerin mesaj ve görüşme sayıları görüntülenebilir; ancak token ve maliyet verileri klinik bazında ayrıştırılamamaktadır.
       </div>
 
       {showCosts && (
