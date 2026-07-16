@@ -310,8 +310,8 @@ export default function LeadDetailPage() {
       }}>
         <p style={{ width: "100%", fontSize: 14, fontWeight: 700, color: UI_COLORS.textPrimary, marginBottom: 8 }}>Aksiyonlar</p>
 
-        {lead.status !== "contacted" && lead.status !== "converted" && lead.status !== "lost" && (
-          <Button variant="secondary" onClick={() => handleStatusChange("contacted")} isLoading={actionLoading}>
+        {lead.status !== "clinic_contacted" && lead.status !== "converted" && lead.status !== "lost" && (
+          <Button variant="secondary" onClick={() => handleStatusChange("clinic_contacted")} isLoading={actionLoading}>
             <Phone size={14} /> İletişime Geçildi
           </Button>
         )}

@@ -85,7 +85,7 @@ export async function sendAgencyLeadNotification({ agencyId, leadId }: { agencyI
     });
 
     // Mark lead as notified
-    await adminDb.collection("agencies").doc(agencyId).collection("leads").doc(leadId).update({
+    await adminDb!.collection("agencies").doc(agencyId).collection("leads").doc(leadId).update({
       notificationEmailSent: true,
       notificationSentAt: new Date().toISOString(),
     });
@@ -107,7 +107,7 @@ export async function sendPatientLeadApprovalEmail({ agencyId, leadId, customMes
     const adminDb = getAdminDb();
     
     // Fetch Lead data
-    const leadSnap = await adminDb.collection("agencies").doc(agencyId).collection("leads").doc(leadId).get();
+    const leadSnap = await adminDb!.collection("agencies").doc(agencyId).collection("leads").doc(leadId).get();
     if (!leadSnap.exists) throw new Error("Lead not found");
     const lead = leadSnap.data();
 
@@ -137,7 +137,7 @@ export async function sendPatientLeadApprovalEmail({ agencyId, leadId, customMes
     });
 
     // Mark lead as patient notified
-    await adminDb.collection("agencies").doc(agencyId).collection("leads").doc(leadId).update({
+    await adminDb!.collection("agencies").doc(agencyId).collection("leads").doc(leadId).update({
       patientEmailSent: true,
       patientNotifiedAt: new Date().toISOString(),
       status: "patient_notified",

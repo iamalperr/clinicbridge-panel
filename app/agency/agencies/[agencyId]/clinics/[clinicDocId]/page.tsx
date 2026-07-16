@@ -91,7 +91,7 @@ function SectionTitle({ icon, title }: { icon: React.ReactNode; title: string })
 }
 
 // ─── Tab Definition ─────────────────────────────────────────────────────────
-const TAB_KEYS = ["general", "overview", "treatments", "pricing", "doctors", "knowledgeBase", "faq", "location"] as const;
+const TAB_KEYS = ["general", "overview", "treatments", "pricing", "doctors", "knowledgeBase", "faq", "location", "settings"] as const;
 type TabKey = typeof TAB_KEYS[number];
 
 const TAB_ICONS: Record<TabKey, React.ReactNode> = {
@@ -103,6 +103,7 @@ const TAB_ICONS: Record<TabKey, React.ReactNode> = {
   knowledgeBase: <FileText size={14} />,
   faq: <HelpCircle size={14} />,
   location: <MapPin size={14} />,
+  settings: <Settings size={14} />,
 };
 
 const TAB_LABELS: Record<TabKey, { tr: string; en: string }> = {
@@ -114,6 +115,7 @@ const TAB_LABELS: Record<TabKey, { tr: string; en: string }> = {
   knowledgeBase: { tr: "AI Bilgi Havuzu", en: "AI Knowledge" },
   faq: { tr: "SSS", en: "FAQ" },
   location: { tr: "Lokasyon", en: "Location" },
+  settings: { tr: "Ayarlar", en: "Settings" },
 };
 
 // ═════════════════════════════════════════════════════════════════════════════
