@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
+import { trackableAIRequest } from "@/lib/services/aiGateway";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { initializeApp, getApps } from "firebase/app";
 import {
@@ -918,12 +918,15 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
       guardrails: Object.fromEntries(Object.entries(guardrails).map(([k,v]: any) => [k, v?.enabled ? "ON" : "OFF"])),
       skillBlockCount: skillBlocks.length,
     });
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-    const completion = await openai.chat.completions.create({
+    const completion = await trackableAIRequest({
+      clinicId,
+      conversationId: convId,
+      channel: "web_widget",
+      requestType: "chat",
+      language: "tr",
       model:       promptSettings?.model ?? "gpt-4o-mini",
       temperature: promptSettings?.temperature ?? 0.5,
-      max_tokens:  600,
+      maxTokens:   600,
       messages: [
         { role: "system", content: systemPrompt },
         ...history.slice(-12).map((h: any) => ({
@@ -934,7 +937,7 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
       ],
     });
 
-    const reply = completion.choices[0]?.message?.content?.trim()
+    const reply = completion.content?.trim()
       ?? "Üzgünüm, şu an yanıt üretemiyorum.";
 
     debugLog.push(`OK reply="${reply.slice(0, 60)}" ms=${Date.now() - startTime}`);

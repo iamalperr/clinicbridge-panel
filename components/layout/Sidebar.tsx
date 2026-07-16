@@ -6,7 +6,7 @@ import ThemeToggle from "@/components/ui/ThemeToggle";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
-import { Grid, BarChart3, Settings, Users, LogOut, ClipboardList, Globe } from "lucide-react";
+import { Grid, BarChart3, Settings, Users, LogOut, ClipboardList, Globe, Zap } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { isSuperAdmin, getRoleDisplayName } from "@/lib/types";
 import { useI18n } from "@/lib/i18n-context";
@@ -112,6 +112,9 @@ export default function Sidebar() {
         <NavItem href="/analytics" label={t("nav.analytics")} icon={<BarChart3 size={18} />} />
         {isSuperAdmin(profile?.role) && (
           <NavItem href="/demo-requests" label="Demo Talepleri" icon={<ClipboardList size={18} />} />
+        )}
+        {isSuperAdmin(profile?.role) && (
+          <NavItem href="/analytics/ai-usage" label="AI Maliyet & Kullanım" icon={<Zap size={18} />} />
         )}
         {isSuperAdmin(profile?.role) && (
           <NavItem href="/agency" label={t("nav.portal")} icon={<Globe size={18} />} />

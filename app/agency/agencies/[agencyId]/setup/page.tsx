@@ -34,7 +34,6 @@ export default function SetupPage() {
   const [clinics, setClinics] = useState<AgencyClinic[]>([]);
   const [treatments, setTreatments] = useState<TreatmentCatalogItem[]>([]);
   const [hasMatching, setHasMatching] = useState(false);
-  const [hasIntakeFlow, setHasIntakeFlow] = useState(false);
   const [hasWidget, setHasWidget] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -48,11 +47,6 @@ export default function SetupPage() {
     unsubs.push(subscribeToTreatments(agencyId, (d) => { setTreatments(d); checkDone(); }));
     unsubs.push(onSnapshot(doc(db, "agencies", agencyId, "config", "matching"), (snap) => {
       setHasMatching(snap.exists() && (snap.data()?.treatmentClinicRules?.length || 0) > 0);
-      checkDone();
-    }, () => checkDone()));
-    unsubs.push(onSnapshot(doc(db, "agencies", agencyId, "config", "ai"), (snap) => {
-      const data = snap.data();
-      setHasIntakeFlow(snap.exists() && data?.categoryFlows && Object.keys(data.categoryFlows).length > 0);
       checkDone();
     }, () => checkDone()));
     unsubs.push(onSnapshot(doc(db, "agencies", agencyId, "config", "widget"), (snap) => {
@@ -71,7 +65,6 @@ export default function SetupPage() {
     { key: "treatments", label: t("portal.setup.treatmentCatalog"), description: t("portal.setup.treatmentCatalogDesc"), icon: <Stethoscope size={18} />, done: treatments.length > 0, href: `${base}/treatments` },
     { key: "clinics", label: t("portal.setup.clinicNetwork"), description: t("portal.setup.clinicNetworkDesc"), icon: <Building2 size={18} />, done: clinics.length > 0, href: `${base}/clinics` },
     { key: "matching", label: t("portal.setup.aiMatchingRules"), description: t("portal.setup.aiMatchingRulesDesc"), icon: <Brain size={18} />, done: hasMatching, href: `${base}/matching` },
-    { key: "intake", label: t("portal.setup.intakeFlowTitle"), description: t("portal.setup.intakeFlowDesc"), icon: <MessageSquare size={18} />, done: hasIntakeFlow, href: `${base}/intake-flow` },
     { key: "widget", label: t("portal.setup.widgetExperience"), description: t("portal.setup.widgetExperienceDesc"), icon: <Code size={18} />, done: hasWidget, href: `${base}/widget` },
     { key: "consent", label: t("portal.setup.consentUrl"), description: t("portal.setup.consentUrlDesc"), icon: <Shield size={18} />, done: hasConsent, href: `${base}/settings` },
   ];

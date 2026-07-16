@@ -217,7 +217,7 @@ export default function LeadsPage() {
                   }}
                 >
                   <td style={{ padding: "12px 14px" }}>
-                    <Link href={`/agency/leads/${lead.id}`} style={{ textDecoration: "none", color: UI_COLORS.textPrimary, fontWeight: 600 }}>
+                    <Link href={`/agency/agencies/${agencyId}/leads/${lead.id}`} style={{ textDecoration: "none", color: UI_COLORS.textPrimary, fontWeight: 600 }}>
                       {lead.patientName || t("portal.leads.anonymous")}
                     </Link>
                     {lead.patientEmail && (

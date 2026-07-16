@@ -32,6 +32,18 @@ service cloud.firestore {
       }
     }
 
+    // AI Usage tracking is purely backend-driven (via admin SDK). 
+    // Client should use API endpoints.
+    match /aiUsage/{docId} {
+      allow read, write: if false;
+    }
+    match /aiUsageDaily/{docId} {
+      allow read, write: if false;
+    }
+    match /aiModelPricing/{docId} {
+      allow read, write: if false;
+    }
+
     // All other collections require authentication
     match /{document=**} {
       allow read, write: if request.auth != null;

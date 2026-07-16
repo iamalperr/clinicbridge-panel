@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
+import { trackableAIRequest } from "@/lib/services/aiGateway";
 import { getAdminDb } from "@/lib/firebase-admin";
+import { sendAgencyLeadNotification } from "@/lib/services/emailService";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -436,13 +437,14 @@ JSON FORMATI:
 - clinic_recommendation intent'inde replyText sadece kısa giriş olmalı.
 - showClinicCards: Sadece "clinic_recommendation" veya klinik listesi sunulması gereken durumlarda true yap. "clinic_selected", "lead_capture", "clinic_info" gibi durumlarda KESİNLİKLE false yap ki kartlar ekranda tekrar etmesin.`;
 
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-    const completion = await openai.chat.completions.create({
+    const completion = await trackableAIRequest({
+      clinicId: ctx.selectedClinicId || undefined,
+      channel: "portal",
+      requestType: "chat",
       model: "gpt-4o-mini",
       temperature: 0.3,
-      max_tokens: 1200,
-      response_format: { type: "json_object" },
+      maxTokens: 1200,
+      responseFormat: { type: "json_object" },
       messages: [
         { role: "system", content: systemPrompt },
         ...history.slice(-10).map((h: any) => ({
@@ -453,7 +455,7 @@ JSON FORMATI:
       ],
     });
 
-    const raw = completion.choices[0]?.message?.content?.trim() ?? "{}";
+    const raw = completion.content?.trim() ?? "{}";
     let parsed: any;
     try {
       parsed = JSON.parse(raw);
@@ -538,8 +540,13 @@ JSON FORMATI:
           createdAt: now,
           updatedAt: now,
         };
-        await adminDb.collection("agencies").doc(agencyId).collection("leads").add(leadDoc);
+        const newLeadRef = await adminDb.collection("agencies").doc(agencyId).collection("leads").add(leadDoc);
         console.log("[matching-chat] Lead successfully created.");
+
+        // Async email notification
+        sendAgencyLeadNotification({ agencyId, leadId: newLeadRef.id }).catch((err) => {
+          console.error("[matching-chat] sendAgencyLeadNotification failed:", err);
+        });
       } catch (err) {
         console.error("[matching-chat] Error creating lead:", err);
       }

@@ -37,24 +37,51 @@ function SectionTitle({ icon, title }: { icon: React.ReactNode; title: string })
     </div>
   );
 }
+const DEFAULT_RESPONSE_RULES = [
+  "Hastanın tedavi ihtiyacını anlamadan klinik önermeye çalışma.",
+  "Hasta yeterli bilgi verdiyse klinik önerilerini sohbet içinde kartlarla göster.",
+  "Klinik kartlarında backend fiyatlarını kullan.",
+  "Hasta bir klinik seçtiğinde aynı kartı sürekli tekrar gösterme.",
+  "Klinik seçildikten sonra klinik hakkında kısa ve güven veren bilgi ver.",
+  "Klinik bilgi havuzunda bilgi varsa o bilgiyi kullan.",
+  "Bilgi varsa 'detaylı bilgi için iletişime geçin' gibi zayıf cevap verme.",
+  "Her yanıtı lead toplama hedefiyle doğal şekilde ilerlet.",
+  "Lead için minimum bilgiler: ad soyad, telefon, ülke/şehir, yaş, cinsiyet, tedavi, tercih edilen klinik, bütçe, seyahat tarihi.",
+  "Eksik bilgi varsa her seferinde yalnızca 1-2 kritik soru sor.",
+  "Hasta teşekkür edip konuşmayı kapatıyorsa ve yeterli lead bilgisi varsa konuşmayı tekrar tekrar uzatma.",
+  "Kesin teşhis, kesin tedavi garantisi, kesin sonuç veya kesin fiyat garantisi verme."
+];
+
+const DEFAULT_FORBIDDEN_CLAIMS = [
+  "Kesin teşhis koyma.",
+  "Tedavi sonucu garantisi verme.",
+  "Fiyatın kesin olduğunu söyleme.",
+  "Doktor muayenesi olmadan kesin tedavi planı çıkarma.",
+  "Klinik adına tıbbi taahhüt verme.",
+  "Bilgi yoksa uydurma."
+];
+
+const DEFAULT_SYSTEM_PROMPT = `Bu asistan FeelinHealthy acentasına bağlı klinikler arasında hasta yönlendirmesi yapar. Yanıt üretirken sırasıyla agency prompt ayarlarını, klinik profillerini, tedavi kataloglarını, fiyatlandırma kayıtlarını, doktor bilgilerini, AI bilgi havuzunu, SSS ve lokasyon bilgilerini kullan. Klinik önerilerini yalnızca acentaya bağlı ve aktif klinikler arasından yap. Fiyatları yalnızca backend’de kayıtlı pricing verilerinden çek. Eğer fiyat yoksa “teklif alarak öğrenin” de. Hasta bir klinik seçtiğinde bu kliniği conversation state’e kaydet ve sonraki sorularda bu klinik bağlamını koru. Kartları yalnızca öneri veya klinik seçimi anında göster; her yanıtta tekrar etme.`;
+
+const DEFAULT_PERSONA = `Sen FeelinHealthy adına çalışan, sağlık turizmi hastalarına doğru klinik ve tedavi yönlendirmesi yapan profesyonel bir AI asistansın. Hastanın tedavi ihtiyacını, lokasyonunu, bütçesini, yaşını, cinsiyetini, seyahat planını ve beklentilerini anlayarak en uygun klinikleri önerirsin. Kesin teşhis koymaz, tedavi garantisi vermez ve kesin fiyat taahhüdünde bulunmazsın. Fiyat bilgisi paylaşırken bunun tahmini veya sistemde kayıtlı fiyat aralığı olduğunu, nihai fiyatın klinik değerlendirmesi sonrası netleşeceğini belirtirsin. Konuşma tarzın güven veren, sade, profesyonel, çözüm odaklı ve sağlık turizmi hastalarının anlayabileceği kadar net olmalıdır.`;
 
 export default function AgencyAIPromptPage() {
   const { agencyId } = useAgencyWorkspace();
   const { t } = useI18n();
   const [config, setConfig] = useState<Partial<AgencyAIConfig>>({
-    assistantName: "",
-    persona: "",
+    assistantName: "FeelinHealthy AI Assistant",
+    persona: DEFAULT_PERSONA,
     tone: "Professional",
-    greetingMessageTR: "",
-    greetingMessageEN: "",
-    responseRules: [],
-    forbiddenClaims: [],
+    greetingMessageTR: "Merhaba 👋 Ben FeelinHealthy AI asistanınızım. Tedavi ihtiyacınızı, tercih ettiğiniz lokasyonu, bütçenizi ve beklentilerinizi paylaşın; size en uygun klinikleri ve tedavi seçeneklerini birlikte bulalım.",
+    greetingMessageEN: "Hello 👋 I’m your FeelinHealthy AI assistant. Tell me about your treatment need, preferred location, budget, and expectations, and I’ll help you find the most suitable clinics and treatment options.",
+    responseRules: DEFAULT_RESPONSE_RULES,
+    forbiddenClaims: DEFAULT_FORBIDDEN_CLAIMS,
     leadCollectionMode: "moderate",
     pricingBehavior: "show_exact",
     recommendationBehavior: "direct_recommend",
     languageBehavior: "user_lang",
     intakeInstructions: DEFAULT_INTAKE_INSTRUCTIONS,
-    customSystemPrompt: "",
+    customSystemPrompt: DEFAULT_SYSTEM_PROMPT,
   });
   
   const [saving, setSaving] = useState(false);
@@ -63,10 +90,11 @@ export default function AgencyAIPromptPage() {
   useEffect(() => {
     return subscribeToAgencyAIConfig(agencyId, (cfg) => {
       if (cfg) {
-        if (!cfg.intakeInstructions || cfg.intakeInstructions.length === 0) {
-          cfg.intakeInstructions = DEFAULT_INTAKE_INSTRUCTIONS;
-        }
-        setConfig(cfg);
+        setConfig(prev => ({
+          ...prev, // Keep defaults for missing fields
+          ...cfg,
+          intakeInstructions: cfg.intakeInstructions?.length ? cfg.intakeInstructions : DEFAULT_INTAKE_INSTRUCTIONS,
+        }));
       }
     });
   }, [agencyId]);

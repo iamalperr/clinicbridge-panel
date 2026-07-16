@@ -68,7 +68,6 @@ export default function AgencyOverviewPage() {
     { label: t("portal.setup.treatmentCatalog"), done: treatments.length > 0, href: `${base}/treatments` },
     { label: t("portal.setup.clinicNetwork"), done: clinics.length > 0, href: `${base}/clinics` },
     { label: t("portal.setup.aiMatchingRules"), done: !!matchingConfig && (matchingConfig.treatmentClinicRules?.length || 0) > 0, href: `${base}/matching` },
-    { label: t("portal.setup.intakeFlowTitle"), done: intakeFlowExists, href: `${base}/intake-flow` },
     { label: t("portal.setup.widgetExperience"), done: widgetConfigExists, href: `${base}/widget` },
   ];
   const completedSteps = checklist.filter((c) => c.done).length;

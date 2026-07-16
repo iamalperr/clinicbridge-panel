@@ -76,6 +76,11 @@ export interface Clinic {
   messages?: number;
   conversations?: number;
   appointmentCount?: number;
+  aiUsageSettings?: {
+    budgetLimitUsd: number;
+    showCostToClinicUsers: boolean;
+    notifyOnLimits: boolean;
+  };
 }
 
 export interface ConversationLog {

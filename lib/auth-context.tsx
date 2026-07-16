@@ -10,12 +10,14 @@ interface AuthContextType {
   user: User | null;
   profile: UserProfile | null;
   loading: boolean;
+  getToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   profile: null,
   loading: true,
+  getToken: async () => null,
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -56,8 +58,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
+  const getToken = async () => {
+    if (!user) return null;
+    return await user.getIdToken();
+  };
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading }}>
+    <AuthContext.Provider value={{ user, profile, loading, getToken }}>
       {children}
     </AuthContext.Provider>
   );

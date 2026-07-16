@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
+import { trackableAIRequest } from "@/lib/services/aiGateway";
 
 export async function POST(req: Request) {
   try {
-    const { messages, userMessage, settings, patientConsent } = await req.json();
+    const { clinicId, messages, userMessage, settings, patientConsent } = await req.json();
+
+    if (!clinicId) {
+      return NextResponse.json(
+        { error: "clinicId is required for usage tracking." },
+        { status: 400 }
+      );
+    }
 
     if (patientConsent !== true) {
       return NextResponse.json(
@@ -18,18 +25,6 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json(
-        { error: "OpenAI API key is not configured" },
-        { status: 500 }
-      );
-    }
-
-    // Initialize OpenAI
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
 
     // Construct Guardrails
     const activeGuardrails: string[] = [];
@@ -65,13 +60,16 @@ export async function POST(req: Request) {
       ? `${guardrailRules}${settings.systemPrompt}${criteriaRules}\n\nIMPORTANT: If the user asks to book an appointment (e.g., "randevu almak istiyorum"), you MUST respond in valid JSON format exactly like this:\n{ "message": "Your response text here...", "quickReplies": ["Option 1", "Option 2", "Option 3"] }\nOtherwise, just respond normally in plain text.`
       : `${guardrailRules}You are a helpful assistant.${criteriaRules}`;
 
-    // Build the messages array for OpenAI
+    // Build the messages array for AI Gateway
     // We favor the full 'messages' array if provided by the client (stateful chat)
     const chatHistory = messages && Array.isArray(messages) 
       ? messages.map((m: any) => ({ role: m.role, content: m.content }))
       : [{ role: "user", content: userMessage }];
 
-    const completion = await openai.chat.completions.create({
+    const completion = await trackableAIRequest({
+      clinicId,
+      channel: "admin",
+      requestType: "admin_test",
       model: settings.model || "gpt-4o",
       temperature: settings.temperature !== undefined ? settings.temperature : 0.7,
       messages: [
@@ -83,10 +81,10 @@ export async function POST(req: Request) {
       ],
     });
 
-    const aiMessage = completion.choices[0]?.message?.content;
+    const aiMessage = completion.content;
 
     if (!aiMessage) {
-      throw new Error("Empty response from OpenAI");
+      throw new Error("Empty response from AI Gateway");
     }
 
     // Attempt to parse structured response

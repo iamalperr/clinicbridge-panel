@@ -44,6 +44,12 @@ interface SettingsForm {
   // Paket & Modül
   plan: Plan | "starter";
   modules: { ai: boolean; widget: boolean; voice: boolean; sms?: boolean };
+  // AI Bütçe ve Limit Ayarları
+  aiUsageSettings: {
+    budgetLimitUsd: number;
+    showCostToClinicUsers: boolean;
+    notifyOnLimits: boolean;
+  };
 }
 
 const DEFAULT_FORM: SettingsForm = {
@@ -58,6 +64,11 @@ const DEFAULT_FORM: SettingsForm = {
   telegramUsername: "",
   plan: "trial",
   modules: { ai: true, widget: true, voice: false },
+  aiUsageSettings: {
+    budgetLimitUsd: 0,
+    showCostToClinicUsers: false,
+    notifyOnLimits: true,
+  },
 };
 
 export default function ClinicSettingsPage({ params }: PageProps) {
@@ -89,6 +100,12 @@ export default function ClinicSettingsPage({ params }: PageProps) {
           // Paket & Modül — fallback: trial + AI+Widget aktif
           plan: (data.plan as Plan | "starter") ?? "trial",
           modules: data.modules ?? { ai: true, widget: true, voice: false },
+          // AI Bütçe ve Limit Ayarları
+          aiUsageSettings: {
+            budgetLimitUsd: data.aiUsageSettings?.budgetLimitUsd ?? 0,
+            showCostToClinicUsers: data.aiUsageSettings?.showCostToClinicUsers ?? false,
+            notifyOnLimits: data.aiUsageSettings?.notifyOnLimits ?? true,
+          },
         });
       }
     } catch (err) {
@@ -124,6 +141,8 @@ export default function ClinicSettingsPage({ params }: PageProps) {
         // Paket & Modül
         plan: form.plan as Plan,
         modules: form.modules,
+        // AI Limit Ayarları
+        aiUsageSettings: form.aiUsageSettings,
       };
       // Also update local form so the preview reflects the normalised value
       setForm(prev => ({ ...prev, telegramUsername: normalizedTelegram }));
@@ -344,6 +363,71 @@ export default function ClinicSettingsPage({ params }: PageProps) {
           </div>
         </div>
       </SectionCard>
+
+      {/* ── AI Bütçe ve Limit Ayarları ── */}
+      {profile?.role === "superAdmin" || profile?.role === "admin" ? (
+        <SectionCard 
+          title="AI Bütçe ve Limit Ayarları (Sadece Süper Admin)" 
+          subtitle="Kliniğin aylık AI maliyet limitini belirleyin ve görünürlük ayarlarını yapılandırın."
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+            <Input
+              type="number"
+              label="Aylık Bütçe Limiti (USD)"
+              value={form.aiUsageSettings.budgetLimitUsd || ""}
+              onChange={(e) => setForm(prev => ({
+                ...prev,
+                aiUsageSettings: { ...prev.aiUsageSettings, budgetLimitUsd: parseFloat(e.target.value) || 0 }
+              }))}
+              placeholder="0 (Sınırsız)"
+            />
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+                <input
+                  type="checkbox"
+                  id="showCost"
+                  checked={form.aiUsageSettings.showCostToClinicUsers}
+                  onChange={(e) => setForm(prev => ({
+                    ...prev,
+                    aiUsageSettings: { ...prev.aiUsageSettings, showCostToClinicUsers: e.target.checked }
+                  }))}
+                  style={{ marginTop: 4, width: 18, height: 18, accentColor: UI_COLORS.brand, cursor: "pointer" }}
+                />
+                <div>
+                  <label htmlFor="showCost" style={{ fontSize: 14, fontWeight: 600, color: UI_COLORS.textPrimary, cursor: "pointer", display: "block" }}>
+                    Maliyetleri Kliniğe Göster
+                  </label>
+                  <p style={{ fontSize: 13, color: UI_COLORS.textSecondary, marginTop: 4, lineHeight: 1.5 }}>
+                    Klinik kullanıcıları Kullanım sekmesinde tahmini maliyetleri görebilir.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+                <input
+                  type="checkbox"
+                  id="notifyLimits"
+                  checked={form.aiUsageSettings.notifyOnLimits}
+                  onChange={(e) => setForm(prev => ({
+                    ...prev,
+                    aiUsageSettings: { ...prev.aiUsageSettings, notifyOnLimits: e.target.checked }
+                  }))}
+                  style={{ marginTop: 4, width: 18, height: 18, accentColor: UI_COLORS.brand, cursor: "pointer" }}
+                />
+                <div>
+                  <label htmlFor="notifyLimits" style={{ fontSize: 14, fontWeight: 600, color: UI_COLORS.textPrimary, cursor: "pointer", display: "block" }}>
+                    Limit Uyarıları Açık
+                  </label>
+                  <p style={{ fontSize: 13, color: UI_COLORS.textSecondary, marginTop: 4, lineHeight: 1.5 }}>
+                    Bütçe limiti %70 ve %90'a ulaştığında uyarı gönderilir.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </SectionCard>
+      ) : null}
 
       {/* ── Canlı Destek ── */}
       <SectionCard title="Canlı Destek & İletişim">
