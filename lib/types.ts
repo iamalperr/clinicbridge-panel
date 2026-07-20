@@ -1,7 +1,36 @@
 export type Plan = "trial" | "pro" | "enterprise";
 export type ClinicStatus = "active" | "inactive" | "trial";
 
-export type UserRole = "superAdmin" | "admin" | "agencyAdmin" | "agencyUser" | "clinicAdmin" | "clinicUser";
+export type UserRole = "superAdmin" | "admin" | "agencyAdmin" | "agencyUser" | "clinicAdmin" | "clinicUser" | "viewer";
+
+export type PermissionTab = 
+  | "dashboard"          // Global Clinics
+  | "analytics"          // Global Analytics
+  | "demo_requests"      // Global Demo Requests
+  | "ai_usage"           // Global AI Usage
+  | "agency_portal"      // Global Agency Portal
+  | "users"              // Global Users
+  | "system_settings"    // Global Settings
+  | "clinic_overview"    // Clinic Dashboard (Overview)
+  | "clinic_prompt"      // AI Prompt Ayarları (Prompt Studio)
+  | "clinic_voice"       // Voice
+  | "clinic_widget"      // Widget Ayarları
+  | "clinic_training"    // AI Bilgi Havuzu (Training)
+  | "clinic_notes"       // Notes
+  | "clinic_usage"       // Usage
+  | "clinic_logs"        // Konuşmalar (Logs)
+  | "clinic_appointments"// Randevu Talepleri (Appointments)
+  | "clinic_settings";   // Sistem Ayarları (Settings)
+
+export const DEFAULT_PERMISSIONS: Record<UserRole, PermissionTab[]> = {
+  superAdmin: ["dashboard", "analytics", "demo_requests", "ai_usage", "agency_portal", "users", "system_settings", "clinic_overview", "clinic_prompt", "clinic_voice", "clinic_widget", "clinic_training", "clinic_notes", "clinic_usage", "clinic_logs", "clinic_appointments", "clinic_settings"],
+  admin: ["dashboard", "analytics", "demo_requests", "ai_usage", "agency_portal", "users", "system_settings", "clinic_overview", "clinic_prompt", "clinic_voice", "clinic_widget", "clinic_training", "clinic_notes", "clinic_usage", "clinic_logs", "clinic_appointments", "clinic_settings"],
+  agencyAdmin: ["agency_portal"],
+  agencyUser: ["agency_portal"],
+  clinicAdmin: ["clinic_overview", "clinic_prompt", "clinic_voice", "clinic_widget", "clinic_training", "clinic_notes", "clinic_usage", "clinic_logs", "clinic_appointments", "clinic_settings"],
+  clinicUser: ["clinic_overview", "clinic_logs", "clinic_appointments", "clinic_training"],
+  viewer: ["clinic_overview", "clinic_logs", "clinic_appointments"]
+};
 
 // ─── Role Helpers ─────────────────────────────────────────────────────────────
 // "admin" is a backward-compatible alias for "superAdmin" in Firestore.
@@ -16,7 +45,7 @@ export function isAgencyRole(role?: string): boolean {
 }
 
 export function isClinicRole(role?: string): boolean {
-  return role === "clinicAdmin" || role === "clinicUser";
+  return role === "clinicAdmin" || role === "clinicUser" || role === "viewer";
 }
 
 export function getRoleDisplayName(role?: string): string {
@@ -32,6 +61,8 @@ export function getRoleDisplayName(role?: string): string {
       return "Clinic Admin";
     case "clinicUser":
       return "Clinic User";
+    case "viewer":
+      return "Viewer";
     default:
       return role || "Unknown";
   }
@@ -43,6 +74,7 @@ export interface UserProfile {
   name?: string;
   email: string;
   role: UserRole;
+  permissions?: PermissionTab[];
   status?: "active" | "pending" | "suspended";
   clinicId?: string;
   agencyId?: string;

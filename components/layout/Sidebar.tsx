@@ -8,7 +8,8 @@ import { auth } from "@/lib/firebase";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 import { Grid, BarChart3, Settings, Users, LogOut, ClipboardList, Globe, Zap } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { isSuperAdmin, getRoleDisplayName } from "@/lib/types";
+import { isSuperAdmin, getRoleDisplayName, DEFAULT_PERMISSIONS } from "@/lib/types";
+import type { PermissionTab } from "@/lib/types";
 import { useI18n } from "@/lib/i18n-context";
 import Logo from "@/components/ui/Logo";
 
@@ -80,6 +81,14 @@ export default function Sidebar() {
   const { profile } = useAuth();
   const { t } = useI18n();
 
+  const hasPermission = (tab: PermissionTab) => {
+    if (!profile) return false;
+    if (profile.permissions && profile.permissions.length > 0) {
+      return profile.permissions.includes(tab);
+    }
+    return DEFAULT_PERMISSIONS[profile.role]?.includes(tab) || isSuperAdmin(profile.role);
+  };
+
   return (
     <aside style={{
       width: "var(--sidebar-w)", 
@@ -108,23 +117,24 @@ export default function Sidebar() {
         overflowY: "auto" 
       }}>
         <SectionLabel>{t("nav.platform")}</SectionLabel>
-        <NavItem href="/clinics" label={t("nav.clinics")} icon={<Grid size={18} />} />
-        <NavItem href="/analytics" label={t("nav.analytics")} icon={<BarChart3 size={18} />} />
-        {isSuperAdmin(profile?.role) && (
+        {hasPermission("dashboard") && <NavItem href="/clinics" label={t("nav.clinics")} icon={<Grid size={18} />} />}
+        {hasPermission("analytics") && <NavItem href="/analytics" label={t("nav.analytics")} icon={<BarChart3 size={18} />} />}
+        
+        {hasPermission("demo_requests") && (
           <NavItem href="/demo-requests" label="Demo Talepleri" icon={<ClipboardList size={18} />} />
         )}
-        {isSuperAdmin(profile?.role) && (
+        {hasPermission("ai_usage") && (
           <NavItem href="/analytics/ai-usage" label="AI Kullanımı" icon={<Zap size={18} />} />
         )}
-        {isSuperAdmin(profile?.role) && (
+        {hasPermission("agency_portal") && (
           <NavItem href="/agency" label={t("nav.portal")} icon={<Globe size={18} />} />
         )}
         
         <SectionLabel>{t("nav.system")}</SectionLabel>
-        {isSuperAdmin(profile?.role) && (
+        {hasPermission("users") && (
           <NavItem href="/users" label={t("nav.users")} icon={<Users size={18} />} />
         )}
-        <NavItem href="/settings" label={t("nav.settings")} icon={<Settings size={18} />} />
+        {hasPermission("system_settings") && <NavItem href="/settings" label={t("nav.settings")} icon={<Settings size={18} />} />}
       </nav>
 
       {/* User & Auth Section */}

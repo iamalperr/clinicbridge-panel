@@ -4,8 +4,8 @@ import { useEffect, useState, useMemo } from "react";
 import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, where, doc, updateDoc, deleteDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
-import type { UserProfile, Clinic, UserRole } from "@/lib/types";
-import { isSuperAdmin, isAgencyRole, isClinicRole, getRoleDisplayName } from "@/lib/types";
+import type { UserProfile, Clinic, UserRole, PermissionTab } from "@/lib/types";
+import { isSuperAdmin, isAgencyRole, isClinicRole, getRoleDisplayName, DEFAULT_PERMISSIONS } from "@/lib/types";
 import type { Agency } from "@/lib/types/agency";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -17,6 +17,26 @@ import PageHeader from "@/components/ui/PageHeader";
 import { UserPlus, Search, Shield, Building2, Calendar, Edit2, Trash2, Power, Ban, Globe } from "lucide-react";
 
 import { useI18n } from "@/lib/i18n-context";
+
+const ALL_TABS: { value: PermissionTab; label: string }[] = [
+  { value: "dashboard", label: "Genel Bakış" },
+  { value: "analytics", label: "Raporlar & Analytics" },
+  { value: "users", label: "Kullanıcı Yönetimi" },
+  { value: "system_settings", label: "Sistem Ayarları" },
+  { value: "demo_requests", label: "Demo Talepleri" },
+  { value: "ai_usage", label: "Global AI Kullanımı" },
+  { value: "agency_portal", label: "Acenta Portalı" },
+  { value: "clinic_overview", label: "Klinik Özeti / Leadler" },
+  { value: "clinic_prompt", label: "AI Prompt Ayarları" },
+  { value: "clinic_voice", label: "Voice" },
+  { value: "clinic_widget", label: "Widget Ayarları" },
+  { value: "clinic_training", label: "AI Bilgi Havuzu" },
+  { value: "clinic_notes", label: "Notlar" },
+  { value: "clinic_usage", label: "Klinik AI Kullanımı" },
+  { value: "clinic_logs", label: "Konuşmalar / Loglar" },
+  { value: "clinic_appointments", label: "Randevu Talepleri" },
+  { value: "clinic_settings", label: "Klinik Ayarları" }
+];
 
 export default function UsersPage() {
   const { profile } = useAuth();
@@ -45,7 +65,8 @@ export default function UsersPage() {
     email: "",
     role: "clinicUser",
     status: "active",
-    clinicId: ""
+    clinicId: "",
+    permissions: []
   });
   
   const [temporaryPassword, setTemporaryPassword] = useState("");
@@ -94,7 +115,7 @@ export default function UsersPage() {
   }, [users, clinics, agencies, searchQuery, t]);
 
   const openAddUser = () => {
-    setNewUser({ name: "", email: "", role: "clinicUser", status: "active", clinicId: "", agencyId: "" });
+    setNewUser({ name: "", email: "", role: "clinicUser", status: "active", clinicId: "", agencyId: "", permissions: DEFAULT_PERMISSIONS["clinicUser"] });
     setTemporaryPassword("");
     setCreatedUserData(null);
     setSubmitSuccess(false);
@@ -110,7 +131,8 @@ export default function UsersPage() {
       role: user.role,
       status: user.status,
       clinicId: user.clinicId || "",
-      agencyId: user.agencyId || ""
+      agencyId: user.agencyId || "",
+      permissions: user.permissions || DEFAULT_PERMISSIONS[user.role]
     });
     setEditingUserId(user.id || null);
     setIsModalOpen(true);
@@ -185,6 +207,7 @@ export default function UsersPage() {
           status: newUser.status || "active",
           clinicId: newUser.role === "clinicUser" ? newUser.clinicId : null,
           agencyId: isAgencyRole ? newUser.agencyId : null,
+          permissions: newUser.permissions || DEFAULT_PERMISSIONS[newUser.role]
         };
         // Don't update email directly to prevent auth mismatch
         await updateDoc(doc(db, "users", editingUserId), userData);
@@ -252,7 +275,8 @@ export default function UsersPage() {
           role: newUser.role,
           clinicId: newUser.role === "clinicUser" ? newUser.clinicId : undefined,
           agencyId: (newUser.role === "agencyAdmin" || newUser.role === "agencyUser") ? newUser.agencyId : undefined,
-          password: temporaryPassword || undefined
+          password: temporaryPassword || undefined,
+          permissions: newUser.permissions || DEFAULT_PERMISSIONS[newUser.role]
         })
       });
 
@@ -492,6 +516,7 @@ export default function UsersPage() {
                     role,
                     clinicId: (role === "clinicUser" || role === "clinicAdmin") ? newUser.clinicId : "",
                     agencyId: (role === "agencyAdmin" || role === "agencyUser") ? newUser.agencyId : "",
+                    permissions: DEFAULT_PERMISSIONS[role]
                   });
                 }}
                 options={[
@@ -500,6 +525,7 @@ export default function UsersPage() {
                   { label: "Agency User", value: "agencyUser" },
                   { label: "Clinic Admin", value: "clinicAdmin" },
                   { label: "Clinic User", value: "clinicUser" },
+                  { label: "Viewer", value: "viewer" },
                 ]}
               />
               <Select 
@@ -536,6 +562,37 @@ export default function UsersPage() {
                 ]}
               />
             )}
+
+            <div style={{ marginTop: 12 }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: UI_COLORS.textPrimary, marginBottom: 8 }}>Erişebileceği Sekmeler</p>
+              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <Button variant="secondary" onClick={() => setNewUser({...newUser, permissions: ALL_TABS.map(t => t.value)})}>Tümünü Seç</Button>
+                <Button variant="secondary" onClick={() => setNewUser({...newUser, permissions: []})}>Hiçbiri</Button>
+                <Button variant="secondary" onClick={() => setNewUser({...newUser, permissions: DEFAULT_PERMISSIONS[newUser.role as UserRole]})}>Rol Varsayılanı</Button>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, maxHeight: 180, overflowY: "auto", padding: 12, background: "rgba(0,0,0,0.02)", borderRadius: 8, border: `1px solid ${UI_COLORS.border}` }}>
+                {ALL_TABS.map(tab => {
+                  const isChecked = newUser.permissions?.includes(tab.value);
+                  return (
+                    <label key={tab.value} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", color: UI_COLORS.textSecondary }}>
+                      <input 
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          const perms = newUser.permissions || [];
+                          if (e.target.checked) {
+                            setNewUser({...newUser, permissions: [...perms, tab.value]});
+                          } else {
+                            setNewUser({...newUser, permissions: perms.filter(p => p !== tab.value)});
+                          }
+                        }}
+                      />
+                      {tab.label}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
 
             {!editingUserId && (
               <Input 

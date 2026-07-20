@@ -56,7 +56,7 @@ export async function POST(req: Request) {
 
     // 3. Parse Request Body
     const body = await req.json();
-    const { email, name, role, clinicId, agencyId, password } = body;
+    const { email, name, role, clinicId, agencyId, password, permissions } = body;
 
     if (!email || !name || !role) {
       return NextResponse.json({ error: "E-posta, isim ve rol alanları zorunludur." }, { status: 400 });
@@ -113,6 +113,7 @@ export async function POST(req: Request) {
         role,
         clinicId: role === "clinicUser" ? clinicId : null,
         agencyId: isAgencyRole ? agencyId : null,
+        permissions: permissions || [],
         status: "active",
         createdAt: FieldValue.serverTimestamp(),
       }, { merge: true }); // Use merge in case the document already exists to avoid overwriting everything

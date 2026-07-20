@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import UnauthorizedScreen from "./UnauthorizedScreen";
+import { isSuperAdmin, DEFAULT_PERMISSIONS } from "@/lib/types";
+import type { PermissionTab } from "@/lib/types";
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
@@ -78,20 +80,68 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     return <UnauthorizedScreen />;
   }
 
-  // Route-Level Role Guards for Clinic Users
-  if (user && profile && !isPublicRoute && isClinicUser) {
-    // Block access to User Management
-    if (pathname.startsWith("/users")) {
+  const hasPermission = (tab: PermissionTab) => {
+    if (!profile) return false;
+    if (profile.permissions && profile.permissions.length > 0) {
+      return profile.permissions.includes(tab);
+    }
+    return DEFAULT_PERMISSIONS[profile.role]?.includes(tab) || isSuperAdmin(profile.role);
+  };
+
+  // Global Route Checks
+  if (user && profile && !isPublicRoute) {
+    if (pathname.startsWith("/users") && !hasPermission("users")) {
       return <UnauthorizedScreen />;
     }
-    
-    // Block access to other clinics
-    const clinicMatch = pathname.match(/^\/clinics\/([^/]+)/);
-    if (clinicMatch) {
-      const accessedClinicId = clinicMatch[1];
-      if (profile.clinicId && accessedClinicId !== profile.clinicId) {
+    if (pathname === "/settings" && !hasPermission("system_settings")) {
+      return <UnauthorizedScreen />;
+    }
+    if (pathname.startsWith("/analytics") && !hasPermission("analytics")) {
+      // /analytics/ai-usage handled below or separately, but generally handled by analytics
+      if (pathname === "/analytics/ai-usage" && !hasPermission("ai_usage")) {
         return <UnauthorizedScreen />;
       }
+      if (pathname === "/analytics" && !hasPermission("analytics")) {
+        return <UnauthorizedScreen />;
+      }
+    }
+    if (pathname.startsWith("/demo-requests") && !hasPermission("demo_requests")) {
+      return <UnauthorizedScreen />;
+    }
+  }
+
+  // Clinic Level Route Guards
+  if (user && profile && !isPublicRoute && (isClinicUser || roleStr === "viewer" || roleStr === "clinicAdmin")) {
+    const clinicMatch = pathname.match(/^\/clinics\/([^/]+)(\/.*)?$/);
+    if (clinicMatch) {
+      const accessedClinicId = clinicMatch[1];
+      const subRoute = clinicMatch[2] || ""; // e.g., "/ai-settings", or empty string for overview
+
+      // Block cross-clinic access for non-super-admins
+      if (profile.clinicId && accessedClinicId !== profile.clinicId && !isAdmin) {
+        return <UnauthorizedScreen />;
+      }
+
+      // Check subroute permissions
+      const routePermissionMap: Record<string, PermissionTab> = {
+        "": "clinic_overview",
+        "/ai-settings": "clinic_prompt",
+        "/voice": "clinic_voice",
+        "/widget": "clinic_widget",
+        "/training": "clinic_training",
+        "/notes": "clinic_notes",
+        "/usage": "clinic_usage",
+        "/logs": "clinic_logs",
+        "/appointments": "clinic_appointments",
+        "/settings": "clinic_settings"
+      };
+
+      const requiredPermission = routePermissionMap[subRoute];
+      if (requiredPermission && !hasPermission(requiredPermission)) {
+        return <UnauthorizedScreen />;
+      }
+    } else if (pathname === "/clinics" && !hasPermission("dashboard")) {
+      return <UnauthorizedScreen />;
     }
   }
 

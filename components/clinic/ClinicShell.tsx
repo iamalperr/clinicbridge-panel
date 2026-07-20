@@ -8,19 +8,8 @@ import { db } from "@/lib/firebase";
 import type { Clinic } from "@/lib/types";
 import Badge from "@/components/ui/Badge";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
-
-const TABS = [
-  { label: "Overview",      path: "" },
-  { label: "Prompt Studio", path: "/ai-settings" },
-  { label: "Voice",         path: "/voice" },
-  { label: "Widget",        path: "/widget" },
-  { label: "Training",      path: "/training" },
-  { label: "Notes",         path: "/notes" },
-  { label: "Usage",         path: "/usage" },
-  { label: "Logs",          path: "/logs" },
-  { label: "Appointments",  path: "/appointments" },
-  { label: "Settings",      path: "/settings" },
-];
+import { isSuperAdmin, DEFAULT_PERMISSIONS } from "@/lib/types";
+import type { PermissionTab } from "@/lib/types";
 
 import { useI18n } from "@/lib/i18n-context";
 import { useAuth } from "@/lib/auth-context";
@@ -38,18 +27,26 @@ export default function ClinicShell({
   const [clinic, setClinic] = useState<Clinic | null>(null);
   const base = `/clinics/${clinicId}`;
 
+  const hasPermission = (tab: PermissionTab) => {
+    if (!profile) return false;
+    if (profile.permissions && profile.permissions.length > 0) {
+      return profile.permissions.includes(tab);
+    }
+    return DEFAULT_PERMISSIONS[profile.role]?.includes(tab) || isSuperAdmin(profile.role);
+  };
+
   const TABS = [
-    { label: t("clinics.tabs.overview"),      path: "" },
-    { label: t("clinics.tabs.promptStudio"), path: "/ai-settings" },
-    { label: t("clinics.tabs.voice"),         path: "/voice" },
-    { label: t("clinics.tabs.widget"),        path: "/widget" },
-    { label: t("clinics.tabs.training"),      path: "/training" },
-    ...(profile?.role === "admin" ? [{ label: t("clinics.tabs.notes"), path: "/notes" }] : []),
-    { label: t("clinics.tabs.usage"),         path: "/usage" },
-    { label: t("clinics.tabs.logs"),          path: "/logs" },
-    { label: t("clinics.tabs.appointments"),  path: "/appointments" },
-    { label: t("clinics.tabs.settings"),      path: "/settings" },
-  ];
+    { label: t("clinics.tabs.overview"),      path: "",                perm: "clinic_overview" },
+    { label: t("clinics.tabs.promptStudio"), path: "/ai-settings",    perm: "clinic_prompt" },
+    { label: t("clinics.tabs.voice"),         path: "/voice",          perm: "clinic_voice" },
+    { label: t("clinics.tabs.widget"),        path: "/widget",         perm: "clinic_widget" },
+    { label: t("clinics.tabs.training"),      path: "/training",       perm: "clinic_training" },
+    { label: t("clinics.tabs.notes"),         path: "/notes",          perm: "clinic_notes" },
+    { label: t("clinics.tabs.usage"),         path: "/usage",          perm: "clinic_usage" },
+    { label: t("clinics.tabs.logs"),          path: "/logs",           perm: "clinic_logs" },
+    { label: t("clinics.tabs.appointments"),  path: "/appointments",   perm: "clinic_appointments" },
+    { label: t("clinics.tabs.settings"),      path: "/settings",       perm: "clinic_settings" },
+  ].filter(tab => hasPermission(tab.perm as PermissionTab));
 
   useEffect(() => {
     // onSnapshot — header updates instantly when clinic name is saved
