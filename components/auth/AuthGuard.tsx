@@ -21,7 +21,15 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         router.replace("/login");
       } else if (user && profile && (pathname === "/login" || pathname === "/")) {
         const isAgencyRole = profile.role === "agencyAdmin" || profile.role === "agencyUser";
-        router.replace(isAgencyRole ? "/agency" : "/clinics");
+        const isClinicUser = profile.role === "clinicUser" || profile.role === "clinicAdmin" || profile.role === "viewer";
+        
+        if (isAgencyRole) {
+          router.replace("/agency");
+        } else if (isClinicUser && profile.clinicId) {
+          router.replace(`/clinics/${profile.clinicId}`);
+        } else {
+          router.replace("/clinics");
+        }
       }
     }
   }, [user, profile, loading, pathname, router]);
@@ -141,6 +149,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         return <UnauthorizedScreen />;
       }
     } else if (pathname === "/clinics" && !hasPermission("dashboard")) {
+      if (profile.clinicId) {
+        router.replace(`/clinics/${profile.clinicId}`);
+        return null;
+      }
       return <UnauthorizedScreen />;
     }
   }

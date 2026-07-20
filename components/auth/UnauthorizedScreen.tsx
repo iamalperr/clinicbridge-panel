@@ -149,7 +149,7 @@ export default function UnauthorizedScreen() {
               }}
             >
               <RefreshCw size={18} className={isRefreshing ? "animate-spin" : ""} />
-              {isRefreshing ? t("common.loading") : t("nav.clinics") /* Using generic check logic */}
+              {isRefreshing ? t("common.loading") : "Yetkimi Tekrar Kontrol Et"}
             </Button>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
