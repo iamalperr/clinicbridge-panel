@@ -52,15 +52,20 @@ export default function PromptStudioPage({ params }: PageProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isTestModalOpen, setIsTestModalOpen] = useState(false);
+  const [clinicName, setClinicName] = useState<string>("");
+  const [clinicLanguage, setClinicLanguage] = useState<string>("tr");
 
   useEffect(() => {
-    const fetchSettings = async () => {
+    const fetchData = async () => {
       try {
-        const docRef = doc(db, "promptSettings", clinicId);
-        const docSnap = await getDoc(docRef);
-        
-        if (docSnap.exists()) {
-          const data = docSnap.data() as PromptSettings;
+        // Fetch prompt settings and clinic info in parallel
+        const [promptSnap, clinicSnap] = await Promise.all([
+          getDoc(doc(db, "promptSettings", clinicId)),
+          getDoc(doc(db, "clinics", clinicId)),
+        ]);
+
+        if (promptSnap.exists()) {
+          const data = promptSnap.data() as PromptSettings;
           setSettings({ 
             ...DEFAULT_SETTINGS, 
             ...data,
@@ -70,6 +75,12 @@ export default function PromptStudioPage({ params }: PageProps) {
             }
           });
         }
+
+        if (clinicSnap.exists()) {
+          const clinicData = clinicSnap.data();
+          setClinicName(clinicData.name ?? "");
+          setClinicLanguage(clinicData.language ?? "tr");
+        }
       } catch (err) {
         console.error("Failed to fetch prompt settings:", err);
       } finally {
@@ -77,7 +88,7 @@ export default function PromptStudioPage({ params }: PageProps) {
       }
     };
 
-    fetchSettings();
+    fetchData();
   }, [clinicId]);
 
   const handleSave = async () => {
@@ -270,6 +281,8 @@ export default function PromptStudioPage({ params }: PageProps) {
         isOpen={isTestModalOpen}
         onClose={() => setIsTestModalOpen(false)}
         clinicId={clinicId}
+        clinicName={clinicName}
+        language={clinicLanguage}
         settings={settings}
       />
 

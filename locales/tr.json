@@ -836,6 +836,8 @@
     "assistant": "Asistan",
     "testSuccess": "AI yanıtı alındı.",
     "testError": "AI yanıtı alınamadı.",
+    "testErrorNoClinic": "AI testi başlatılamadı. Klinik bilgisi alınamadı. Lütfen sayfayı yenileyerek tekrar deneyin.",
+    "testFallback": "Sorunuzu tam olarak anlayamadım. Farklı bir şekilde ifade edebilir misiniz?",
     "promptStudioTitle": "AI Karakteri ve Üslubu (System Prompt)",
     "promptStudioSubtitle": "Asistanın temel kişiliğini, kliniğin uzmanlık alanını ve iletişim dilini belirleyin.",
     "systemInstructionLabel": "Sistem Talimatı",

@@ -836,6 +836,8 @@
     "assistant": "Assistant",
     "testSuccess": "AI response received.",
     "testError": "Failed to get AI response.",
+    "testErrorNoClinic": "AI test could not be started. Clinic information is unavailable. Please refresh the page and try again.",
+    "testFallback": "I didn't fully understand your question. Could you rephrase it?",
     "promptStudioTitle": "AI Character & Tone (System Prompt)",
     "promptStudioSubtitle": "Define the assistant’s core personality, clinic expertise, and communication style.",
     "systemInstructionLabel": "System Instruction",
