@@ -766,12 +766,18 @@ export async function POST(req: Request) {
     
     // YENİ: RAG araması iyileştirmesi (Çalışma saatleri garantisi)
     const isAppointmentIntent = /\b(randevu|appointment|saat|gün|müsait|boş|yarın|bugün|alabilir)\b/.test(msgLower);
+    
+    // YENİ: Konum RAG araması iyileştirmesi
+    const isLocationIntent = /\b(nerede|adres|nerdesiniz|semt|ilçe|ulaşım|konum|lokasyon|address|where|get there|befindet|adresse)\b/.test(msgLower);
 
     const scored = trainingDocs.map(d => {
       const text = (d.title + " " + d.content).toLowerCase();
       let score = msgWords.reduce((s: number, w: string) => s + (text.includes(w) ? 1 : 0), 0);
       
       if (isAppointmentIntent && /\b(çalışma|saat|mesai|opening|business|working|gün)\b/.test(text)) {
+         score += 50; // Artificial boost to ensure inclusion
+      }
+      if (isLocationIntent && /\b(konum|ulaşım|adres|lokasyon|location|address|karte|adresse)\b/.test(text)) {
          score += 50; // Artificial boost to ensure inclusion
       }
       return { ...d, score };
@@ -782,6 +788,16 @@ export async function POST(req: Request) {
       ? topDocs.map(d => `## ${d.title}\n${d.content}`).join("\n\n---\n\n")
       : "";
     debugLog.push(`topDocs=[${topDocs.slice(0, 4).map(d => d.title).join(", ")}]`);
+
+    // Log detailed RAG matching data for debug
+    if (topDocs.length > 0) {
+      console.log(`[RAG-DEBUG] widget_clinic_id: ${clinicId}`);
+      console.log(`[RAG-DEBUG] query_text: "${message}"`);
+      topDocs.slice(0, 3).forEach((d, i) => {
+        console.log(`[RAG-DEBUG] match_${i + 1} - title: "${d.title}", score: ${d.score}, content_preview: "${d.content.slice(0, 100).replace(/\n/g, ' ')}..."`);
+      });
+      console.log(`[RAG-DEBUG] final_context_sent_to_llm_length: ${knowledgeContext.length} chars`);
+    }
 
     /* ── SERVER-SIDE confirmation → appointment creation ──────────────── */
     if (isConfirmation(message)) {
@@ -1030,6 +1046,10 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
       skillBlocks.push("\n(Bu klinik için henüz eğitim verisi eklenmemiş.)");
     }
 
+    if (isLocationIntent) {
+      skillBlocks.push("\nKONUM BİLGİSİ: Konum veya adres sorulduğunda, bilgi havuzunda bulunan semt, ilçe, şehir, yakındaki önemli noktalar (havalimanı vb.) gibi TÜM detayları açıkça belirt. Sadece şehri söyleyip geçme. Bilgi varsa gereksiz yere 'iletişime geçin' deme, adresi tam olarak yaz.");
+    }
+
     /* ── Guardrail blocks ── */
     const guardrailBlocks: string[] = [];
     if (guardrails?.noDiagnosis?.enabled !== false) {
@@ -1052,6 +1072,7 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
 - Yanıtların kısa (max 4 cümle), nazik olsun.
 - Türkçe sorulara Türkçe, İngilizce sorulara İngilizce yanıt ver.
 - Eğer mevcut konuşmanın bağlamıyla DOĞRUDAN ilgili ve kullanıcının seçebileceği 2 veya 3 kısa hızlı aksiyon önerebiliyorsan, yanıtının EN SONUNA şu formatta ekle: [ACTIONS: Aksiyon 1 | Aksiyon 2]
+- Bu aksiyonlar kesinlikle kullanıcının diliyle eşleşmelidir (Türkçe konuşmada "Randevu almak istiyorum", "Hangi hizmetleri sunuyorsunuz?", "Kliniğiniz nerede?" gibi olmalı. "Book an appointment" gibi İngilizce kalıpları Türkçe konuşmada KULLANMA).
 - SADECE mantıklıysa öner. Randevu akışı başladıysa (isim/telefon soruluyorsa veya onay bekleniyorsa) genel tedavi komutları GÖSTERME.
 - [ACTIONS: ...] etiketi DAİMA en sonda olsun ve tek satırda olsun.`,
     ].join("");
