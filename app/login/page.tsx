@@ -69,16 +69,22 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: forgotEmail })
+        body: JSON.stringify({ email: forgotEmail.trim().toLowerCase() })
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Şifre sıfırlama talebi gönderilemedi.");
+        // API gerçek bir hata döndürdüyse kullanıcıya göster
+        throw new Error(data.error || "E-posta şu anda gönderilemedi. Lütfen birkaç dakika sonra tekrar deneyin.");
       }
 
-      setForgotSuccess(true);
+      // Yalnızca API success:true döndüğünde başarı göster
+      if (data.success) {
+        setForgotSuccess(true);
+      } else {
+        throw new Error(data.error || "Beklenmeyen bir hata oluştu.");
+      }
     } catch (err: any) {
       setForgotError(err.message || "Bir hata oluştu, lütfen tekrar deneyin.");
     } finally {
