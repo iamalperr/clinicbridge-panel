@@ -7,6 +7,7 @@ import { AuthProvider } from "@/lib/auth-context";
 import { I18nProvider } from "@/lib/i18n-context";
 import AuthGuard from "@/components/auth/AuthGuard";
 import CookieBanner from "@/components/ui/CookieBanner";
+import ActivityTracker from "@/components/analytics/ActivityTracker";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -42,6 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           <I18nProvider>
             <AuthProvider>
+              <ActivityTracker />
               <AuthGuard>
                 {children}
               </AuthGuard>

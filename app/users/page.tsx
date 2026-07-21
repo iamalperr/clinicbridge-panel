@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, where, doc, updateDoc, deleteDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
+import Link from "next/link";
 import type { UserProfile, Clinic, UserRole, PermissionTab } from "@/lib/types";
 import { isSuperAdmin, isAgencyRole, isClinicRole, getRoleDisplayName, DEFAULT_PERMISSIONS } from "@/lib/types";
 import type { Agency } from "@/lib/types/agency";
@@ -428,6 +429,13 @@ export default function UsersPage() {
                   </td>
                   <td style={{ padding: "16px 20px", textAlign: "right" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+                      {(isSuperAdmin(profile?.role) || profile?.role === "admin") && (
+                        <Link href={`/admin/usage-analytics?user=${u.id}`} passHref legacyBehavior>
+                          <a style={{ display: "flex", background: "transparent", border: "none", color: UI_COLORS.textSecondary, cursor: "pointer", padding: 6, borderRadius: 6 }} title="Aktiviteyi Gör">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                          </a>
+                        </Link>
+                      )}
                       <button onClick={() => openEditUser(u)} style={{ background: "transparent", border: "none", color: UI_COLORS.textSecondary, cursor: "pointer", padding: 6, borderRadius: 6 }} title="Düzenle">
                         <Edit2 size={16} />
                       </button>
