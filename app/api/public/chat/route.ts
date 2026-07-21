@@ -730,7 +730,7 @@ export async function POST(req: Request) {
       const [clinicSnap, promptSnap, materialsSnap] = await Promise.all([
         adminDb.collection("clinics").doc(clinicId).get(),
         adminDb.collection("promptSettings").doc(clinicId).get(),
-        adminDb.collection("trainingMaterials").where("clinicId", "==", clinicId).limit(30).get(),
+        adminDb.collection("trainingMaterials").where("clinicId", "==", clinicId).limit(250).get(),
       ]);
       if (clinicSnap.exists) {
         const cData = clinicSnap.data()!;

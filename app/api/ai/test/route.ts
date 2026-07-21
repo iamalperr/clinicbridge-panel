@@ -132,7 +132,7 @@ export async function POST(req: Request) {
       try {
         const [clinicSnap, materialsSnap] = await Promise.all([
           adminDb.collection("clinics").doc(clinicId).get(),
-          adminDb.collection("trainingMaterials").where("clinicId", "==", clinicId).limit(30).get(),
+          adminDb.collection("trainingMaterials").where("clinicId", "==", clinicId).limit(250).get(),
         ]);
 
         if (clinicSnap.exists) {
@@ -165,11 +165,15 @@ export async function POST(req: Request) {
     let topDocs: any[] = [];
     if (trainingDocs.length > 0 && msgWords.length > 0) {
       isAppointmentIntent = /\b(randevu|appointment|saat|gün|müsait|boş|yarın|bugün|alabilir)\b/.test(msgLower);
+      const isLocationIntent = /\b(nerede|adres|nerdesiniz|semt|ilçe|ulaşım|konum|lokasyon|address|where|get there|befindet|adresse)\b/.test(msgLower);
       const scored = trainingDocs.map(d => {
         const text = (d.title + " " + d.content).toLowerCase();
         let score = msgWords.reduce((s: number, w: string) => s + (text.includes(w) ? 1 : 0), 0);
         
         if (isAppointmentIntent && /\b(çalışma|saat|mesai|opening|business|working|gün)\b/.test(text)) {
+           score += 50; 
+        }
+        if (isLocationIntent && /\b(konum|ulaşım|adres|lokasyon|location|address|karte|adresse)\b/.test(text)) {
            score += 50; 
         }
         
