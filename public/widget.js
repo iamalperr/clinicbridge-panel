@@ -565,7 +565,7 @@
             return '<button class="cbw-qbtn">' + qa + '</button>';
           }).join('');
         } else {
-          quickEl.style.display = 'none';
+          quickEl.style.setProperty('display', 'none', 'important');
         }
       }
     }
@@ -728,12 +728,12 @@
 
       /* Hide any quick or contextual actions */
       var q = shadow.getElementById('cbw-quick');
-      if (q) q.style.display = 'none';
+      if (q) q.style.setProperty('display', 'none', 'important');
       var msgs = shadow.getElementById('cbw-msgs');
       if (msgs) {
         var contextuals = msgs.querySelectorAll('.cbw-contextual');
         for (var i = 0; i < contextuals.length; i++) {
-          contextuals[i].style.display = 'none';
+          contextuals[i].style.setProperty('display', 'none', 'important');
         }
       }
 
@@ -785,7 +785,7 @@
           q.innerHTML = data.suggestedActions.map(function(sa) {
             return '<button class="cbw-qbtn">' + sa + '</button>';
           }).join('');
-          q.style.display = 'flex';
+          q.style.setProperty('display', 'flex', 'important');
           q.className = 'cbw-contextual'; // Use contextual styling
         }
       })
