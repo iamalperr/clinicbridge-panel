@@ -262,6 +262,7 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [hasConsent, setHasConsent] = useState<boolean | null>(null);
+  const [hasInteracted, setHasInteracted] = useState(false);
   const [previewLang, setPreviewLang] = useState<"tr" | "en">("tr");
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -320,13 +321,14 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
     const textToSend = overrideText || inputValue;
     if (hasConsent !== true || !textToSend.trim()) return;
 
-    const userMsg: Message = {
+    const userMsg: Message & { contextualActions?: string[] } = {
       id: Date.now().toString(),
       text: textToSend,
       sender: "user",
       timestamp: new Date(),
     };
 
+    setHasInteracted(true);
     setMessages((prev) => [...prev, userMsg]);
     if (!overrideText) {
       setInputValue("");
@@ -371,11 +373,12 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
           }]);
         }
       } else {
-        const botMsg: Message = {
+        const botMsg: Message & { contextualActions?: string[] } = {
           id: (Date.now() + 1).toString(),
           text: "Bu bir önizleme modudur. Gerçek asistanınız burada verdiğiniz bilgilere göre yanıt verecektir.",
           sender: "bot",
           timestamp: new Date(),
+          contextualActions: previewLang === "tr" ? ["Randevu Al", "Fiyatlar"] : ["Book Appointment", "Pricing"]
         };
         setMessages((prev) => [...prev, botMsg]);
       }
@@ -385,6 +388,7 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
 
   const resetChat = () => {
     if (hasConsent !== true) return;
+    setHasInteracted(false);
     setMessages([
       {
         id: "1",
@@ -629,6 +633,33 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
                   <span style={{ fontSize: 10, color: UI_COLORS.textMuted, alignSelf: msg.sender === "user" ? "flex-end" : "flex-start" }}>
                     {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
+                  
+                  {/* Contextual Actions Mock */}
+                  {(msg as any).contextualActions && (msg as any).contextualActions.length > 0 && (
+                    <div style={{
+                      display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4, width: "100%"
+                    }}>
+                      {(msg as any).contextualActions.map((action: string, idx: number) => (
+                        <button
+                          key={idx}
+                          onClick={() => handleSend(action)}
+                          style={{
+                            background: `${settings.primaryColor || UI_COLORS.brand}18`,
+                            border: `1.5px solid ${settings.primaryColor || UI_COLORS.brand}30`,
+                            color: settings.primaryColor || UI_COLORS.brand,
+                            padding: "6px 10px",
+                            borderRadius: 12,
+                            fontSize: 12,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            transition: "all 0.2s"
+                          }}
+                        >
+                          {action}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
               {isTyping && (
@@ -646,44 +677,48 @@ export default function WidgetPreview({ settings, clinicContact = { enableHumanH
         <div style={{ padding: "12px 16px 16px 16px", borderTop: `1px solid ${UI_COLORS.border}`, background: "var(--bg-card)", display: "flex", flexDirection: "column", gap: 12 }}>
           
           {/* Quick Actions */}
-          <div
-            className="hide-scrollbar"
-            style={{
-              display: "flex",
-              gap: 8,
-              overflowX: "auto",
-              paddingBottom: 2,
-              opacity: hasConsent !== true ? 0.3 : 1,
-              pointerEvents: hasConsent !== true ? "none" : "auto"
-            }}
-          >
-            {locale.quickActions.map((q, idx) => (
-              <button
-                key={idx}
-                onClick={() => handleSend(q)}
-                style={{
-                  background: "rgba(255,255,255,0.03)",
-                  border: `1px solid ${settings.primaryColor || UI_COLORS.brand}40`,
-                  color: settings.primaryColor || UI_COLORS.brand,
-                  padding: "6px 12px",
-                  borderRadius: 100,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  whiteSpace: "nowrap",
-                  cursor: "pointer",
-                  transition: "all 0.2s"
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = `${settings.primaryColor || UI_COLORS.brand}15`;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "rgba(255,255,255,0.03)";
-                }}
-              >
-                {q}
-              </button>
-            ))}
-          </div>
+          {/* Quick Actions */}
+          {!hasInteracted && locale.quickActions && locale.quickActions.length > 0 && (
+            <div
+              className="hide-scrollbar"
+              style={{
+                display: "flex",
+                gap: 8,
+                overflowX: "auto",
+                paddingBottom: 2,
+                opacity: hasConsent !== true ? 0.3 : 1,
+                pointerEvents: hasConsent !== true ? "none" : "auto",
+                transition: "all 0.3s"
+              }}
+            >
+              {locale.quickActions.slice(0, 4).map((q, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleSend(q)}
+                  style={{
+                    background: "rgba(255,255,255,0.03)",
+                    border: `1px solid ${settings.primaryColor || UI_COLORS.brand}40`,
+                    color: settings.primaryColor || UI_COLORS.brand,
+                    padding: "6px 12px",
+                    borderRadius: 100,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    cursor: "pointer",
+                    transition: "all 0.2s"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = `${settings.primaryColor || UI_COLORS.brand}15`;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "rgba(255,255,255,0.03)";
+                  }}
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div style={{
             display: "flex",

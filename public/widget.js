@@ -378,14 +378,15 @@
       '@keyframes cbw-bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}',
 
       /* ── Quick action buttons ── */
-      '#cbw-quick{padding:10px 14px!important;display:flex!important;flex-direction:column!important;',
-        'gap:7px!important;border-top:1px solid #E2E8F0!important;flex-shrink:0!important;background:#fff!important}',
+      '#cbw-quick, .cbw-contextual{padding:10px 14px!important;display:flex!important;flex-direction:row!important;flex-wrap:wrap!important;',
+        'gap:7px!important;border-top:1px solid #E2E8F0!important;flex-shrink:0!important;background:#fff!important;transition:all .3s ease!important}',
+      '.cbw-contextual{border-top:none!important;padding:4px 14px 10px!important}',
       '.cbw-qbtn{background:' + c + '18!important;border:1.5px solid ' + c + '30!important;',
-        'border-radius:10px!important;padding:9px 13px!important;font-size:13px!important;',
-        'font-weight:500!important;color:' + c + '!important;cursor:pointer!important;',
-        'text-align:left!important;transition:all .2s!important;font-family:inherit!important;',
-        'line-height:1.4!important;width:100%!important}',
-      '.cbw-qbtn:hover{background:' + c + '30!important}',
+        'border-radius:12px!important;padding:8px 12px!important;font-size:12.5px!important;',
+        'font-weight:600!important;color:' + c + '!important;cursor:pointer!important;',
+        'text-align:center!important;transition:all .2s!important;font-family:inherit!important;',
+        'line-height:1.3!important;white-space:normal!important;word-break:break-word!important;flex:1 1 auto!important}',
+      '.cbw-qbtn:hover{background:' + c + '30!important;transform:translateY(-1px)!important}',
 
       /* ── Input row ── */
       '#cbw-inputrow{display:flex!important;align-items:center!important;gap:8px!important;',
@@ -555,10 +556,17 @@
     /* Quick actions (first load only) */
     if (firstTime) {
       var quickEl = shadow.getElementById('cbw-quick');
+      var hasInteracted = w.sessionStorage.getItem('cbw_hasUserInteracted_' + clinicId) === 'true';
       if (quickEl) {
-        quickEl.innerHTML = locale.quickActions.map(function (qa) {
-          return '<button class="cbw-qbtn">' + qa + '</button>';
-        }).join('');
+        if (!hasInteracted && locale.quickActions && locale.quickActions.length > 0) {
+          // Take up to 4 quick actions
+          var initialActions = locale.quickActions.slice(0, 4);
+          quickEl.innerHTML = initialActions.map(function (qa) {
+            return '<button class="cbw-qbtn">' + qa + '</button>';
+          }).join('');
+        } else {
+          quickEl.style.display = 'none';
+        }
       }
     }
 
@@ -715,9 +723,19 @@
       
       chatHistory.push({ role: 'user', content: text });
 
-      /* Hide quick actions */
+      // Mark interaction
+      w.sessionStorage.setItem('cbw_hasUserInteracted_' + clinicId, 'true');
+
+      /* Hide any quick or contextual actions */
       var q = shadow.getElementById('cbw-quick');
       if (q) q.style.display = 'none';
+      var msgs = shadow.getElementById('cbw-msgs');
+      if (msgs) {
+        var contextuals = msgs.querySelectorAll('.cbw-contextual');
+        for (var i = 0; i < contextuals.length; i++) {
+          contextuals[i].style.display = 'none';
+        }
+      }
 
       /* Typing indicator */
       var msgs = shadow.getElementById('cbw-msgs');
@@ -760,6 +778,16 @@
         appendMsg(shadow, reply, false, '', false);
         if (data && data.pendingAppointmentData) pendingApptData = data.pendingAppointmentData;
         if (data && data.appointmentCreated)     pendingApptData = null;
+
+        /* Show contextual actions if any */
+        var q = shadow.getElementById('cbw-quick');
+        if (q && data && data.suggestedActions && data.suggestedActions.length > 0) {
+          q.innerHTML = data.suggestedActions.map(function(sa) {
+            return '<button class="cbw-qbtn">' + sa + '</button>';
+          }).join('');
+          q.style.display = 'flex';
+          q.className = 'cbw-contextual'; // Use contextual styling
+        }
       })
       .catch(function () {
         var t = shadow.getElementById('cbw-typing'); if (t) t.remove();

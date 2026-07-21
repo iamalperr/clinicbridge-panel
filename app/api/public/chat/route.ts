@@ -909,7 +909,10 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
       `\nGENEL KURALLAR:
 - Kesin randevu onayı veya kesin müsaitlik garantisi VERME.
 - Yanıtların kısa (max 4 cümle), nazik olsun.
-- Türkçe sorulara Türkçe, İngilizce sorulara İngilizce yanıt ver.`,
+- Türkçe sorulara Türkçe, İngilizce sorulara İngilizce yanıt ver.
+- Eğer mevcut konuşmanın bağlamıyla DOĞRUDAN ilgili ve kullanıcının seçebileceği 2 veya 3 kısa hızlı aksiyon önerebiliyorsan, yanıtının EN SONUNA şu formatta ekle: [ACTIONS: Aksiyon 1 | Aksiyon 2]
+- SADECE mantıklıysa öner. Randevu akışı başladıysa (isim/telefon soruluyorsa veya onay bekleniyorsa) genel tedavi komutları GÖSTERME.
+- [ACTIONS: ...] etiketi DAİMA en sonda olsun ve tek satırda olsun.`,
     ].join("");
 
     debugLog.push("calling OpenAI...");
@@ -937,13 +940,23 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
       ],
     });
 
-    const reply = completion.content?.trim()
+    let reply = completion.content?.trim()
       ?? "Üzgünüm, şu an yanıt üretemiyorum.";
+
+    let suggestedActions: string[] = [];
+    const actionsMatch = reply.match(/\[ACTIONS:\s*(.*?)\]/);
+    if (actionsMatch) {
+      suggestedActions = actionsMatch[1].split("|").map(a => a.trim()).filter(Boolean);
+      reply = reply.replace(actionsMatch[0], "").trim();
+    }
 
     debugLog.push(`OK reply="${reply.slice(0, 60)}" ms=${Date.now() - startTime}`);
     console.log("[widget-chat]", debugLog.join(" | "));
 
     const responsePayload: any = { reply, conversationId: convId };
+    if (suggestedActions.length > 0) {
+      responsePayload.suggestedActions = suggestedActions;
+    }
 
     // If AI response contains a confirmation summary, extract and return pendingAppointmentData
     // so the widget can send it back on confirmation — more reliable than history parsing
