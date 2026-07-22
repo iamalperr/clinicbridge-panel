@@ -51,11 +51,13 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
   const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
 
-  const [patientNotificationSettings, setPatientNotificationSettings] = useState({
-    primaryChannel: "sms",
-    enabledChannels: ["sms", "email"],
-    collectEmail: false,
-    collectPhone: true
+  const [notificationSettings, setNotificationSettings] = useState({
+    patientAppointmentChannel: "email",
+    requireEmail: true,
+    requirePhone: false,
+    emailEnabled: true,
+    smsEnabled: false,
+    whatsappEnabled: false
   });
 
   const loadSettings = useCallback(async () => {
@@ -68,10 +70,23 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
         setSettings({ ...DEFAULT_SETTINGS, clinic_id: clinicId });
       }
 
-      // Load root clinic settings for patientNotificationSettings
+      // Load root clinic settings for notificationSettings
       const clinicSnap = await getDoc(doc(db, "clinics", clinicId));
-      if (clinicSnap.exists() && clinicSnap.data().patientNotificationSettings) {
-        setPatientNotificationSettings(clinicSnap.data().patientNotificationSettings);
+      if (clinicSnap.exists()) {
+        const data = clinicSnap.data();
+        if (data.notificationSettings) {
+          setNotificationSettings(data.notificationSettings);
+        } else if (data.patientNotificationSettings) {
+          // Graceful migration
+          setNotificationSettings({
+            patientAppointmentChannel: data.patientNotificationSettings.primaryChannel === "email_and_sms" || data.patientNotificationSettings.primaryChannel === "email_and_whatsapp" ? "email" : (data.patientNotificationSettings.primaryChannel || "email"),
+            requireEmail: data.patientNotificationSettings.collectEmail ?? true,
+            requirePhone: data.patientNotificationSettings.collectPhone ?? false,
+            emailEnabled: data.patientNotificationSettings.enabledChannels?.includes("email") ?? true,
+            smsEnabled: data.patientNotificationSettings.enabledChannels?.includes("sms") ?? false,
+            whatsappEnabled: data.patientNotificationSettings.enabledChannels?.includes("whatsapp") ?? false
+          });
+        }
       }
     } catch (err) {
       console.error("Failed to load notification settings", err);
@@ -91,7 +106,7 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
     try {
       // Save root clinic settings
       await updateDoc(doc(db, "clinics", clinicId), {
-        patientNotificationSettings: patientNotificationSettings
+        notificationSettings: notificationSettings
       });
 
       // Save subcollection settings
@@ -178,33 +193,58 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
         <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 24, paddingTop: 24, borderTop: `1px solid ${UI_COLORS.border}` }}>
           <Select
             label="Birincil Bildirim Kanalı"
-            value={patientNotificationSettings.primaryChannel}
-            onChange={(e) => setPatientNotificationSettings(prev => ({ ...prev, primaryChannel: e.target.value }))}
+            value={notificationSettings.patientAppointmentChannel}
+            onChange={(e) => setNotificationSettings(prev => ({ ...prev, patientAppointmentChannel: e.target.value }))}
             options={[
-              { label: "Sadece E-Posta", value: "email" },
-              { label: "Sadece SMS", value: "sms" },
-              { label: "Sadece WhatsApp", value: "whatsapp" },
-              { label: "E-Posta ve SMS", value: "email_and_sms" },
-              { label: "E-Posta ve WhatsApp", value: "email_and_whatsapp" }
+              { label: "E-Posta", value: "email" },
+              { label: "SMS", value: "sms" },
+              { label: "WhatsApp", value: "whatsapp" }
             ]}
           />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 12, border: `1px solid ${UI_COLORS.border}`, borderRadius: 8 }}>
-              <span style={{ fontSize: 14 }}>Hasta E-posta Adresi İste</span>
+              <span style={{ fontSize: 14 }}>E-Posta Adresi Zorunlu Kıl</span>
               <input
                 type="checkbox"
-                checked={patientNotificationSettings.collectEmail}
-                onChange={(e) => setPatientNotificationSettings(prev => ({ ...prev, collectEmail: e.target.checked }))}
+                checked={notificationSettings.requireEmail}
+                onChange={(e) => setNotificationSettings(prev => ({ ...prev, requireEmail: e.target.checked }))}
                 style={{ width: 18, height: 18, accentColor: UI_COLORS.brand, cursor: "pointer" }}
               />
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 12, border: `1px solid ${UI_COLORS.border}`, borderRadius: 8 }}>
-              <span style={{ fontSize: 14 }}>Hasta Telefon Numarası İste</span>
+              <span style={{ fontSize: 14 }}>Telefon Numarası Zorunlu Kıl</span>
               <input
                 type="checkbox"
-                checked={patientNotificationSettings.collectPhone}
-                onChange={(e) => setPatientNotificationSettings(prev => ({ ...prev, collectPhone: e.target.checked }))}
+                checked={notificationSettings.requirePhone}
+                onChange={(e) => setNotificationSettings(prev => ({ ...prev, requirePhone: e.target.checked }))}
+                style={{ width: 18, height: 18, accentColor: UI_COLORS.brand, cursor: "pointer" }}
+              />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 12, border: `1px solid ${UI_COLORS.border}`, borderRadius: 8 }}>
+              <span style={{ fontSize: 14 }}>E-Posta Bildirimleri Aktif</span>
+              <input
+                type="checkbox"
+                checked={notificationSettings.emailEnabled}
+                onChange={(e) => setNotificationSettings(prev => ({ ...prev, emailEnabled: e.target.checked }))}
+                style={{ width: 18, height: 18, accentColor: UI_COLORS.brand, cursor: "pointer" }}
+              />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 12, border: `1px solid ${UI_COLORS.border}`, borderRadius: 8 }}>
+              <span style={{ fontSize: 14 }}>SMS Bildirimleri Aktif</span>
+              <input
+                type="checkbox"
+                checked={notificationSettings.smsEnabled}
+                onChange={(e) => setNotificationSettings(prev => ({ ...prev, smsEnabled: e.target.checked }))}
+                style={{ width: 18, height: 18, accentColor: UI_COLORS.brand, cursor: "pointer" }}
+              />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 12, border: `1px solid ${UI_COLORS.border}`, borderRadius: 8 }}>
+              <span style={{ fontSize: 14 }}>WhatsApp Bildirimleri Aktif</span>
+              <input
+                type="checkbox"
+                checked={notificationSettings.whatsappEnabled}
+                onChange={(e) => setNotificationSettings(prev => ({ ...prev, whatsappEnabled: e.target.checked }))}
                 style={{ width: 18, height: 18, accentColor: UI_COLORS.brand, cursor: "pointer" }}
               />
             </div>

@@ -1,5 +1,29 @@
 import { notificationService } from './services/notifications/NotificationService';
 
+export const getPatientNotificationMessages = (channel: string) => {
+  const messages: Record<string, { submitted: string; approved: string; cancelled: string; alternative: string }> = {
+    email: {
+      submitted: "Ön randevu talebiniz kliniğimize iletildi. Sonuç, paylaştığınız e-posta adresi üzerinden bildirilecektir.",
+      approved: "Ön randevu talebiniz onaylandı. Detaylar e-posta adresinize gönderildi.",
+      cancelled: "Randevu talebiniz şu an için onaylanamadı. İptal detayı e-posta adresinize gönderildi.",
+      alternative: "Randevu talebiniz için yeni bir saat önerisi e-posta adresinize gönderildi.",
+    },
+    sms: {
+      submitted: "Ön randevu talebiniz kliniğimize iletildi. Sonuç SMS üzerinden bildirilecektir.",
+      approved: "Ön randevu talebiniz onaylandı. Detaylar SMS ile gönderildi.",
+      cancelled: "Randevu talebiniz şu an için onaylanamadı. Uygun alternatif saatler için klinik iletişime geçebilir.",
+      alternative: "Randevu talebiniz için yeni bir saat önerisi SMS ile iletildi.",
+    },
+    whatsapp: {
+      submitted: "Ön randevu talebiniz kliniğimize iletildi. Sonuç WhatsApp üzerinden bildirilecektir.",
+      approved: "Ön randevu talebiniz onaylandı. Detaylar WhatsApp üzerinden gönderildi.",
+      cancelled: "Randevu talebiniz şu an için onaylanamadı. Uygun alternatif saatler için klinik iletişime geçebilir.",
+      alternative: "Randevu talebiniz için yeni bir saat önerisi WhatsApp üzerinden iletildi.",
+    }
+  };
+  return messages[channel] || messages.email;
+};
+
 /**
  * Appointment Notification Services
  * - sendClinicAppointmentEmail: Resend ile klinik kullanıcılarına email

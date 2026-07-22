@@ -80,18 +80,12 @@ export default function AppointmentsPage({ params }: PageProps) {
         throw new Error(data.error || "Güncelleme başarısız");
       }
 
-      if (data.notification) {
-        const { channel, result } = data.notification;
-        if (channel === "email") {
-          if (result?.success) {
-            setToastMsg("Randevu durumu güncellendi ve hastaya e-posta gönderildi.");
-          } else if (result?.reason === "no_email") {
-            setToastMsg("Randevu durumu güncellenemedi. Hastanın e-posta adresi bulunmuyor.");
-          } else {
-            setToastMsg("Randevu durumu güncellendi ancak hastaya e-posta gönderilemedi.");
-          }
+      if (data.notificationChannel) {
+        const channelName = data.notificationChannel === "email" ? "e-posta" : data.notificationChannel === "whatsapp" ? "WhatsApp mesajı" : "SMS";
+        if (data.notificationStatus === "sent" || data.success) { // Fallback if backend doesn't send exact status but succeeded
+          setToastMsg(`Randevu durumu güncellendi ve hastaya ${channelName} gönderildi.`);
         } else {
-          setToastMsg(t("appointments.updateSuccess") || "Randevu durumu güncellendi.");
+          setToastMsg(`Randevu durumu güncellendi ancak hastaya ${channelName} gönderilemedi.`);
         }
       } else {
         setToastMsg(t("appointments.updateSuccess") || "Randevu durumu güncellendi.");
@@ -225,45 +219,32 @@ export default function AppointmentsPage({ params }: PageProps) {
                               </span>
                             )}
                             {/* Determine whether to show SMS or Email info based on notificationChannel or fallback */}
-                              {(apt.notificationChannel === "email" || apt.patientEmail) && !apt.smsNotificationStatus ? (
+                              {apt.notificationChannel && apt.patientNotificationStatus ? (
                                 <div style={{
                                   display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500,
-                                  backgroundColor: "rgba(99, 102, 241, 0.1)", color: "#4f46e5",
+                                  backgroundColor: apt.patientNotificationStatus === "sent" ? "rgba(34, 197, 94, 0.1)" : 
+                                                   apt.patientNotificationStatus === "failed" ? "rgba(239, 68, 68, 0.1)" : "rgba(100, 116, 139, 0.1)",
+                                  color: apt.patientNotificationStatus === "sent" ? "#16a34a" : 
+                                         apt.patientNotificationStatus === "failed" ? "#dc2626" : "#475569",
                                   padding: '4px 8px', borderRadius: '12px', width: 'fit-content', marginTop: '6px'
                                 }}>
-                                  <Mail size={12} />
-                                  E-posta bildirimi aktif
+                                  {apt.patientNotificationStatus === "sent" ? <CheckCircle size={12} /> : 
+                                   apt.patientNotificationStatus === "failed" ? <XCircle size={12} /> : <MessageSquare size={12} />}
+                                  
+                                  {apt.patientNotificationStatus === "sent" ? `${apt.notificationChannel === 'email' ? 'E-Posta' : apt.notificationChannel === 'whatsapp' ? 'WhatsApp' : 'SMS'} Gönderildi` : 
+                                   apt.patientNotificationStatus === "failed" ? `${apt.notificationChannel === 'email' ? 'E-Posta' : apt.notificationChannel === 'whatsapp' ? 'WhatsApp' : 'SMS'} Gönderilemedi` : 
+                                   apt.patientNotificationStatus === "missing_contact" ? "İletişim Bilgisi Yok" :
+                                   "Bildirim Durumu Bekleniyor"}
                                 </div>
                               ) : (
-                                <>
-                                  {apt.patientNotificationStatus ? (
-                                    <div style={{
-                                      display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500,
-                                      backgroundColor: apt.patientNotificationStatus === "sent" ? "rgba(34, 197, 94, 0.1)" : 
-                                                       apt.patientNotificationStatus === "failed" ? "rgba(239, 68, 68, 0.1)" : "rgba(100, 116, 139, 0.1)",
-                                      color: apt.patientNotificationStatus === "sent" ? "#16a34a" : 
-                                             apt.patientNotificationStatus === "failed" ? "#dc2626" : "#475569",
-                                      padding: '4px 8px', borderRadius: '12px', width: 'fit-content', marginTop: '6px'
-                                    }}>
-                                      {apt.patientNotificationStatus === "sent" ? <CheckCircle size={12} /> : 
-                                       apt.patientNotificationStatus === "failed" ? <XCircle size={12} /> : <MessageSquare size={12} />}
-                                      
-                                      {apt.patientNotificationStatus === "sent" ? "Bildirim Gönderildi" : 
-                                       apt.patientNotificationStatus === "failed" ? "Bildirim Gönderilemedi" : 
-                                       apt.patientNotificationStatus === "missing_contact" ? "İletişim Bilgisi Yok" :
-                                       "Bildirim Durumu Bekleniyor"}
-                                    </div>
-                                  ) : (
-                                    <div style={{
-                                      display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500,
-                                      backgroundColor: "rgba(100, 116, 139, 0.1)", color: "#475569",
-                                      padding: '4px 8px', borderRadius: '12px', width: 'fit-content', marginTop: '6px'
-                                    }}>
-                                      <MessageSquare size={12} />
-                                      {(t("appointments.sms.skipped") || "Bildirim Ayarlanmadı")}
-                                    </div>
-                                  )}
-                                </>
+                                <div style={{
+                                  display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500,
+                                  backgroundColor: "rgba(100, 116, 139, 0.1)", color: "#475569",
+                                  padding: '4px 8px', borderRadius: '12px', width: 'fit-content', marginTop: '6px'
+                                }}>
+                                  <MessageSquare size={12} />
+                                  {apt.notificationChannel ? `${apt.notificationChannel === 'email' ? 'E-Posta' : apt.notificationChannel === 'whatsapp' ? 'WhatsApp' : 'SMS'} Seçili` : "Bildirim Ayarlanmadı"}
+                                </div>
                               )}
                             </div>
                           </div>

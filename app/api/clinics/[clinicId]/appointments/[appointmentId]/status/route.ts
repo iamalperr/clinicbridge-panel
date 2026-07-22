@@ -61,12 +61,26 @@ export async function POST(req: Request, { params }: RouteParams) {
       return NextResponse.json({ success: true, message: "Status unchanged" });
     }
 
-    const patientNotificationSettings = clinicData.patientNotificationSettings || {
-      primaryChannel: "email",
-      collectEmail: true,
-      collectPhone: false
+    let notificationSettings = {
+      patientAppointmentChannel: "email",
+      requireEmail: true,
+      requirePhone: false
     };
-    const primaryChannel = patientNotificationSettings.primaryChannel;
+
+    if (clinicData.notificationSettings) {
+      notificationSettings = clinicData.notificationSettings;
+    } else if (clinicData.patientNotificationSettings) {
+      notificationSettings = {
+        patientAppointmentChannel: clinicData.patientNotificationSettings.primaryChannel === "email_and_sms" || clinicData.patientNotificationSettings.primaryChannel === "email_and_whatsapp" ? "email" : (clinicData.patientNotificationSettings.primaryChannel || "email"),
+        requireEmail: clinicData.patientNotificationSettings.collectEmail ?? true,
+        requirePhone: clinicData.patientNotificationSettings.collectPhone ?? false
+      };
+    } else {
+      // No configuration found
+      return NextResponse.json({ error: "Clinic notification channel is missing or invalid. Please configure notification settings." }, { status: 400 });
+    }
+
+    const primaryChannel = notificationSettings.patientAppointmentChannel;
 
     let notificationResult = null;
     let notificationChannelUsed = "";
@@ -79,8 +93,9 @@ export async function POST(req: Request, { params }: RouteParams) {
       const date = apptData.preferredDate || apptData.requestedDate || apptData.proposedDate || "";
       const time = apptData.preferredTime || apptData.requestedTime || apptData.proposedTime || "";
 
-      if (primaryChannel === "email" || primaryChannel === "email_and_sms" || primaryChannel === "email_and_whatsapp") {
-        notificationChannelUsed = "email";
+      notificationChannelUsed = primaryChannel;
+
+      if (primaryChannel === "email") {
         if (apptData.patientEmail) {
           notificationResult = await sendPatientAppointmentStatusEmail({
             patientEmail: apptData.patientEmail,
@@ -95,33 +110,61 @@ export async function POST(req: Request, { params }: RouteParams) {
         } else {
           notificationResult = { success: false, reason: "no_email", error: "Hastanın e-posta adresi bulunmuyor." };
         }
-      } 
-      
-      // Note: SMS and WhatsApp channels are currently passive as per requirements.
-      // If primaryChannel is "sms" or "whatsapp", we do not attempt to send notifications through them.
-      if (!notificationChannelUsed && (primaryChannel === "sms" || primaryChannel === "email_and_sms")) {
-        // notificationResult = { success: false, skipped: true, reason: "passive_channel", error: "SMS kanalı geçici olarak devre dışıdır." };
-        // We will just not set notificationChannelUsed so it behaves as no notification sent, 
-        // or we can force email fallback if there's an email.
-        
-        // Let's force email fallback if SMS is passive but patient has email
-        if (apptData.patientEmail) {
-          notificationChannelUsed = "email";
-          notificationResult = await sendPatientAppointmentStatusEmail({
-            patientEmail: apptData.patientEmail,
-            patientName: apptData.patientName || "Değerli Hastamız",
-            clinicName,
-            treatment,
-            requestedDate: date,
-            requestedTime: time,
-            status: newStatus,
-            appointmentId
-          });
+      } else if (primaryChannel === "sms") {
+        if (apptData.patientPhone) {
+          const { sendPatientSms } = await import('@/lib/appointment-notifications');
+          
+          const isEn = apptData.language === "en";
+          let smsMessage = "";
+          let smsType = "";
+
+          if (newStatus === "confirmed" || newStatus === "approved") {
+            smsType = "appointment_confirmed";
+            if (treatment && date && time) {
+              smsMessage = isEn
+                ? `ClinicBridge AI: Your appointment request at ${clinicName} has been approved for ${treatment} on ${date} ${time}.`
+                : `ClinicBridge AI: ${clinicName} randevu talebinizi onayladı. ${treatment} için ${date} ${time} randevu talebiniz uygun görülmüştür. Sağlıklı günler dileriz.`;
+            } else {
+              smsMessage = isEn
+                ? `ClinicBridge AI: Your appointment request at ${clinicName} has been approved. The clinic may contact you for details.`
+                : `ClinicBridge AI: ${clinicName} randevu talebinizi onayladı. Detaylar için kliniğiniz sizinle iletişime geçebilir. Sağlıklı günler dileriz.`;
+            }
+          } else if (newStatus === "cancelled" || newStatus === "rejected") {
+            smsType = "appointment_cancelled";
+            smsMessage = isEn
+              ? `ClinicBridge AI: Your appointment request at ${clinicName} could not be approved at this time. The clinic may contact you for alternative options.`
+              : `ClinicBridge AI: ${clinicName} randevu talebiniz şu an için onaylanamadı. Uygun alternatif saatler için kliniğiniz sizinle iletişime geçebilir. Sağlıklı günler dileriz.`;
+          } else if (newStatus === "alternative_time_proposed") {
+             smsType = "appointment_rescheduled";
+             smsMessage = isEn
+               ? `ClinicBridge AI: ${clinicName} proposed a new time for your appointment: ${date} ${time}.`
+               : `ClinicBridge AI: ${clinicName} randevu talebiniz için yeni bir saat önerdi: ${date} ${time}.`;
+          }
+
+          if (smsMessage) {
+            notificationResult = await sendPatientSms({
+              phone: apptData.patientPhone,
+              clinicName: clinicName,
+              requestedDate: date,
+              requestedTime: time,
+              requestedService: treatment,
+            });
+            (notificationResult as any).smsType = smsType;
+            (notificationResult as any).smsMessage = smsMessage;
+          }
         } else {
-          // If they wanted SMS but it's passive, we just skip it quietly.
-          notificationChannelUsed = "email"; 
-          notificationResult = { success: false, reason: "no_email", error: "Hastanın e-posta adresi bulunmuyor." };
+          notificationResult = { success: false, reason: "no_phone", error: "Hastanın telefon numarası bulunmuyor." };
         }
+      } else if (primaryChannel === "whatsapp") {
+        if (apptData.patientPhone) {
+          // Placeholder for WhatsApp implementation
+          console.log(`[WhatsApp Mock] Sending to ${apptData.patientPhone} for appointment ${appointmentId} status ${newStatus}`);
+          notificationResult = { success: true, reason: "mock_whatsapp", message: "WhatsApp notification logged (not sent to real API yet)." };
+        } else {
+          notificationResult = { success: false, reason: "no_phone", error: "Hastanın telefon numarası bulunmuyor." };
+        }
+      } else {
+        notificationResult = { success: false, reason: "invalid_channel", error: "Geçersiz bildirim kanalı." };
       }
     }
 

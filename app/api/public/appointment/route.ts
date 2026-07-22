@@ -156,22 +156,45 @@ export async function POST(req: Request) {
     /* ── Notifications (fire and forget) ────────────────────────────────── */
     const notifResults = { sms: false, email: false };
 
-    // SMS to patient
-    try {
-      const smsResult = await sendPatientSms({
-        phone,
-        clinicName,
-        requestedDate: date,
-        requestedTime: time,
-        requestedService: service,
-      });
-      notifResults.sms = smsResult.success;
-      console.log(`[appointment-sms] ${smsResult.success ? "OK" : "FAILED"} → ${phone}`);
-    } catch (e: any) {
-      console.error("[appointment-sms] Error:", e.message);
+    // Fetch the notification settings to know what channel we should use
+    let notificationSettings = {
+      patientAppointmentChannel: "email",
+      requireEmail: true,
+      requirePhone: false
+    };
+
+    if (adminDb) {
+      const cSnap = await adminDb.collection("clinics").doc(clinicId).get();
+      if (cSnap.exists) {
+        notificationSettings = cSnap.data()!.notificationSettings || cSnap.data()!.patientNotificationSettings || notificationSettings;
+      }
+    } else if (clientDb) {
+      const cSnap = await getDoc(doc(clientDb, "clinics", clinicId));
+      if (cSnap.exists()) {
+        notificationSettings = cSnap.data()!.notificationSettings || cSnap.data()!.patientNotificationSettings || notificationSettings;
+      }
     }
 
-    // Email to clinic
+    const channelToUse = notificationSettings.patientAppointmentChannel || "email";
+
+    // SMS to patient (only if SMS channel is specifically configured - we avoid fallback per requirements)
+    if (channelToUse === "sms") {
+      try {
+        const smsResult = await sendPatientSms({
+          phone,
+          clinicName,
+          requestedDate: date,
+          requestedTime: time,
+          requestedService: service,
+        });
+        notifResults.sms = smsResult.success;
+        console.log(`[appointment-sms] ${smsResult.success ? "OK" : "FAILED"} → ${phone}`);
+      } catch (e: any) {
+        console.error("[appointment-sms] Error:", e.message);
+      }
+    }
+
+    // Email to clinic (always notify the clinic via email regardless of patient channel)
     if (clinicEmail) {
       try {
         const emailResult = await sendClinicAppointmentEmail({
@@ -198,7 +221,9 @@ export async function POST(req: Request) {
       const statusUpdate = {
         "notificationStatus.smsToPatient":  notifResults.sms   ? "sent" : "failed",
         "notificationStatus.emailToClinic": notifResults.email  ? "sent" : "failed",
+        notificationChannel: channelToUse
       };
+      
       if (adminDb) {
         await adminDb.collection("appointments").doc(appointmentId).update(statusUpdate);
       } else if (clientDb) {
@@ -206,7 +231,7 @@ export async function POST(req: Request) {
         await updateDoc(firestoreDoc(clientDb, "appointments", appointmentId), statusUpdate);
       }
     } catch (e) {
-      console.warn("[appointment-create] Could not update notification status");
+      console.warn("[appointment-create] Could not update notification status", e);
     }
 
     return NextResponse.json(

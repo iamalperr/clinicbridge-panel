@@ -894,8 +894,10 @@ export async function POST(req: Request) {
 
       if (apptData) {
         try {
-          const patientNotificationSettings = clinicData?.patientNotificationSettings || {
-            primaryChannel: "sms"
+          const notificationSettings = clinicData?.notificationSettings || {
+            patientAppointmentChannel: "email",
+            requireEmail: true,
+            requirePhone: false
           };
           
           const { appointmentId, emailSent } = await createAppointment({
@@ -903,7 +905,7 @@ export async function POST(req: Request) {
             clinicName,
             data: apptData,
             conversationId: conversationId || `session_${Date.now()}`,
-            notificationChannel: patientNotificationSettings.primaryChannel
+            notificationChannel: notificationSettings.patientAppointmentChannel
           });
 
           const isEnglish = /\b(yes|confirm|ok|okay|sure|please|yeah)\b/i.test(message) || 
@@ -913,18 +915,18 @@ export async function POST(req: Request) {
           
           if (isEnglish) {
             let channelStrEn = "SMS";
-            if (patientNotificationSettings.primaryChannel === "email") channelStrEn = "email";
-            else if (patientNotificationSettings.primaryChannel === "whatsapp") channelStrEn = "WhatsApp";
-            else if (patientNotificationSettings.primaryChannel === "email_and_sms") channelStrEn = "SMS and email";
-            else if (patientNotificationSettings.primaryChannel === "email_and_whatsapp") channelStrEn = "WhatsApp and email";
+            if (notificationSettings.patientAppointmentChannel === "email") channelStrEn = "email";
+            else if (notificationSettings.patientAppointmentChannel === "whatsapp") channelStrEn = "WhatsApp";
+            else if (notificationSettings.patientAppointmentChannel === "email_and_sms") channelStrEn = "SMS and email";
+            else if (notificationSettings.patientAppointmentChannel === "email_and_whatsapp") channelStrEn = "WhatsApp and email";
             
             confirmReply = `Your appointment request has been sent to the clinic. The clinic team will review your preferred date and time. Once your request is approved or an alternative time is suggested, you will be notified by ${channelStrEn}.`;
           } else {
             let channelStrTr = "SMS üzerinden";
-            if (patientNotificationSettings.primaryChannel === "email") channelStrTr = "paylaştığınız e-posta adresi üzerinden";
-            else if (patientNotificationSettings.primaryChannel === "whatsapp") channelStrTr = "WhatsApp üzerinden";
-            else if (patientNotificationSettings.primaryChannel === "email_and_sms") channelStrTr = "SMS ve E-posta üzerinden";
-            else if (patientNotificationSettings.primaryChannel === "email_and_whatsapp") channelStrTr = "WhatsApp ve E-posta üzerinden";
+            if (notificationSettings.patientAppointmentChannel === "email") channelStrTr = "paylaştığınız e-posta adresi üzerinden";
+            else if (notificationSettings.patientAppointmentChannel === "whatsapp") channelStrTr = "WhatsApp üzerinden";
+            else if (notificationSettings.patientAppointmentChannel === "email_and_sms") channelStrTr = "SMS ve E-posta üzerinden";
+            else if (notificationSettings.patientAppointmentChannel === "email_and_whatsapp") channelStrTr = "WhatsApp ve E-posta üzerinden";
 
             if (apptData.requestedService && apptData.requestedDate && apptData.requestedTime) {
               confirmReply = `Randevu talebinizi kliniğimize ilettim. ${apptData.requestedService} işleminiz için tercih ettiğiniz ${apptData.requestedDate} ${apptData.requestedTime} bilgisi klinik ekibi tarafından değerlendirilecektir. Talebiniz onaylandığında veya farklı bir saat önerildiğinde ${channelStrTr} bilgilendirileceksiniz.`;
@@ -1090,31 +1092,25 @@ export async function POST(req: Request) {
 
     // create_appointment_request — always injected if enabled (core UX)
     if (skillOn("create_appointment_request")) {
-      const patientNotificationSettings = clinicData?.patientNotificationSettings || {
-        primaryChannel: "sms",
-        collectEmail: false,
-        collectPhone: true
+      const notificationSettings = clinicData?.notificationSettings || {
+        patientAppointmentChannel: "email",
+        requireEmail: true,
+        requirePhone: false
       };
 
-      const { primaryChannel, collectEmail, collectPhone } = patientNotificationSettings;
+      const { patientAppointmentChannel, requireEmail, requirePhone } = notificationSettings;
 
-      const requiresEmailStr = collectEmail ? "- E-posta Adresi (Mutlaka geçerli bir adres alınmalı)" : "";
-      const requiresPhoneStr = collectPhone ? "- Telefon Numarası" : "";
+      const requiresEmailStr = requireEmail ? "- E-posta Adresi (Mutlaka geçerli bir adres alınmalı)" : "";
+      const requiresPhoneStr = requirePhone ? "- Telefon Numarası" : "";
       
-      const validationRules = collectEmail 
+      const validationRules = requireEmail 
           ? `3. E-posta adresi geçerliliğini kontrol et (@ işareti, alan adı vs.). Hatalıysa: "E-posta adresinizde küçük bir eksiklik görünüyor. Klinik dönüşünü iletebilmemiz için adresinizi örneğin adiniz@example.com formatında tekrar paylaşabilir misiniz?" şeklinde nazikçe uyar.`
           : `3. Bilgileri doğrula.`;
           
       let confirmationSentence = "";
-      switch (primaryChannel) {
+      switch (patientAppointmentChannel) {
         case "whatsapp":
           confirmationSentence = `Talebiniz onaylandığında veya farklı bir saat önerildiğinde, WhatsApp üzerinden bilgilendirileceksiniz.`;
-          break;
-        case "email_and_whatsapp":
-          confirmationSentence = `Talebiniz onaylandığında veya farklı bir saat önerildiğinde, WhatsApp ve E-posta üzerinden bilgilendirileceksiniz.`;
-          break;
-        case "email_and_sms":
-          confirmationSentence = `Talebiniz onaylandığında veya farklı bir saat önerildiğinde, SMS ve E-posta üzerinden bilgilendirileceksiniz.`;
           break;
         case "email":
           confirmationSentence = `Talebiniz onaylandığında veya farklı bir saat önerildiğinde, paylaştığınız e-posta adresi üzerinden bilgilendirileceksiniz.`;
@@ -1139,7 +1135,7 @@ ${validationRules}
 4. Tüm bilgiler tamam olunca MUTLAKA şu formatta özet ve onay iste:
    "Harika! Şu bilgilerle randevu talebi oluşturayım mı?
    Ad: [isim]
-   ${collectPhone ? 'Telefon: [telefon]\n   ' : ''}${collectEmail ? 'E-posta: [email]\n   ' : ''}Hizmet: [hizmet]
+   ${requirePhone ? 'Telefon: [telefon]\n   ' : ''}${requireEmail ? 'E-posta: [email]\n   ' : ''}Hizmet: [hizmet]
    Tarih: [tarih]
    Saat: [saat]
    Onaylıyor musunuz? (Evet/Hayır)"
