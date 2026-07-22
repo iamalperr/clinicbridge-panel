@@ -52,12 +52,15 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
   const [errorMsg, setErrorMsg] = useState("");
 
   const [notificationSettings, setNotificationSettings] = useState({
-    patientAppointmentChannel: "email",
-    requireEmail: true,
-    requirePhone: false,
-    emailEnabled: true,
-    smsEnabled: false,
-    whatsappEnabled: false
+    patient: {
+      appointmentChannel: "email",
+      requireEmail: true,
+      requirePhone: false
+    },
+    clinic: {
+      newAppointmentEmailEnabled: true,
+      recipientEmails: [""]
+    }
   });
 
   const loadSettings = useCallback(async () => {
@@ -75,16 +78,46 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
       if (clinicSnap.exists()) {
         const data = clinicSnap.data();
         if (data.notificationSettings) {
-          setNotificationSettings(data.notificationSettings);
+          // Normalize to new schema if upgrading from old flat schema
+          const ns = data.notificationSettings;
+          if (ns.patient || ns.clinic) {
+            setNotificationSettings({
+              patient: {
+                appointmentChannel: ns.patient?.appointmentChannel || ns.patientAppointmentChannel || "email",
+                requireEmail: ns.patient?.requireEmail ?? ns.requireEmail ?? true,
+                requirePhone: ns.patient?.requirePhone ?? ns.requirePhone ?? false
+              },
+              clinic: {
+                newAppointmentEmailEnabled: ns.clinic?.newAppointmentEmailEnabled ?? true,
+                recipientEmails: ns.clinic?.recipientEmails || [data.notificationEmail || data.email || ""]
+              }
+            });
+          } else {
+            // Migration from flat schema
+            setNotificationSettings({
+              patient: {
+                appointmentChannel: ns.patientAppointmentChannel || "email",
+                requireEmail: ns.requireEmail ?? true,
+                requirePhone: ns.requirePhone ?? false
+              },
+              clinic: {
+                newAppointmentEmailEnabled: true,
+                recipientEmails: [data.notificationEmail || data.email || ""]
+              }
+            });
+          }
         } else if (data.patientNotificationSettings) {
-          // Graceful migration
+          // Legacy migration
           setNotificationSettings({
-            patientAppointmentChannel: data.patientNotificationSettings.primaryChannel === "email_and_sms" || data.patientNotificationSettings.primaryChannel === "email_and_whatsapp" ? "email" : (data.patientNotificationSettings.primaryChannel || "email"),
-            requireEmail: data.patientNotificationSettings.collectEmail ?? true,
-            requirePhone: data.patientNotificationSettings.collectPhone ?? false,
-            emailEnabled: data.patientNotificationSettings.enabledChannels?.includes("email") ?? true,
-            smsEnabled: data.patientNotificationSettings.enabledChannels?.includes("sms") ?? false,
-            whatsappEnabled: data.patientNotificationSettings.enabledChannels?.includes("whatsapp") ?? false
+            patient: {
+              appointmentChannel: data.patientNotificationSettings.primaryChannel === "email_and_sms" || data.patientNotificationSettings.primaryChannel === "email_and_whatsapp" ? "email" : (data.patientNotificationSettings.primaryChannel || "email"),
+              requireEmail: data.patientNotificationSettings.collectEmail ?? true,
+              requirePhone: data.patientNotificationSettings.collectPhone ?? false
+            },
+            clinic: {
+              newAppointmentEmailEnabled: true,
+              recipientEmails: [data.notificationEmail || data.email || ""]
+            }
           });
         }
       }
@@ -192,9 +225,9 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
 
         <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 24, paddingTop: 24, borderTop: `1px solid ${UI_COLORS.border}` }}>
           <Select
-            label="Birincil Bildirim Kanalı"
-            value={notificationSettings.patientAppointmentChannel}
-            onChange={(e) => setNotificationSettings(prev => ({ ...prev, patientAppointmentChannel: e.target.value }))}
+            label="Birincil Hasta Bildirim Kanalı"
+            value={notificationSettings.patient.appointmentChannel}
+            onChange={(e) => setNotificationSettings(prev => ({ ...prev, patient: { ...prev.patient, appointmentChannel: e.target.value } }))}
             options={[
               { label: "E-Posta", value: "email" },
               { label: "SMS", value: "sms" },
@@ -207,8 +240,8 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
               <span style={{ fontSize: 14 }}>E-Posta Adresi Zorunlu Kıl</span>
               <input
                 type="checkbox"
-                checked={notificationSettings.requireEmail}
-                onChange={(e) => setNotificationSettings(prev => ({ ...prev, requireEmail: e.target.checked }))}
+                checked={notificationSettings.patient.requireEmail}
+                onChange={(e) => setNotificationSettings(prev => ({ ...prev, patient: { ...prev.patient, requireEmail: e.target.checked } }))}
                 style={{ width: 18, height: 18, accentColor: UI_COLORS.brand, cursor: "pointer" }}
               />
             </div>
@@ -216,40 +249,67 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
               <span style={{ fontSize: 14 }}>Telefon Numarası Zorunlu Kıl</span>
               <input
                 type="checkbox"
-                checked={notificationSettings.requirePhone}
-                onChange={(e) => setNotificationSettings(prev => ({ ...prev, requirePhone: e.target.checked }))}
-                style={{ width: 18, height: 18, accentColor: UI_COLORS.brand, cursor: "pointer" }}
-              />
-            </div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 12, border: `1px solid ${UI_COLORS.border}`, borderRadius: 8 }}>
-              <span style={{ fontSize: 14 }}>E-Posta Bildirimleri Aktif</span>
-              <input
-                type="checkbox"
-                checked={notificationSettings.emailEnabled}
-                onChange={(e) => setNotificationSettings(prev => ({ ...prev, emailEnabled: e.target.checked }))}
-                style={{ width: 18, height: 18, accentColor: UI_COLORS.brand, cursor: "pointer" }}
-              />
-            </div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 12, border: `1px solid ${UI_COLORS.border}`, borderRadius: 8 }}>
-              <span style={{ fontSize: 14 }}>SMS Bildirimleri Aktif</span>
-              <input
-                type="checkbox"
-                checked={notificationSettings.smsEnabled}
-                onChange={(e) => setNotificationSettings(prev => ({ ...prev, smsEnabled: e.target.checked }))}
-                style={{ width: 18, height: 18, accentColor: UI_COLORS.brand, cursor: "pointer" }}
-              />
-            </div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 12, border: `1px solid ${UI_COLORS.border}`, borderRadius: 8 }}>
-              <span style={{ fontSize: 14 }}>WhatsApp Bildirimleri Aktif</span>
-              <input
-                type="checkbox"
-                checked={notificationSettings.whatsappEnabled}
-                onChange={(e) => setNotificationSettings(prev => ({ ...prev, whatsappEnabled: e.target.checked }))}
+                checked={notificationSettings.patient.requirePhone}
+                onChange={(e) => setNotificationSettings(prev => ({ ...prev, patient: { ...prev.patient, requirePhone: e.target.checked } }))}
                 style={{ width: 18, height: 18, accentColor: UI_COLORS.brand, cursor: "pointer" }}
               />
             </div>
           </div>
         </div>
+      </SectionCard>
+
+      <SectionCard title="Klinik Ekibi Bildirimleri">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <h3 style={{ fontSize: 15, fontWeight: 600, color: UI_COLORS.textPrimary }}>Yeni Randevu E-Posta Bildirimi</h3>
+            <p style={{ fontSize: 13, color: UI_COLORS.textSecondary }}>Yeni bir randevu talebi oluştuğunda belirtilen adreslere e-posta gönderilir.</p>
+          </div>
+          <input
+            type="checkbox"
+            checked={notificationSettings.clinic.newAppointmentEmailEnabled}
+            onChange={(e) => setNotificationSettings(prev => ({ ...prev, clinic: { ...prev.clinic, newAppointmentEmailEnabled: e.target.checked } }))}
+            style={{ width: 20, height: 20, accentColor: UI_COLORS.brand, cursor: "pointer" }}
+          />
+        </div>
+
+        {notificationSettings.clinic.newAppointmentEmailEnabled && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 24, paddingTop: 24, borderTop: `1px solid ${UI_COLORS.border}` }}>
+            <h4 style={{ fontSize: 14, fontWeight: 600, color: UI_COLORS.textPrimary }}>Alıcı E-posta Adresleri</h4>
+            {notificationSettings.clinic.recipientEmails.map((email, index) => (
+              <div key={index} style={{ display: "flex", gap: 8 }}>
+                <Input
+                  value={email}
+                  placeholder="ornek@klinik.com"
+                  onChange={(e) => {
+                    const newEmails = [...notificationSettings.clinic.recipientEmails];
+                    newEmails[index] = e.target.value;
+                    setNotificationSettings(prev => ({ ...prev, clinic: { ...prev.clinic, recipientEmails: newEmails } }));
+                  }}
+                  style={{ flex: 1 }}
+                />
+                <Button 
+                  variant="secondary" 
+                  onClick={() => {
+                    const newEmails = notificationSettings.clinic.recipientEmails.filter((_, i) => i !== index);
+                    setNotificationSettings(prev => ({ ...prev, clinic: { ...prev.clinic, recipientEmails: newEmails } }));
+                  }}
+                >Sil</Button>
+              </div>
+            ))}
+            <Button 
+              variant="secondary" 
+              onClick={() => {
+                setNotificationSettings(prev => ({ 
+                  ...prev, 
+                  clinic: { ...prev.clinic, recipientEmails: [...prev.clinic.recipientEmails, ""] } 
+                }));
+              }}
+              style={{ width: "fit-content" }}
+            >
+              + Yeni Alıcı Ekle
+            </Button>
+          </div>
+        )}
       </SectionCard>
 
       <SectionCard title="E-Posta Ayarları (Email Channel)">

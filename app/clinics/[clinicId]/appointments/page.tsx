@@ -219,7 +219,29 @@ export default function AppointmentsPage({ params }: PageProps) {
                               </span>
                             )}
                             {/* Determine whether to show SMS or Email info based on notificationChannel or fallback */}
-                              {apt.notificationChannel && apt.patientNotificationStatus ? (
+                              {apt.notificationStatus?.emailToClinic !== undefined ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
+                                  <div style={{
+                                    display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500,
+                                    backgroundColor: apt.notificationStatus?.emailToClinic === 'sent' ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)",
+                                    color: apt.notificationStatus?.emailToClinic === 'sent' ? "#16a34a" : "#dc2626",
+                                    padding: '4px 8px', borderRadius: '12px', width: 'fit-content'
+                                  }}>
+                                    {apt.notificationStatus?.emailToClinic === 'sent' ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                                    {apt.notificationStatus?.emailToClinic === 'sent' ? "Klinik e-postası gönderildi" : "Klinik e-postası gönderilemedi"}
+                                  </div>
+                                  
+                                  <div style={{
+                                    display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500,
+                                    backgroundColor: apt.patientNotificationStatus === 'sent' ? "rgba(34, 197, 94, 0.1)" : apt.patientNotificationStatus !== undefined ? "rgba(239, 68, 68, 0.1)" : "rgba(100, 116, 139, 0.1)",
+                                    color: apt.patientNotificationStatus === 'sent' ? "#16a34a" : apt.patientNotificationStatus !== undefined ? "#dc2626" : "#475569",
+                                    padding: '4px 8px', borderRadius: '12px', width: 'fit-content'
+                                  }}>
+                                    {apt.patientNotificationStatus === 'sent' ? <CheckCircle size={12} /> : apt.patientNotificationStatus !== undefined ? <XCircle size={12} /> : <MessageSquare size={12} />}
+                                    {apt.patientNotificationStatus === 'sent' ? "Hasta e-postası gönderildi" : apt.patientNotificationStatus !== undefined ? "E-posta gönderilemedi" : `${apt.notificationChannel === 'email' ? 'E-posta' : apt.notificationChannel === 'whatsapp' ? 'WhatsApp' : 'SMS'} seçili`}
+                                  </div>
+                                </div>
+                              ) : apt.notificationChannel && apt.patientNotificationStatus ? (
                                 <div style={{
                                   display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500,
                                   backgroundColor: apt.patientNotificationStatus === "sent" ? "rgba(34, 197, 94, 0.1)" : 
@@ -243,7 +265,7 @@ export default function AppointmentsPage({ params }: PageProps) {
                                   padding: '4px 8px', borderRadius: '12px', width: 'fit-content', marginTop: '6px'
                                 }}>
                                   <MessageSquare size={12} />
-                                  {apt.notificationChannel ? `${apt.notificationChannel === 'email' ? 'E-Posta' : apt.notificationChannel === 'whatsapp' ? 'WhatsApp' : 'SMS'} Seçili` : "Bildirim Ayarlanmadı"}
+                                  {apt.notificationChannel ? `${apt.notificationChannel === 'email' ? 'E-posta' : apt.notificationChannel === 'whatsapp' ? 'WhatsApp' : 'SMS'} seçili` : "Bildirim Ayarlanmadı"}
                                 </div>
                               )}
                             </div>

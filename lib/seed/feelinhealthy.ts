@@ -49,6 +49,30 @@ const CLINICS = [
     showProfileLink: true,
   },
   {
+    clinicId: "hospitadent-alanya",
+    clinicName: "Hospitadent Dental Group Alanya",
+    clinicType: "external",
+    category: "dental",
+    profileUrl: "https://www.feelinhealthy.com/medicalcenter/hospitadent-dental-group-alanya",
+    website: "https://www.hospitadent.com",
+    contactEmail: "alanya@hospitadent.com",
+    shortDescription: "Modern dental clinic in Alanya offering comprehensive dental treatments.",
+    location: { city: "Antalya", country: "Turkey", address: "Alanya" },
+    supportedLanguages: ["en", "tr", "de", "ru"],
+    treatmentCategories: ["dental"],
+    subTreatments: ["Dental Implant", "Zirconium Crowns", "Hollywood Smile", "All-on-4", "All-on-6", "Root Canal", "Teeth Whitening"],
+    targetPatientCountries: ["Germany", "UK", "Russia", "Scandinavia"],
+    accreditation: ["ISO 9001"],
+    doctorCount: 20,
+    experienceYears: 10,
+    priority: 95, responseSLA: 12, leadCapacity: 30, status: "active",
+    quoteEnabled: true,
+    quoteContactEmail: "alanya.quotes@hospitadent.com",
+    showInRecommendations: true,
+    showPriceRange: true,
+    showProfileLink: true,
+  },
+  {
     clinicId: "demo-dental-istanbul",
     clinicName: "Demo Dental Istanbul",
     clinicType: "external",
@@ -107,6 +131,9 @@ const CLINICS = [
 const CLINIC_PRICING = [
   { treatmentName: "Dental Implant", category: "dental", clinicId: "hospitadent-pendik", clinicName: "Hospitadent Dental Group Pendik", priceMin: 450, priceMax: 850, currency: "EUR", priceType: "average" },
   { treatmentName: "Zirconium Crowns", category: "dental", clinicId: "hospitadent-pendik", clinicName: "Hospitadent Dental Group Pendik", priceMin: 200, priceMax: 320, currency: "EUR", priceType: "per_unit" },
+  { treatmentName: "Dental Implant", category: "dental", clinicId: "hospitadent-alanya", clinicName: "Hospitadent Dental Group Alanya", priceMin: 400, priceMax: 800, currency: "EUR", priceType: "average" },
+  { treatmentName: "Zirconium Crowns", category: "dental", clinicId: "hospitadent-alanya", clinicName: "Hospitadent Dental Group Alanya", priceMin: 180, priceMax: 300, currency: "EUR", priceType: "per_unit" },
+  { treatmentName: "Hollywood Smile", category: "dental", clinicId: "hospitadent-alanya", clinicName: "Hospitadent Dental Group Alanya", priceMin: 2000, priceMax: 5000, currency: "EUR", priceType: "package" },
 ];
 
 // ─── Demo Leads ─────────────────────────────────────────────────────────────
@@ -227,6 +254,52 @@ export async function seedFeelinHealthy(agencyId: string): Promise<{
     }
   }
 
+
+  // 2c. Seed Hospitadent Alanya Knowledge Base
+  const alanyaDocId = clinicDocIds["hospitadent-alanya"];
+  if (alanyaDocId) {
+    const kbRecords = [
+      {
+        title: "Genel Tanıtım",
+        category: "Klinik Bilgisi",
+        content: "Hospitadent Dental Group Alanya; modern altyapısı, deneyimli diş hekimleri ve tam donanımlı tedavi odaları ile hastalarına uluslararası standartlarda hizmet vermektedir. Kliniğimizde diş implantı, zirkonyum, gülüş tasarımı ve tüm temel diş tedavileri uygulanmaktadır.",
+        priority: "Yüksek",
+        isActive: true,
+      },
+      {
+        title: "Konum ve Ulaşım",
+        category: "Konum ve Tesis",
+        content: "Kliniğimiz Antalya'nın Alanya ilçesinde, merkezi bir konumda yer almaktadır. Gazipaşa-Alanya Havalimanı'na (GZP) yaklaşık 45 dakika, Antalya Havalimanı'na (AYT) ise yaklaşık 2 saat mesafededir. Yurtdışından gelen hastalarımız için VIP transfer hizmetimiz bulunmaktadır.",
+        priority: "Normal",
+        isActive: true,
+      },
+      {
+        title: "Çalışma Saatleri",
+        category: "Çalışma Şartları",
+        content: "Kliniğimiz Pazartesi - Cumartesi günleri 09:00 - 19:00 saatleri arasında hizmet vermektedir. Pazar günleri kapalıdır.",
+        priority: "Normal",
+        isActive: true,
+      },
+      {
+        title: "Uluslararası Hasta Hizmetleri",
+        category: "Hizmetler",
+        content: "Sağlık turizmi yetki belgesine sahip olan kliniğimiz; İngilizce, Almanca ve Rusça dillerinde destek veren uluslararası hasta birimine sahiptir. Tedavi süresince ücretsiz tercümanlık, havaalanı-klinik-otel transferi ve anlaşmalı otellerde konaklama imkanları sunulmaktadır.",
+        priority: "Yüksek",
+        isActive: true,
+      }
+    ];
+
+    for (const kb of kbRecords) {
+      const kbRef = doc(collection(db, "agencies", agencyId, "clinics", alanyaDocId, "knowledgeBase"));
+      await setDoc(kbRef, {
+        clinicId: alanyaDocId,
+        ...kb,
+        createdAt: ts,
+        updatedAt: ts,
+      });
+    }
+  }
+
   // 3. Seed Global Pricing (from treatment averages)
   for (const t of TREATMENTS) {
     const docRef = doc(collection(db, "agencies", agencyId, "pricing"));
@@ -283,7 +356,7 @@ export async function seedFeelinHealthy(agencyId: string): Promise<{
     showProfileLinks: true,
     requireConsentBeforeQuote: true,
     treatmentClinicRules: [
-      { treatmentCategory: "dental", eligibleClinicIds: ["hospitadent-pendik", "demo-dental-istanbul"] },
+      { treatmentCategory: "dental", eligibleClinicIds: ["hospitadent-pendik", "hospitadent-alanya", "demo-dental-istanbul"] },
       { treatmentCategory: "hair_transplant", eligibleClinicIds: ["demo-hair-istanbul"] },
       { treatmentCategory: "aesthetic_surgery", eligibleClinicIds: ["demo-aesthetic-istanbul"] },
       { treatmentCategory: "ivf", eligibleClinicIds: ["demo-ivf-istanbul"] },

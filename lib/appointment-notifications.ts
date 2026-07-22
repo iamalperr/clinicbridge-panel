@@ -34,7 +34,7 @@ export const getPatientNotificationMessages = (channel: string) => {
 
 export interface AppointmentEmailPayload {
   clinicName: string;
-  clinicEmail: string; // recipient
+  clinicEmails: string[]; // recipients
   patientName: string;
   patientPhone: string;
   requestedService: string;
@@ -69,25 +69,35 @@ export async function sendClinicAppointmentEmail(
     </div>
   `;
 
-  const result = await notificationService.sendNotification(
-    {
-      tenant_id: 'legacy', // To be updated if tenant logic is applied
-      clinic_id: 'unknown',
-      appointment_id: payload.appointmentId,
-      event_type: 'appointment.request.created',
-      channel: 'email',
-      recipient: payload.clinicEmail,
-    },
-    {
-      language: 'tr',
-      subject: `Yeni Randevu Talebi – ${payload.clinicName}`,
-      variables: {
-        htmlContent: html,
-      }
-    }
-  );
+  let allSuccess = true;
+  let lastError: string | undefined;
 
-  return { success: result.success, error: result.error };
+  for (const email of payload.clinicEmails) {
+    if (!email) continue;
+    const result = await notificationService.sendNotification(
+      {
+        tenant_id: 'legacy', // To be updated if tenant logic is applied
+        clinic_id: 'unknown',
+        appointment_id: payload.appointmentId,
+        event_type: 'appointment.request.created',
+        channel: 'email',
+        recipient: email,
+      },
+      {
+        language: 'tr',
+        subject: `Yeni Randevu Talebi – ${payload.clinicName}`,
+        variables: {
+          htmlContent: html,
+        }
+      }
+    );
+    if (!result.success) {
+      allSuccess = false;
+      lastError = result.error;
+    }
+  }
+
+  return { success: allSuccess, error: lastError };
 }
 
 export async function sendPatientAppointmentEmail(
@@ -120,7 +130,7 @@ export async function sendPatientAppointmentEmail(
       appointment_id: payload.appointmentId,
       event_type: 'appointment.request.created',
       channel: 'email',
-      recipient: payload.clinicEmail, // Note: clinicEmail in the payload is actually the recipient. For patient, pass patientEmail here.
+      recipient: payload.clinicEmails[0], // Note: clinicEmails in the payload is actually the recipient. For patient, pass patientEmail here.
     },
     {
       language: 'tr',

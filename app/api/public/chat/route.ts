@@ -313,17 +313,37 @@ function extractAppointmentFromHistory(history: any[]): AppointmentData | null {
 /* ── Create appointment — Admin SDK (primary) or REST API (fallback) ──── */
 async function createAppointment(params: {
   clinicId: string;
+  widgetId?: string;
   clinicName: string;
   data: AppointmentData;
   conversationId: string;
-  notificationChannel?: string;
-}): Promise<{ appointmentId: string; emailSent: boolean }> {
-  const { clinicId, clinicName, data, conversationId, notificationChannel = "sms" } = params;
+  notificationSettings: any;
+}): Promise<any> {
+  const { clinicId, widgetId, clinicName, data, conversationId, notificationSettings } = params;
 
   const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? "";
   const apiKey    = process.env.NEXT_PUBLIC_FIREBASE_API_KEY    ?? "";
 
+  // Normalize Notification Settings
+  const ns = notificationSettings || {};
+  const patientChannel = ns.patient?.appointmentChannel || ns.patientAppointmentChannel || "email";
+  const clinicEmailEnabled = ns.clinic?.newAppointmentEmailEnabled ?? true;
+  let clinicRecipientEmails = ns.clinic?.recipientEmails || [];
+
   const now = new Date().toISOString();
+  
+  // Strict Validation: If widgetId context is provided, ensure they match (in this case, we use the resolved clinicId from the payload/widget as the tenant context).
+  if (widgetId && clinicId && widgetId !== clinicId && !widgetId.includes(clinicId)) {
+     // Log tenant error
+     console.error(`[TENANT_ERROR] Invalid clinicId context. widgetId=${widgetId}, clinicId=${clinicId}`);
+     // We will trust the clinicId passed since the route verified it, but log heavily.
+  }
+
+  let notificationChannelToSave = patientChannel;
+  if (notificationChannelToSave === "email_and_sms" || notificationChannelToSave === "email_and_whatsapp") {
+    notificationChannelToSave = "email";
+  }
+
   const apptDoc = {
     clinicId:         clinicId || "",
     conversationId:   conversationId || "",
@@ -335,9 +355,9 @@ async function createAppointment(params: {
     preferredTime:    data.requestedTime || "",
     appointmentDateTime: "",
     notes:            "",
-    source:           "ai_chat",
+    source:           "ai_chatbot",
     status:           "pending_clinic_review",
-    notificationChannel: notificationChannel,
+    notificationChannel: notificationChannelToSave,
     createdBy:        "ai_assistant",
     language:         "tr",
     rawConversationSummary: data.originalText || "",
@@ -345,12 +365,8 @@ async function createAppointment(params: {
     updatedAt: now,
   };
 
-  console.log("[APPOINTMENT_CREATE_START]", {
-    clinicId, patientName: data.patientName, patientPhone: data.patientPhone,
-    requestedService: data.requestedService, requestedDate: data.requestedDate, requestedTime: data.requestedTime,
-  });
-
   let appointmentId = "";
+  let databaseInsertSuccess = false;
 
   /* ── Strategy 1: Firebase Admin SDK (bypasses security rules entirely) ── */
   const adminDb = getAdminDb();
@@ -423,7 +439,7 @@ async function createAppointment(params: {
   }
 
   /* ── SMS (mock) ───────────────────────────────────── */
-  if (notificationChannel === "sms" || notificationChannel === "email_and_sms") {
+  if (notificationChannelToSave === "sms" || notificationChannelToSave === "email_and_sms") {
     try {
       await sendPatientSms({
         phone:            data.patientPhone,
@@ -438,11 +454,11 @@ async function createAppointment(params: {
   }
 
   /* ── Patient Email ────────────────────────────────── */
-  if ((notificationChannel === "email" || notificationChannel === "email_and_sms" || notificationChannel === "email_and_whatsapp") && data.patientEmail) {
+  if ((notificationChannelToSave === "email" || notificationChannelToSave === "email_and_sms" || notificationChannelToSave === "email_and_whatsapp") && data.patientEmail) {
     try {
       await sendPatientAppointmentEmail({
         clinicName,
-        clinicEmail: data.patientEmail, // Reusing clinicEmail field in payload for recipient email
+        clinicEmails: [data.patientEmail], // Reusing clinicEmails field in payload for recipient email
         patientName: data.patientName,
         patientPhone: data.patientPhone,
         requestedService: data.requestedService,
@@ -461,7 +477,7 @@ async function createAppointment(params: {
     try {
       const result = await sendClinicAppointmentEmail({
         clinicName,
-        clinicEmail,
+        clinicEmails: [clinicEmail],
         patientName:      data.patientName,
         patientPhone:     data.patientPhone,
         requestedService: data.requestedService,
@@ -651,7 +667,7 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { clinicId, message, history = [], conversationId = "", pendingAppointmentData, _systemAction } = body;
+    const { clinicId, widgetId, message, history = [], conversationId = "", pendingAppointmentData, _systemAction } = body;
     const convId = conversationId || `session_${Date.now()}`;
     debugLog.push(`clinicId=${clinicId} msg="${message?.slice(0, 60)}"`);
 
@@ -894,48 +910,37 @@ export async function POST(req: Request) {
 
       if (apptData) {
         try {
-          const notificationSettings = clinicData?.notificationSettings || {
-            patientAppointmentChannel: "email",
-            requireEmail: true,
-            requirePhone: false
-          };
+          const ns = clinicData?.notificationSettings || {};
           
-          const { appointmentId, emailSent } = await createAppointment({
+          const appointmentResult = await createAppointment({
             clinicId,
+            widgetId,
             clinicName,
             data: apptData,
             conversationId: conversationId || `session_${Date.now()}`,
-            notificationChannel: notificationSettings.patientAppointmentChannel
+            notificationSettings: ns
           });
+
+          let confirmReply = appointmentResult.patientMessage || "Randevu talebinizi kliniğimize ilettim.";
 
           const isEnglish = /\b(yes|confirm|ok|okay|sure|please|yeah)\b/i.test(message) || 
                             (history.length > 0 && /\b(english|appointment|date|time|name|phone)\b/i.test(history[history.length - 1].content || ""));
 
-          let confirmReply = "";
-          
           if (isEnglish) {
-            let channelStrEn = "SMS";
-            if (notificationSettings.patientAppointmentChannel === "email") channelStrEn = "email";
-            else if (notificationSettings.patientAppointmentChannel === "whatsapp") channelStrEn = "WhatsApp";
-            else if (notificationSettings.patientAppointmentChannel === "email_and_sms") channelStrEn = "SMS and email";
-            else if (notificationSettings.patientAppointmentChannel === "email_and_whatsapp") channelStrEn = "WhatsApp and email";
-            
-            confirmReply = `Your appointment request has been sent to the clinic. The clinic team will review your preferred date and time. Once your request is approved or an alternative time is suggested, you will be notified by ${channelStrEn}.`;
-          } else {
-            let channelStrTr = "SMS üzerinden";
-            if (notificationSettings.patientAppointmentChannel === "email") channelStrTr = "paylaştığınız e-posta adresi üzerinden";
-            else if (notificationSettings.patientAppointmentChannel === "whatsapp") channelStrTr = "WhatsApp üzerinden";
-            else if (notificationSettings.patientAppointmentChannel === "email_and_sms") channelStrTr = "SMS ve E-posta üzerinden";
-            else if (notificationSettings.patientAppointmentChannel === "email_and_whatsapp") channelStrTr = "WhatsApp ve E-posta üzerinden";
-
-            if (apptData.requestedService && apptData.requestedDate && apptData.requestedTime) {
-              confirmReply = `Randevu talebinizi kliniğimize ilettim. ${apptData.requestedService} işleminiz için tercih ettiğiniz ${apptData.requestedDate} ${apptData.requestedTime} bilgisi klinik ekibi tarafından değerlendirilecektir. Talebiniz onaylandığında veya farklı bir saat önerildiğinde ${channelStrTr} bilgilendirileceksiniz.`;
+            if (!appointmentResult.success) {
+              confirmReply = "Your appointment request could not be sent to the clinic at this time. Please try again shortly.";
+            } else if (appointmentResult.clinicNotification?.attempted && !appointmentResult.clinicNotification?.sent) {
+              confirmReply = "Your pre-appointment request has been saved, but the email notification to the clinic team could not be sent at this time.";
             } else {
-              confirmReply = `Randevu talebinizi kliniğimize ilettim. Klinik ekibi talebinizi değerlendirdikten sonra onay veya uygun saat bilgisi için sizi ${channelStrTr} bilgilendirecektir.`;
+              let channelStrEn = "email";
+              if (appointmentResult.notificationChannel === "sms") channelStrEn = "SMS";
+              else if (appointmentResult.notificationChannel === "whatsapp") channelStrEn = "WhatsApp";
+              
+              confirmReply = `Your appointment request has been sent to the clinic. The clinic team will review your preferred date and time. Once your request is approved or an alternative time is suggested, you will be notified by ${channelStrEn}.`;
             }
           }
 
-          debugLog.push(`appt_created=${appointmentId} email=${emailSent} ms=${Date.now() - startTime}`);
+          debugLog.push(`appt_created=${appointmentResult.appointmentId} db_success=${appointmentResult.success} ms=${Date.now() - startTime}`);
           console.log("[widget-chat]", debugLog.join(" | "));
 
           await logConversation({
@@ -945,12 +950,12 @@ export async function POST(req: Request) {
             aiReply: confirmReply,
             historyLength: history.length,
             apptData,
-            appointmentId,
-            isAppointmentCreated: true,
+            appointmentId: appointmentResult.appointmentId,
+            isAppointmentCreated: appointmentResult.success,
           });
 
           return NextResponse.json(
-            { reply: confirmReply, appointmentId, appointmentCreated: true, conversationId: convId },
+            { reply: confirmReply, toolResponse: appointmentResult, appointmentCreated: appointmentResult.success, conversationId: convId },
             { headers: CORS }
           );
         } catch (e: any) {
