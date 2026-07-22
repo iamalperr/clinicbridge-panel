@@ -254,7 +254,7 @@ function extractAppointmentFromHistory(history: any[]): AppointmentData | null {
   // Find the last assistant message that contains a summary with Ad: and Telefon:
   const confirmMsg = [...assistantMsgs].reverse().find(m =>
     (m.includes("Ad:") || m.includes("ad:") || m.includes("Name:") || m.includes("İsim:")) &&
-    (m.includes("Telefon:") || m.includes("Phone:") || m.includes("Tel:"))
+    (m.includes("Telefon:") || m.includes("Phone:") || m.includes("Tel:") || m.includes("E-posta:") || m.includes("Email:") || m.includes("E-mail:"))
   );
 
   if (!confirmMsg) {
@@ -293,8 +293,8 @@ function extractAppointmentFromHistory(history: any[]): AppointmentData | null {
 
   const originalText = userMsgs.join(" | ");
 
-  if (!patientName || !patientPhone) {
-    console.log(`[appt-extract] Missing required fields: name="${patientName}" phone="${patientPhone}"`);
+  if (!patientName || (!patientPhone && !patientEmail)) {
+    console.log(`[appt-extract] Missing required fields: name="${patientName}" phone="${patientPhone}" email="${patientEmail}"`);
     return null;
   }
 
@@ -517,7 +517,7 @@ async function createAppointment(params: {
     });
   } catch (e) { /* non-critical */ }
 
-  return { appointmentId, emailSent };
+  return { success: !!appointmentId, appointmentId, emailSent };
 }
 
 /* ── Log conversation to Firestore ───────────────────────────────────── */
@@ -1282,13 +1282,14 @@ ${validationRules}
     // so the widget can send it back on confirmation — more reliable than history parsing
     const isConfirmSummary =
       (reply.includes("Ad:") || reply.includes("Name:")) &&
-      (reply.includes("Telefon:") || reply.includes("Phone:")) &&
+      (reply.includes("Telefon:") || reply.includes("Phone:") || reply.includes("E-posta:") || reply.includes("Email:") || reply.includes("E-mail:")) &&
       (reply.includes("Onaylıyor") || reply.includes("Onaylay") || reply.includes("Confirm"));
 
     if (isConfirmSummary) {
       // Parse the summary from AI reply and attach as pendingAppointmentData
       const nameMatch    = reply.match(/(?:Ad|Name|İsim):\s*([^\n\r]+)/i);
       const phoneMatch   = reply.match(/(?:Telefon|Phone|Tel):\s*([0-9\s+\-().]+)/i);
+      const emailMatch   = reply.match(/(?:E-posta|Email|Mail|E-mail):\s*([^\n\r\s]+)/i);
       const serviceMatch = reply.match(/(?:Hizmet|Service|Tedavi):\s*([^\n\r]+)/i);
       const dtMatch      = reply.match(/(?:Tarih\/Saat|Tarih|Date):\s*([^\n\r]+)/i);
       const timeMatch    = reply.match(/(\d{1,2}:\d{2})/i);
@@ -1300,13 +1301,14 @@ ${validationRules}
       const pending: AppointmentData = {
         patientName:      nameMatch?.[1]?.trim()    ?? "",
         patientPhone:     phoneMatch?.[1]?.replace(/\s+/g, "").trim() ?? "",
+        patientEmail:     emailMatch?.[1]?.trim().toLowerCase() ?? "",
         requestedService: serviceMatch?.[1]?.trim() ?? "Genel Muayene",
         requestedDate:    dateStr || dtStr,
         requestedTime:    timeStr,
         originalText:     reply,
       };
 
-      if (pending.patientName && pending.patientPhone) {
+      if (pending.patientName && (pending.patientPhone || pending.patientEmail)) {
         responsePayload.pendingAppointmentData = pending;
         console.log("[widget-chat] pendingAppointmentData attached:", JSON.stringify(pending));
       }
