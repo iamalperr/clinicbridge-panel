@@ -56,7 +56,7 @@ export async function sendClinicAppointmentEmail(
     },
     {
       language: 'tr',
-      subject: \`Yeni Randevu Talebi – \${payload.clinicName}\`,
+      subject: `Yeni Randevu Talebi – ${payload.clinicName}`,
       variables: {
         htmlContent: html,
       }

@@ -1,5 +1,4 @@
-import { Suspense } from 'react';
-import VerifyActionClient from './VerifyActionClient';
+
 import { tokenService } from '@/lib/services/notifications/TokenService';
 import { getAdminDb } from '@/lib/firebase-admin';
 

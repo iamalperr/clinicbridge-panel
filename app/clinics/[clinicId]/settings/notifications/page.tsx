@@ -240,7 +240,7 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
 
       {/* Save Button */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 16, marginTop: 16, paddingTop: 24, borderTop: `1px solid ${UI_COLORS.border}` }}>
-        {saveStatus === "success" && <span style={{ color: UI_COLORS.success, fontSize: 14, fontWeight: 500 }}>✓ Ayarlar kaydedildi</span>}
+        {saveStatus === "success" && <span style={{ color: "#10b981", fontSize: 14, fontWeight: 500 }}>✓ Ayarlar kaydedildi</span>}
         {saveStatus === "error" && <span style={{ color: UI_COLORS.danger, fontSize: 14, fontWeight: 500 }}>{errorMsg}</span>}
         <Button onClick={saveSettings} disabled={isSaving} style={{ minWidth: 140 }}>
           {isSaving ? <Loader2 size={18} className="animate-spin" /> : "Değişiklikleri Kaydet"}
