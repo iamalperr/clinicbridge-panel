@@ -344,6 +344,23 @@ async function createAppointment(params: {
     notificationChannelToSave = "email";
   }
 
+  if (!data.requestedDate) {
+    console.error("[VALIDATION_ERROR] requestedDate is missing.");
+    throw new Error("Validation Error: requestedDate is required");
+  }
+  
+  let validRequestedTime: string | null = data.requestedTime || null;
+  if (validRequestedTime && validRequestedTime.toLowerCase() !== "belirtilmedi") {
+    // Make sure it matches HH:mm (e.g. 14:30)
+    const timeRegex = /^([01]?\d|2[0-3]):?([0-5]\d)$/;
+    if (!timeRegex.test(validRequestedTime)) {
+      console.error(`[VALIDATION_ERROR] requestedTime format invalid: ${validRequestedTime}`);
+      throw new Error(`Validation Error: requestedTime must be in HH:mm format, got: ${validRequestedTime}`);
+    }
+  } else {
+    validRequestedTime = null;
+  }
+
   const apptDoc = {
     clinicId:         clinicId || "",
     conversationId:   conversationId || "",
@@ -352,7 +369,7 @@ async function createAppointment(params: {
     patientEmail:     data.patientEmail || "",
     treatmentType:    data.requestedService || "Genel Muayene",
     preferredDate:    data.requestedDate || "",
-    preferredTime:    data.requestedTime || "",
+    preferredTime:    validRequestedTime,
     appointmentDateTime: "",
     notes:            "",
     source:           "ai_chatbot",
@@ -1142,7 +1159,7 @@ ${validationRules}
    Ad: [isim]
    ${requirePhone ? 'Telefon: [telefon]\n   ' : ''}${requireEmail ? 'E-posta: [email]\n   ' : ''}Hizmet: [hizmet]
    Tarih: [tarih]
-   Saat: [saat]
+   Saat: [saat (Eğer hasta belirli bir saat seçmediyse saat uydurma, 'Belirtilmedi' yaz)]
    Onaylıyor musunuz? (Evet/Hayır)"
 5. Kullanıcı "Evet" dediğinde sistem klinik onayına sunulmak üzere bir ÖN RANDEVU TALEBİ oluşturacak. 
    Kesinlikle "randevunuz oluşturuldu", "onaylandı" deme.

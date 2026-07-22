@@ -198,6 +198,8 @@ export default function AppointmentsPage({ params }: PageProps) {
                   {appointments.map((apt) => {
                     const displayPhone = apt.patientPhone ? apt.patientPhone.replace(/-+$/, "") : "";
                     const displayService = apt.treatmentType || apt.requestedService || apt.service || apt.reason || "Belirtilmedi";
+                    const aptAny = apt as any;
+                    const timeStr = apt.appointmentDateTime || aptAny.appointmentTime || apt.requestedTime || apt.preferredTime || (aptAny.scheduledAt ? new Date(aptAny.scheduledAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : null) || aptAny.startTime;
                     
                     return (
                       <tr key={apt.id} style={{ borderBottom: `1px solid ${UI_COLORS.border}`, transition: "background 0.2s" }} onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-page)"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
@@ -283,10 +285,16 @@ export default function AppointmentsPage({ params }: PageProps) {
                               <Calendar size={14} color={UI_COLORS.textMuted} />
                               {apt.requestedDate || apt.preferredDate}
                             </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: UI_COLORS.textSecondary }}>
-                              <Clock size={14} />
-                              {apt.requestedTime || apt.preferredTime}
-                            </div>
+                            {timeStr ? (
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: UI_COLORS.textSecondary }}>
+                                <Clock size={14} />
+                                {timeStr}
+                              </div>
+                            ) : (
+                              <div style={{ display: "inline-flex", alignItems: "center", padding: "2px 6px", background: "rgba(245, 158, 11, 0.1)", borderRadius: 4, color: "#d97706", fontSize: 11, fontWeight: 600, marginTop: 2 }}>
+                                Saat seçilmedi
+                              </div>
+                            )}
                           </div>
                         </td>
                         <td style={{ padding: "16px 24px" }}>
@@ -318,7 +326,7 @@ export default function AppointmentsPage({ params }: PageProps) {
                         </td>
                         <td style={{ padding: "16px 24px" }}>
                           <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", background: "var(--bg-page)", borderRadius: 100, border: `1px solid ${UI_COLORS.border}`, fontSize: 12, fontWeight: 600, color: UI_COLORS.textSecondary }}>
-                            {apt.source === "ai_chat" || apt.source === "widget" ? "🌐 " + (t("appointments.source.ai_chat") || "AI Chatbot") : (t(`appointments.source.${apt.source}`) || apt.source)}
+                            {["ai_chat", "widget", "ai_chatbot"].includes(apt.source || "") ? "🌐 AI Chatbot" : (t(`appointments.source.${apt.source}`)?.includes("appointments.source") ? apt.source : (t(`appointments.source.${apt.source}`) || apt.source))}
                           </div>
                         </td>
                       </tr>
