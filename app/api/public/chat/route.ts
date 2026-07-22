@@ -323,7 +323,7 @@ async function createAppointment(params: {
     appointmentDateTime: "",
     notes:            "",
     source:           "ai_chat",
-    status:           "pending",
+    status:           "pending_clinic_review",
     createdBy:        "ai_assistant",
     language:         "tr",
     rawConversationSummary: data.originalText || "",
@@ -1011,7 +1011,7 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
    Tarih: [tarih]
    Saat: [saat]
    Onaylıyor musunuz? (Evet/Hayır)"
-4. Kullanıcı "Evet" dediğinde sistem otomatik randevu oluşturacak.`);
+4. Kullanıcı "Evet" dediğinde sistem klinik onayına sunulmak üzere bir ÖN RANDEVU TALEBİ oluşturacak. Kesinlikle "randevunuz onaylandı", "oluşturuldu" (confirmed) ifadelerini KULLANMA. "Talebinizi kliniğe iletiyorum" de.`);
     } else {
       skillBlocks.push("\nNot: Randevu oluşturma özelliği bu klinik için şu an devre dışıdır. Randevu talepleri için kullanıcıyı kliniği doğrudan aramaya yönlendir.");
     }

@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/Select";
 import { UI_COLORS } from "@/components/ui/ui-shared";
 import { Loader2, MessageCircle, Phone, Sparkles, Layout, Mic, Bell } from "lucide-react";
 import type { Clinic, Plan } from "@/lib/types";
+import Link from "next/link";
 
 /** Normalises any Telegram input to a canonical https://t.me/… link */
 function normalizeTelegram(raw: string): string {
@@ -186,6 +187,57 @@ export default function ClinicSettingsPage({ params }: PageProps) {
           Klinik profilinizi ve temel asistan yapılandırmalarınızı yönetin.
         </p>
       </div>
+
+      {/* ── İletişim Kanalları ── */}
+      <SectionCard title="İletişim Kanalları">
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <Input
+            label="WhatsApp Numarası (Opsiyonel)"
+            value={form.whatsappNumber}
+            onChange={field("whatsappNumber")}
+            placeholder="örn: +905551234567"
+          />
+          <Input
+            label="Telegram Kullanıcı Adı (Opsiyonel)"
+            value={form.telegramUsername}
+            onChange={field("telegramUsername")}
+            placeholder="örn: novadental"
+            onBlur={() => {
+              if (form.telegramUsername) {
+                setForm((prev) => ({ ...prev, telegramUsername: normalizeTelegram(prev.telegramUsername) }));
+              }
+            }}
+          />
+        </div>
+      </SectionCard>
+
+      {/* ── Bildirim Ayarları ── */}
+      <SectionCard title="Bildirim Ayarları">
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <p style={{ color: UI_COLORS.textSecondary, fontSize: 14 }}>
+            Hastalarınıza gönderilecek otomatik e-posta bildirimlerini, şablonları ve aktif iletişim kanallarını yapılandırın.
+          </p>
+          <div style={{ marginTop: 8 }}>
+            <Link 
+              href={`/clinics/${clinicId}/settings/notifications`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "8px 16px",
+                background: "rgba(99, 102, 241, 0.1)",
+                color: UI_COLORS.brand,
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight: 600,
+                textDecoration: "none"
+              }}
+            >
+              <Bell size={16} style={{ marginRight: 8 }} />
+              Hasta Bildirimleri Ayarları
+            </Link>
+          </div>
+        </div>
+      </SectionCard>
 
       {/* ── Genel Bilgiler ── */}
       <SectionCard title="Genel Bilgiler">

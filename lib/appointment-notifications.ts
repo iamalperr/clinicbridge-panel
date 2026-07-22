@@ -1,3 +1,5 @@
+import { notificationService } from './services/notifications/NotificationService';
+
 /**
  * Appointment Notification Services
  * - sendClinicAppointmentEmail: Resend ile klinik kullanıcılarına email
@@ -20,15 +22,6 @@ export interface AppointmentEmailPayload {
 export async function sendClinicAppointmentEmail(
   payload: AppointmentEmailPayload
 ): Promise<{ success: boolean; error?: string }> {
-  const RESEND_KEY = process.env.RESEND_API_KEY;
-  const FROM       = process.env.EMAIL_FROM ?? "no-reply@clinicbridge-ai.com";
-
-  if (!RESEND_KEY) {
-    console.warn("[appointment-email] RESEND_API_KEY not set — logging to console only");
-    console.log("[appointment-email] MOCK EMAIL:", JSON.stringify(payload, null, 2));
-    return { success: true };
-  }
-
   const html = `
     <div style="font-family:sans-serif;max-width:560px;margin:0 auto;line-height:1.6;">
       <h2 style="color:#6366f1">Yeni Randevu Talebi - ClinicBridge AI</h2>
@@ -38,7 +31,6 @@ export async function sendClinicAppointmentEmail(
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600;width:170px">Klinik</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.clinicName}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Hasta</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.patientName}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Telefon</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.patientPhone}</td></tr>
-        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">E-posta</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">-</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Hizmet / İşlem</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedService}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Tercih Edilen Tarih</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedDate}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Tercih Edilen Saat</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedTime}</td></tr>
@@ -53,33 +45,25 @@ export async function sendClinicAppointmentEmail(
     </div>
   `;
 
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${RESEND_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: FROM,
-        to:   [payload.clinicEmail],
-        subject: `Yeni Randevu Talebi – ${payload.clinicName}`,
-        html,
-      }),
-    });
-
-    if (!res.ok) {
-      const err = await res.text();
-      console.error("[appointment-email] Resend error:", err);
-      return { success: false, error: err };
+  const result = await notificationService.sendNotification(
+    {
+      tenant_id: 'legacy', // To be updated if tenant logic is applied
+      clinic_id: 'unknown',
+      appointment_id: payload.appointmentId,
+      event_type: 'appointment.request.created',
+      channel: 'email',
+      recipient: payload.clinicEmail,
+    },
+    {
+      language: 'tr',
+      subject: \`Yeni Randevu Talebi – \${payload.clinicName}\`,
+      variables: {
+        htmlContent: html,
+      }
     }
+  );
 
-    console.log(`[appointment-email] Sent to ${payload.clinicEmail}`);
-    return { success: true };
-  } catch (err: any) {
-    console.error("[appointment-email] Network error:", err.message);
-    return { success: false, error: err.message };
-  }
+  return { success: result.success, error: result.error };
 }
 
 /* ── SMS (mock / provider-ready) ───────────────────────────────────────── */
