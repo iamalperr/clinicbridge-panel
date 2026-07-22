@@ -62,9 +62,9 @@ export async function POST(req: Request, { params }: RouteParams) {
     }
 
     const patientNotificationSettings = clinicData.patientNotificationSettings || {
-      primaryChannel: "sms",
-      collectEmail: false,
-      collectPhone: true
+      primaryChannel: "email",
+      collectEmail: true,
+      collectPhone: false
     };
     const primaryChannel = patientNotificationSettings.primaryChannel;
 
@@ -97,54 +97,30 @@ export async function POST(req: Request, { params }: RouteParams) {
         }
       } 
       
-      // If primaryChannel is strictly SMS, or email_and_sms is used, we could send SMS. 
-      // But based on user requirements: "If appointmentNotificationChannel = email, Do not attempt SMS."
-      // Let's only do SMS if email is NOT the primary and SMS is requested, OR if we want to fallback?
-      // Wait, the user explicitly said "If appointmentNotificationChannel = email, Do not attempt SMS."
-      // So if it's sms, send SMS. If it's email_and_sms, we could send both, but let's keep it simple and just do SMS if it's explicitly sms for legacy compatibility.
+      // Note: SMS and WhatsApp channels are currently passive as per requirements.
+      // If primaryChannel is "sms" or "whatsapp", we do not attempt to send notifications through them.
       if (!notificationChannelUsed && (primaryChannel === "sms" || primaryChannel === "email_and_sms")) {
-        notificationChannelUsed = "sms";
-        if (apptData.patientPhone) {
-          const isEn = apptData.language === "en";
-          let smsMessage = "";
-          let smsType = "";
-
-          if (newStatus === "confirmed" || newStatus === "approved") {
-            smsType = "appointment_confirmed";
-            if (treatment && date && time) {
-              smsMessage = isEn
-                ? `ClinicBridge AI: Your appointment request at ${clinicName} has been approved for ${treatment} on ${date} ${time}.`
-                : `ClinicBridge AI: ${clinicName} randevu talebinizi onayladı. ${treatment} için ${date} ${time} randevu talebiniz uygun görülmüştür. Sağlıklı günler dileriz.`;
-            } else {
-              smsMessage = isEn
-                ? `ClinicBridge AI: Your appointment request at ${clinicName} has been approved. The clinic may contact you for details.`
-                : `ClinicBridge AI: ${clinicName} randevu talebinizi onayladı. Detaylar için kliniğiniz sizinle iletişime geçebilir. Sağlıklı günler dileriz.`;
-            }
-          } else if (newStatus === "cancelled" || newStatus === "rejected") {
-            smsType = "appointment_cancelled";
-            smsMessage = isEn
-              ? `ClinicBridge AI: Your appointment request at ${clinicName} could not be approved at this time. The clinic may contact you for alternative options.`
-              : `ClinicBridge AI: ${clinicName} randevu talebiniz şu an için onaylanamadı. Uygun alternatif saatler için kliniğiniz sizinle iletişime geçebilir. Sağlıklı günler dileriz.`;
-          } else if (newStatus === "alternative_time_proposed") {
-             smsType = "appointment_rescheduled";
-             smsMessage = isEn
-               ? `ClinicBridge AI: ${clinicName} proposed a new time for your appointment: ${date} ${time}.`
-               : `ClinicBridge AI: ${clinicName} randevu talebiniz için yeni bir saat önerdi: ${date} ${time}.`;
-          }
-
-          if (smsMessage) {
-            notificationResult = await sendSms({
-              to: apptData.patientPhone,
-              message: smsMessage,
-              clinicId,
-              appointmentId,
-              type: smsType
-            });
-            (notificationResult as any).smsType = smsType;
-            (notificationResult as any).smsMessage = smsMessage;
-          }
+        // notificationResult = { success: false, skipped: true, reason: "passive_channel", error: "SMS kanalı geçici olarak devre dışıdır." };
+        // We will just not set notificationChannelUsed so it behaves as no notification sent, 
+        // or we can force email fallback if there's an email.
+        
+        // Let's force email fallback if SMS is passive but patient has email
+        if (apptData.patientEmail) {
+          notificationChannelUsed = "email";
+          notificationResult = await sendPatientAppointmentStatusEmail({
+            patientEmail: apptData.patientEmail,
+            patientName: apptData.patientName || "Değerli Hastamız",
+            clinicName,
+            treatment,
+            requestedDate: date,
+            requestedTime: time,
+            status: newStatus,
+            appointmentId
+          });
         } else {
-          notificationResult = { success: false, reason: "no_phone", error: "Hastanın telefon numarası bulunmuyor." };
+          // If they wanted SMS but it's passive, we just skip it quietly.
+          notificationChannelUsed = "email"; 
+          notificationResult = { success: false, reason: "no_email", error: "Hastanın e-posta adresi bulunmuyor." };
         }
       }
     }

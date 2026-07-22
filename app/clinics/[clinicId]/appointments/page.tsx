@@ -90,18 +90,6 @@ export default function AppointmentsPage({ params }: PageProps) {
           } else {
             setToastMsg("Randevu durumu güncellendi ancak hastaya e-posta gönderilemedi.");
           }
-        } else if (channel === "sms") {
-          if (result?.success) {
-            setToastMsg(t("appointments.statusUpdateSmsSent") || "Randevu durumu güncellendi ve hastaya SMS gönderildi.");
-          } else if (result?.skipped) {
-            setToastMsg(t("appointments.statusUpdateSmsSkipped") || "Randevu durumu güncellendi. SMS sağlayıcısı yapılandırılmadığı için SMS gönderilmedi.");
-          } else if (result?.reason === "invalid_phone") {
-            setToastMsg(t("appointments.statusUpdateSmsInvalidPhone") || "Randevu durumu güncellendi ancak hasta telefon numarası geçersiz olduğu için SMS gönderilemedi.");
-          } else if (result?.reason === "no_phone") {
-            setToastMsg("Randevu durumu güncellendi ancak hastanın telefon numarası bulunmuyor.");
-          } else {
-            setToastMsg(t("appointments.statusUpdateSmsFailed") || "Randevu durumu güncellendi ancak SMS gönderimi başarısız oldu.");
-          }
         } else {
           setToastMsg(t("appointments.updateSuccess") || "Randevu durumu güncellendi.");
         }
@@ -265,24 +253,6 @@ export default function AppointmentsPage({ params }: PageProps) {
                                        apt.patientNotificationStatus === "missing_contact" ? "İletişim Bilgisi Yok" :
                                        "Bildirim Durumu Bekleniyor"}
                                     </div>
-                                  ) : apt.smsNotificationStatus ? (
-                                    <div style={{
-                                      display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500,
-                                      backgroundColor: apt.smsNotificationStatus === "sent" ? "rgba(34, 197, 94, 0.1)" : 
-                                                       apt.smsNotificationStatus === "failed" ? "rgba(239, 68, 68, 0.1)" : "rgba(100, 116, 139, 0.1)",
-                                      color: apt.smsNotificationStatus === "sent" ? "#16a34a" : 
-                                             apt.smsNotificationStatus === "failed" ? "#dc2626" : "#475569",
-                                      padding: '4px 8px', borderRadius: '12px', width: 'fit-content', marginTop: '6px'
-                                    }}>
-                                      {apt.smsNotificationStatus === "sent" ? <CheckCircle size={12} /> : 
-                                       apt.smsNotificationStatus === "failed" ? <XCircle size={12} /> : <MessageSquare size={12} />}
-                                      
-                                      {apt.smsNotificationStatus === "sent" ? (t("appointments.sms.sent") || "SMS Gönderildi") : 
-                                       apt.smsNotificationStatus === "failed" ? (t("appointments.sms.failed") || "SMS Gönderilemedi") : 
-                                       apt.smsNotificationStatus === "invalid_phone" ? (t("appointments.sms.invalidPhone") || "Telefon Geçersiz") : 
-                                       apt.smsNotificationStatus === "skipped" ? (t("appointments.sms.skipped") || "SMS Sağlayıcısı Yok") : 
-                                       (t("appointments.sms.skipped") || "SMS Sağlayıcısı Yok")}
-                                    </div>
                                   ) : (
                                     <div style={{
                                       display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500,
@@ -290,7 +260,7 @@ export default function AppointmentsPage({ params }: PageProps) {
                                       padding: '4px 8px', borderRadius: '12px', width: 'fit-content', marginTop: '6px'
                                     }}>
                                       <MessageSquare size={12} />
-                                      {(t("appointments.sms.skipped") || "SMS Sağlayıcısı Yok")}
+                                      {(t("appointments.sms.skipped") || "Bildirim Ayarlanmadı")}
                                     </div>
                                   )}
                                 </>
