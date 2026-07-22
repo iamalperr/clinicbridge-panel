@@ -51,6 +51,13 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
   const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
 
+  const [patientNotificationSettings, setPatientNotificationSettings] = useState({
+    primaryChannel: "sms",
+    enabledChannels: ["sms", "email"],
+    collectEmail: false,
+    collectPhone: true
+  });
+
   const loadSettings = useCallback(async () => {
     try {
       const snap = await getDoc(doc(db, "clinics", clinicId, "settings", "notifications"));
@@ -59,6 +66,12 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
         setSettings({ ...DEFAULT_SETTINGS, ...data });
       } else {
         setSettings({ ...DEFAULT_SETTINGS, clinic_id: clinicId });
+      }
+
+      // Load root clinic settings for patientNotificationSettings
+      const clinicSnap = await getDoc(doc(db, "clinics", clinicId));
+      if (clinicSnap.exists() && clinicSnap.data().patientNotificationSettings) {
+        setPatientNotificationSettings(clinicSnap.data().patientNotificationSettings);
       }
     } catch (err) {
       console.error("Failed to load notification settings", err);
@@ -76,6 +89,12 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
     setSaveStatus("idle");
     setErrorMsg("");
     try {
+      // Save root clinic settings
+      await updateDoc(doc(db, "clinics", clinicId), {
+        patientNotificationSettings: patientNotificationSettings
+      });
+
+      // Save subcollection settings
       await updateDoc(doc(db, "clinics", clinicId, "settings", "notifications"), {
         ...settings,
         updated_at: serverTimestamp()
@@ -154,6 +173,42 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
             onChange={(e) => setSettings(prev => ({ ...prev, patient_notifications_enabled: e.target.checked }))}
             style={{ width: 20, height: 20, accentColor: UI_COLORS.brand, cursor: "pointer" }}
           />
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 24, paddingTop: 24, borderTop: `1px solid ${UI_COLORS.border}` }}>
+          <Select
+            label="Birincil Bildirim Kanalı"
+            value={patientNotificationSettings.primaryChannel}
+            onChange={(e) => setPatientNotificationSettings(prev => ({ ...prev, primaryChannel: e.target.value }))}
+            options={[
+              { label: "Sadece E-Posta", value: "email" },
+              { label: "Sadece SMS", value: "sms" },
+              { label: "Sadece WhatsApp", value: "whatsapp" },
+              { label: "E-Posta ve SMS", value: "email_and_sms" },
+              { label: "E-Posta ve WhatsApp", value: "email_and_whatsapp" }
+            ]}
+          />
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 12, border: `1px solid ${UI_COLORS.border}`, borderRadius: 8 }}>
+              <span style={{ fontSize: 14 }}>Hasta E-posta Adresi İste</span>
+              <input
+                type="checkbox"
+                checked={patientNotificationSettings.collectEmail}
+                onChange={(e) => setPatientNotificationSettings(prev => ({ ...prev, collectEmail: e.target.checked }))}
+                style={{ width: 18, height: 18, accentColor: UI_COLORS.brand, cursor: "pointer" }}
+              />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 12, border: `1px solid ${UI_COLORS.border}`, borderRadius: 8 }}>
+              <span style={{ fontSize: 14 }}>Hasta Telefon Numarası İste</span>
+              <input
+                type="checkbox"
+                checked={patientNotificationSettings.collectPhone}
+                onChange={(e) => setPatientNotificationSettings(prev => ({ ...prev, collectPhone: e.target.checked }))}
+                style={{ width: 18, height: 18, accentColor: UI_COLORS.brand, cursor: "pointer" }}
+              />
+            </div>
+          </div>
         </div>
       </SectionCard>
 

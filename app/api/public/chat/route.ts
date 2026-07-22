@@ -9,6 +9,7 @@ import {
 import {
   sendClinicAppointmentEmail,
   sendPatientSms,
+  sendPatientAppointmentEmail,
 } from "@/lib/appointment-notifications";
 
 // Cache to avoid parsing working hours repeatedly
@@ -239,6 +240,7 @@ function isConfirmation(msg: string): boolean {
 interface AppointmentData {
   patientName: string;
   patientPhone: string;
+  patientEmail?: string;
   requestedService: string;
   requestedDate: string;
   requestedTime: string;
@@ -265,11 +267,13 @@ function extractAppointmentFromHistory(history: any[]): AppointmentData | null {
   // Extract each field with flexible regex
   const nameMatch    = confirmMsg.match(/(?:Ad|Name|İsim|Hasta):\s*([^\n\r]+)/i);
   const phoneMatch   = confirmMsg.match(/(?:Telefon|Phone|Tel):\s*([0-9\s+\-().]+)/i);
+  const emailMatch   = confirmMsg.match(/(?:E-posta|Email|Mail|E-mail):\s*([^\n\r\s]+)/i);
   const serviceMatch = confirmMsg.match(/(?:Hizmet|Service|Tedavi|Treatment):\s*([^\n\r]+)/i);
   const dtMatch      = confirmMsg.match(/(?:Tarih\/Saat|Date\/Time|Tarih|Date|Saat):\s*([^\n\r]+)/i);
 
   const patientName      = nameMatch?.[1]?.trim() ?? "";
   const patientPhone     = phoneMatch?.[1]?.replace(/\s+/g, "").trim() ?? "";
+  const patientEmail     = emailMatch?.[1]?.trim().toLowerCase() ?? "";
   const requestedService = serviceMatch?.[1]?.trim() ?? "Genel Muayene";
 
   // Parse date and time from the combined field
@@ -295,7 +299,15 @@ function extractAppointmentFromHistory(history: any[]): AppointmentData | null {
   }
 
   console.log(`[appt-extract] ✅ name="${patientName}" phone="${patientPhone}" service="${requestedService}" date="${requestedDate}" time="${requestedTime}"`);
-  return { patientName, patientPhone, requestedService, requestedDate, requestedTime, originalText };
+  return {
+    patientName,
+    patientPhone,
+    patientEmail,
+    requestedService,
+    requestedDate,
+    requestedTime,
+    originalText: confirmMsg
+  };
 }
 
 /* ── Create appointment — Admin SDK (primary) or REST API (fallback) ──── */
@@ -304,8 +316,9 @@ async function createAppointment(params: {
   clinicName: string;
   data: AppointmentData;
   conversationId: string;
+  notificationChannel?: string;
 }): Promise<{ appointmentId: string; emailSent: boolean }> {
-  const { clinicId, clinicName, data, conversationId } = params;
+  const { clinicId, clinicName, data, conversationId, notificationChannel = "sms" } = params;
 
   const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? "";
   const apiKey    = process.env.NEXT_PUBLIC_FIREBASE_API_KEY    ?? "";
@@ -316,7 +329,7 @@ async function createAppointment(params: {
     conversationId:   conversationId || "",
     patientName:      data.patientName || "",
     patientPhone:     data.patientPhone || "",
-    patientEmail:     "", // optional
+    patientEmail:     data.patientEmail || "",
     treatmentType:    data.requestedService || "Genel Muayene",
     preferredDate:    data.requestedDate || "",
     preferredTime:    data.requestedTime || "",
@@ -324,6 +337,7 @@ async function createAppointment(params: {
     notes:            "",
     source:           "ai_chat",
     status:           "pending_clinic_review",
+    notificationChannel: notificationChannel,
     createdBy:        "ai_assistant",
     language:         "tr",
     rawConversationSummary: data.originalText || "",
@@ -409,16 +423,36 @@ async function createAppointment(params: {
   }
 
   /* ── SMS (mock) ───────────────────────────────────── */
-  try {
-    await sendPatientSms({
-      phone:            data.patientPhone,
-      clinicName,
-      requestedDate:    data.requestedDate,
-      requestedTime:    data.requestedTime,
-      requestedService: data.requestedService,
-    });
-  } catch (e: any) {
-    console.error("[appointment-sms] Error:", e.message);
+  if (notificationChannel === "sms" || notificationChannel === "email_and_sms") {
+    try {
+      await sendPatientSms({
+        phone:            data.patientPhone,
+        clinicName,
+        requestedDate:    data.requestedDate,
+        requestedTime:    data.requestedTime,
+        requestedService: data.requestedService,
+      });
+    } catch (e: any) {
+      console.error("[appointment-sms] Error:", e.message);
+    }
+  }
+
+  /* ── Patient Email ────────────────────────────────── */
+  if ((notificationChannel === "email" || notificationChannel === "email_and_sms" || notificationChannel === "email_and_whatsapp") && data.patientEmail) {
+    try {
+      await sendPatientAppointmentEmail({
+        clinicName,
+        clinicEmail: data.patientEmail, // Reusing clinicEmail field in payload for recipient email
+        patientName: data.patientName,
+        patientPhone: data.patientPhone,
+        requestedService: data.requestedService,
+        requestedDate: data.requestedDate,
+        requestedTime: data.requestedTime,
+        appointmentId,
+      });
+    } catch (e: any) {
+      console.error("[appointment-patient-email] Error:", e.message);
+    }
   }
 
   /* ── Email to clinic ──────────────────────────────── */
@@ -725,6 +759,7 @@ export async function POST(req: Request) {
     let clinicWhatsapp = "";
     let clinicTelegram = "";
     let clinicLanguage = "tr";
+    let clinicData: any = null;
 
     if (adminDb) {
       const [clinicSnap, promptSnap, materialsSnap] = await Promise.all([
@@ -734,6 +769,7 @@ export async function POST(req: Request) {
       ]);
       if (clinicSnap.exists) {
         const cData = clinicSnap.data()!;
+        clinicData      = cData;
         clinicName      = cData.name          ?? "Klinik";
         clinicWhatsapp  = cData.whatsappNumber  ?? "";
         clinicTelegram  = cData.telegramUsername ?? "";
@@ -749,6 +785,7 @@ export async function POST(req: Request) {
       ]);
       if (clinicSnap.exists()) {
         const cData = clinicSnap.data()!;
+        clinicData      = cData;
         clinicName      = cData.name          ?? "Klinik";
         clinicWhatsapp  = cData.whatsappNumber  ?? "";
         clinicTelegram  = cData.telegramUsername ?? "";
@@ -857,24 +894,33 @@ export async function POST(req: Request) {
 
       if (apptData) {
         try {
+          const patientNotificationSettings = clinicData?.patientNotificationSettings || {
+            primaryChannel: "sms"
+          };
+          
           const { appointmentId, emailSent } = await createAppointment({
             clinicId,
             clinicName,
             data: apptData,
             conversationId: conversationId || `session_${Date.now()}`,
+            notificationChannel: patientNotificationSettings.primaryChannel
           });
 
           const isEnglish = /\b(yes|confirm|ok|okay|sure|please|yeah)\b/i.test(message) || 
                             (history.length > 0 && /\b(english|appointment|date|time|name|phone)\b/i.test(history[history.length - 1].content || ""));
 
           let confirmReply = "";
+          const isEmailChannel = patientNotificationSettings.primaryChannel === "email";
+          
           if (isEnglish) {
-            confirmReply = `Your appointment request has been sent to the clinic. The clinic team will review your preferred date and time. Once your request is approved or an alternative time is suggested, you will be notified by SMS.`;
+            const channelStrEn = isEmailChannel ? "email" : "SMS";
+            confirmReply = `Your appointment request has been sent to the clinic. The clinic team will review your preferred date and time. Once your request is approved or an alternative time is suggested, you will be notified by ${channelStrEn}.`;
           } else {
+            const channelStrTr = isEmailChannel ? "paylaştığınız e-posta adresi üzerinden" : "SMS üzerinden";
             if (apptData.requestedService && apptData.requestedDate && apptData.requestedTime) {
-              confirmReply = `Randevu talebinizi kliniğimize ilettim. ${apptData.requestedService} işleminiz için tercih ettiğiniz ${apptData.requestedDate} ${apptData.requestedTime} bilgisi klinik ekibi tarafından değerlendirilecektir. Talebiniz onaylandığında veya farklı bir saat önerildiğinde SMS üzerinden bilgilendirileceksiniz.`;
+              confirmReply = `Randevu talebinizi kliniğimize ilettim. ${apptData.requestedService} işleminiz için tercih ettiğiniz ${apptData.requestedDate} ${apptData.requestedTime} bilgisi klinik ekibi tarafından değerlendirilecektir. Talebiniz onaylandığında veya farklı bir saat önerildiğinde ${channelStrTr} bilgilendirileceksiniz.`;
             } else {
-              confirmReply = `Randevu talebinizi kliniğimize ilettim. Klinik ekibi talebinizi değerlendirdikten sonra onay veya uygun saat bilgisi için sizi SMS üzerinden bilgilendirecektir.`;
+              confirmReply = `Randevu talebinizi kliniğimize ilettim. Klinik ekibi talebinizi değerlendirdikten sonra onay veya uygun saat bilgisi için sizi ${channelStrTr} bilgilendirecektir.`;
             }
           }
 
@@ -1035,24 +1081,46 @@ export async function POST(req: Request) {
 
     // create_appointment_request — always injected if enabled (core UX)
     if (skillOn("create_appointment_request")) {
+      const patientNotificationSettings = clinicData?.patientNotificationSettings || {
+        primaryChannel: "sms",
+        collectEmail: false,
+        collectPhone: true
+      };
+
+      const { primaryChannel, collectEmail, collectPhone } = patientNotificationSettings;
+
+      const requiresEmailStr = collectEmail ? "- E-posta Adresi (Mutlaka geçerli bir adres alınmalı)" : "";
+      const requiresPhoneStr = collectPhone ? "- Telefon Numarası" : "";
+      
+      const validationRules = collectEmail 
+          ? `3. E-posta adresi geçerliliğini kontrol et (@ işareti, alan adı vs.). Hatalıysa: "E-posta adresinizde küçük bir eksiklik görünüyor. Klinik dönüşünü iletebilmemiz için adresinizi örneğin adiniz@example.com formatında tekrar paylaşabilir misiniz?" şeklinde nazikçe uyar.`
+          : `3. Bilgileri doğrula.`;
+          
+      const confirmationSentence = primaryChannel === "email" 
+          ? `Talebiniz onaylandığında veya farklı bir saat önerildiğinde, paylaştığınız e-posta adresi üzerinden bilgilendirileceksiniz.`
+          : `Talebiniz onaylandığında veya farklı bir saat önerildiğinde, SMS üzerinden bilgilendirileceksiniz.`;
+
       skillBlocks.push(`\nRANDEVU AKIŞI:
 Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın diş beyazlatma", "Doktora görünmek istiyorum", vb.):
 1. Şu bilgileri adım adım, tek tek ve DOĞAL bir dille topla:
    - Ad ve Soyad
-   - Telefon Numarası
+   ${requiresPhoneStr}
+   ${requiresEmailStr}
    - Tedavi/İşlem Türü
    - Tercih edilen Tarih
    - Tercih edilen Saat
-2. Eğer bir bilgi eksikse sadece o bilgiyi sor.
-3. Tüm bilgiler tamam olunca MUTLAKA şu formatta özet ve onay iste:
+2. Eğer bir bilgi eksikse sadece o bilgiyi sor. (Aynı konuşmada daha önce verilen bir bilgiyi tekrar sorma).
+${validationRules}
+4. Tüm bilgiler tamam olunca MUTLAKA şu formatta özet ve onay iste:
    "Harika! Şu bilgilerle randevu talebi oluşturayım mı?
    Ad: [isim]
-   Telefon: [telefon]
-   Hizmet: [hizmet]
+   ${collectPhone ? 'Telefon: [telefon]\n   ' : ''}${collectEmail ? 'E-posta: [email]\n   ' : ''}Hizmet: [hizmet]
    Tarih: [tarih]
    Saat: [saat]
    Onaylıyor musunuz? (Evet/Hayır)"
-4. Kullanıcı "Evet" dediğinde sistem klinik onayına sunulmak üzere bir ÖN RANDEVU TALEBİ oluşturacak. Kesinlikle "randevunuz onaylandı", "oluşturuldu" (confirmed) ifadelerini KULLANMA. "Talebinizi kliniğe iletiyorum" de.`);
+5. Kullanıcı "Evet" dediğinde sistem klinik onayına sunulmak üzere bir ÖN RANDEVU TALEBİ oluşturacak. 
+   Kesinlikle "randevunuz oluşturuldu", "onaylandı" deme.
+   Kapanış mesajı olarak şunu kullan: "Ön randevu talebinizi kliniğimize ilettim. [Hizmet] işlemi için tercih ettiğiniz [Tarih] [Saat] bilgisi klinik ekibi tarafından değerlendirilecektir. ${confirmationSentence}"`);
     } else {
       skillBlocks.push("\nNot: Randevu oluşturma özelliği bu klinik için şu an devre dışıdır. Randevu talepleri için kullanıcıyı kliniği doğrudan aramaya yönlendir.");
     }

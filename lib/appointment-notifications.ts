@@ -66,6 +66,50 @@ export async function sendClinicAppointmentEmail(
   return { success: result.success, error: result.error };
 }
 
+export async function sendPatientAppointmentEmail(
+  payload: AppointmentEmailPayload
+): Promise<{ success: boolean; error?: string }> {
+  const html = `
+    <div style="font-family:sans-serif;max-width:560px;margin:0 auto;line-height:1.6;">
+      <h2 style="color:#6366f1">Randevu Talebiniz Alındı</h2>
+      <p>Merhaba ${payload.patientName},</p>
+      <p><strong>${payload.clinicName}</strong> kliniğine iletilen randevu talebiniz başarıyla alındı. Klinik ekibi tercih ettiğiniz tarihi değerlendirdikten sonra size yine bu e-posta adresi üzerinden dönüş yapacaktır.</p>
+      <table style="width:100%;border-collapse:collapse;margin:24px 0">
+        <tr><td style="padding:10px;background:#f8fafc;font-weight:600;width:170px">Klinik</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.clinicName}</td></tr>
+        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Hizmet / İşlem</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedService}</td></tr>
+        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Tercih Edilen Tarih</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedDate}</td></tr>
+        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Tercih Edilen Saat</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedTime}</td></tr>
+        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Durum</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">Değerlendirme Aşamasında</td></tr>
+      </table>
+      <p style="color:#64748b;font-size:14px">
+        Sağlıklı günler dileriz.
+      </p>
+      <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0"/>
+      <p style="color:#94a3b8;font-size:12px">ClinicBridge AI</p>
+    </div>
+  `;
+
+  const result = await notificationService.sendNotification(
+    {
+      tenant_id: 'legacy',
+      clinic_id: 'unknown',
+      appointment_id: payload.appointmentId,
+      event_type: 'appointment.request.created',
+      channel: 'email',
+      recipient: payload.clinicEmail, // Note: clinicEmail in the payload is actually the recipient. For patient, pass patientEmail here.
+    },
+    {
+      language: 'tr',
+      subject: `${payload.clinicName} Randevu Talebiniz Alındı`,
+      variables: {
+        htmlContent: html,
+      }
+    }
+  );
+
+  return { success: result.success, error: result.error };
+}
+
 /* ── SMS (mock / provider-ready) ───────────────────────────────────────── */
 
 export interface SmsPayload {
