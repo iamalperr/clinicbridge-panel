@@ -798,7 +798,8 @@ export async function POST(req: Request) {
             });
             doctorContext = `Sistemimizde şu an bu kliniğe ait aktif ${docsSnap.docs.length} doktor kaydı bulunmaktadır.\n\nDOKTORLAR LİSTESİ:\n\n${docsList.join('\n\n---\n\n')}\n\nÖNEMLİ KURAL: Kullanıcı doktorları sorduğunda, yukarıdaki listede bulunan TÜM doktorları (hiçbirini atlamadan) eksiksiz olarak listele. "Bazı doktorlarımız..." gibi ifadeler kullanma, doktor sayısını kesin olarak belirt ve SADECE yukarıda verilen doğrulanmış bilgileri kullan. Eksik olan bir bilgiyi (örneğin eğitim veya diller) kesinlikle uydurma.`;
           } else {
-            doctorContext = "Sistemimizde şu an bu klinikte aktif olarak kayıtlı doktor bilgisi bulunmamaktadır. Lütfen hastaya şu an sistemde doğrulanmış bir doktor bilgisinin olmadığını, detaylar için kliniği doğrudan arayabileceğini belirt. Kurgusal doktor isimleri üretme.";
+            // Structured collection empty -> Do not add a negative constraint. 
+            // We will rely on the AI Knowledge Base (RAG) and boost doctor docs below.
           }
         } catch (err) {
           console.error("[chat] Error fetching doctors", err);
@@ -816,10 +817,14 @@ export async function POST(req: Request) {
       if (isLocationIntent && /\b(konum|ulaşım|adres|lokasyon|location|address|karte|adresse)\b/.test(text)) {
          score += 50; // Artificial boost to ensure inclusion
       }
+      if (isDoctorIntent && /\b(doktor|hekim|uzman|doctor|dentist|specialist|cerrah|surgeon|dt\.|dr\.)\b/.test(text)) {
+         score += 200; // HUGE boost to ensure ALL doctor profiles from the KB are included
+      }
       return { ...d, score };
     });
     scored.sort((a, b) => b.score - a.score);
-    const topDocs = scored.slice(0, 12);
+    const sliceLimit = isDoctorIntent ? 30 : 12;
+    const topDocs = scored.slice(0, sliceLimit);
     const knowledgeContext = topDocs.length > 0
       ? topDocs.map(d => `## ${d.title}\n${d.content}`).join("\n\n---\n\n")
       : "";
