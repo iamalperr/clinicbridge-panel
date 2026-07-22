@@ -770,6 +770,42 @@ export async function POST(req: Request) {
     // YENİ: Konum RAG araması iyileştirmesi
     const isLocationIntent = /\b(nerede|adres|nerdesiniz|semt|ilçe|ulaşım|konum|lokasyon|address|where|get there|befindet|adresse)\b/.test(msgLower);
 
+    // YENİ: Doktor niyet tespiti
+    const isDoctorIntent = /\b(doktor|hekim|uzman|doctor|dentist|specialist|cerrah|surgeon|tıbbi|medical team|ekip|doctors|hekimler|doktorlar)\b/i.test(msgLower);
+    
+    let doctorContext = "";
+    if (isDoctorIntent) {
+      const adminDb = getAdminDb();
+      if (adminDb) {
+        try {
+          const docsSnap = await adminDb.collection("clinics").doc(clinicId).collection("doctors")
+            .where("status", "==", "active")
+            .where("showOnPublicProfile", "!=", false)
+            .get();
+          
+          if (!docsSnap.empty) {
+            const docsList = docsSnap.docs.map(d => {
+              const data = d.data();
+              let text = `Ad: ${data.title ? data.title + ' ' : ''}${data.doctorName}\n`;
+              if (data.specialty) text += `Uzmanlık: ${data.specialty}\n`;
+              if (data.role) text += `Görev: ${data.role}\n`;
+              if (data.education) text += `Eğitim: ${data.education}\n`;
+              if (data.experienceYears) text += `Deneyim: ${data.experienceYears} Yıl\n`;
+              if (data.supportedLanguages?.length) text += `Konuştuğu Diller: ${data.supportedLanguages.join(", ")}\n`;
+              if (data.expertiseAreas?.length) text += `İlgi Alanları/Uzmanlıkları: ${data.expertiseAreas.join(", ")}\n`;
+              if (data.highlightedTreatments?.length) text += `Öne Çıkan Tedavileri: ${data.highlightedTreatments.join(", ")}\n`;
+              return text.trim();
+            });
+            doctorContext = `Sistemimizde şu an bu kliniğe ait aktif ${docsSnap.docs.length} doktor kaydı bulunmaktadır.\n\nDOKTORLAR LİSTESİ:\n\n${docsList.join('\n\n---\n\n')}\n\nÖNEMLİ KURAL: Kullanıcı doktorları sorduğunda, yukarıdaki listede bulunan TÜM doktorları (hiçbirini atlamadan) eksiksiz olarak listele. "Bazı doktorlarımız..." gibi ifadeler kullanma, doktor sayısını kesin olarak belirt ve SADECE yukarıda verilen doğrulanmış bilgileri kullan. Eksik olan bir bilgiyi (örneğin eğitim veya diller) kesinlikle uydurma.`;
+          } else {
+            doctorContext = "Sistemimizde şu an bu klinikte aktif olarak kayıtlı doktor bilgisi bulunmamaktadır. Lütfen hastaya şu an sistemde doğrulanmış bir doktor bilgisinin olmadığını, detaylar için kliniği doğrudan arayabileceğini belirt. Kurgusal doktor isimleri üretme.";
+          }
+        } catch (err) {
+          console.error("[chat] Error fetching doctors", err);
+        }
+      }
+    }
+
     const scored = trainingDocs.map(d => {
       const text = (d.title + " " + d.content).toLowerCase();
       let score = msgWords.reduce((s: number, w: string) => s + (text.includes(w) ? 1 : 0), 0);
@@ -1048,6 +1084,10 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
 
     if (isLocationIntent) {
       skillBlocks.push("\nKONUM BİLGİSİ: Konum veya adres sorulduğunda, bilgi havuzunda bulunan semt, ilçe, şehir, yakındaki önemli noktalar (havalimanı vb.) gibi TÜM detayları açıkça belirt. Sadece şehri söyleyip geçme. Bilgi varsa gereksiz yere 'iletişime geçin' deme, adresi tam olarak yaz.");
+    }
+
+    if (doctorContext) {
+      skillBlocks.push(`\n${doctorContext}`);
     }
 
     /* ── Guardrail blocks ── */
