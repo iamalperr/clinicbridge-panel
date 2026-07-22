@@ -910,13 +910,22 @@ export async function POST(req: Request) {
                             (history.length > 0 && /\b(english|appointment|date|time|name|phone)\b/i.test(history[history.length - 1].content || ""));
 
           let confirmReply = "";
-          const isEmailChannel = patientNotificationSettings.primaryChannel === "email";
           
           if (isEnglish) {
-            const channelStrEn = isEmailChannel ? "email" : "SMS";
+            let channelStrEn = "SMS";
+            if (patientNotificationSettings.primaryChannel === "email") channelStrEn = "email";
+            else if (patientNotificationSettings.primaryChannel === "whatsapp") channelStrEn = "WhatsApp";
+            else if (patientNotificationSettings.primaryChannel === "email_and_sms") channelStrEn = "SMS and email";
+            else if (patientNotificationSettings.primaryChannel === "email_and_whatsapp") channelStrEn = "WhatsApp and email";
+            
             confirmReply = `Your appointment request has been sent to the clinic. The clinic team will review your preferred date and time. Once your request is approved or an alternative time is suggested, you will be notified by ${channelStrEn}.`;
           } else {
-            const channelStrTr = isEmailChannel ? "paylaştığınız e-posta adresi üzerinden" : "SMS üzerinden";
+            let channelStrTr = "SMS üzerinden";
+            if (patientNotificationSettings.primaryChannel === "email") channelStrTr = "paylaştığınız e-posta adresi üzerinden";
+            else if (patientNotificationSettings.primaryChannel === "whatsapp") channelStrTr = "WhatsApp üzerinden";
+            else if (patientNotificationSettings.primaryChannel === "email_and_sms") channelStrTr = "SMS ve E-posta üzerinden";
+            else if (patientNotificationSettings.primaryChannel === "email_and_whatsapp") channelStrTr = "WhatsApp ve E-posta üzerinden";
+
             if (apptData.requestedService && apptData.requestedDate && apptData.requestedTime) {
               confirmReply = `Randevu talebinizi kliniğimize ilettim. ${apptData.requestedService} işleminiz için tercih ettiğiniz ${apptData.requestedDate} ${apptData.requestedTime} bilgisi klinik ekibi tarafından değerlendirilecektir. Talebiniz onaylandığında veya farklı bir saat önerildiğinde ${channelStrTr} bilgilendirileceksiniz.`;
             } else {
@@ -1096,9 +1105,25 @@ export async function POST(req: Request) {
           ? `3. E-posta adresi geçerliliğini kontrol et (@ işareti, alan adı vs.). Hatalıysa: "E-posta adresinizde küçük bir eksiklik görünüyor. Klinik dönüşünü iletebilmemiz için adresinizi örneğin adiniz@example.com formatında tekrar paylaşabilir misiniz?" şeklinde nazikçe uyar.`
           : `3. Bilgileri doğrula.`;
           
-      const confirmationSentence = primaryChannel === "email" 
-          ? `Talebiniz onaylandığında veya farklı bir saat önerildiğinde, paylaştığınız e-posta adresi üzerinden bilgilendirileceksiniz.`
-          : `Talebiniz onaylandığında veya farklı bir saat önerildiğinde, SMS üzerinden bilgilendirileceksiniz.`;
+      let confirmationSentence = "";
+      switch (primaryChannel) {
+        case "whatsapp":
+          confirmationSentence = `Talebiniz onaylandığında veya farklı bir saat önerildiğinde, WhatsApp üzerinden bilgilendirileceksiniz.`;
+          break;
+        case "email_and_whatsapp":
+          confirmationSentence = `Talebiniz onaylandığında veya farklı bir saat önerildiğinde, WhatsApp ve E-posta üzerinden bilgilendirileceksiniz.`;
+          break;
+        case "email_and_sms":
+          confirmationSentence = `Talebiniz onaylandığında veya farklı bir saat önerildiğinde, SMS ve E-posta üzerinden bilgilendirileceksiniz.`;
+          break;
+        case "email":
+          confirmationSentence = `Talebiniz onaylandığında veya farklı bir saat önerildiğinde, paylaştığınız e-posta adresi üzerinden bilgilendirileceksiniz.`;
+          break;
+        case "sms":
+        default:
+          confirmationSentence = `Talebiniz onaylandığında veya farklı bir saat önerildiğinde, SMS üzerinden bilgilendirileceksiniz.`;
+          break;
+      }
 
       skillBlocks.push(`\nRANDEVU AKIŞI:
 Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın diş beyazlatma", "Doktora görünmek istiyorum", vb.):
