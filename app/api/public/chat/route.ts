@@ -1062,15 +1062,31 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
       guardrailBlocks.push("- Kişisel veya hassas sağlık verilerini paylaşma.");
     }
 
+    /* ── System prompt construction ──
+       When the clinic has provided a comprehensive custom prompt (e.g. İDA),
+       it becomes the PRIMARY identity. Otherwise, use the default intro.
+    */
+    const hasCustomPrompt = customPrompt && customPrompt.trim().length > 0;
+
     const systemPrompt = [
-      `Sen ${clinicName}'nin dijital hasta asistanısın. Bugünün tarihi: ${today}.`,
-      customPrompt ? `\nKLİNİĞE ÖZEL TALİMATLAR:\n${customPrompt}` : "",
+      // ── PRIMARY IDENTITY ──
+      hasCustomPrompt
+        ? customPrompt   // Custom prompt IS the identity (e.g. "Your name is İDA...")
+        : `Sen ${clinicName}'nin dijital hasta asistanısın.`,
+
+      // ── Date context (always injected) ──
+      `\n\nBugünün tarihi ve saati: ${today}.`,
+
+      // ── Skill and knowledge blocks ──
       ...skillBlocks,
-      guardrailBlocks.length > 0 ? `\nKESİN KURALLAR:\n${guardrailBlocks.join("\n")}` : "",
-      `\nGENEL KURALLAR:
+
+      // ── Guardrails ──
+      guardrailBlocks.length > 0 ? `\nEK GÜVENLİK KURALLARI:\n${guardrailBlocks.join("\n")}` : "",
+
+      // ── System-level rules ──
+      `\nSİSTEM KURALLARI:
 - Kesin randevu onayı veya kesin müsaitlik garantisi VERME.
-- Yanıtların kısa (max 4 cümle), nazik olsun.
-- Türkçe sorulara Türkçe, İngilizce sorulara İngilizce yanıt ver.
+- Yanıt dilini kullanıcının diline göre belirle.${!hasCustomPrompt ? "\n- Yanıtların kısa (max 4 cümle), nazik olsun." : "\n- Yanıt uzunluğunu kendi talimatlarına göre belirle; bilgi varsa eksiksiz aktar."}
 - Eğer mevcut konuşmanın bağlamıyla DOĞRUDAN ilgili ve kullanıcının seçebileceği 2 veya 3 kısa hızlı aksiyon önerebiliyorsan, yanıtının EN SONUNA şu formatta ekle: [ACTIONS: Aksiyon 1 | Aksiyon 2]
 - Bu aksiyonlar kesinlikle kullanıcının diliyle eşleşmelidir (Türkçe konuşmada "Randevu almak istiyorum", "Hangi hizmetleri sunuyorsunuz?", "Kliniğiniz nerede?" gibi olmalı. "Book an appointment" gibi İngilizce kalıpları Türkçe konuşmada KULLANMA).
 - SADECE mantıklıysa öner. Randevu akışı başladıysa (isim/telefon soruluyorsa veya onay bekleniyorsa) genel tedavi komutları GÖSTERME.

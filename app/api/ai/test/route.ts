@@ -224,8 +224,10 @@ export async function POST(req: Request) {
       ? `\n\nKLİNİK BİLGİ HAVUZU:\n\n${knowledgeContext}`
       : "";
 
-    const systemInstruction = settings.systemPrompt 
-      ? `${guardrailRules}Sen ${clinicName}'nin dijital hasta asistanısın.\n\n${settings.systemPrompt}${contactInfo}${knowledgeBlock}${criteriaRules}\n\nIMPORTANT: If the user asks to book an appointment (e.g., "randevu almak istiyorum"), you MUST respond in valid JSON format exactly like this:\n{ "message": "Your response text here...", "quickReplies": ["Option 1", "Option 2", "Option 3"] }\nOtherwise, just respond normally in plain text.\n\nDil kuralı: Kullanıcı hangi dilde soruyorsa o dilde yanıt ver. Türkçe sorulara Türkçe, İngilizce sorulara İngilizce yanıt ver.`
+    const hasCustomPrompt = settings.systemPrompt && settings.systemPrompt.trim().length > 0;
+
+    const systemInstruction = hasCustomPrompt
+      ? `${guardrailRules}${settings.systemPrompt}${contactInfo}${knowledgeBlock}${criteriaRules}\n\nIMPORTANT: If the user asks to book an appointment (e.g., "randevu almak istiyorum"), you MUST respond in valid JSON format exactly like this:\n{ "message": "Your response text here...", "quickReplies": ["Option 1", "Option 2", "Option 3"] }\nOtherwise, just respond normally in plain text.\n\nDil kuralı: Kullanıcı hangi dilde soruyorsa o dilde yanıt ver.`
       : `${guardrailRules}Sen ${clinicName}'nin dijital hasta asistanısın. Yardımsever ve profesyonel bir üslup kullan.${contactInfo}${knowledgeBlock}${criteriaRules}`;
 
     // ── 7. Build the messages array for AI Gateway ──
