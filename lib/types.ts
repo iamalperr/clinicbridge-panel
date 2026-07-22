@@ -324,6 +324,10 @@ export interface Appointment {
   smsNotificationLastType?: string;
   smsNotificationError?: string;
   smsNotificationMessagePreview?: string;
+  notificationChannel?: string;
+  patientNotificationStatus?: string;
+  notificationSentAt?: string;
+  notificationError?: string;
   createdBy?: string;
   language?: string;
   createdAt: any;

@@ -5,7 +5,7 @@ import { collection, query, where, orderBy, onSnapshot, doc, updateDoc } from "f
 import { db, auth } from "@/lib/firebase";
 import { useI18n } from "@/lib/i18n-context";
 import { UI_COLORS } from "@/components/ui/ui-shared";
-import { Loader2, Calendar, Clock, User, Stethoscope, ChevronRight, Inbox } from "lucide-react";
+import { Loader2, Calendar, Clock, User, Stethoscope, ChevronRight, Inbox, Phone, Mail, CheckCircle, XCircle, MessageSquare } from "lucide-react";
 import Badge from "@/components/ui/Badge";
 import type { Appointment } from "@/lib/types";
 
@@ -80,15 +80,30 @@ export default function AppointmentsPage({ params }: PageProps) {
         throw new Error(data.error || "Güncelleme başarısız");
       }
 
-      if (data.sms) {
-        if (data.sms.success) {
-          setToastMsg(t("appointments.statusUpdateSmsSent") || "Randevu durumu güncellendi ve hastaya SMS gönderildi.");
-        } else if (data.sms.skipped) {
-          setToastMsg(t("appointments.statusUpdateSmsSkipped") || "Randevu durumu güncellendi. SMS sağlayıcısı yapılandırılmadığı için SMS gönderilmedi.");
-        } else if (data.sms.reason === "invalid_phone") {
-          setToastMsg(t("appointments.statusUpdateSmsInvalidPhone") || "Randevu durumu güncellendi ancak hasta telefon numarası geçersiz olduğu için SMS gönderilemedi.");
+      if (data.notification) {
+        const { channel, result } = data.notification;
+        if (channel === "email") {
+          if (result?.success) {
+            setToastMsg("Randevu durumu güncellendi ve hastaya e-posta gönderildi.");
+          } else if (result?.reason === "no_email") {
+            setToastMsg("Randevu durumu güncellenemedi. Hastanın e-posta adresi bulunmuyor.");
+          } else {
+            setToastMsg("Randevu durumu güncellendi ancak hastaya e-posta gönderilemedi.");
+          }
+        } else if (channel === "sms") {
+          if (result?.success) {
+            setToastMsg(t("appointments.statusUpdateSmsSent") || "Randevu durumu güncellendi ve hastaya SMS gönderildi.");
+          } else if (result?.skipped) {
+            setToastMsg(t("appointments.statusUpdateSmsSkipped") || "Randevu durumu güncellendi. SMS sağlayıcısı yapılandırılmadığı için SMS gönderilmedi.");
+          } else if (result?.reason === "invalid_phone") {
+            setToastMsg(t("appointments.statusUpdateSmsInvalidPhone") || "Randevu durumu güncellendi ancak hasta telefon numarası geçersiz olduğu için SMS gönderilemedi.");
+          } else if (result?.reason === "no_phone") {
+            setToastMsg("Randevu durumu güncellendi ancak hastanın telefon numarası bulunmuyor.");
+          } else {
+            setToastMsg(t("appointments.statusUpdateSmsFailed") || "Randevu durumu güncellendi ancak SMS gönderimi başarısız oldu.");
+          }
         } else {
-          setToastMsg(t("appointments.statusUpdateSmsFailed") || "Randevu durumu güncellendi ancak SMS gönderimi başarısız oldu.");
+          setToastMsg(t("appointments.updateSuccess") || "Randevu durumu güncellendi.");
         }
       } else {
         setToastMsg(t("appointments.updateSuccess") || "Randevu durumu güncellendi.");
@@ -205,37 +220,80 @@ export default function AppointmentsPage({ params }: PageProps) {
                     return (
                       <tr key={apt.id} style={{ borderBottom: `1px solid ${UI_COLORS.border}`, transition: "background 0.2s" }} onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-page)"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
                         <td style={{ padding: "16px 24px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                            <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(99, 102, 241, 0.1)", color: UI_COLORS.brand, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                            <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(99, 102, 241, 0.1)", color: UI_COLORS.brand, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                               <User size={16} />
                             </div>
-                            <div>
-                              <span style={{ fontSize: 14, fontWeight: 600, color: UI_COLORS.textPrimary, display: "block" }}>
-                                {apt.patientName}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <span style={{ fontSize: 14, fontWeight: 600, color: UI_COLORS.textPrimary }}>{apt.patientName || "-"}</span>
+                            <span style={{ fontSize: '13px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <Phone size={12} />
+                              {apt.patientPhone || "-"}
+                            </span>
+                            {apt.patientEmail && (
+                              <span style={{ fontSize: '13px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <Mail size={12} />
+                                {apt.patientEmail}
                               </span>
-                              {displayPhone && (
-                                <span style={{ fontSize: 12, color: UI_COLORS.textMuted, display: "block" }}>
-                                  {displayPhone}
-                                </span>
-                              )}
-                              {apt.smsNotificationStatus && (
-                                <span style={{ 
-                                  fontSize: 10, 
-                                  fontWeight: 600, 
-                                  padding: "2px 6px", 
-                                  borderRadius: 4, 
-                                  marginTop: 4, 
-                                  display: "inline-block",
-                                  backgroundColor: apt.smsNotificationStatus === "sent" ? "rgba(34, 197, 94, 0.1)" : 
-                                                   apt.smsNotificationStatus === "failed" ? "rgba(239, 68, 68, 0.1)" : "rgba(100, 116, 139, 0.1)",
-                                  color: apt.smsNotificationStatus === "sent" ? "#16a34a" : 
-                                         apt.smsNotificationStatus === "failed" ? "#dc2626" : "#475569"
+                            )}
+                            {/* Determine whether to show SMS or Email info based on notificationChannel or fallback */}
+                              {(apt.notificationChannel === "email" || apt.patientEmail) && !apt.smsNotificationStatus ? (
+                                <div style={{
+                                  display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500,
+                                  backgroundColor: "rgba(99, 102, 241, 0.1)", color: "#4f46e5",
+                                  padding: '4px 8px', borderRadius: '12px', width: 'fit-content', marginTop: '6px'
                                 }}>
-                                  {apt.smsNotificationStatus === "sent" ? (t("appointments.sms.sent") || "SMS Gönderildi") : 
-                                   apt.smsNotificationStatus === "failed" ? (t("appointments.sms.failed") || "SMS Gönderilemedi") : 
-                                   apt.smsNotificationStatus === "invalid_phone" ? (t("appointments.sms.invalidPhone") || "Telefon Geçersiz") : 
-                                   (t("appointments.sms.skipped") || "SMS Sağlayıcısı Yok")}
-                                </span>
+                                  <Mail size={12} />
+                                  E-posta bildirimi aktif
+                                </div>
+                              ) : (
+                                <>
+                                  {apt.patientNotificationStatus ? (
+                                    <div style={{
+                                      display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500,
+                                      backgroundColor: apt.patientNotificationStatus === "sent" ? "rgba(34, 197, 94, 0.1)" : 
+                                                       apt.patientNotificationStatus === "failed" ? "rgba(239, 68, 68, 0.1)" : "rgba(100, 116, 139, 0.1)",
+                                      color: apt.patientNotificationStatus === "sent" ? "#16a34a" : 
+                                             apt.patientNotificationStatus === "failed" ? "#dc2626" : "#475569",
+                                      padding: '4px 8px', borderRadius: '12px', width: 'fit-content', marginTop: '6px'
+                                    }}>
+                                      {apt.patientNotificationStatus === "sent" ? <CheckCircle size={12} /> : 
+                                       apt.patientNotificationStatus === "failed" ? <XCircle size={12} /> : <MessageSquare size={12} />}
+                                      
+                                      {apt.patientNotificationStatus === "sent" ? "Bildirim Gönderildi" : 
+                                       apt.patientNotificationStatus === "failed" ? "Bildirim Gönderilemedi" : 
+                                       apt.patientNotificationStatus === "missing_contact" ? "İletişim Bilgisi Yok" :
+                                       "Bildirim Durumu Bekleniyor"}
+                                    </div>
+                                  ) : apt.smsNotificationStatus ? (
+                                    <div style={{
+                                      display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500,
+                                      backgroundColor: apt.smsNotificationStatus === "sent" ? "rgba(34, 197, 94, 0.1)" : 
+                                                       apt.smsNotificationStatus === "failed" ? "rgba(239, 68, 68, 0.1)" : "rgba(100, 116, 139, 0.1)",
+                                      color: apt.smsNotificationStatus === "sent" ? "#16a34a" : 
+                                             apt.smsNotificationStatus === "failed" ? "#dc2626" : "#475569",
+                                      padding: '4px 8px', borderRadius: '12px', width: 'fit-content', marginTop: '6px'
+                                    }}>
+                                      {apt.smsNotificationStatus === "sent" ? <CheckCircle size={12} /> : 
+                                       apt.smsNotificationStatus === "failed" ? <XCircle size={12} /> : <MessageSquare size={12} />}
+                                      
+                                      {apt.smsNotificationStatus === "sent" ? (t("appointments.sms.sent") || "SMS Gönderildi") : 
+                                       apt.smsNotificationStatus === "failed" ? (t("appointments.sms.failed") || "SMS Gönderilemedi") : 
+                                       apt.smsNotificationStatus === "invalid_phone" ? (t("appointments.sms.invalidPhone") || "Telefon Geçersiz") : 
+                                       apt.smsNotificationStatus === "skipped" ? (t("appointments.sms.skipped") || "SMS Sağlayıcısı Yok") : 
+                                       (t("appointments.sms.skipped") || "SMS Sağlayıcısı Yok")}
+                                    </div>
+                                  ) : (
+                                    <div style={{
+                                      display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500,
+                                      backgroundColor: "rgba(100, 116, 139, 0.1)", color: "#475569",
+                                      padding: '4px 8px', borderRadius: '12px', width: 'fit-content', marginTop: '6px'
+                                    }}>
+                                      <MessageSquare size={12} />
+                                      {(t("appointments.sms.skipped") || "SMS Sağlayıcısı Yok")}
+                                    </div>
+                                  )}
+                                </>
                               )}
                             </div>
                           </div>

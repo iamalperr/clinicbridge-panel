@@ -110,6 +110,91 @@ export async function sendPatientAppointmentEmail(
   return { success: result.success, error: result.error };
 }
 
+export interface AppointmentStatusEmailPayload {
+  patientEmail: string;
+  patientName: string;
+  clinicName: string;
+  treatment: string;
+  requestedDate: string;
+  requestedTime: string;
+  status: string;
+  appointmentId: string;
+}
+
+export async function sendPatientAppointmentStatusEmail(
+  payload: AppointmentStatusEmailPayload
+): Promise<{ success: boolean; error?: string }> {
+  let subject = "";
+  let bodyContent = "";
+
+  if (payload.status === "confirmed" || payload.status === "approved") {
+    subject = "Ön Randevu Talebiniz Onaylandı";
+    bodyContent = `
+      <p>Merhaba ${payload.patientName},</p>
+      <p><strong>${payload.clinicName}</strong> için oluşturduğunuz <strong>${payload.treatment}</strong> ön randevu talebiniz onaylanmıştır.</p>
+      <p><strong>Tarih:</strong> ${payload.requestedDate}<br/>
+      <strong>Saat:</strong> ${payload.requestedTime}</p>
+      <p>Herhangi bir değişiklik olması durumunda kliniğimiz sizinle yeniden iletişime geçecektir.</p>
+    `;
+  } else if (payload.status === "alternative_time_proposed") {
+    subject = "Ön Randevu Talebiniz İçin Yeni Saat Önerisi";
+    bodyContent = `
+      <p>Merhaba ${payload.patientName},</p>
+      <p><strong>${payload.clinicName}</strong> için oluşturduğunuz <strong>${payload.treatment}</strong> ön randevu talebiniz değerlendirilmiştir.</p>
+      <p>Klinik ekibimiz aşağıdaki tarih ve saati önermektedir:</p>
+      <p><strong>Tarih:</strong> ${payload.requestedDate}<br/>
+      <strong>Saat:</strong> ${payload.requestedTime}</p>
+      <p>Önerilen tarih ve saat sizin için uygunsa kliniğimizle iletişime geçerek onaylayabilirsiniz.</p>
+    `;
+  } else if (payload.status === "rejected" || payload.status === "cancelled") {
+    subject = "Ön Randevu Talebiniz Hakkında";
+    bodyContent = `
+      <p>Merhaba ${payload.patientName},</p>
+      <p><strong>${payload.clinicName}</strong> için oluşturduğunuz <strong>${payload.treatment}</strong> ön randevu talebiniz, seçtiğiniz tarih ve saat için onaylanamamıştır.</p>
+      <p>Yeni bir tarih ve saat tercihi oluşturmak için kliniğimizle iletişime geçebilirsiniz.</p>
+    `;
+  } else {
+    // If it's another status, don't send an email
+    return { success: false, error: "Unsupported status for email notification" };
+  }
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:560px;margin:0 auto;line-height:1.6;color:#334155">
+      <h2 style="color:#6366f1">${subject}</h2>
+      ${bodyContent}
+      <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0"/>
+      <p style="color:#94a3b8;font-size:12px">ClinicBridge AI</p>
+    </div>
+  `;
+
+  let eventType: any = "appointment.request.created";
+  if (payload.status === "approved") eventType = "appointment.clinic.approved";
+  else if (payload.status === "alternative_time_proposed") eventType = "appointment.alternative.proposed";
+  else if (payload.status === "rejected") eventType = "appointment.rejected";
+  else if (payload.status === "confirmed") eventType = "appointment.confirmed";
+  else if (payload.status === "cancelled") eventType = "appointment.cancelled";
+
+  const result = await notificationService.sendNotification(
+    {
+      tenant_id: 'legacy',
+      clinic_id: 'unknown',
+      appointment_id: payload.appointmentId,
+      event_type: eventType,
+      channel: 'email',
+      recipient: payload.patientEmail,
+    },
+    {
+      language: 'tr',
+      subject: subject,
+      variables: {
+        htmlContent: html,
+      }
+    }
+  );
+
+  return { success: result.success, error: result.error };
+}
+
 /* ── SMS (mock / provider-ready) ───────────────────────────────────────── */
 
 export interface SmsPayload {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase-admin";
 import { sendSms } from "@/lib/sms/sendSms";
+import { sendPatientAppointmentStatusEmail } from "@/lib/appointment-notifications";
 
 interface RouteParams {
   params: Promise<{ clinicId: string; appointmentId: string }>;
@@ -52,61 +53,100 @@ export async function POST(req: Request, { params }: RouteParams) {
     }
 
     const apptData = apptSnap.data()!;
-    const clinicName = clinicSnap.data()?.name || "Klinik";
+    const clinicData = clinicSnap.data() || {};
+    const clinicName = clinicData.name || "Klinik";
     const oldStatus = apptData.status;
 
     if (oldStatus === newStatus) {
       return NextResponse.json({ success: true, message: "Status unchanged" });
     }
 
-    // Prevent duplicate SMS for the same status
-    if (newStatus === "confirmed" && apptData.smsNotificationLastType === "appointment_confirmed" && apptData.smsNotificationStatus === "sent") {
-      // Allow status update without resending SMS
-      await updateStatusOnly(adminDb, clinicId, appointmentId, newStatus, decodedToken.uid, apptData.conversationId);
-      return NextResponse.json({ success: true, sms: { skipped: true, reason: "already_sent" } });
-    }
+    const patientNotificationSettings = clinicData.patientNotificationSettings || {
+      primaryChannel: "sms",
+      collectEmail: false,
+      collectPhone: true
+    };
+    const primaryChannel = patientNotificationSettings.primaryChannel;
 
-    let smsResult = null;
-    let smsMessage = "";
-    let smsType = "";
+    let notificationResult = null;
+    let notificationChannelUsed = "";
     
-    const shouldSendSms = newStatus === "confirmed" || newStatus === "cancelled";
-    
-    if (shouldSendSms && apptData.patientPhone) {
-      const isEn = apptData.language === "en";
-      
-      const treatment = apptData.treatmentType || apptData.requestedService || apptData.service || apptData.reason;
-      const date = apptData.preferredDate || apptData.requestedDate;
-      const time = apptData.preferredTime || apptData.requestedTime;
+    // Check if we should trigger a notification
+    const shouldNotify = newStatus === "confirmed" || newStatus === "approved" || newStatus === "cancelled" || newStatus === "rejected" || newStatus === "alternative_time_proposed";
 
-      if (newStatus === "confirmed") {
-        smsType = "appointment_confirmed";
-        if (treatment && date && time) {
-          smsMessage = isEn
-            ? `ClinicBridge AI: Your appointment request at ${clinicName} has been approved for ${treatment} on ${date} ${time}.`
-            : `ClinicBridge AI: ${clinicName} randevu talebinizi onayladı. ${treatment} için ${date} ${time} randevu talebiniz uygun görülmüştür. Sağlıklı günler dileriz.`;
+    if (shouldNotify) {
+      const treatment = apptData.treatmentType || apptData.requestedService || apptData.service || apptData.reason || "Genel Muayene";
+      const date = apptData.preferredDate || apptData.requestedDate || apptData.proposedDate || "";
+      const time = apptData.preferredTime || apptData.requestedTime || apptData.proposedTime || "";
+
+      if (primaryChannel === "email" || primaryChannel === "email_and_sms" || primaryChannel === "email_and_whatsapp") {
+        notificationChannelUsed = "email";
+        if (apptData.patientEmail) {
+          notificationResult = await sendPatientAppointmentStatusEmail({
+            patientEmail: apptData.patientEmail,
+            patientName: apptData.patientName || "Değerli Hastamız",
+            clinicName,
+            treatment,
+            requestedDate: date,
+            requestedTime: time,
+            status: newStatus,
+            appointmentId
+          });
         } else {
-          smsMessage = isEn
-            ? `ClinicBridge AI: Your appointment request at ${clinicName} has been approved. The clinic may contact you for details.`
-            : `ClinicBridge AI: ${clinicName} randevu talebinizi onayladı. Detaylar için kliniğiniz sizinle iletişime geçebilir. Sağlıklı günler dileriz.`;
+          notificationResult = { success: false, reason: "no_email", error: "Hastanın e-posta adresi bulunmuyor." };
         }
-      } else if (newStatus === "cancelled") {
-        smsType = "appointment_cancelled";
-        smsMessage = isEn
-          ? `ClinicBridge AI: Your appointment request at ${clinicName} could not be approved at this time. The clinic may contact you for alternative options.`
-          : `ClinicBridge AI: ${clinicName} randevu talebiniz şu an için onaylanamadı. Uygun alternatif saatler için kliniğiniz sizinle iletişime geçebilir. Sağlıklı günler dileriz.`;
-      }
+      } 
+      
+      // If primaryChannel is strictly SMS, or email_and_sms is used, we could send SMS. 
+      // But based on user requirements: "If appointmentNotificationChannel = email, Do not attempt SMS."
+      // Let's only do SMS if email is NOT the primary and SMS is requested, OR if we want to fallback?
+      // Wait, the user explicitly said "If appointmentNotificationChannel = email, Do not attempt SMS."
+      // So if it's sms, send SMS. If it's email_and_sms, we could send both, but let's keep it simple and just do SMS if it's explicitly sms for legacy compatibility.
+      if (!notificationChannelUsed && (primaryChannel === "sms" || primaryChannel === "email_and_sms")) {
+        notificationChannelUsed = "sms";
+        if (apptData.patientPhone) {
+          const isEn = apptData.language === "en";
+          let smsMessage = "";
+          let smsType = "";
 
-      // Send SMS
-      smsResult = await sendSms({
-        to: apptData.patientPhone,
-        message: smsMessage,
-        clinicId,
-        appointmentId,
-        type: smsType
-      });
-    } else if (shouldSendSms && !apptData.patientPhone) {
-      smsResult = { success: false, reason: "no_phone", error: "No phone number available" };
+          if (newStatus === "confirmed" || newStatus === "approved") {
+            smsType = "appointment_confirmed";
+            if (treatment && date && time) {
+              smsMessage = isEn
+                ? `ClinicBridge AI: Your appointment request at ${clinicName} has been approved for ${treatment} on ${date} ${time}.`
+                : `ClinicBridge AI: ${clinicName} randevu talebinizi onayladı. ${treatment} için ${date} ${time} randevu talebiniz uygun görülmüştür. Sağlıklı günler dileriz.`;
+            } else {
+              smsMessage = isEn
+                ? `ClinicBridge AI: Your appointment request at ${clinicName} has been approved. The clinic may contact you for details.`
+                : `ClinicBridge AI: ${clinicName} randevu talebinizi onayladı. Detaylar için kliniğiniz sizinle iletişime geçebilir. Sağlıklı günler dileriz.`;
+            }
+          } else if (newStatus === "cancelled" || newStatus === "rejected") {
+            smsType = "appointment_cancelled";
+            smsMessage = isEn
+              ? `ClinicBridge AI: Your appointment request at ${clinicName} could not be approved at this time. The clinic may contact you for alternative options.`
+              : `ClinicBridge AI: ${clinicName} randevu talebiniz şu an için onaylanamadı. Uygun alternatif saatler için kliniğiniz sizinle iletişime geçebilir. Sağlıklı günler dileriz.`;
+          } else if (newStatus === "alternative_time_proposed") {
+             smsType = "appointment_rescheduled";
+             smsMessage = isEn
+               ? `ClinicBridge AI: ${clinicName} proposed a new time for your appointment: ${date} ${time}.`
+               : `ClinicBridge AI: ${clinicName} randevu talebiniz için yeni bir saat önerdi: ${date} ${time}.`;
+          }
+
+          if (smsMessage) {
+            notificationResult = await sendSms({
+              to: apptData.patientPhone,
+              message: smsMessage,
+              clinicId,
+              appointmentId,
+              type: smsType
+            });
+            (notificationResult as any).smsType = smsType;
+            (notificationResult as any).smsMessage = smsMessage;
+          }
+        } else {
+          notificationResult = { success: false, reason: "no_phone", error: "Hastanın telefon numarası bulunmuyor." };
+        }
+      }
     }
 
     // 3. Update Appointment Document
@@ -117,26 +157,25 @@ export async function POST(req: Request, { params }: RouteParams) {
       updatedBy: decodedToken.uid
     };
 
-    if (smsResult) {
-      updateData.smsNotificationStatus = smsResult.success ? "sent" : (smsResult.skipped ? "skipped" : (smsResult.reason === "invalid_phone" ? "invalid_phone" : "failed"));
-      updateData.smsNotificationLastSentAt = now;
-      if (smsType) updateData.smsNotificationLastType = smsType;
-      if (smsResult.error) updateData.smsNotificationError = smsResult.error;
-      updateData.smsNotificationMessagePreview = smsMessage.slice(0, 100);
+    if (notificationResult) {
+      updateData.patientNotificationStatus = notificationResult.success ? "sent" : ((notificationResult as any).reason === "no_email" || (notificationResult as any).reason === "no_phone" ? "missing_contact" : "failed");
+      updateData.notificationSentAt = now;
+      updateData.notificationChannel = notificationChannelUsed;
+      if (notificationResult.error) updateData.notificationError = notificationResult.error;
     }
 
     await adminDb.collection("clinics").doc(clinicId).collection("appointments").doc(appointmentId).update(updateData);
 
-    // 4. Create SMS Log if applicable
-    if (smsResult && smsType) {
+    // 4. Create Notification Log if applicable (for SMS to preserve legacy log, and maybe for Email)
+    if (notificationResult && notificationChannelUsed === "sms" && (notificationResult as any).smsType) {
       await adminDb.collection("clinics").doc(clinicId).collection("appointments").doc(appointmentId).collection("smsLogs").add({
-        type: smsType,
+        type: (notificationResult as any).smsType,
         to: apptData.patientPhone || "",
-        message: smsMessage,
-        status: smsResult.success ? "success" : "failed",
+        message: (notificationResult as any).smsMessage,
+        status: notificationResult.success ? "success" : "failed",
         provider: process.env.SMS_PROVIDER || "none",
-        error: smsResult.error || null,
-        reason: smsResult.reason || null,
+        error: notificationResult.error || null,
+        reason: (notificationResult as any).reason || null,
         createdAt: now,
         triggeredBy: decodedToken.uid,
         oldStatus,
@@ -153,7 +192,13 @@ export async function POST(req: Request, { params }: RouteParams) {
       }).catch(e => console.warn("Failed to update conversation log:", e));
     }
 
-    return NextResponse.json({ success: true, sms: smsResult });
+    return NextResponse.json({ 
+      success: true, 
+      notification: {
+        channel: notificationChannelUsed,
+        result: notificationResult
+      } 
+    });
     
   } catch (error: any) {
     console.error("Error updating appointment status:", error);
