@@ -1121,6 +1121,9 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
     let reply = completion.content?.trim()
       ?? "Üzgünüm, şu an yanıt üretemiyorum.";
 
+    // Strip markdown formatting characters (**, *, #) as requested
+    reply = reply.replace(/\*\*|\*|#/g, '');
+
     let suggestedActions: string[] = [];
     const actionsMatch = reply.match(/\[ACTIONS:\s*(.*?)\]/);
     if (actionsMatch) {

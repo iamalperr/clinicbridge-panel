@@ -468,6 +468,11 @@ JSON FORMATI:
       }, { headers: CORS });
     }
 
+    // Strip markdown formatting characters from reply text
+    if (parsed && typeof parsed.reply === "string") {
+      parsed.reply = parsed.reply.replace(/\*\*|\*|#/g, '');
+    }
+
     console.log(`[matching-chat] Intent: ${parsed.intent}, Treatment: ${parsed.treatmentCategory}, Sub: ${parsed.subTreatment}, Location: ${parsed.location}, ClinicName: ${parsed.clinicName}`);
 
     const newCtx: SessionContext = { ...ctx };

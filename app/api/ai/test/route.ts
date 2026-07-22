@@ -291,12 +291,12 @@ export async function POST(req: Request) {
     }
 
     // ── 9. Parse structured response ──
-    let responsePayload: any = { message: aiMessage };
+    let responsePayload: any = { message: aiMessage.replace(/\*\*|\*|#/g, '') };
     try {
       const parsed = JSON.parse(aiMessage);
       if (parsed && typeof parsed === "object" && parsed.message) {
         responsePayload = {
-          message: parsed.message,
+          message: parsed.message.replace(/\*\*|\*|#/g, ''),
           ...(parsed.quickReplies && Array.isArray(parsed.quickReplies) ? { quickReplies: parsed.quickReplies } : {})
         };
       }
