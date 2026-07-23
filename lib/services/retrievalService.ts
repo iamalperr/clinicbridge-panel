@@ -89,7 +89,29 @@ export async function hybridSearch(
 
   // 3. Score each chunk
   for (const doc of clinicDocs) {
-    if (!doc.embeddingChunks || !Array.isArray(doc.embeddingChunks)) continue;
+    if (!doc.embeddingChunks || !Array.isArray(doc.embeddingChunks) || doc.embeddingChunks.length === 0) {
+      // BACKWARD COMPATIBILITY: If no embeddings, use keyword scoring on the whole text
+      const fullText = (doc.title + " " + doc.content).trim();
+      if (!fullText) continue;
+
+      const keywordScoreRaw = calculateKeywordScore(fullText, queries);
+      if (keywordScoreRaw > 0) {
+        const keywordScore = Math.min(keywordScoreRaw / 5, 1.0);
+        // We give it 0 for vector score, but we weight keyword score heavily so it still appears
+        const finalScore = keywordScore * 0.3; // It will be lower than vector matches, but better than nothing
+        
+        results.push({
+          text: fullText,
+          chunk_index: 0,
+          doc_id: doc.id,
+          title: doc.title || "",
+          score: finalScore,
+          vectorScore: 0,
+          keywordScore: keywordScore,
+        });
+      }
+      continue;
+    }
 
     for (const chunk of doc.embeddingChunks) {
       if (!chunk.embedding || chunk.embedding.length === 0) continue;

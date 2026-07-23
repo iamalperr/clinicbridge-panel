@@ -842,6 +842,9 @@ export async function POST(req: Request) {
     let clinicLanguage = "tr";
     let clinicData: any = null;
 
+    let isAgencyClinic = false;
+    let agencyIdForClinic: string | null = null;
+
     if (adminDb) {
       const [clinicSnap, promptSnap, materialsSnap] = await Promise.all([
         adminDb.collection("clinics").doc(clinicId).get(),
@@ -855,15 +858,47 @@ export async function POST(req: Request) {
         clinicWhatsapp  = cData.whatsappNumber  ?? "";
         clinicTelegram  = cData.telegramUsername ?? "";
         clinicLanguage  = cData.language         ?? "tr";
+        
+        if (promptSnap.exists) promptSettings = promptSnap.data();
+        trainingDocs = materialsSnap.docs.map(d => ({ 
+          id: d.id, 
+          title: d.data().title ?? "", 
+          content: d.data().content ?? "",
+          embeddingChunks: d.data().embeddingChunks || []
+        }));
+        debugLog.push(`[admin] clinic="${clinicName}" docs=${trainingDocs.length}`);
+      } else {
+        // Fallback for Agency Clinics
+        const agenciesSnap = await adminDb.collection("agencies").get();
+        for (const agency of agenciesSnap.docs) {
+          const aClinicSnap = await adminDb.collection("agencies").doc(agency.id).collection("clinics").doc(clinicId).get();
+          if (aClinicSnap.exists) {
+             const aData = aClinicSnap.data()!;
+             agencyIdForClinic = agency.id;
+             isAgencyClinic = true;
+             
+             clinicData = aData;
+             clinicName = aData.clinicName || aData.name || "Klinik";
+             clinicWhatsapp = aData.whatsapp || aData.whatsappNumber || "";
+             clinicTelegram = aData.telegram || aData.telegramUsername || "";
+             clinicLanguage = aData.language || "tr";
+             
+             if (aData.aiQuoteSettings?.prompt) {
+                 promptSettings = { basePrompt: aData.aiQuoteSettings.prompt };
+             }
+             
+             const aMaterialsSnap = await adminDb.collection("agencies").doc(agency.id).collection("clinics").doc(clinicId).collection("knowledgeBase").where("isActive", "==", true).get();
+             trainingDocs = aMaterialsSnap.docs.map(d => ({
+               id: d.id,
+               title: d.data().title ?? "",
+               content: d.data().content ?? "",
+               embeddingChunks: d.data().embeddingChunks || []
+             }));
+             debugLog.push(`[admin-agency] clinic="${clinicName}" docs=${trainingDocs.length}`);
+             break;
+          }
+        }
       }
-      if (promptSnap.exists) promptSettings = promptSnap.data();
-      trainingDocs = materialsSnap.docs.map(d => ({ 
-        id: d.id, 
-        title: d.data().title ?? "", 
-        content: d.data().content ?? "",
-        embeddingChunks: d.data().embeddingChunks || []
-      }));
-      debugLog.push(`[admin] clinic="${clinicName}" docs=${trainingDocs.length}`);
     } else if (clientDb) {
       const [clinicSnap, promptSnap] = await Promise.all([
         getDoc(doc(clientDb, "clinics", clinicId)),
@@ -876,16 +911,17 @@ export async function POST(req: Request) {
         clinicWhatsapp  = cData.whatsappNumber  ?? "";
         clinicTelegram  = cData.telegramUsername ?? "";
         clinicLanguage  = cData.language         ?? "tr";
+        
+        if (promptSnap.exists()) promptSettings = promptSnap.data();
+        const materialsSnap = await getDocs(query(collection(clientDb, "trainingMaterials"), where("clinicId", "==", clinicId)));
+        trainingDocs = materialsSnap.docs.map(d => ({ 
+          id: d.id, 
+          title: d.data().title ?? "", 
+          content: d.data().content ?? "",
+          embeddingChunks: d.data().embeddingChunks || []
+        }));
+        debugLog.push(`[client] clinic="${clinicName}" docs=${trainingDocs.length}`);
       }
-      if (promptSnap.exists()) promptSettings = promptSnap.data();
-      const materialsSnap = await getDocs(query(collection(clientDb, "trainingMaterials"), where("clinicId", "==", clinicId)));
-      trainingDocs = materialsSnap.docs.map(d => ({ 
-        id: d.id, 
-        title: d.data().title ?? "", 
-        content: d.data().content ?? "",
-        embeddingChunks: d.data().embeddingChunks || []
-      }));
-      debugLog.push(`[client] clinic="${clinicName}" docs=${trainingDocs.length}`);
     }
 
     /* ── Relevance scoring ─────────────────────────────────────────────── */
@@ -909,9 +945,16 @@ export async function POST(req: Request) {
       const adminDb = getAdminDb();
       if (adminDb) {
         try {
-          const docsSnap = await adminDb.collection("clinics").doc(clinicId).collection("doctors")
-            .where("status", "==", "active")
-            .get();
+          let docsSnap;
+          if (isAgencyClinic && agencyIdForClinic) {
+            docsSnap = await adminDb.collection("agencies").doc(agencyIdForClinic).collection("clinics").doc(clinicId).collection("doctors")
+              .where("status", "==", "active")
+              .get();
+          } else {
+            docsSnap = await adminDb.collection("clinics").doc(clinicId).collection("doctors")
+              .where("status", "==", "active")
+              .get();
+          }
           
           if (!docsSnap.empty) {
             // Memory sort and filter to avoid missing field/index issues
