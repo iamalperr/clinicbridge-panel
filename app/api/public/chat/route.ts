@@ -1014,9 +1014,12 @@ export async function POST(req: Request) {
     function isVerifiedSpecialist(data: any): boolean {
       // 1. Explicit specialist_status field
       if (data.specialist_status === true) return true;
-      // 2. Title starts with "Uzm. Dt." or "Uzm.Dt."
+      // 2. Title matches any recognized specialist or academic prefix
       const title = String(data.title || data.professional_title || "").trim();
-      if (/^uzm\.?\s*dt\./i.test(title)) return true;
+      const isAcademicOrSpecialist = /^(uzm|uzman|doç|prof)\b/i.test(title) || 
+                                     /^dr\.\s*dt\./i.test(title) || 
+                                     /^dr\.\s*öğr\.\s*üyesi/i.test(title);
+      if (isAcademicOrSpecialist) return true;
       // 3. Explicit primary_specialization_code
       if (data.primary_specialization_code && data.primary_specialization_code.length > 0) return true;
       // "Dr." alone does NOT qualify
