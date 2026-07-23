@@ -1023,12 +1023,16 @@ export async function POST(req: Request) {
 
     // Attempt to recover state from history if DB is empty or missing
     if (appointmentFlow.status === "inactive" && history.length > 0) {
-      const lastAiMessage = history[history.length - 1];
-      if (lastAiMessage.role === "assistant") {
+      // Traverse history backwards to find the last assistant message
+      const lastAiMessage = [...history].reverse().find(m => m.role === "assistant");
+      if (lastAiMessage) {
          const lastText = lastAiMessage.content.toLowerCase();
-         if (lastText.includes("adınızı ve soyadınızı") || lastText.includes("isminizi öğrenebilir")) {
+         const isAskingName = /(?:adınızı|isminizi|ad soyad|hitap edebilirim|adınız|isminiz|kiminle görüşüyorum|ad ve soyad)/i.test(lastText);
+         const isAskingPhone = /(?:telefon|numaranızı|iletişim numarası|cep telefonu)/i.test(lastText);
+         
+         if (isAskingName && !isAskingPhone) {
            appointmentFlow = { status: "collecting", currentStep: "full_name", collectedData: {} };
-         } else if (lastText.includes("telefon numaranızı") || lastText.includes("numaranızı paylaşabilir")) {
+         } else if (isAskingPhone) {
            appointmentFlow = { status: "collecting", currentStep: "phone", collectedData: pendingAppointmentData || {} };
          }
       }
