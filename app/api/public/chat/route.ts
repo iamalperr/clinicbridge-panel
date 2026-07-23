@@ -980,6 +980,11 @@ export async function POST(req: Request) {
             let docs = docsSnap.docs.map(d => d.data() as any);
             if (docs.length > 0) {
               docs.sort((a, b) => (a.display_order || a.order || 0) - (b.display_order || b.order || 0));
+              
+              let specialistCount = 0;
+              let generalCount = 0;
+              const specialistKeywords = /uzman|uzm\.|dr\.|doç\.|prof\.|cerrahisi|ortodonti|endodonti|periodontoloji|pedodonti|protetik|restoratif|oral diagnoz/i;
+
               const docsListStrings = docs.map(data => {
                 const fullName = `${data.title ? data.title + ' ' : ''}${data.doctorName || data.full_name || data.fullName}`.trim();
                 allowedDoctorNames.push(fullName);
@@ -988,17 +993,31 @@ export async function POST(req: Request) {
                 if (data.role) text += `   Görev: ${data.role}\n`;
                 if (data.education) text += `   Eğitim: ${data.education}\n`;
                 if (data.experienceYears) text += `   Deneyim: ${data.experienceYears} Yıl\n`;
+                
+                // Sınıflandırma
+                const titleStr = String(data.title || "");
+                const specialtyStr = String(data.specialty || "");
+                if (specialistKeywords.test(titleStr) || specialistKeywords.test(specialtyStr)) {
+                  specialistCount++;
+                } else {
+                  generalCount++;
+                }
+
                 return text.trim();
               });
 
-              console.log(`[DOCTOR INTENT] Resolved ${docs.length} active structured doctors for clinic ${clinicId}`);
+              console.log(`[DOCTOR INTENT] Resolved ${docs.length} active structured doctors for clinic ${clinicId}. Specialists: ${specialistCount}, General: ${generalCount}`);
 
-              doctorContext = `[KESİN HEKİM KADROSU]
-Aşağıdaki liste kliniğin doğrulanmış hekim kadrosudur.
+              doctorContext = `[HEKİM KADROSU BİLGİSİ]
+Kliniğimizde an itibarıyla toplam ${docs.length} aktif hekim görev yapmaktadır.
+Bu hekimlerin ${specialistCount} tanesi uzman diş hekimi, ${generalCount} tanesi ise diş hekimidir.
 
+TAM LİSTE:
 ${docsListStrings.join('\n\n')}
 
-ÖNEMLİ KURAL: Kullanıcı doktorları sorduğunda, sadece ve sadece yukarıdaki listede bulunan hekimleri (hiçbirini atlamadan, sırasını değiştirmeden) eksiksiz olarak hastaya sun. Başka hiçbir hekim ismi uydurma.`;
+ÖNEMLİ KURAL:
+- Hasta sadece "kaç doktor var" veya benzeri bir sayı soruyorsa, YUKARIDAKİ TOPLAM SAYIYI ve uzman/diş hekimi dağılımını ver. Gerekmiyorsa tüm listeyi TEK TEK YAZMA, sadece dilerse isimlerini paylaşabileceğini belirt.
+- Hasta hekim isimlerini, kadroyu veya uzmanlıkları görmek istiyorsa, SADECE yukarıdaki listede bulunan hekimleri sun. Asla uydurma hekim ismi ekleme.`;
             } else {
               doctorDataMissing = true;
             }
@@ -1015,7 +1034,7 @@ ${docsListStrings.join('\n\n')}
       }
       
       if (doctorDataMissing) {
-        doctorContext = `DİKKAT: Sistemde bu kliniğin yapısal (structured) doktor listesi bulunamadı. Lütfen sağlanan 'Bilgi Havuzu' (Knowledge Base) kayıtlarına bak. Eğer Bilgi Havuzunda doktor isimleri AÇIKÇA geçiyorsa, sadece o bilgileri kullan. Eğer Bilgi Havuzunda da doktor bilgisi YOKSA, KESİNLİKLE uydurma yapma ve SADECE SADECE şu cümleyi söyle: "Doktor kadromuzla ilgili güncel kayıtların tamamına şu anda erişemediğim için eksik veya yanlış bilgi vermek istemem. Klinik ekibimizden teyit edilmesi gerekir." (Bu cümlenin sonuna 'Başka bir konuda...' gibi bir ifade Ekleme.)`;
+        doctorContext = `DİKKAT: Sistemde bu kliniğin yapısal (structured) doktor listesi bulunamadı. Lütfen sağlanan 'Bilgi Havuzu' (Knowledge Base) kayıtlarına bak. Eğer Bilgi Havuzunda doktor isimleri AÇIKÇA geçiyorsa, sadece o bilgileri kullan. Eğer Bilgi Havuzunda da doktor bilgisi YOKSA, KESİNLİKLE uydurma yapma ve SADECE SADECE şu cümleyi söyle: "Kliniğimizin güncel hekim kadrosuna ilişkin kayıtlı bir sayı bulunmuyor. Dilerseniz klinik ekibimizden teyit edilmesini sağlayabilirim." (Bu cümlenin sonuna 'Başka bir konuda...' gibi bir ifade Ekleme.)`;
       }
     }
 
