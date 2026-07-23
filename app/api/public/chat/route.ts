@@ -466,33 +466,45 @@ async function createAppointment(params: {
 
 
   /* ── Find clinic email ────────────────────────────── */
-  let clinicEmail = "";
-  try {
-    const adminDb = getAdminDb();
-    const clientDb = adminDb ? null : getClientDb();
+  let clinicEmailsToUse: string[] = [];
+  
+  if (clinicEmailEnabled) {
+    if (clinicRecipientEmails && clinicRecipientEmails.length > 0) {
+      clinicEmailsToUse = clinicRecipientEmails;
+      console.log(`[appointment-create] Using clinicRecipientEmails from settings: ${clinicEmailsToUse.join(", ")}`);
+    } else {
+      let clinicEmail = "";
+      try {
+        const adminDb = getAdminDb();
+        const clientDb = adminDb ? null : getClientDb();
 
-    if (adminDb) {
-      const cSnap = await adminDb.collection("clinics").doc(clinicId).get();
-      if (cSnap.exists) {
-        clinicEmail = cSnap.data()!.notificationEmail ?? cSnap.data()!.email ?? "";
-      }
-      if (!clinicEmail) {
-        const uSnap = await adminDb.collection("users").where("clinicId", "==", clinicId).limit(3).get();
-        clinicEmail = uSnap.docs.map((d: any) => d.data().email).filter(Boolean)[0] ?? "";
-      }
-    } else if (clientDb) {
-      const cSnap = await getDoc(doc(clientDb, "clinics", clinicId));
-      if (cSnap.exists()) {
-        clinicEmail = cSnap.data()!.notificationEmail ?? cSnap.data()!.email ?? "";
-      }
-      if (!clinicEmail) {
-        const uSnap = await getDocs(query(collection(clientDb, "users"), where("clinicId", "==", clinicId)));
-        clinicEmail = uSnap.docs.map(d => d.data().email).filter(Boolean)[0] ?? "";
+        if (adminDb) {
+          const cSnap = await adminDb.collection("clinics").doc(clinicId).get();
+          if (cSnap.exists) {
+            clinicEmail = cSnap.data()!.notificationEmail ?? cSnap.data()!.email ?? "";
+          }
+          if (!clinicEmail) {
+            const uSnap = await adminDb.collection("users").where("clinicId", "==", clinicId).limit(3).get();
+            clinicEmail = uSnap.docs.map((d: any) => d.data().email).filter(Boolean)[0] ?? "";
+          }
+        } else if (clientDb) {
+          const cSnap = await getDoc(doc(clientDb, "clinics", clinicId));
+          if (cSnap.exists()) {
+            clinicEmail = cSnap.data()!.notificationEmail ?? cSnap.data()!.email ?? "";
+          }
+          if (!clinicEmail) {
+            const uSnap = await getDocs(query(collection(clientDb, "users"), where("clinicId", "==", clinicId)));
+            clinicEmail = uSnap.docs.map(d => d.data().email).filter(Boolean)[0] ?? "";
+          }
+        }
+        if (clinicEmail) clinicEmailsToUse.push(clinicEmail);
+        console.log(`[appointment-create] Fallback clinicEmail=${clinicEmail || "(none found)"}`);
+      } catch (e: any) {
+        console.warn("[appointment-create] Email lookup failed:", e.message);
       }
     }
-    console.log(`[appointment-create] clinicEmail=${clinicEmail || "(none found)"}`);
-  } catch (e: any) {
-    console.warn("[appointment-create] Email lookup failed:", e.message);
+  } else {
+    console.log("[appointment-create] clinicEmailEnabled is false, skipping clinic email.");
   }
 
   /* ── SMS (mock) ───────────────────────────────────── */
@@ -534,11 +546,11 @@ async function createAppointment(params: {
 
   /* ── Email to clinic ──────────────────────────────── */
   let emailSent = false;
-  if (clinicEmail) {
+  if (clinicEmailsToUse.length > 0) {
     try {
       const result = await sendClinicAppointmentEmail({
         clinicName,
-        clinicEmails: [clinicEmail],
+        clinicEmails: clinicEmailsToUse,
         patientName:      data.patientName,
         patientPhone: data.patientPhone,
         requestedService: data.requestedService,
@@ -551,12 +563,12 @@ async function createAppointment(params: {
         appointmentId,
       });
       emailSent = result.success;
-      console.log(`[appointment-email] ${result.success ? "✅ sent" : "❌ failed"} → ${clinicEmail}`);
+      console.log(`[appointment-email] ${result.success ? "✅ sent" : "❌ failed"} → ${clinicEmailsToUse.join(", ")}`);
     } catch (e: any) {
       console.error("[appointment-email] Error:", e.message);
     }
   } else {
-    console.warn(`[appointment-email] No email found for clinicId=${clinicId}`);
+    console.warn(`[appointment-email] No emails found for clinicId=${clinicId} or notifications disabled.`);
   }
 
   /* ── Update notification status via REST ──────────── */
@@ -573,7 +585,7 @@ async function createAppointment(params: {
             mapValue: {
               fields: {
                 smsToPatient:  { stringValue: "sent" },
-                emailToClinic: { stringValue: emailSent ? "sent" : (clinicEmail ? "failed" : "skipped") },
+                emailToClinic: { stringValue: emailSent ? "sent" : (clinicEmailsToUse.length > 0 ? "failed" : "skipped") },
               },
             },
           },
