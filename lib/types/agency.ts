@@ -415,7 +415,7 @@ export interface AgencyKnowledgeRecord {
   isActive: boolean;
   priority: AgencyKnowledgePriority;
   embedding_status?: "pending" | "indexing" | "indexed" | "failed";
-  last_error?: string;
+  last_error?: string | null;
   embeddingChunks?: Array<{ text: string, embedding: number[], chunk_index: number }>;
   indexed_at?: any;
   index_version?: string;

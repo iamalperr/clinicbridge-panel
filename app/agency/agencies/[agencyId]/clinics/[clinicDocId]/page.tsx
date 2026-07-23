@@ -32,7 +32,7 @@ import { UI_COLORS } from "@/components/ui/ui-shared";
 import {
   ArrowLeft, Loader2, Save, Check, X, Plus, Trash2,
   Building2, FileText, Stethoscope, DollarSign, Brain,
-  HelpCircle, MapPin, Settings, ExternalLink, Globe, UserCircle, Edit2, RefreshCw
+  HelpCircle, MapPin, Settings, ExternalLink, Globe, UserCircle, Edit2, RefreshCw, AlertTriangle
 } from "lucide-react";
 import type {
   AgencyClinic, ClinicOverview, ClinicKnowledgeBase,

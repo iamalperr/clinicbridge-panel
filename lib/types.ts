@@ -144,7 +144,7 @@ export interface TrainingMaterial {
   status: "learned" | "pending";
   clinicId: string;
   embedding_status?: "pending" | "indexing" | "indexed" | "failed";
-  last_error?: string;
+  last_error?: string | null;
   createdAt: string | number | object;
   updatedAt: string | number | object;
 }
