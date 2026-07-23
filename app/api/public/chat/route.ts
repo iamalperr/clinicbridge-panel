@@ -596,6 +596,15 @@ async function logConversation(params: {
   appointmentId?: string;
   isAppointmentCreated?: boolean;
   isLiveSupport?: boolean;
+  // NEW DIAGNOSTIC FIELDS
+  tenantId?: string;
+  widgetId?: string;
+  sourceDomain?: string;
+  detectedLanguage?: string;
+  promptVersionId?: string;
+  knowledgeBaseId?: string;
+  retrievedDocumentCount?: number;
+  fallbackReason?: string;
 }) {
   const adminDb = getAdminDb();
   if (!adminDb) return;
@@ -639,8 +648,16 @@ async function logConversation(params: {
     if (!existing) {
       logData.createdAt = nowStr;
       logData.convertedToAppointment = false;
-      logData.language = "tr"; // default
+      logData.language = params.detectedLanguage || "tr";
+      logData.tenantId = params.tenantId || "";
+      logData.widgetId = params.widgetId || "";
+      logData.sourceDomain = params.sourceDomain || "";
+      logData.promptVersionId = params.promptVersionId || "";
+      logData.knowledgeBaseId = params.knowledgeBaseId || "";
     }
+
+    if (params.retrievedDocumentCount !== undefined) logData.retrievedDocumentCount = params.retrievedDocumentCount;
+    if (params.fallbackReason) logData.fallbackReason = params.fallbackReason;
 
     if (trainingTopic) logData.trainingTopic = trainingTopic;
     if (params.apptData?.patientName) logData.patientName = params.apptData.patientName;
@@ -934,6 +951,13 @@ export async function POST(req: Request) {
         }));
         debugLog.push(`[client] clinic="${clinicName}" docs=${trainingDocs.length}`);
       }
+    }
+    
+    if (!clinicData) {
+      console.error(`[chat API] FAIL LOUDLY: Clinic not found for clinicId=${clinicId}. Preventing generic fallback.`);
+      return NextResponse.json({ 
+        error: "Klinik veya asistan yapılandırması bulunamadı. Lütfen clinicId değerini kontrol edin." 
+      }, { status: 404, headers: CORS });
     }
 
     /* ── Relevance scoring ─────────────────────────────────────────────── */
@@ -1760,6 +1784,14 @@ ${validationRules}
       aiReply: responsePayload.reply,
       historyLength: history.length,
       apptData: isConfirmSummary ? responsePayload.pendingAppointmentData : null,
+      tenantId: agencyIdForClinic || clinicId,
+      widgetId: widgetId || "unknown",
+      sourceDomain: req.headers.get("origin") || req.headers.get("referer") || "unknown",
+      detectedLanguage: clinicLanguage,
+      promptVersionId: "production",
+      knowledgeBaseId: "default",
+      retrievedDocumentCount: trainingDocs.length,
+      fallbackReason: responsePayload.reply.includes("doğrulayamıyorum") ? "groundedness_failure" : "",
     });
 
     return NextResponse.json(responsePayload, { headers: CORS });

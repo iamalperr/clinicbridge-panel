@@ -32,13 +32,43 @@ export async function GET(
       return NextResponse.json(buildDefaults(clinicId), { headers: CORS_HEADERS });
     }
 
+    let raw: any = null;
     const snap = await adminDb.collection("widgetSettings").doc(clinicId).get();
 
-    if (!snap.exists) {
-      return NextResponse.json(buildDefaults(clinicId), { headers: CORS_HEADERS });
-    }
+    if (snap.exists) {
+      raw = snap.data()!;
+    } else {
+      let cData: any = null;
+      const clinicSnap = await adminDb.collection("clinics").doc(clinicId).get();
+      if (clinicSnap.exists) {
+        cData = clinicSnap.data();
+      } else {
+        const agenciesSnap = await adminDb.collection("agencies").get();
+        for (const agency of agenciesSnap.docs) {
+          let aClinicSnap: any = await adminDb.collection("agencies").doc(agency.id).collection("clinics").doc(clinicId).get();
+          if (!aClinicSnap.exists) {
+            const aClinicsQuery = await adminDb.collection("agencies").doc(agency.id).collection("clinics").where("clinicSlug", "==", clinicId).limit(1).get();
+            if (!aClinicsQuery.empty) {
+              aClinicSnap = aClinicsQuery.docs[0];
+            }
+          }
+          if (aClinicSnap.exists) {
+            cData = aClinicSnap.data();
+            break;
+          }
+        }
+      }
 
-    const raw = snap.data()!;
+      if (!cData) {
+        console.error(`[widget-settings API] FAIL LOUDLY: Clinic not found for clinicId=${clinicId}`);
+        return NextResponse.json({ error: "Clinic not found" }, { status: 404, headers: CORS_HEADERS });
+      }
+
+      raw = {
+        title: cData.clinicName || cData.name || "Clinic Assistant",
+        defaultLanguage: cData.language || "auto",
+      };
+    }
 
     // Return ONLY public-safe fields — no private/admin data
     const publicSettings = {
