@@ -39,13 +39,37 @@ export interface AppointmentEmailPayload {
   patientPhone: string;
   requestedService: string;
   requestedDate: string;
-  requestedTime: string;
+  requestedTime?: string | null;
+  preferredTimeStart?: string | null;
+  preferredTimeEnd?: string | null;
+  preferredTimePeriod?: string | null;
+  preferredTimeText?: string | null;
   appointmentId: string;
 }
 
 export async function sendClinicAppointmentEmail(
   payload: AppointmentEmailPayload
 ): Promise<{ success: boolean; error?: string }> {
+  let timeLabel = "Tercih Edilen Saat";
+  let timeValue = payload.requestedTime || "Saat belirtilmedi";
+  if (payload.preferredTimeText && payload.preferredTimeText.toLowerCase() !== "belirtilmedi" && payload.preferredTimeText.toLowerCase() !== "belirtilmemiş") {
+    timeValue = payload.preferredTimeText;
+  }
+  
+  if (payload.preferredTimePeriod) {
+    timeLabel = "Tercih Edilen Zaman";
+    const periodMap: Record<string, string> = {
+      morning: "Sabah",
+      afternoon: "Öğleden sonra",
+      evening: "Akşam",
+      earliest_available: "En erken uygun saat"
+    };
+    timeValue = periodMap[payload.preferredTimePeriod] || payload.preferredTimePeriod;
+  } else if (payload.preferredTimeStart && payload.preferredTimeEnd) {
+    timeLabel = "Tercih Edilen Saat Aralığı";
+    timeValue = `${payload.preferredTimeStart} - ${payload.preferredTimeEnd}`;
+  }
+
   const html = `
     <div style="font-family:sans-serif;max-width:560px;margin:0 auto;line-height:1.6;">
       <h2 style="color:#6366f1">Yeni Randevu Talebi - ClinicBridge AI</h2>
@@ -57,7 +81,7 @@ export async function sendClinicAppointmentEmail(
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Telefon</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.patientPhone}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Hizmet / İşlem</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedService}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Tercih Edilen Tarih</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedDate}</td></tr>
-        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Tercih Edilen Saat</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedTime}</td></tr>
+        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">${timeLabel}</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${timeValue}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Kaynak</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">AI Chatbot</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Durum</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">Bekliyor</td></tr>
       </table>
@@ -103,6 +127,26 @@ export async function sendClinicAppointmentEmail(
 export async function sendPatientAppointmentEmail(
   payload: AppointmentEmailPayload
 ): Promise<{ success: boolean; error?: string }> {
+  let timeLabel = "Tercih Edilen Saat";
+  let timeValue = payload.requestedTime || "Saat belirtilmedi";
+  if (payload.preferredTimeText && payload.preferredTimeText.toLowerCase() !== "belirtilmedi" && payload.preferredTimeText.toLowerCase() !== "belirtilmemiş") {
+    timeValue = payload.preferredTimeText;
+  }
+  
+  if (payload.preferredTimePeriod) {
+    timeLabel = "Tercih Edilen Zaman";
+    const periodMap: Record<string, string> = {
+      morning: "Sabah",
+      afternoon: "Öğleden sonra",
+      evening: "Akşam",
+      earliest_available: "En erken uygun saat"
+    };
+    timeValue = periodMap[payload.preferredTimePeriod] || payload.preferredTimePeriod;
+  } else if (payload.preferredTimeStart && payload.preferredTimeEnd) {
+    timeLabel = "Tercih Edilen Saat Aralığı";
+    timeValue = `${payload.preferredTimeStart} - ${payload.preferredTimeEnd}`;
+  }
+
   const html = `
     <div style="font-family:sans-serif;max-width:560px;margin:0 auto;line-height:1.6;">
       <h2 style="color:#6366f1">Randevu Talebiniz Alındı</h2>
@@ -112,7 +156,7 @@ export async function sendPatientAppointmentEmail(
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600;width:170px">Klinik</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.clinicName}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Hizmet / İşlem</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedService}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Tercih Edilen Tarih</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedDate}</td></tr>
-        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Tercih Edilen Saat</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedTime}</td></tr>
+        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">${timeLabel}</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${timeValue}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Durum</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">Değerlendirme Aşamasında</td></tr>
       </table>
       <p style="color:#64748b;font-size:14px">
@@ -235,7 +279,7 @@ export interface SmsPayload {
   phone: string;
   clinicName: string;
   requestedDate: string;
-  requestedTime: string;
+  requestedTime?: string | null;
   requestedService: string;
 }
 

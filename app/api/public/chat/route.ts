@@ -243,8 +243,48 @@ interface AppointmentData {
   patientEmail?: string;
   requestedService: string;
   requestedDate: string;
-  requestedTime: string;
+  requestedTime: string | null;
+  preferredTimeStart?: string | null;
+  preferredTimeEnd?: string | null;
+  preferredTimePeriod?: "morning" | "afternoon" | "evening" | "earliest_available" | null;
+  preferredTimeText?: string | null;
+  timezone?: string;
   originalText: string;
+}
+
+function parseTimeText(text: string) {
+  const t = text.trim();
+  const lower = t.toLowerCase();
+  
+  if (!t || lower === "belirtilmedi" || lower === "belirtilmemiş") {
+    return { preferredTime: null, preferredTimeStart: null, preferredTimeEnd: null, preferredTimePeriod: null, preferredTimeText: null };
+  }
+
+  const result = {
+    preferredTime: null as string | null,
+    preferredTimeStart: null as string | null,
+    preferredTimeEnd: null as string | null,
+    preferredTimePeriod: null as "morning" | "afternoon" | "evening" | "earliest_available" | null,
+    preferredTimeText: t
+  };
+
+  if (lower.includes("sabah") || lower.includes("morning")) {
+    result.preferredTimePeriod = "morning";
+  } else if (lower.includes("öğleden sonra") || lower.includes("öğleden_sonra") || lower.includes("afternoon")) {
+    result.preferredTimePeriod = "afternoon";
+  } else if (lower.includes("akşamüstü") || lower.includes("akşam") || lower.includes("evening")) {
+    result.preferredTimePeriod = "evening";
+  } else if (lower.includes("en erken") || lower.includes("erken") || lower.includes("earliest")) {
+    result.preferredTimePeriod = "earliest_available";
+  } else if (t.includes("-")) {
+    const parts = t.split("-").map(p => p.trim());
+    result.preferredTimeStart = parts[0]?.match(/([01]?\d|2[0-3]):?([0-5]\d)/)?.[0] || null;
+    result.preferredTimeEnd = parts[1]?.match(/([01]?\d|2[0-3]):?([0-5]\d)/)?.[0] || null;
+  } else {
+    result.preferredTime = t.match(/([01]?\d|2[0-3]):?([0-5]\d)/)?.[0] || null;
+  }
+
+  return result;
 }
 
 function extractAppointmentFromHistory(history: any[]): AppointmentData | null {
@@ -269,27 +309,18 @@ function extractAppointmentFromHistory(history: any[]): AppointmentData | null {
   const phoneMatch   = confirmMsg.match(/(?:Telefon|Phone|Tel):\s*([0-9\s+\-().]+)/i);
   const emailMatch   = confirmMsg.match(/(?:E-posta|Email|Mail|E-mail):\s*([^\n\r\s]+)/i);
   const serviceMatch = confirmMsg.match(/(?:Hizmet|Service|Tedavi|Treatment):\s*([^\n\r]+)/i);
-  const dtMatch      = confirmMsg.match(/(?:Tarih\/Saat|Date\/Time|Tarih|Date|Saat):\s*([^\n\r]+)/i);
+  const dtMatch      = confirmMsg.match(/(?:Tarih|Date):\s*([^\n\r]+)/i);
+  const timeMatch    = confirmMsg.match(/(?:Saat|Time):\s*([^\n\r]+)/i);
 
   const patientName      = nameMatch?.[1]?.trim() ?? "";
   const patientPhone     = phoneMatch?.[1]?.replace(/\s+/g, "").trim() ?? "";
   const patientEmail     = emailMatch?.[1]?.trim().toLowerCase() ?? "";
   const requestedService = serviceMatch?.[1]?.trim() ?? "Genel Muayene";
 
-  // Parse date and time from the combined field
-  let requestedDate = "";
-  let requestedTime = "";
-  if (dtMatch) {
-    const dtStr = dtMatch[1].trim();
-    // Look for time pattern HH:MM
-    const timeInStr = dtStr.match(/(\d{1,2}:\d{2})/);
-    if (timeInStr) {
-      requestedTime = timeInStr[1];
-      requestedDate = dtStr.replace(timeInStr[0], "").replace(/saat/gi, "").trim();
-    } else {
-      requestedDate = dtStr;
-    }
-  }
+  const requestedDate = dtMatch?.[1]?.trim() ?? "";
+  const rawTimeStr = timeMatch?.[1]?.trim() ?? "";
+  
+  const parsedTime = parseTimeText(rawTimeStr);
 
   const originalText = userMsgs.join(" | ");
 
@@ -298,14 +329,18 @@ function extractAppointmentFromHistory(history: any[]): AppointmentData | null {
     return null;
   }
 
-  console.log(`[appt-extract] ✅ name="${patientName}" phone="${patientPhone}" service="${requestedService}" date="${requestedDate}" time="${requestedTime}"`);
+  console.log(`[appt-extract] ✅ name="${patientName}" phone="${patientPhone}" service="${requestedService}" date="${requestedDate}" time="${parsedTime.preferredTime}"`);
   return {
     patientName,
     patientPhone,
     patientEmail,
     requestedService,
     requestedDate,
-    requestedTime,
+    requestedTime: parsedTime.preferredTime,
+    preferredTimeStart: parsedTime.preferredTimeStart,
+    preferredTimeEnd: parsedTime.preferredTimeEnd,
+    preferredTimePeriod: parsedTime.preferredTimePeriod,
+    preferredTimeText: parsedTime.preferredTimeText,
     originalText: confirmMsg
   };
 }
@@ -370,6 +405,11 @@ async function createAppointment(params: {
     treatmentType:    data.requestedService || "Genel Muayene",
     preferredDate:    data.requestedDate || "",
     preferredTime:    validRequestedTime,
+    preferredTimeStart: data.preferredTimeStart || null,
+    preferredTimeEnd: data.preferredTimeEnd || null,
+    preferredTimePeriod: data.preferredTimePeriod || null,
+    preferredTimeText: data.preferredTimeText || null,
+    timezone:         Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Istanbul",
     appointmentDateTime: "",
     notes:            "",
     source:           "ai_chatbot",
@@ -481,6 +521,10 @@ async function createAppointment(params: {
         requestedService: data.requestedService,
         requestedDate: data.requestedDate,
         requestedTime: data.requestedTime,
+        preferredTimeStart: data.preferredTimeStart,
+        preferredTimeEnd: data.preferredTimeEnd,
+        preferredTimePeriod: data.preferredTimePeriod,
+        preferredTimeText: data.preferredTimeText,
         appointmentId,
       });
     } catch (e: any) {
@@ -496,10 +540,14 @@ async function createAppointment(params: {
         clinicName,
         clinicEmails: [clinicEmail],
         patientName:      data.patientName,
-        patientPhone:     data.patientPhone,
+        patientPhone: data.patientPhone,
         requestedService: data.requestedService,
-        requestedDate:    data.requestedDate,
-        requestedTime:    data.requestedTime,
+        requestedDate: data.requestedDate,
+        requestedTime: data.requestedTime,
+        preferredTimeStart: data.preferredTimeStart,
+        preferredTimeEnd: data.preferredTimeEnd,
+        preferredTimePeriod: data.preferredTimePeriod,
+        preferredTimeText: data.preferredTimeText,
         appointmentId,
       });
       emailSent = result.success;
@@ -1151,7 +1199,7 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
    ${requiresEmailStr}
    - Tedavi/İşlem Türü
    - Tercih edilen Tarih
-   - Tercih edilen Saat
+   - Tercih edilen Saat (Eğer hasta saat belirtmediyse mutlaka şu soruyu sor: "Randevu talebinizi kliniğe doğru şekilde iletebilmem için tercih ettiğiniz saat veya saat aralığını da paylaşabilir misiniz?" Hasta saat belirtmeden devam etmek isterse boş bırakabilirsin.)
 2. Eğer bir bilgi eksikse sadece o bilgiyi sor. (Aynı konuşmada daha önce verilen bir bilgiyi tekrar sorma).
 ${validationRules}
 4. Tüm bilgiler tamam olunca MUTLAKA şu formatta özet ve onay iste:
@@ -1159,7 +1207,7 @@ ${validationRules}
    Ad: [isim]
    ${requirePhone ? 'Telefon: [telefon]\n   ' : ''}${requireEmail ? 'E-posta: [email]\n   ' : ''}Hizmet: [hizmet]
    Tarih: [tarih]
-   Saat: [saat (Eğer hasta belirli bir saat seçmediyse saat uydurma, 'Belirtilmedi' yaz)]
+   Saat: [Tercih edilen saat. Sadece şu formatlardan birini kullan: Net saat ise "14:00", Aralık ise "10:00-12:00", Dönem ise "sabah" / "öğleden_sonra" / "akşamüstü" / "en_erken", Belirtilmediyse "Belirtilmedi"]
    Onaylıyor musunuz? (Evet/Hayır)"
 5. Kullanıcı "Evet" dediğinde sistem klinik onayına sunulmak üzere bir ÖN RANDEVU TALEBİ oluşturacak. 
    Kesinlikle "randevunuz oluşturuldu", "onaylandı" deme.
@@ -1308,20 +1356,25 @@ ${validationRules}
       const phoneMatch   = reply.match(/(?:Telefon|Phone|Tel):\s*([0-9\s+\-().]+)/i);
       const emailMatch   = reply.match(/(?:E-posta|Email|Mail|E-mail):\s*([^\n\r\s]+)/i);
       const serviceMatch = reply.match(/(?:Hizmet|Service|Tedavi):\s*([^\n\r]+)/i);
-      const dtMatch      = reply.match(/(?:Tarih\/Saat|Tarih|Date):\s*([^\n\r]+)/i);
-      const timeMatch    = reply.match(/(\d{1,2}:\d{2})/i);
+      const dtMatch      = reply.match(/(?:Tarih|Date):\s*([^\n\r]+)/i);
+      const timeMatch    = reply.match(/(?:Saat|Time):\s*([^\n\r]+)/i);
 
       const dtStr  = dtMatch?.[1]?.trim() ?? "";
-      const timeStr = timeMatch?.[1]?.trim() ?? "";
-      const dateStr = dtStr.replace(timeStr, "").replace(/saat/gi, "").trim();
+      const rawTimeStr = timeMatch?.[1]?.trim() ?? "";
+      
+      const parsedTime = parseTimeText(rawTimeStr);
 
       const pending: AppointmentData = {
         patientName:      nameMatch?.[1]?.trim()    ?? "",
         patientPhone:     phoneMatch?.[1]?.replace(/\s+/g, "").trim() ?? "",
         patientEmail:     emailMatch?.[1]?.trim().toLowerCase() ?? "",
         requestedService: serviceMatch?.[1]?.trim() ?? "Genel Muayene",
-        requestedDate:    dateStr || dtStr,
-        requestedTime:    timeStr,
+        requestedDate:    dtStr,
+        requestedTime:    parsedTime.preferredTime,
+        preferredTimeStart: parsedTime.preferredTimeStart,
+        preferredTimeEnd: parsedTime.preferredTimeEnd,
+        preferredTimePeriod: parsedTime.preferredTimePeriod,
+        preferredTimeText: parsedTime.preferredTimeText,
         originalText:     reply,
       };
 

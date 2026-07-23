@@ -306,8 +306,13 @@ export interface Appointment {
   reason?: string;
   preferredDate?: string;
   requestedDate?: string;
-  preferredTime?: string;
-  requestedTime?: string;
+  preferredTime?: string | null;
+  requestedTime?: string | null;
+  preferredTimeStart?: string | null;
+  preferredTimeEnd?: string | null;
+  preferredTimePeriod?: "morning" | "afternoon" | "evening" | "earliest_available" | null;
+  preferredTimeText?: string | null;
+  timezone?: string;
   appointmentDateTime?: string;
   status: "pending" | "confirmed" | "cancelled" | "completed";
   source: "ai_chat" | "manual" | "widget" | string;

@@ -199,7 +199,23 @@ export default function AppointmentsPage({ params }: PageProps) {
                     const displayPhone = apt.patientPhone ? apt.patientPhone.replace(/-+$/, "") : "";
                     const displayService = apt.treatmentType || apt.requestedService || apt.service || apt.reason || "Belirtilmedi";
                     const aptAny = apt as any;
-                    const timeStr = apt.appointmentDateTime || aptAny.appointmentTime || apt.requestedTime || apt.preferredTime || (aptAny.scheduledAt ? new Date(aptAny.scheduledAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : null) || aptAny.startTime;
+                    
+                    let timeStr = "";
+                    if (aptAny.preferredTimeText && aptAny.preferredTimeText.toLowerCase() !== "belirtilmedi" && aptAny.preferredTimeText.toLowerCase() !== "belirtilmemiş") {
+                      timeStr = aptAny.preferredTimeText;
+                    } else if (aptAny.preferredTimePeriod) {
+                      const periodMap: Record<string, string> = {
+                        morning: "Sabah",
+                        afternoon: "Öğleden sonra",
+                        evening: "Akşam",
+                        earliest_available: "En erken uygun saat"
+                      };
+                      timeStr = periodMap[aptAny.preferredTimePeriod] || aptAny.preferredTimePeriod;
+                    } else if (aptAny.preferredTimeStart && aptAny.preferredTimeEnd) {
+                      timeStr = `${aptAny.preferredTimeStart} - ${aptAny.preferredTimeEnd}`;
+                    } else {
+                      timeStr = apt.preferredTime || apt.requestedTime || apt.appointmentDateTime || aptAny.appointmentTime || (aptAny.scheduledAt ? new Date(aptAny.scheduledAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : null) || aptAny.startTime || "";
+                    }
                     
                     return (
                       <tr key={apt.id} style={{ borderBottom: `1px solid ${UI_COLORS.border}`, transition: "background 0.2s" }} onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-page)"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
@@ -291,8 +307,8 @@ export default function AppointmentsPage({ params }: PageProps) {
                                 {timeStr}
                               </div>
                             ) : (
-                              <div style={{ display: "inline-flex", alignItems: "center", padding: "2px 6px", background: "rgba(245, 158, 11, 0.1)", borderRadius: 4, color: "#d97706", fontSize: 11, fontWeight: 600, marginTop: 2 }}>
-                                Saat seçilmedi
+                              <div style={{ display: "inline-flex", alignItems: "center", padding: "2px 6px", background: "rgba(100, 116, 139, 0.1)", borderRadius: 4, color: "#475569", fontSize: 11, fontWeight: 600, marginTop: 2 }}>
+                                Saat belirtilmedi
                               </div>
                             )}
                           </div>
