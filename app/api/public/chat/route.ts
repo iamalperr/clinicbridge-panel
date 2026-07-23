@@ -915,9 +915,10 @@ export async function POST(req: Request) {
               return text.trim();
             });
             doctorContext = `Sistemimizde şu an bu kliniğe ait aktif ${docsSnap.docs.length} doktor kaydı bulunmaktadır.\n\nDOKTORLAR LİSTESİ:\n\n${docsList.join('\n\n---\n\n')}\n\nÖNEMLİ KURAL: Kullanıcı doktorları sorduğunda, yukarıdaki listede bulunan TÜM doktorları (hiçbirini atlamadan) eksiksiz olarak listele. "Bazı doktorlarımız..." gibi ifadeler kullanma, doktor sayısını kesin olarak belirt ve SADECE yukarıda verilen doğrulanmış bilgileri kullan. Eksik olan bir bilgiyi (örneğin eğitim veya diller) kesinlikle uydurma.`;
-          } else {
-            // Structured collection empty -> Do not add a negative constraint. 
-            // We will rely on the AI Knowledge Base (RAG) and boost doctor docs below.
+            
+            if (doctorContext.length > 8000) {
+              doctorContext = doctorContext.substring(0, 8000) + "\n...[DOKTOR LİSTESİ KESİLDİ]";
+            }
           }
         } catch (err) {
           console.error("[chat] Error fetching doctors", err);
@@ -941,11 +942,19 @@ export async function POST(req: Request) {
       return { ...d, score };
     });
     scored.sort((a, b) => b.score - a.score);
-    const sliceLimit = isDoctorIntent ? 30 : 12;
-    const topDocs = scored.slice(0, sliceLimit);
-    const knowledgeContext = topDocs.length > 0
+    const sliceLimit = isDoctorIntent ? 15 : 10;
+    let topDocs = scored.slice(0, sliceLimit);
+    
+    let knowledgeContext = topDocs.length > 0
       ? topDocs.map(d => `## ${d.title}\n${d.content}`).join("\n\n---\n\n")
       : "";
+      
+    // Safeguard: Hard limit knowledgeContext to prevent TPM / max context limits
+    // Roughly 12000 chars is ~3000 tokens, a safe limit to leave room for history + doctors
+    if (knowledgeContext.length > 15000) {
+       knowledgeContext = knowledgeContext.substring(0, 15000) + "\n...[METİN KESİLDİ]";
+    }
+
     debugLog.push(`topDocs=[${topDocs.slice(0, 4).map(d => d.title).join(", ")}]`);
 
     // Log detailed RAG matching data for debug
