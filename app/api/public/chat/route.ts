@@ -965,11 +965,10 @@ export async function POST(req: Request) {
           }
           
           if (!docsSnap.empty) {
-            // Memory sort and filter to avoid missing field/index issues
-            let docs = docsSnap.docs.map(d => d.data());
-            // docs = docs.filter(d => d.showOnPublicProfile !== false);
-            // docs = docs.filter(d => d.status === "active"); // Relaxing filter in case manually added
-
+            let docs = docsSnap.docs.map(d => {
+              const data = d.data();
+              return { id: d.id, ...data };
+            });
             
             if (docs.length > 0) {
               docs.sort((a, b) => (a.display_order || a.order || 0) - (b.display_order || b.order || 0));
@@ -988,7 +987,7 @@ export async function POST(req: Request) {
               if (data.highlightedTreatments?.length) text += `Öne Çıkan Tedavileri: ${data.highlightedTreatments.join(", ")}\n`;
               return text.trim();
             });
-            doctorContext = `Sistemimizde şu an bu kliniğe ait aktif ${docs.length} doktor kaydı bulunmaktadır.\n\nDOKTORLAR LİSTESİ:\n\n${docsList.join('\n\n---\n\n')}\n\nÖNEMLİ KURAL: Kullanıcı doktorları sorduğunda, yukarıdaki listede bulunan TÜM doktorları (hiçbirini atlamadan) eksiksiz olarak listele. "Bazı doktorlarımız..." gibi ifadeler kullanma, doktor sayısını kesin olarak belirt ve SADECE yukarıda verilen doğrulanmış bilgileri kullan. Eksik olan bir bilgiyi (örneğin eğitim veya diller) kesinlikle uydurma. Aşağıdaki hekim listesi (sıralı) dışında HİÇBİR hekim adı uydurma. Verilmeyen hekimleri listeye ekleme.`;
+            doctorContext = `Sistemimizde şu an bu kliniğe ait ${docs.length} doktor kaydı (yapılandırılmış veritabanında) bulunmaktadır.\n\nYAPILANDIRILMIŞ DOKTORLAR LİSTESİ:\n\n${docsList.join('\n\n---\n\n')}\n\nÖNEMLİ KURAL: Kullanıcı doktorları sorduğunda, yukarıdaki listede bulunan doktorları ve "Bilgi Havuzu (Knowledge Base)" içinde bulduğun DİĞER TÜM doktorları BİRLEŞTİREREK eksiksiz olarak listele. Sadece yukarıdaki listeye bağlı kalma, bilgi havuzundaki doktorları da mutlaka listeye dahil et.`;
             
             if (doctorContext.length > 8000) {
               doctorContext = doctorContext.substring(0, 8000) + "\n...[DOKTOR LİSTESİ KESİLDİ]";
