@@ -872,9 +872,16 @@ export async function POST(req: Request) {
         // Fallback for Agency Clinics
         const agenciesSnap = await adminDb.collection("agencies").get();
         for (const agency of agenciesSnap.docs) {
-          const aClinicsQuery = await adminDb.collection("agencies").doc(agency.id).collection("clinics").where("clinicSlug", "==", clinicId).limit(1).get();
-          if (!aClinicsQuery.empty) {
-             const aClinicSnap = aClinicsQuery.docs[0];
+          let aClinicSnap: any = await adminDb.collection("agencies").doc(agency.id).collection("clinics").doc(clinicId).get();
+          
+          if (!aClinicSnap.exists) {
+            const aClinicsQuery = await adminDb.collection("agencies").doc(agency.id).collection("clinics").where("clinicSlug", "==", clinicId).limit(1).get();
+            if (!aClinicsQuery.empty) {
+              aClinicSnap = aClinicsQuery.docs[0];
+            }
+          }
+
+          if (aClinicSnap.exists) {
              const aData = aClinicSnap.data()!;
              agencyIdForClinic = agency.id;
              isAgencyClinic = true;
