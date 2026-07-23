@@ -1060,7 +1060,12 @@ ${docsListStrings.join('\n\n---\n\n')}
       }
       
       if (doctorDataMissing) {
-        doctorContext = `DİKKAT: Sistemde bu kliniğin yapısal (structured) doktor listesi bulunamadı. Lütfen sağlanan 'Bilgi Havuzu' (Knowledge Base) kayıtlarına bak. Eğer Bilgi Havuzunda doktor isimleri AÇIKÇA geçiyorsa, sadece o bilgileri kullan. Eğer Bilgi Havuzunda da doktor bilgisi YOKSA, KESİNLİKLE uydurma yapma ve SADECE SADECE şu cümleyi söyle: "Kliniğimizin güncel hekim kadrosuna ilişkin kayıtlı bir sayı bulunmuyor. Dilerseniz klinik ekibimizden teyit edilmesini sağlayabilirim." (Bu cümlenin sonuna 'Başka bir konuda...' gibi bir ifade Ekleme.)`;
+        doctorContext = `DİKKAT: Sistemde bu kliniğin yapısal (structured) doktor listesi bulunamadı. Lütfen sağlanan 'Bilgi Havuzu' (Knowledge Base) kayıtlarına bak.
+Eğer Bilgi Havuzunda doktor isimleri başlık olarak geçiyorsa şu kurallara KESİNLİKLE uy:
+1. Her doktor başlığının altındaki bilgileri (Unvan, Uzmanlık, Tedaviler vb.) SADECE o doktora ait tek ve bağımsız bir kayıt olarak değerlendir. Asla başka bir doktorun bilgileriyle karıştırma.
+2. Uzmanlık alanlarını ASLA tahmin etme veya unvandan/tedavilerden çıkarma. Sadece o doktorun başlığı altında AÇIKÇA yazan uzmanlık bilgisini kullan. Açıkça uzmanlık yazmıyorsa uydurma.
+3. Hasta "kaç doktorunuz var?" veya "hekim sayınız nedir?" diye sorarsa, Bilgi Havuzu'ndaki doktor başlıklarını (isimlerini) say ve hastaya doğru toplam sayıyı ver.
+Eğer Bilgi Havuzunda da doktor bilgisi YOKSA, KESİNLİKLE uydurma yapma ve SADECE SADECE şu cümleyi söyle: "Kliniğimizin güncel hekim kadrosuna ilişkin kayıtlı bir sayı bulunmuyor. Dilerseniz klinik ekibimizden teyit edilmesini sağlayabilirim." (Bu cümlenin sonuna 'Başka bir konuda...' gibi bir ifade Ekleme.)`;
       }
     }
 
