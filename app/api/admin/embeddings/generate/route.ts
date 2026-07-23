@@ -55,6 +55,7 @@ export async function POST(req: Request) {
       text,
       embedding: embeddings[i],
       chunk_index: i,
+      entity_type: data.entity_type || "general",
     }));
 
     // Update document
