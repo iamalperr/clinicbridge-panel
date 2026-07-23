@@ -1447,9 +1447,11 @@ ${validationRules}
 
     // GROUNDEDNESS CHECK
     // Only check if we retrieved RAG context and the AI didn't already use the safe fallback
-    if (knowledgeContext.length > 0 && !reply.includes("doğrulamıyorum") && !reply.includes("erişemediğim")) {
+    if (knowledgeContext.length > 0 && !reply.includes("doğrulamıyorum") && !reply.includes("erişemediğim") && !isDoctorIntent) {
       const { validateGroundedness } = await import("@/lib/services/retrievalService");
-      const validation = await validateGroundedness(reply, knowledgeContext);
+      
+      const fullContextForValidation = doctorContext ? `${knowledgeContext}\n\n${doctorContext}` : knowledgeContext;
+      const validation = await validateGroundedness(reply, fullContextForValidation);
       if (!validation.isGrounded) {
          console.warn(`[Groundedness Failed] Reason: ${validation.reason}\nReply: ${reply}`);
          reply = "Bu bilgiyi şu anda güvenilir şekilde doğrulayamıyorum. Yanlış yönlendirmemek için klinik ekibimizden teyit edilmesi gerekir.";
