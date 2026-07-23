@@ -959,7 +959,8 @@ export async function POST(req: Request) {
     debugLog.push(`intent_price=${activePriceIntent || "none"}`);
 
     // YENİ: Doktor niyet tespiti
-    const isDoctorIntent = /\b(doktor|hekim|uzman|doctor|dentist|specialist|cerrah|surgeon|tıbbi|medical team|ekip|doctors|hekimler|doktorlar)\b/i.test(msgLower);
+    const isDoctorIntent = /\b(doktor|hekim|uzman|doctor|dentist|specialist|cerrah|surgeon|tıbbi|medical team|ekip|doctors|hekimler|doktorlar)/i.test(msgLower);
+    const isDoctorCountIntent = isDoctorIntent && /\b(kaç|sayısı|sayı|how many|number of)\b/i.test(msgLower);
     
     let doctorContext = "";
     let doctorDataMissing = false;
@@ -985,18 +986,25 @@ export async function POST(req: Request) {
               let generalCount = 0;
               const specialistKeywords = /uzman|uzm\.|dr\.|doç\.|prof\.|cerrahisi|ortodonti|endodonti|periodontoloji|pedodonti|protetik|restoratif|oral diagnoz/i;
 
+              let rawDoctorsData: any[] = [];
               const docsListStrings = docs.map((data, index) => {
                 const fullName = `${data.title ? data.title + ' ' : ''}${data.doctorName || data.full_name || data.fullName}`.trim();
                 allowedDoctorNames.push(fullName);
                 
                 const docId = data.id || data.doctor_id || `doctor_${index + 1}`;
+                const titleStr = String(data.title || data.professional_title || "Diş Hekimi").trim();
+                const specialtyStr = String(data.specialty || data.primary_specialization || "").trim();
+                
+                rawDoctorsData.push({
+                   full_name: fullName,
+                   professional_title: titleStr,
+                   specialization: specialtyStr || "Sistem kayıtlarında ayrıca tanımlanmış bir uzmanlık alanı bulunmamaktadır."
+                });
+
                 let text = `HEKİM ID: ${docId}\n`;
                 text += `Ad: ${fullName}\n`;
-                
-                const titleStr = String(data.title || data.professional_title || "Diş Hekimi").trim();
                 text += `Unvan: ${titleStr}\n`;
                 
-                const specialtyStr = String(data.specialty || data.primary_specialization || "").trim();
                 if (specialtyStr) {
                   text += `Uzmanlık Alanı: ${specialtyStr}\n`;
                 } else {
@@ -1030,7 +1038,29 @@ export async function POST(req: Request) {
 
               console.log(`[DOCTOR INTENT] Resolved ${docs.length} active structured doctors for clinic ${clinicId}. Specialists: ${specialistCount}, General: ${generalCount}`);
 
-              doctorContext = `[HEKİM KADROSU BİLGİSİ]
+              if (isDoctorCountIntent) {
+                const verifiedPayload = {
+                  intent: "doctor_count",
+                  clinic_id: clinicId,
+                  total_active_doctors: docs.length,
+                  specialists: specialistCount,
+                  general_dentists: generalCount,
+                  doctors: rawDoctorsData
+                };
+                
+                doctorContext = `[VERIFIED DOCTOR COUNT PAYLOAD]
+Aşağıdaki JSON verisi kliniğin KESİN ve GÜNCEL hekim kadrosudur. (Uygulama katmanından doğrudan verilmiştir).
+Eğer hasta hekim sayısıyla ("kaç doktorunuz var" vb.) ilgili bir soru soruyorsa SADECE VE KESİNLİKLE bu JSON verisindeki "total_active_doctors" sayısını ve isterseniz branş dağılımını kullanarak yanıt üret. 
+Asla bilginin doğrulanamadığını (fallback) söyleme, çünkü bu veri sistemin doğrudan kendisinden gelmektedir!
+
+\`\`\`json
+${JSON.stringify(verifiedPayload, null, 2)}
+\`\`\`
+
+ÖNEMLİ KURAL: 
+- İstenmedikçe listeyi tek tek sayma. Sadece "Kliniğimizde aktif olarak toplam X hekim görev yapmaktadır, bunların Y tanesi uzman diş hekimi, Z tanesi ise diş hekimidir. Dilerseniz isimlerini paylaşabilirim." şeklinde doğal bir yanıtla.`;
+              } else {
+                doctorContext = `[HEKİM KADROSU BİLGİSİ]
 Kliniğimizde an itibarıyla toplam ${docs.length} aktif hekim görev yapmaktadır.
 Bu hekimlerin ${specialistCount} tanesi uzman diş hekimi, ${generalCount} tanesi ise diş hekimidir.
 
@@ -1038,12 +1068,12 @@ TAM LİSTE:
 ${docsListStrings.join('\n\n---\n\n')}
 
 ÖNEMLİ KURAL (HEKİM BİLGİSİ):
-1. Hasta sadece "kaç doktor var" veya benzeri bir sayı soruyorsa, YUKARIDAKİ TOPLAM SAYIYI ve uzman/diş hekimi dağılımını ver. Gerekmiyorsa tüm listeyi TEK TEK YAZMA, sadece dilerse isimlerini paylaşabileceğini belirt.
-2. Hasta hekim isimlerini veya kadroyu görmek istiyorsa, SADECE yukarıdaki listede bulunan hekimleri sun. Asla uydurma hekim ismi ekleme.
-3. Uzmanlık sorulduğunda SADECE 'Uzmanlık Alanı' alanına bak. Eğer 'Sistem kayıtlarında ayrıca tanımlanmış bir uzmanlık alanı bulunmamaktadır' yazıyorsa, kendi kafandan unvana, biyografiye veya tedavilere bakarak uzmanlık uydurma.
-4. Tedaviler ile uzmanlıkları karıştırma. Bir tedaviyi (örn. implant) yapıyor olması, doktoru o alanın uzmanı (örn. çene cerrahı) yapmaz. 'Yaptığı Tedaviler' alanı sadece hastanın o tedavi için kime gideceğini sorduğu durumlar içindir.
-5. Hekim verilerini birbirine karıştırma; her hekimi sadece kendi ID'si altındaki verilerle değerlendir.
-6. Hasta belirli bir alandaki uzmanı (örn. "Ortodonti uzmanı") sorarsa ve eşleşen uzman yoksa şu cümleyi kur: "Mevcut aktif hekim kayıtlarımızda bu uzmanlık alanıyla eşleşen bir hekim görünmüyor."`;
+1. Hasta hekim isimlerini veya kadroyu görmek istiyorsa, SADECE yukarıdaki listede bulunan hekimleri sun. Asla uydurma hekim ismi ekleme.
+2. Uzmanlık sorulduğunda SADECE 'Uzmanlık Alanı' alanına bak. Eğer 'Sistem kayıtlarında ayrıca tanımlanmış bir uzmanlık alanı bulunmamaktadır' yazıyorsa, kendi kafandan unvana, biyografiye veya tedavilere bakarak uzmanlık uydurma.
+3. Tedaviler ile uzmanlıkları karıştırma. Bir tedaviyi (örn. implant) yapıyor olması, doktoru o alanın uzmanı (örn. çene cerrahı) yapmaz. 'Yaptığı Tedaviler' alanı sadece hastanın o tedavi için kime gideceğini sorduğu durumlar içindir.
+4. Hekim verilerini birbirine karıştırma; her hekimi sadece kendi ID'si altındaki verilerle değerlendir.
+5. Hasta belirli bir alandaki uzmanı (örn. "Ortodonti uzmanı") sorarsa ve eşleşen uzman yoksa şu cümleyi kur: "Mevcut aktif hekim kayıtlarımızda bu uzmanlık alanıyla eşleşen bir hekim görünmüyor."`;
+              }
             } else {
               doctorDataMissing = true;
             }
