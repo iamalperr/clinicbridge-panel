@@ -892,6 +892,9 @@ export async function POST(req: Request) {
     const isDoctorIntent = /\b(doktor|hekim|uzman|doctor|dentist|specialist|cerrah|surgeon|tıbbi|medical team|ekip|doctors|hekimler|doktorlar)\b/i.test(msgLower);
     
     let doctorContext = "";
+    let doctorDataMissing = false;
+    let allowedDoctorNames: string[] = [];
+    
     if (isDoctorIntent) {
       const adminDb = getAdminDb();
       if (adminDb) {
@@ -902,9 +905,15 @@ export async function POST(req: Request) {
             .get();
           
           if (!docsSnap.empty) {
-            const docsList = docsSnap.docs.map(d => {
-              const data = d.data();
-              let text = `Ad: ${data.title ? data.title + ' ' : ''}${data.doctorName}\n`;
+            // Memory sort to preserve display_order without requiring composite index
+            let docs = docsSnap.docs.map(d => d.data());
+            docs.sort((a, b) => (a.display_order || a.order || 0) - (b.display_order || b.order || 0));
+
+            const docsList = docs.map(data => {
+              const fullName = `${data.title ? data.title + ' ' : ''}${data.doctorName}`.trim();
+              allowedDoctorNames.push(fullName);
+              
+              let text = `Ad: ${fullName}\n`;
               if (data.specialty) text += `Uzmanlık: ${data.specialty}\n`;
               if (data.role) text += `Görev: ${data.role}\n`;
               if (data.education) text += `Eğitim: ${data.education}\n`;
@@ -914,15 +923,24 @@ export async function POST(req: Request) {
               if (data.highlightedTreatments?.length) text += `Öne Çıkan Tedavileri: ${data.highlightedTreatments.join(", ")}\n`;
               return text.trim();
             });
-            doctorContext = `Sistemimizde şu an bu kliniğe ait aktif ${docsSnap.docs.length} doktor kaydı bulunmaktadır.\n\nDOKTORLAR LİSTESİ:\n\n${docsList.join('\n\n---\n\n')}\n\nÖNEMLİ KURAL: Kullanıcı doktorları sorduğunda, yukarıdaki listede bulunan TÜM doktorları (hiçbirini atlamadan) eksiksiz olarak listele. "Bazı doktorlarımız..." gibi ifadeler kullanma, doktor sayısını kesin olarak belirt ve SADECE yukarıda verilen doğrulanmış bilgileri kullan. Eksik olan bir bilgiyi (örneğin eğitim veya diller) kesinlikle uydurma.`;
+            doctorContext = `Sistemimizde şu an bu kliniğe ait aktif ${docs.length} doktor kaydı bulunmaktadır.\n\nDOKTORLAR LİSTESİ:\n\n${docsList.join('\n\n---\n\n')}\n\nÖNEMLİ KURAL: Kullanıcı doktorları sorduğunda, yukarıdaki listede bulunan TÜM doktorları (hiçbirini atlamadan) eksiksiz olarak listele. "Bazı doktorlarımız..." gibi ifadeler kullanma, doktor sayısını kesin olarak belirt ve SADECE yukarıda verilen doğrulanmış bilgileri kullan. Eksik olan bir bilgiyi (örneğin eğitim veya diller) kesinlikle uydurma. Aşağıdaki hekim listesi (sıralı) dışında HİÇBİR hekim adı uydurma. Verilmeyen hekimleri listeye ekleme.`;
             
             if (doctorContext.length > 8000) {
               doctorContext = doctorContext.substring(0, 8000) + "\n...[DOKTOR LİSTESİ KESİLDİ]";
             }
+          } else {
+            doctorDataMissing = true;
           }
         } catch (err) {
           console.error("[chat] Error fetching doctors", err);
+          doctorDataMissing = true;
         }
+      } else {
+        doctorDataMissing = true;
+      }
+      
+      if (doctorDataMissing) {
+        doctorContext = `DİKKAT: Sistemde bu kliniğin doktor listesi bulunamadı. Kullanıcı hekim/doktor isimlerini sorarsa KESİNLİKLE uydurma yapma ve SADECE SADECE şu cümleyi söyle: "Doktor kadromuzla ilgili güncel kayıtların tamamına şu anda erişemediğim için eksik veya yanlış bilgi vermek istemem. Klinik ekibimizden teyit edilmesi gerekir."`;
       }
     }
 
@@ -937,7 +955,8 @@ export async function POST(req: Request) {
          score += 50; // Artificial boost to ensure inclusion
       }
       if (isDoctorIntent && /\b(doktor|hekim|uzman|doctor|dentist|specialist|cerrah|surgeon|dt\.|dr\.)\b/.test(text)) {
-         score += 200; // HUGE boost to ensure ALL doctor profiles from the KB are included
+         // YENİ: RAG araması doktor isimleri uydurmaya sebep olduğu için, doktor niyetinde RAG'ı güçlendirmek yerine skoru SIFIRLIYORUZ (böylece RAG'dan halüsinasyon gelmez)
+         score -= 1000; 
       }
       return { ...d, score };
     });
@@ -1342,6 +1361,22 @@ ${validationRules}
     if (actionsMatch) {
       suggestedActions = actionsMatch[1].split("|").map(a => a.trim()).filter(Boolean);
       reply = reply.replace(actionsMatch[0], "").trim();
+    }
+
+    // HARD VALIDATION for Doctor Intent (Preventing Hallucinations)
+    if (isDoctorIntent) {
+      const lowerReply = reply.toLowerCase();
+      // Check if AI is attempting to list doctors
+      const hasTitle = ["dr.", "dt.", "uzm.", "prof.", "doç.", "ahmet", "ayşe", "mehmet"].some(t => lowerReply.includes(t));
+      
+      if (doctorDataMissing && hasTitle) {
+         reply = "Doktor kadromuzla ilgili güncel kayıtların tamamına şu anda erişemediğim için eksik veya yanlış bilgi vermek istemem. Klinik ekibimizden teyit edilmesi gerekir.";
+      } else if (!doctorDataMissing && allowedDoctorNames.length > 0) {
+         const dummyNames = ["ahmet yılmaz", "ayşe kaya", "mehmet demir", "elif özcan", "selin aydın"];
+         if (dummyNames.some(d => lowerReply.includes(d))) {
+             reply = "Doktor kadromuzla ilgili güncel kayıtların tamamına şu anda erişemediğim için eksik veya yanlış bilgi vermek istemem. Klinik ekibimizden teyit edilmesi gerekir.";
+         }
+      }
     }
 
     debugLog.push(`OK reply="${reply.slice(0, 60)}" ms=${Date.now() - startTime}`);
