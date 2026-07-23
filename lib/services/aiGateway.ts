@@ -216,7 +216,7 @@ async function updateDailyAggregate(
   const docId = `${usage.clinicId}_${dateStr}_${usage.model}_${usage.channel}_${usage.requestType}`;
   const ref = db.collection("aiUsageDaily").doc(docId);
   
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const { FieldValue } = require("firebase-admin/firestore");
 
   const incrementObj: any = {

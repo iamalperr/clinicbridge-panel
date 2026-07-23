@@ -39,7 +39,7 @@ function initializeAdmin(): App | null {
   }
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     const adminModule = require("firebase-admin/app");
     const { getApps, initializeApp, cert } = adminModule;
 
@@ -64,7 +64,7 @@ export function getAdminDb(): Firestore | null {
   const app = initializeAdmin();
   if (!app) return null;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     const { getFirestore } = require("firebase-admin/firestore");
     _db = getFirestore(app) as Firestore;
   } catch (err) {
@@ -78,7 +78,7 @@ export function getAdminAuth(): Auth | null {
   const app = initializeAdmin();
   if (!app) return null;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     const { getAuth } = require("firebase-admin/auth");
     _auth = getAuth(app) as Auth;
   } catch (err) {

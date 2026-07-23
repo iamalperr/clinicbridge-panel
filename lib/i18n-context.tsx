@@ -35,7 +35,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const savedLang = localStorage.getItem("cb_language") as Language;
     if (savedLang && translations[savedLang] && savedLang !== "tr") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setLanguageState(savedLang);
     }
     setIsLoaded(true);

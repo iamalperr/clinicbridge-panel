@@ -363,7 +363,7 @@ async function createAppointment(params: {
   const ns = notificationSettings || {};
   const patientChannel = ns.patient?.appointmentChannel || ns.patientAppointmentChannel || "email";
   const clinicEmailEnabled = ns.clinic?.newAppointmentEmailEnabled ?? true;
-  let clinicRecipientEmails = ns.clinic?.recipientEmails || [];
+  const clinicRecipientEmails = ns.clinic?.recipientEmails || [];
 
   const now = new Date().toISOString();
   
@@ -423,7 +423,7 @@ async function createAppointment(params: {
   };
 
   let appointmentId = "";
-  let databaseInsertSuccess = false;
+  const databaseInsertSuccess = false;
 
   /* ── Strategy 1: Firebase Admin SDK (bypasses security rules entirely) ── */
   const adminDb = getAdminDb();
@@ -966,7 +966,7 @@ export async function POST(req: Request) {
     const requestedTreatmentCode = findTreatmentCode(msgLower);
 
     // Intent detection
-    const isBaseDoctorIntent = /\b(doktor|hekim|uzman|doctor|dentist|specialist|cerrah|surgeon|tıbbi|medical team|ekip|doctors|hekimler|doktorlar)\b/i.test(msgLower);
+    const isBaseDoctorIntent = /\b(doktor|hekim|uzman|doctor|dentist|specialist|cerrah|surgeon|tıbbi|medical team|ekip|doctors|hekimler|doktorlar)/i.test(msgLower);
     const isTreatmentDoctorIntent = requestedTreatmentCode !== null && /\b(kim|hangi|who|which|yapıyor|yapan|ilgilen|çalış|performs|does)\b/i.test(msgLower);
     const isBeforeAfterIntent = /\b(önce.?sonra|before.?after|sonuç|result|örnek.?vaka|sample|case|foto|photo|görseller?|images?|nasıl.?gör[üu]n|how.?look|tedavi.?sonuç|outcome)\b/i.test(msgLower);
     const isDoctorIntent = isBaseDoctorIntent || requestedSpecialtyCode !== null || isTreatmentDoctorIntent;
@@ -983,7 +983,7 @@ export async function POST(req: Request) {
 
     let doctorContext = "";
     let doctorDataMissing = false;
-    let allowedDoctorNames: string[] = [];
+    const allowedDoctorNames: string[] = [];
     let treatmentContext = "";
     
     // ─── Helper: Classify specialist status ────────────────────────────────────
@@ -1043,14 +1043,14 @@ export async function POST(req: Request) {
           }
           
           if (!docsSnap.empty) {
-            let docs = docsSnap.docs.map(d => ({ id: d.id, ...d.data() }) as any);
+            const docs = docsSnap.docs.map(d => ({ id: d.id, ...d.data() }) as any);
             if (docs.length > 0) {
               docs.sort((a: any, b: any) => (a.display_order || a.order || 0) - (b.display_order || b.order || 0));
               
               let specialistCount = 0;
               let generalCount = 0;
 
-              let rawDoctorsData: any[] = [];
+              const rawDoctorsData: any[] = [];
               const docsListStrings = docs.map((data: any, index: number) => {
                 const fullName = `${data.title ? data.title + ' ' : ''}${data.doctorName || data.full_name || data.fullName}`.trim();
                 allowedDoctorNames.push(fullName);
@@ -1273,7 +1273,7 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
       searchMessage = "röntgen ücreti ücretsiz röntgen fiyatı tomografi bedeli bedava mı";
     }
 
-    let topDocs = await hybridSearch(searchMessage, trainingDocs, clinicName, sliceLimit);
+    const topDocs = await hybridSearch(searchMessage, trainingDocs, clinicName, sliceLimit);
     
     let knowledgeContext = topDocs.length > 0
       ? topDocs.map(d => `## ${d.title}\n${d.text}`).join("\n\n---\n\n")
@@ -1638,6 +1638,7 @@ ${validationRules}
 
       // ── System-level rules ──
       `\nSİSTEM KURALLARI:
+- ÖNEMLİ: A polite closing, appreciation message, or temporary end of conversation ("Teşekkürler", "Tamamdır", "Thanks") does NOT prevent the user from continuing the conversation. If the user asks a new question after a closing message, immediately resume normal assistant behavior, treat it as a fresh active query, and always respond factually based on the clinic's Knowledge Base, ignoring the fact that the conversation recently seemed 'closed'.
 - Kesin randevu onayı veya kesin müsaitlik garantisi VERME.
 - Yanıt dilini kullanıcının diline göre belirle.${!hasCustomPrompt ? "\n- Yanıtların kısa (max 4 cümle), nazik olsun." : "\n- Yanıt uzunluğunu kendi talimatlarına göre belirle; bilgi varsa eksiksiz aktar."}
 - Eğer mevcut konuşmanın bağlamıyla DOĞRUDAN ilgili ve kullanıcının seçebileceği 2 veya 3 kısa hızlı aksiyon önerebiliyorsan, yanıtının EN SONUNA şu formatta ekle: [ACTIONS: Aksiyon 1 | Aksiyon 2]

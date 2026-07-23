@@ -197,7 +197,7 @@ export default function AnalyticsPage() {
       () => setClinicsLoading(false)
     );
     return () => unsub();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [isClinicUser, profile?.clinicId]);
 
   // ── Subscribe to conversationLogs for each clinic ──

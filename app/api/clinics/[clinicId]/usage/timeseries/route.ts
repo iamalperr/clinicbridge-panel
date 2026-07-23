@@ -26,7 +26,7 @@ export async function GET(
       return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
     }
 
-    let dataPoints: Record<string, AIUsageTimeseriesPoint> = {};
+    const dataPoints: Record<string, AIUsageTimeseriesPoint> = {};
 
     if (grouping === "day") {
       // 1. Fetch AI Usage daily aggregates

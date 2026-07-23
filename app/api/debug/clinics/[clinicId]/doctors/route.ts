@@ -11,7 +11,7 @@ export async function GET(
     const adminDb = getAdminDb();
     if (!adminDb) return NextResponse.json({ error: "no db" }, { status: 500 });
     
-    let debugLog: string[] = [];
+    const debugLog: string[] = [];
     debugLog.push(`Looking for clinicId: ${clinicId}`);
     
     // We assume the debug endpoint allows querying both regular clinics and agency clinics
@@ -47,7 +47,7 @@ export async function GET(
       return NextResponse.json({ totalDoctors: 0, doctors: [], debugLog });
     }
     
-    let doctors = docsSnap.docs.map(d => ({ id: d.id, ...d.data() }) as any);
+    const doctors = docsSnap.docs.map(d => ({ id: d.id, ...d.data() }) as any);
     doctors.sort((a, b) => (a.display_order || a.order || 0) - (b.display_order || b.order || 0));
     
     const payload = doctors.map(d => ({

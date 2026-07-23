@@ -10,7 +10,7 @@ export default function ThemeToggle() {
 
   // Prevent hydration mismatch by only rendering the toggle after component is mounted on the client
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+     
     setMounted(true);
   }, []);
 

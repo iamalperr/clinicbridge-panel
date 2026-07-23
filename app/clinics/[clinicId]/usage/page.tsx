@@ -34,7 +34,7 @@ const DATE_OPTIONS: { label: string; value: DateRange }[] = [
 function getDateParams(range: DateRange) {
   const now = new Date();
   let start = new Date(now);
-  let end = new Date(now);
+  const end = new Date(now);
 
   switch (range) {
     case "today":
