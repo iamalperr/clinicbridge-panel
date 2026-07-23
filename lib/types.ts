@@ -143,11 +143,62 @@ export interface TrainingMaterial {
   type: "note";
   status: "learned" | "pending";
   clinicId: string;
+  entity_type?: "doctor_profile" | "treatment_profile" | "clinic_general_information" | "pricing_information" | "appointment_information" | "policy_information" | "general";
   embedding_status?: "pending" | "indexing" | "indexed" | "failed";
   last_error?: string | null;
   createdAt: string | number | object;
   updatedAt: string | number | object;
 }
+
+// ─── Structured Doctor Record ────────────────────────────────────────────────
+export interface ClinicDoctor {
+  id?: string;
+  clinic_id: string;
+  full_name: string;
+  doctorName?: string;
+  title?: string;
+  professional_title: string;
+  doctor_type: "specialist_dentist" | "general_dentist" | "dentist";
+  is_active: boolean;
+  specialist_status: boolean | null;
+  primary_specialization_code?: string;
+  clinical_field_codes: string[];
+  treatment_codes: string[];
+  treatments?: string[] | string;
+  specialty?: string;
+  primary_specialization?: string;
+  department?: string;
+  education?: string;
+  experienceYears?: number;
+  languages: string[];
+  biography?: string;
+  display_order?: number;
+  order?: number;
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+// ─── Structured Treatment Record ─────────────────────────────────────────────
+export interface ClinicTreatment {
+  id?: string;
+  clinic_id: string;
+  treatment_code: string;
+  treatment_name: string;
+  treatment_category?: string;
+  is_active: boolean;
+  definition?: string;
+  indications?: string;
+  suitability_factors?: string;
+  process?: string;
+  estimated_duration_rule?: string;
+  safety_rules?: string;
+  assigned_doctor_ids: string[];
+  before_after_url?: string;
+  patient_phrase_synonyms?: string[];
+  createdAt?: any;
+  updatedAt?: any;
+}
+
 export interface ShowBubblesConfig {
   enabled: boolean;
   displayMode: "rotate" | "show-all" | "disabled";

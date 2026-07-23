@@ -30,11 +30,11 @@ export default function TrainingPage({ params }: PageProps) {
   const [isAddOpen, setIsAddOpen]       = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAddSuccess, setIsAddSuccess] = useState(false);
-  const [newNote, setNewNote]           = useState({ title: "", content: "" });
+  const [newNote, setNewNote]           = useState({ title: "", content: "", entity_type: "general" as string });
 
   /* ── Edit modal ── */
   const [editTarget, setEditTarget]     = useState<TrainingMaterial | null>(null);
-  const [editForm, setEditForm]         = useState({ title: "", content: "" });
+  const [editForm, setEditForm]         = useState({ title: "", content: "", entity_type: "general" as string });
   const [isSaving, setIsSaving]         = useState(false);
   const [isEditSuccess, setIsEditSuccess] = useState(false);
   const [editError, setEditError]       = useState("");
@@ -74,6 +74,7 @@ export default function TrainingPage({ params }: PageProps) {
       const docRef = await addDoc(collection(db, "trainingMaterials"), {
         title: newNote.title,
         content: newNote.content,
+        entity_type: newNote.entity_type || "general",
         category: "", tags: [], type: "note", status: "learned",
         clinicId,
         createdAt: serverTimestamp(),
@@ -92,7 +93,7 @@ export default function TrainingPage({ params }: PageProps) {
       setTimeout(() => {
         setIsAddOpen(false);
         setIsAddSuccess(false);
-        setNewNote({ title: "", content: "" });
+        setNewNote({ title: "", content: "", entity_type: "general" });
       }, 1500);
     } catch (err) {
       console.error("Failed to add:", err);
@@ -104,7 +105,7 @@ export default function TrainingPage({ params }: PageProps) {
   /* ── Open edit modal ── */
   const openEdit = (m: TrainingMaterial) => {
     setEditTarget(m);
-    setEditForm({ title: m.title, content: m.content });
+    setEditForm({ title: m.title, content: m.content, entity_type: m.entity_type || "general" });
     setIsEditSuccess(false);
     setEditError("");
   };
@@ -118,6 +119,7 @@ export default function TrainingPage({ params }: PageProps) {
       await updateDoc(doc(db, "trainingMaterials", editTarget.id), {
         title: editForm.title,
         content: editForm.content,
+        entity_type: editForm.entity_type || "general",
         updatedAt: serverTimestamp(),
         embedding_status: "indexing",
       });
@@ -412,6 +414,7 @@ export default function TrainingPage({ params }: PageProps) {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             <Input label={t("training.fields.title")} placeholder={t("training.placeholders.title")} value={newNote.title} onChange={e => setNewNote({ ...newNote, title: e.target.value })} />
+            <EntityTypeSelect value={newNote.entity_type} onChange={v => setNewNote({ ...newNote, entity_type: v })} />
             <TextareaField label={t("training.fields.content")} placeholder={t("training.placeholders.content")} value={newNote.content} onChange={v => setNewNote({ ...newNote, content: v })} />
             <ModalActions
               onCancel={() => setIsAddOpen(false)}
@@ -431,6 +434,7 @@ export default function TrainingPage({ params }: PageProps) {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             <Input label={t("training.fields.title")} placeholder={t("training.placeholders.title")} value={editForm.title} onChange={e => setEditForm({ ...editForm, title: e.target.value })} />
+            <EntityTypeSelect value={editForm.entity_type} onChange={v => setEditForm({ ...editForm, entity_type: v })} />
             <TextareaField label={t("training.fields.content")} placeholder={t("training.placeholders.content")} value={editForm.content} onChange={v => setEditForm({ ...editForm, content: v })} />
             {editError && <p style={{ fontSize: 13, color: "#ef4444", marginTop: -8 }}>{editError}</p>}
             <ModalActions
@@ -533,6 +537,50 @@ function ModalActions({ onCancel, onConfirm, confirmLabel, loading, disabled }: 
           </span>
         ) : confirmLabel}
       </Button>
+    </div>
+  );
+}
+
+const ENTITY_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "general", label: "Genel Bilgi" },
+  { value: "doctor_profile", label: "Doktor Profili" },
+  { value: "treatment_profile", label: "Tedavi Profili" },
+  { value: "clinic_general_information", label: "Klinik Genel Bilgi" },
+  { value: "pricing_information", label: "Fiyatlandırma Bilgisi" },
+  { value: "appointment_information", label: "Randevu Bilgisi" },
+  { value: "policy_information", label: "Politika / Kural" },
+];
+
+function EntityTypeSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <label style={{ fontSize: 13, fontWeight: 700, color: UI_COLORS.textSecondary, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+        Kayıt Türü
+      </label>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        style={{
+          width: "100%", padding: "12px 16px", borderRadius: 12,
+          background: "rgba(0,0,0,0.2)", border: `1px solid ${UI_COLORS.border}`,
+          fontSize: 14.5, color: UI_COLORS.textPrimary, outline: "none",
+          cursor: "pointer", appearance: "none",
+          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+          backgroundRepeat: "no-repeat",
+          backgroundPosition: "right 16px center",
+        }}
+      >
+        {ENTITY_TYPE_OPTIONS.map(opt => (
+          <option key={opt.value} value={opt.value}>{opt.label}</option>
+        ))}
+      </select>
+      {(value === "doctor_profile" || value === "treatment_profile") && (
+        <p style={{ fontSize: 12, color: UI_COLORS.textMuted, marginTop: 2, lineHeight: 1.5 }}>
+          {value === "doctor_profile"
+            ? "Bu kayıt bir doktor profili olarak işlenecek. Doktorun adı, unvanı, uzmanlık alanı ve tedavileri yapılandırılmış veri olarak değerlendirilecektir."
+            : "Bu kayıt bir tedavi profili olarak işlenecek. Tedavi adı, tanımı, süre bilgisi, atanan doktorlar ve öncesi/sonrası URL'si yapılandırılmış veri olarak değerlendirilecektir."}
+        </p>
+      )}
     </div>
   );
 }

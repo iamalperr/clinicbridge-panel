@@ -958,34 +958,80 @@ export async function POST(req: Request) {
     
     debugLog.push(`intent_price=${activePriceIntent || "none"}`);
 
-    // YENİ: Doktor niyet tespiti
-    const SPECIALTY_SYNONYMS: Record<string, string[]> = {
-      periodontology: ["diş eti", "dis eti", "periodontolog", "periodontoloji", "periodontist", "gum specialist", "gum disease"],
-      orthodontics: ["ortodonti", "çarpık diş", "tel tedavisi", "braces", "orthodontist"],
-      endodontics: ["endodonti", "kanal tedavisi", "root canal", "endodontist"],
-      pedodontics: ["pedodonti", "çocuk diş", "pediatric dentist", "children's dentist", "pedodontist"],
-      oral_surgery: ["çene cerrah", "ağız ve çene", "oral and maxillofacial", "maxillofacial", "oral surgeon", "oral cerrah"],
-      prosthodontics: ["protez", "protetik", "prosthodont", "denture"],
-      restorative: ["restoratif", "dolgu", "restorative"]
-    };
+    // ─── DETERMINISTIC INTENT ROUTING ──────────────────────────────────────────
+    // Import shared specialization and treatment registries
+    const { findSpecializationCode, findTreatmentCode, getSpecializationLabel, getTreatmentLabel, SPECIALIZATION_REGISTRY } = await import("@/lib/constants/specializations");
 
-    let requestedSpecialtyCode: string | null = null;
-    for (const [code, synonyms] of Object.entries(SPECIALTY_SYNONYMS)) {
-      if (synonyms.some(syn => msgLower.includes(syn))) {
-        requestedSpecialtyCode = code;
-        break;
-      }
-    }
+    const requestedSpecialtyCode = findSpecializationCode(msgLower);
+    const requestedTreatmentCode = findTreatmentCode(msgLower);
 
-    const isBaseDoctorIntent = /\b(doktor|hekim|uzman|doctor|dentist|specialist|cerrah|surgeon|tıbbi|medical team|ekip|doctors|hekimler|doktorlar)/i.test(msgLower);
-    const isDoctorIntent = isBaseDoctorIntent || requestedSpecialtyCode !== null;
+    // Intent detection
+    const isBaseDoctorIntent = /\b(doktor|hekim|uzman|doctor|dentist|specialist|cerrah|surgeon|tıbbi|medical team|ekip|doctors|hekimler|doktorlar)\b/i.test(msgLower);
+    const isTreatmentDoctorIntent = requestedTreatmentCode !== null && /\b(kim|hangi|who|which|yapıyor|yapan|ilgilen|çalış|performs|does)\b/i.test(msgLower);
+    const isBeforeAfterIntent = /\b(önce.?sonra|before.?after|sonuç|result|örnek.?vaka|sample|case|foto|photo|görseller?|images?|nasıl.?gör[üu]n|how.?look|tedavi.?sonuç|outcome)\b/i.test(msgLower);
+    const isDoctorIntent = isBaseDoctorIntent || requestedSpecialtyCode !== null || isTreatmentDoctorIntent;
     const isDoctorCountIntent = isDoctorIntent && /\b(kaç|sayısı|sayı|how many|number of)\b/i.test(msgLower);
-    
+
+    // Classify the detected intent for logging
+    let detectedDoctorSubIntent = "none";
+    if (isDoctorCountIntent) detectedDoctorSubIntent = "doctor_count";
+    else if (requestedSpecialtyCode && /\b(uzman|specialist|kim|who)\b/i.test(msgLower)) detectedDoctorSubIntent = "specialist_lookup";
+    else if (requestedSpecialtyCode) detectedDoctorSubIntent = "doctor_specialization";
+    else if (isTreatmentDoctorIntent) detectedDoctorSubIntent = "doctor_by_treatment";
+    else if (isDoctorIntent) detectedDoctorSubIntent = "doctor_list";
+    if (isBeforeAfterIntent) detectedDoctorSubIntent = "before_after";
+
     let doctorContext = "";
     let doctorDataMissing = false;
     let allowedDoctorNames: string[] = [];
+    let treatmentContext = "";
     
-    if (isDoctorIntent) {
+    // ─── Helper: Classify specialist status ────────────────────────────────────
+    function isVerifiedSpecialist(data: any): boolean {
+      // 1. Explicit specialist_status field
+      if (data.specialist_status === true) return true;
+      // 2. Title starts with "Uzm. Dt." or "Uzm.Dt."
+      const title = String(data.title || data.professional_title || "").trim();
+      if (/^uzm\.?\s*dt\./i.test(title)) return true;
+      // 3. Explicit primary_specialization_code
+      if (data.primary_specialization_code && data.primary_specialization_code.length > 0) return true;
+      // "Dr." alone does NOT qualify
+      return false;
+    }
+
+    // ─── Helper: Match doctor against specialization code ───────────────────────
+    function doctorMatchesSpecialty(data: any, specCode: string): boolean {
+      // 1. Check structured specialization code fields
+      if (data.primary_specialization_code === specCode) return true;
+      if (Array.isArray(data.clinical_field_codes) && data.clinical_field_codes.includes(specCode)) return true;
+      // 2. Fallback: Check title/specialty text against synonym list
+      const entry = SPECIALIZATION_REGISTRY.find(e => e.code === specCode);
+      if (entry) {
+        const combined = ((data.title || "") + " " + (data.specialty || "") + " " + (data.primary_specialization || "") + " " + (data.department || "")).toLowerCase();
+        const allSyns = [...entry.synonymsTR, ...entry.synonymsEN, entry.labelTR.toLowerCase(), entry.labelEN.toLowerCase()];
+        return allSyns.some(syn => combined.includes(syn.toLowerCase()));
+      }
+      return false;
+    }
+
+    // ─── Helper: Match doctor against treatment code ────────────────────────────
+    function doctorMatchesTreatment(data: any, treatCode: string): boolean {
+      // 1. Check structured treatment_codes array
+      if (Array.isArray(data.treatment_codes) && data.treatment_codes.includes(treatCode)) return true;
+      // 2. Fallback: Check free-text treatments field
+      const { TREATMENT_REGISTRY } = require("@/lib/constants/specializations");
+      const entry = TREATMENT_REGISTRY.find((e: any) => e.code === treatCode);
+      if (entry) {
+        let treatmentsText = "";
+        if (Array.isArray(data.treatments)) treatmentsText = data.treatments.join(" ").toLowerCase();
+        else if (typeof data.treatments === "string") treatmentsText = data.treatments.toLowerCase();
+        const allSyns = [...entry.synonymsTR, ...entry.synonymsEN, entry.labelTR.toLowerCase(), entry.labelEN.toLowerCase()];
+        return allSyns.some((syn: string) => treatmentsText.includes(syn.toLowerCase()));
+      }
+      return false;
+    }
+
+    if (isDoctorIntent || isTreatmentDoctorIntent) {
       const adminDb = getAdminDb();
       if (adminDb) {
         try {
@@ -997,40 +1043,25 @@ export async function POST(req: Request) {
           }
           
           if (!docsSnap.empty) {
-            let docs = docsSnap.docs.map(d => d.data() as any);
+            let docs = docsSnap.docs.map(d => ({ id: d.id, ...d.data() }) as any);
             if (docs.length > 0) {
-              docs.sort((a, b) => (a.display_order || a.order || 0) - (b.display_order || b.order || 0));
+              docs.sort((a: any, b: any) => (a.display_order || a.order || 0) - (b.display_order || b.order || 0));
               
               let specialistCount = 0;
               let generalCount = 0;
-              const specialistKeywords = /uzman|uzm\.|dr\.|doç\.|prof\.|cerrahisi|ortodonti|endodonti|periodontoloji|pedodonti|protetik|restoratif|oral diagnoz/i;
 
               let rawDoctorsData: any[] = [];
-              const docsListStrings = docs.map((data, index) => {
+              const docsListStrings = docs.map((data: any, index: number) => {
                 const fullName = `${data.title ? data.title + ' ' : ''}${data.doctorName || data.full_name || data.fullName}`.trim();
                 allowedDoctorNames.push(fullName);
                 
                 const docId = data.id || data.doctor_id || `doctor_${index + 1}`;
                 const titleStr = String(data.title || data.professional_title || "Diş Hekimi").trim();
                 const specialtyStr = String(data.specialty || data.primary_specialization || "").trim();
-                
-                rawDoctorsData.push({
-                   full_name: fullName,
-                   professional_title: titleStr,
-                   specialization: specialtyStr || "Sistem kayıtlarında ayrıca tanımlanmış bir uzmanlık alanı bulunmamaktadır."
-                });
-
-                let text = `HEKİM ID: ${docId}\n`;
-                text += `Ad: ${fullName}\n`;
-                text += `Unvan: ${titleStr}\n`;
-                
-                if (specialtyStr) {
-                  text += `Uzmanlık Alanı: ${specialtyStr}\n`;
-                } else {
-                  text += `Uzmanlık Alanı: Sistem kayıtlarında ayrıca tanımlanmış bir uzmanlık alanı bulunmamaktadır.\n`;
-                }
-                
-                if (data.department) text += `Departman: ${data.department}\n`;
+                const clinicalField = String(data.department || "").trim();
+                const specCode = data.primary_specialization_code || "";
+                const clinicalFieldCodes = Array.isArray(data.clinical_field_codes) ? data.clinical_field_codes : [];
+                const treatmentCodesArr = Array.isArray(data.treatment_codes) ? data.treatment_codes : [];
                 
                 let treatments: string[] = [];
                 if (Array.isArray(data.treatments)) {
@@ -1038,81 +1069,142 @@ export async function POST(req: Request) {
                 } else if (typeof data.treatments === "string") {
                   treatments = data.treatments.split(",").map((t: string) => t.trim()).filter(Boolean);
                 }
+                
+                const isSpecialist = isVerifiedSpecialist(data);
+                
+                rawDoctorsData.push({
+                  doctor_id: docId,
+                  full_name: fullName,
+                  professional_title: titleStr,
+                  specialist_status: isSpecialist,
+                  primary_specialization_code: specCode,
+                  clinical_field_codes: clinicalFieldCodes,
+                  treatment_codes: treatmentCodesArr,
+                  specialization: specialtyStr || (isSpecialist ? getSpecializationLabel(specCode) : ""),
+                  clinical_field: clinicalField,
+                  treatments: treatments,
+                });
+
+                // Build text representation for context
+                let text = `HEKİM ID: ${docId}\n`;
+                text += `Ad: ${fullName}\n`;
+                text += `Unvan: ${titleStr}\n`;
+                text += `Uzman Statüsü: ${isSpecialist ? "Doğrulanmış Uzman Diş Hekimi" : "Diş Hekimi (uzman statüsü doğrulanmamış)"}\n`;
+                
+                if (specialtyStr) {
+                  text += `Doğrulanmış Uzmanlık: ${specialtyStr}\n`;
+                }
+                if (clinicalField) {
+                  text += `Çalışma Alanı: ${clinicalField}\n`;
+                }
                 if (treatments.length > 0) {
                   text += `Yaptığı Tedaviler: ${treatments.join(", ")}\n`;
                 }
-                
                 if (data.education) text += `Eğitim: ${data.education}\n`;
                 if (data.experienceYears) text += `Deneyim: ${data.experienceYears} Yıl\n`;
+                if (Array.isArray(data.languages) && data.languages.length > 0) text += `Diller: ${data.languages.join(", ")}\n`;
                 
-                // Sınıflandırma
-                if (specialistKeywords.test(titleStr) || specialistKeywords.test(specialtyStr)) {
-                  specialistCount++;
-                } else {
-                  generalCount++;
-                }
+                if (isSpecialist) specialistCount++;
+                else generalCount++;
 
                 return text.trim();
               });
 
-              console.log(`[DOCTOR INTENT] Resolved ${docs.length} active structured doctors for clinic ${clinicId}. Specialists: ${specialistCount}, General: ${generalCount}`);
+              // ─── Diagnostic logging ──────────────────────────────────────────
+              console.log(`[DOCTOR INTENT] intent=${detectedDoctorSubIntent} clinic=${clinicId} total_active=${docs.length} specialists=${specialistCount} general=${generalCount} requested_specialty=${requestedSpecialtyCode || "none"} requested_treatment=${requestedTreatmentCode || "none"}`);
 
-              if (requestedSpecialtyCode) {
-                 const matchedDoctors = rawDoctorsData.filter(data => {
-                    const combined = (data.professional_title + " " + data.specialization).toLowerCase();
-                    return SPECIALTY_SYNONYMS[requestedSpecialtyCode].some(syn => combined.includes(syn));
-                 });
+              // ─── INTENT ROUTING ───────────────────────────────────────────────
 
-                 if (matchedDoctors.length > 0) {
-                    doctorContext = `[VERIFIED DOCTOR PAYLOAD]
-Hastanın aradığı uzmanlık alanında (${requestedSpecialtyCode}) kliniğimizde aşağıdaki hekim(ler) görev yapmaktadır. 
-Hastaya doğrudan hekimin isimlerini ve unvanlarını sunarak yanıt ver:
+              if (requestedSpecialtyCode && !isDoctorCountIntent) {
+                // SPECIALIST LOOKUP or DOCTOR_SPECIALIZATION
+                const matchedDoctors = rawDoctorsData.filter(d => doctorMatchesSpecialty(d, requestedSpecialtyCode!));
+                const specLabel = getSpecializationLabel(requestedSpecialtyCode);
+
+                if (matchedDoctors.length > 0) {
+                  const matchedSummary = matchedDoctors.map(d => {
+                    const isSpec = d.specialist_status;
+                    const roleDesc = isSpec
+                      ? `${specLabel} Uzmanı`
+                      : `${specLabel} alanında çalışan hekim`;
+                    return { full_name: d.full_name, professional_title: d.professional_title, role_description: roleDesc, specialist_status: isSpec };
+                  });
+                  doctorContext = `[VERIFIED DOCTOR PAYLOAD — Specialty: ${specLabel}]
+Hastanın aradığı alanda (${specLabel}) kliniğimizde aşağıdaki hekim(ler) görev yapmaktadır.
 
 \`\`\`json
-${JSON.stringify(matchedDoctors, null, 2)}
+${JSON.stringify(matchedSummary, null, 2)}
 \`\`\`
-`;
-                 } else {
-                    doctorContext = `[VERIFIED DOCTOR PAYLOAD]
-Hastanın aradığı uzmanlık alanında (${requestedSpecialtyCode}) şu anda sistemimize kayıtlı aktif bir uzman diş hekimimiz bulunmamaktadır. 
-Hastaya bu alanda kayıtlı aktif uzman olmadığını, ancak dilerse kliniğimizden genel değerlendirme için randevu oluşturabileceğini belirt. 
-(Asla kaba bir şekilde 'diş eti uzmanı yok' deme. Sadece 'Şu anda sistem kayıtlarımızda bu alanda uzmanlığı kayıtlı aktif bir hekimimiz görünmüyor' şeklinde profesyonelce belirt.)`;
-                 }
+
+ÖNEMLİ KURALLAR:
+- specialist_status = true olan hekimleri "Uzman" olarak tanıt. Örn: "Periodontoloji Uzmanı".
+- specialist_status = false olan hekimleri "bu alanda çalışan hekim" olarak tanıt. Örn: "${specLabel} alanında çalışan hekimimiz". ASLA "Uzman" deme.
+- Hastaya doğrudan isimleri ve unvanlarını paylaş.`;
+                } else {
+                  doctorContext = `[VERIFIED DOCTOR PAYLOAD — Specialty: ${specLabel}]
+Şu anda sistem kayıtlarımızda ${specLabel} alanında uzmanlığı veya çalışma alanı kayıtlı aktif bir hekimimiz görünmüyor.
+Hastaya bu durumu profesyonelce bildir. Dilerse genel değerlendirme için randevu oluşturabileceğini belirt.`;
+                }
+              } else if (isTreatmentDoctorIntent && requestedTreatmentCode && !isDoctorCountIntent) {
+                // DOCTOR_BY_TREATMENT
+                const matchedDoctors = rawDoctorsData.filter(d => doctorMatchesTreatment(d, requestedTreatmentCode!));
+                const treatLabel = getTreatmentLabel(requestedTreatmentCode);
+
+                if (matchedDoctors.length > 0) {
+                  const matchedSummary = matchedDoctors.map(d => ({
+                    full_name: d.full_name,
+                    professional_title: d.professional_title,
+                  }));
+                  doctorContext = `[VERIFIED DOCTOR PAYLOAD — Treatment: ${treatLabel}]
+${treatLabel} tedavisini kliniğimizde aşağıdaki hekim(ler) uygulamaktadır:
+
+\`\`\`json
+${JSON.stringify(matchedSummary, null, 2)}
+\`\`\`
+
+Hastaya doğrudan bu hekimlerin isimlerini ve unvanlarını paylaş.`;
+                } else {
+                  doctorContext = `[VERIFIED DOCTOR PAYLOAD — Treatment: ${treatLabel}]
+Şu anda sistem kayıtlarımızda ${treatLabel} tedavisi için atanmış bir hekim kaydı görünmüyor.
+Ancak kliniğimizde bu tedavi sunulabiliyor olabilir. Hastayı randevu oluşturmaya yönlendir.`;
+                }
               } else if (isDoctorCountIntent) {
                 const verifiedPayload = {
                   intent: "doctor_count",
                   clinic_id: clinicId,
                   total_active_doctors: docs.length,
-                  specialists: specialistCount,
-                  general_dentists: generalCount,
-                  doctors: rawDoctorsData
+                  verified_specialist_dentists: specialistCount,
+                  general_or_unverified_doctors: generalCount,
+                  doctors: rawDoctorsData.map(d => ({ full_name: d.full_name, professional_title: d.professional_title, specialist_status: d.specialist_status }))
                 };
                 
                 doctorContext = `[VERIFIED DOCTOR COUNT PAYLOAD]
-Aşağıdaki JSON verisi kliniğin KESİN ve GÜNCEL hekim kadrosudur. (Uygulama katmanından doğrudan verilmiştir).
-Eğer hasta hekim sayısıyla ("kaç doktorunuz var" vb.) ilgili bir soru soruyorsa SADECE VE KESİNLİKLE bu JSON verisindeki "total_active_doctors" sayısını ve isterseniz branş dağılımını kullanarak yanıt üret. 
-Asla bilginin doğrulanamadığını (fallback) söyleme, çünkü bu veri sistemin doğrudan kendisinden gelmektedir!
+Aşağıdaki JSON verisi kliniğin KESİN ve GÜNCEL hekim kadrosudur.
 
 \`\`\`json
 ${JSON.stringify(verifiedPayload, null, 2)}
 \`\`\`
 
-ÖNEMLİ KURAL: 
-- İstenmedikçe listeyi tek tek sayma. Sadece "Kliniğimizde aktif olarak toplam X hekim görev yapmaktadır, bunların Y tanesi uzman diş hekimi, Z tanesi ise diş hekimidir. Dilerseniz isimlerini paylaşabilirim." şeklinde doğal bir yanıtla.`;
+ÖNEMLİ KURALLAR:
+- Doktor sayısı sorusunda SADECE total_active_doctors değerini kullan.
+- "Uzman diş hekimi" sayısı: SADECE specialist_status=true olan hekimler.
+- "Diş hekimi" sayısı: specialist_status=false olan hekimler.
+- Asla bilginin doğrulanamadığını söyleme.
+- İstenmedikçe listeyi tek tek sayma. Doğal bir cümle ile yanıt ver.`;
               } else {
+                // GENERAL DOCTOR LIST
                 doctorContext = `[HEKİM KADROSU BİLGİSİ]
-Kliniğimizde an itibarıyla toplam ${docs.length} aktif hekim görev yapmaktadır.
-Bu hekimlerin ${specialistCount} tanesi uzman diş hekimi, ${generalCount} tanesi ise diş hekimidir.
+Kliniğimizde toplam ${docs.length} aktif hekim görev yapmaktadır.
+Doğrulanmış uzman diş hekimi: ${specialistCount}, Diş hekimi: ${generalCount}.
 
 TAM LİSTE:
 ${docsListStrings.join('\n\n---\n\n')}
 
-ÖNEMLİ KURAL (HEKİM BİLGİSİ):
-1. Hasta hekim isimlerini veya kadroyu görmek istiyorsa, SADECE yukarıdaki listede bulunan hekimleri sun. Asla uydurma hekim ismi ekleme.
-2. Uzmanlık sorulduğunda SADECE 'Uzmanlık Alanı' alanına bak. Eğer 'Sistem kayıtlarında ayrıca tanımlanmış bir uzmanlık alanı bulunmamaktadır' yazıyorsa, kendi kafandan unvana, biyografiye veya tedavilere bakarak uzmanlık uydurma.
-3. Tedaviler ile uzmanlıkları karıştırma. Bir tedaviyi (örn. implant) yapıyor olması, doktoru o alanın uzmanı (örn. çene cerrahı) yapmaz. 'Yaptığı Tedaviler' alanı sadece hastanın o tedavi için kime gideceğini sorduğu durumlar içindir.
-4. Hekim verilerini birbirine karıştırma; her hekimi sadece kendi ID'si altındaki verilerle değerlendir.
-5. Hasta belirli bir alandaki uzmanı (örn. "Ortodonti uzmanı") sorarsa ve eşleşen uzman yoksa şu cümleyi kur: "Mevcut aktif hekim kayıtlarımızda bu uzmanlık alanıyla eşleşen bir hekim görünmüyor."`;
+ÖNEMLİ KURALLAR (HEKİM BİLGİSİ):
+1. SADECE yukarıdaki listede bulunan hekimleri sun. Asla uydurma hekim ekleme.
+2. "Doğrulanmış Uzmanlık" alanı boşsa UZMANLIK UYDURMA. Tedavi yapması o alanın uzmanı olduğu anlamına gelmez.
+3. "Uzman Statüsü" alanına bak: "Doğrulanmış Uzman Diş Hekimi" yazanları uzman olarak tanıt, diğerlerini "Diş Hekimi" olarak tanıt.
+4. Hekim verilerini birbirine karıştırma; her hekimi kendi ID'si altındaki verilerle değerlendir.
+5. Tedaviler ile uzmanlıkları karıştırma. Tedavi yapması uzman olduğunu göstermez.`;
               }
             } else {
               doctorDataMissing = true;
@@ -1132,11 +1224,39 @@ ${docsListStrings.join('\n\n---\n\n')}
       if (doctorDataMissing) {
         doctorContext = `DİKKAT: Sistemde bu kliniğin yapısal (structured) doktor listesi bulunamadı. Lütfen sağlanan 'Bilgi Havuzu' (Knowledge Base) kayıtlarına bak.
 Eğer Bilgi Havuzunda doktor isimleri başlık olarak geçiyorsa şu kurallara KESİNLİKLE uy:
-1. Her doktor başlığının altındaki bilgileri (Unvan, Uzmanlık, Tedaviler vb.) SADECE o doktora ait tek ve bağımsız bir kayıt olarak değerlendir. Asla başka bir doktorun bilgileriyle karıştırma.
-2. Uzmanlık alanlarını ASLA tahmin etme veya unvandan/tedavilerden çıkarma. Sadece o doktorun başlığı altında AÇIKÇA yazan uzmanlık bilgisini kullan. Açıkça uzmanlık yazmıyorsa uydurma.
-3. Hasta "kaç doktorunuz var?" veya "hekim sayınız nedir?" diye sorarsa, Bilgi Havuzu'ndaki doktor başlıklarını (isimlerini) say ve hastaya doğru toplam sayıyı ver.
-Eğer Bilgi Havuzunda da doktor bilgisi YOKSA, KESİNLİKLE uydurma yapma ve SADECE SADECE şu cümleyi söyle: "Kliniğimizin güncel hekim kadrosuna ilişkin kayıtlı bir sayı bulunmuyor. Dilerseniz klinik ekibimizden teyit edilmesini sağlayabilirim." (Bu cümlenin sonuna 'Başka bir konuda...' gibi bir ifade Ekleme.)`;
+1. Her doktor başlığının altındaki bilgileri SADECE o doktora ait tek ve bağımsız bir kayıt olarak değerlendir.
+2. Uzmanlık alanlarını ASLA tahmin etme. Sadece açıkça yazan uzmanlık bilgisini kullan.
+3. "Kaç doktorunuz var?" sorusunda Bilgi Havuzu'ndaki doktor başlıklarını say.
+Eğer Bilgi Havuzunda da doktor bilgisi YOKSA: "Kliniğimizin güncel hekim kadrosuna ilişkin kayıtlı bir sayı bulunmuyor. Dilerseniz klinik ekibimizden teyit edilmesini sağlayabilirim."`;
       }
+    }
+
+    // ─── BEFORE/AFTER INTENT ─────────────────────────────────────────────────
+    if (isBeforeAfterIntent && requestedTreatmentCode) {
+      const treatLabel = getTreatmentLabel(requestedTreatmentCode);
+      // Search knowledge base for treatment profiles with before_after_url
+      const matchingTreatmentDoc = trainingDocs.find((doc: any) => {
+        const combined = (doc.title + " " + doc.content).toLowerCase();
+        const { TREATMENT_REGISTRY } = require("@/lib/constants/specializations");
+        const entry = TREATMENT_REGISTRY.find((e: any) => e.code === requestedTreatmentCode);
+        if (!entry) return false;
+        const allSyns = [...entry.synonymsTR, ...entry.synonymsEN, entry.labelTR.toLowerCase()];
+        return allSyns.some((syn: string) => combined.includes(syn.toLowerCase()));
+      });
+
+      if (matchingTreatmentDoc) {
+        // Try to extract before_after_url from content
+        const urlMatch = matchingTreatmentDoc.content.match(/https?:\/\/[^\s\n"<>]+/);
+        if (urlMatch) {
+          treatmentContext = `[BEFORE/AFTER URL — ${treatLabel}]
+Hastanın sorduğu ${treatLabel} tedavisi için öncesi-sonrası görseller ve vaka örnekleri aşağıdaki sayfada mevcuttur:
+URL: ${urlMatch[0]}
+
+Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
+"Görseller örnek vaka sonuçlarıdır. Uygulanacak tedavi ve elde edilecek sonuç kişiye göre değişebilir."`;
+        }
+      }
+      console.log(`[BEFORE_AFTER] treatment=${requestedTreatmentCode} found_url=${!!treatmentContext} clinic=${clinicId}`);
     }
 
     // HYBRID SEARCH & QUERY REWRITING
@@ -1477,6 +1597,10 @@ ${validationRules}
 
     if (doctorContext) {
       skillBlocks.push(`\n${doctorContext}`);
+    }
+
+    if (treatmentContext) {
+      skillBlocks.push(`\n${treatmentContext}`);
     }
 
     /* ── Guardrail blocks ── */
