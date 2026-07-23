@@ -10,15 +10,10 @@ export async function GET(req: Request) {
   const adminDb = getAdminDb();
   if (!adminDb) return NextResponse.json({ error: "no db" }, { status: 500 });
 
-  const agencyId = "N59KqT1mGfL05h8xKIfi";
-  const clinicSlug = "ByTnY4VEmBTJxogqCQ7q";
-
-  // Find the actual clinic doc ID using the slug
-  const aClinicsQuery = await adminDb.collection("agencies").doc(agencyId).collection("clinics").where("clinicSlug", "==", clinicSlug).limit(1).get();
-  const actualClinicId = aClinicsQuery.empty ? clinicSlug : aClinicsQuery.docs[0].id;
+  const clinicId = "ByTnY4VEmBTJxogqCQ7q";
 
   if (url.searchParams.get("list") === "1") {
-    const doctorsRef = adminDb.collection("agencies").doc(agencyId).collection("clinics").doc(actualClinicId).collection("doctors");
+    const doctorsRef = adminDb.collection("clinics").doc(clinicId).collection("doctors");
     const existing = await doctorsRef.get();
     const docs = existing.docs.map(d => ({ id: d.id, ...d.data() }));
     return NextResponse.json({ totalDoctors: docs.length, doctors: docs });
@@ -37,7 +32,7 @@ export async function GET(req: Request) {
   ];
 
   try {
-    const doctorsRef = adminDb.collection("agencies").doc(agencyId).collection("clinics").doc(actualClinicId).collection("doctors");
+    const doctorsRef = adminDb.collection("clinics").doc(clinicId).collection("doctors");
     
     // First, clear existing doctors to avoid duplicates
     const existing = await doctorsRef.get();

@@ -1,4 +1,4 @@
-import * as https from "https";
+import * as http from "http";
 
 const data = JSON.stringify({
   messages: [{ role: "user", content: "Doktorlarınız kimlerdir?" }],
@@ -6,16 +6,16 @@ const data = JSON.stringify({
   previewMode: true
 });
 
-const req = https.request(
+const req = http.request(
   {
-    hostname: "app.clinicbridge-ai.com",
-    port: 443,
+    hostname: "localhost",
+    port: 3000,
     path: "/api/public/chat",
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Content-Length": data.length,
-      "Referer": "https://app.clinicbridge-ai.com/agency-demo/medicalcenter/hospitadent-dental-group",
+      "Content-Length": Buffer.byteLength(data),
+      "Referer": "http://localhost:3000/agency-demo/medicalcenter/hospitadent-dental-group",
     },
   },
   (res) => {
