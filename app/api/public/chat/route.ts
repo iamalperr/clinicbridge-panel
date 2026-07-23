@@ -995,11 +995,7 @@ export async function POST(req: Request) {
             if (doctorContext.length > 8000) {
               doctorContext = doctorContext.substring(0, 8000) + "\n...[DOKTOR LİSTESİ KESİLDİ]";
             }
-            } else {
-              doctorDataMissing = true; // docs array was empty after filtering
             }
-          } else {
-            doctorDataMissing = true; // docsSnap was empty
           }
         } catch (err) {
           console.error("[chat] Error fetching doctors", err);
@@ -1423,14 +1419,6 @@ ${validationRules}
     // HARD VALIDATION for Doctor Intent (Preventing Hallucinations)
     if (isDoctorIntent) {
       const lowerReply = reply.toLowerCase();
-      // If structured data exists, enforce dummy checking
-      if (!doctorDataMissing && allowedDoctorNames.length > 0) {
-         const dummyNames = ["ahmet yılmaz", "ayşe kaya", "mehmet demir", "elif özcan", "selin aydın"];
-         if (dummyNames.some(d => lowerReply.includes(d))) {
-             reply = "Doktor kadromuzla ilgili güncel kayıtların tamamına şu anda erişemediğim için eksik veya yanlış bilgi vermek istemem. Klinik ekibimizden teyit edilmesi gerekir.";
-         }
-      }
-    // If doctorDataMissing is true, we now rely on the system prompt to enforce the fallback or read from RAG.
       // We removed the unconditional override so that the AI can successfully pull doctors from the Knowledge Base.
     }
 
