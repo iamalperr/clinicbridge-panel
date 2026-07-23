@@ -946,6 +946,18 @@ export async function POST(req: Request) {
     // YENİ: Konum RAG araması iyileştirmesi
     const isLocationIntent = /\b(nerede|adres|nerdesiniz|semt|ilçe|ulaşım|konum|lokasyon|address|where|get there|befindet|adresse)\b/.test(msgLower);
 
+    // YENİ: Fiyat/Ücret niyet tespiti (Priority: examination > xray > general treatment)
+    const isExaminationFeeIntent = /\b(muayene|kontrol|ilk değerlendirme|ilk randevu).*(ücret|fiyat|parası|bedeli|ne kadar|ücretsiz|free|cost|ne tutar|ne kadara mal olur)\b/i.test(msgLower) || /\b(ücret|fiyat|parası|bedeli|ne kadar|ücretsiz|cost|ne tutar).*(muayene|kontrol|ilk değerlendirme|ilk randevu)\b/i.test(msgLower);
+    const isXrayFeeIntent = /\b(röntgen|x-ray|film|tomografi).*(ücret|fiyat|parası|bedeli|ne kadar|ücretsiz|free|cost|ne tutar|ne kadara mal olur)\b/i.test(msgLower) || /\b(ücret|fiyat|parası|bedeli|ne kadar|ücretsiz|cost|ne tutar).*(röntgen|x-ray|film|tomografi)\b/i.test(msgLower);
+    const isTreatmentPriceIntent = /\b(ücret|fiyat|ne kadar|fiyatı|parası|maliyeti|cost|price|ne tutar|ne kadara mal olur)\b/i.test(msgLower) && !isExaminationFeeIntent && !isXrayFeeIntent;
+    
+    let activePriceIntent = "";
+    if (isExaminationFeeIntent) activePriceIntent = "examination_fee";
+    else if (isXrayFeeIntent) activePriceIntent = "xray_fee";
+    else if (isTreatmentPriceIntent) activePriceIntent = "treatment_price";
+    
+    debugLog.push(`intent_price=${activePriceIntent || "none"}`);
+
     // YENİ: Doktor niyet tespiti
     const isDoctorIntent = /\b(doktor|hekim|uzman|doctor|dentist|specialist|cerrah|surgeon|tıbbi|medical team|ekip|doctors|hekimler|doktorlar)\b/i.test(msgLower);
     
@@ -1013,7 +1025,15 @@ ${docsListStrings.join('\n\n')}
     // Dynamically import retrievalService to avoid edge runtime issues if applicable, but this is a node API route
     const { hybridSearch } = await import("@/lib/services/retrievalService");
     
-    let topDocs = await hybridSearch(message, trainingDocs, clinicName, sliceLimit);
+    // YENİ: Override search query for specific price intents to guarantee deterministic RAG match
+    let searchMessage = message;
+    if (activePriceIntent === "examination_fee") {
+      searchMessage = "ilk muayene ücreti ücretsiz muayene fiyatı bedava muayene mi";
+    } else if (activePriceIntent === "xray_fee") {
+      searchMessage = "röntgen ücreti ücretsiz röntgen fiyatı tomografi bedeli bedava mı";
+    }
+
+    let topDocs = await hybridSearch(searchMessage, trainingDocs, clinicName, sliceLimit);
     
     let knowledgeContext = topDocs.length > 0
       ? topDocs.map(d => `## ${d.title}\n${d.text}`).join("\n\n---\n\n")
@@ -1326,6 +1346,13 @@ ${validationRules}
 
     if (isLocationIntent) {
       skillBlocks.push("\nKONUM BİLGİSİ: Konum veya adres sorulduğunda, bilgi havuzunda bulunan semt, ilçe, şehir, yakındaki önemli noktalar (havalimanı vb.) gibi TÜM detayları açıkça belirt. Sadece şehri söyleyip geçme. Bilgi varsa gereksiz yere 'iletişime geçin' deme, adresi tam olarak yaz.");
+    }
+
+    if (activePriceIntent) {
+      skillBlocks.push(`\nÖNEMLİ FİYATLANDIRMA KURALLARI:
+1. "Ücretsiz" (free), geçerli ve doğrulanmış bir fiyat türüdür. Bilgi Havuzunda (Örn: "İlk muayene ücretsizdir") geçiyorsa "doğrulanmış bilgi mevcut değil" DEME, "fiyatlar muayene sonrası belli olur" DEME.
+2. Soru muayene veya röntgen ücreti ise ve cevap "ücretsiz" ise, DOĞRUDAN net cevap ver: "İlk muayene kliniğimizde ücretsizdir." (veya bağlama uygun şekilde).
+3. Soruya doğrudan cevap vermeden önce asla randevu akışını veya iletişim bilgisini öne çıkarma. Önce sorulan fiyat bilgisini / ücretsizlik bilgisini ver, sonra dilerse randevu alabileceğini belirt.`);
     }
 
     if (doctorContext) {

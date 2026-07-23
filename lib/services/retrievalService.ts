@@ -159,6 +159,7 @@ export async function validateGroundedness(
     const prompt = `You are a strict fact-checker. 
 Compare the GENERATED RESPONSE against the RETRIEVED CONTEXT.
 Rule: If the GENERATED RESPONSE makes any specific factual claim (price, service, doctor name, hours) that is NOT explicitly supported by the RETRIEVED CONTEXT, it is UNGROUNDED.
+Rule Exception: If the GENERATED RESPONSE claims a service is "free" or "ücretsiz" and the RETRIEVED CONTEXT supports this, it is GROUNDED. Do not fail it just because it isn't a numeric price.
 If the response simply says "I don't know" or asks for more info, it is GROUNDED.
 
 RETRIEVED CONTEXT:
