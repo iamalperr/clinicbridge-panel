@@ -959,19 +959,17 @@ export async function POST(req: Request) {
         try {
           let docsSnap;
           if (isAgencyClinic && agencyIdForClinic) {
-            docsSnap = await adminDb.collection("agencies").doc(agencyIdForClinic).collection("clinics").doc(actualClinicId).collection("doctors")
-              .where("status", "==", "active")
-              .get();
+            docsSnap = await adminDb.collection("agencies").doc(agencyIdForClinic).collection("clinics").doc(actualClinicId).collection("doctors").get();
           } else {
-            docsSnap = await adminDb.collection("clinics").doc(clinicId).collection("doctors")
-              .where("status", "==", "active")
-              .get();
+            docsSnap = await adminDb.collection("clinics").doc(clinicId).collection("doctors").get();
           }
           
           if (!docsSnap.empty) {
             // Memory sort and filter to avoid missing field/index issues
             let docs = docsSnap.docs.map(d => d.data());
-            docs = docs.filter(d => d.showOnPublicProfile !== false);
+            // docs = docs.filter(d => d.showOnPublicProfile !== false);
+            // docs = docs.filter(d => d.status === "active"); // Relaxing filter in case manually added
+
             
             if (docs.length > 0) {
               docs.sort((a, b) => (a.display_order || a.order || 0) - (b.display_order || b.order || 0));
@@ -1017,6 +1015,31 @@ export async function POST(req: Request) {
     const { hybridSearch } = await import("@/lib/services/retrievalService");
     
     let topDocs = await hybridSearch(message, trainingDocs, clinicName, sliceLimit);
+    
+    // YENİ: Deterministic retrieval for Doctors in Knowledge Base
+    if (isDoctorIntent) {
+      const explicitDoctorDocs = trainingDocs.filter(d => 
+        d.title.toLowerCase().includes("doktor") || 
+        d.title.toLowerCase().includes("hekim") ||
+        d.title.toLowerCase().includes("uzman") ||
+        d.title.toLowerCase().includes("kadro")
+      );
+      
+      // Append them if they aren't already in topDocs
+      for (const ed of explicitDoctorDocs) {
+        if (!topDocs.some(td => td.doc_id === ed.id)) {
+          topDocs.push({
+            doc_id: ed.id,
+            chunk_index: 0,
+            title: ed.title,
+            text: ed.content,
+            score: 1.0, // Artificial high score
+            vectorScore: 1.0,
+            keywordScore: 1.0
+          });
+        }
+      }
+    }
     
     let knowledgeContext = topDocs.length > 0
       ? topDocs.map(d => `## ${d.title}\n${d.text}`).join("\n\n---\n\n")
