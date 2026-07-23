@@ -844,6 +844,7 @@ export async function POST(req: Request) {
 
     let isAgencyClinic = false;
     let agencyIdForClinic: string | null = null;
+    let actualClinicId = clinicId; // Store the real document ID if it differs from the slug
 
     if (adminDb) {
       const [clinicSnap, promptSnap, materialsSnap] = await Promise.all([
@@ -871,11 +872,15 @@ export async function POST(req: Request) {
         // Fallback for Agency Clinics
         const agenciesSnap = await adminDb.collection("agencies").get();
         for (const agency of agenciesSnap.docs) {
-          const aClinicSnap = await adminDb.collection("agencies").doc(agency.id).collection("clinics").doc(clinicId).get();
-          if (aClinicSnap.exists) {
+          const aClinicsQuery = await adminDb.collection("agencies").doc(agency.id).collection("clinics").where("clinicSlug", "==", clinicId).limit(1).get();
+          if (!aClinicsQuery.empty) {
+             const aClinicSnap = aClinicsQuery.docs[0];
              const aData = aClinicSnap.data()!;
              agencyIdForClinic = agency.id;
              isAgencyClinic = true;
+             
+             // Update actualClinicId to the actual document ID for subsequent queries
+             actualClinicId = aClinicSnap.id;
              
              clinicData = aData;
              clinicName = aData.clinicName || aData.name || "Klinik";
@@ -887,7 +892,7 @@ export async function POST(req: Request) {
                  promptSettings = { basePrompt: aData.aiQuoteSettings.prompt };
              }
              
-             const aMaterialsSnap = await adminDb.collection("agencies").doc(agency.id).collection("clinics").doc(clinicId).collection("knowledgeBase").where("isActive", "==", true).get();
+             const aMaterialsSnap = await adminDb.collection("agencies").doc(agency.id).collection("clinics").doc(actualClinicId).collection("knowledgeBase").where("isActive", "==", true).get();
              trainingDocs = aMaterialsSnap.docs.map(d => ({
                id: d.id,
                title: d.data().title ?? "",
@@ -947,7 +952,7 @@ export async function POST(req: Request) {
         try {
           let docsSnap;
           if (isAgencyClinic && agencyIdForClinic) {
-            docsSnap = await adminDb.collection("agencies").doc(agencyIdForClinic).collection("clinics").doc(clinicId).collection("doctors")
+            docsSnap = await adminDb.collection("agencies").doc(agencyIdForClinic).collection("clinics").doc(actualClinicId).collection("doctors")
               .where("status", "==", "active")
               .get();
           } else {
