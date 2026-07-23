@@ -1600,7 +1600,8 @@ ${validationRules}
    Onaylıyor musunuz? (Evet/Hayır)"
 5. Kullanıcı "Evet" dediğinde sistem klinik onayına sunulmak üzere bir ÖN RANDEVU TALEBİ oluşturacak. 
    Kesinlikle "randevunuz oluşturuldu", "onaylandı" deme.
-   Kapanış mesajı olarak şunu kullan: "Ön randevu talebinizi kliniğimize ilettim. [Hizmet] işlemi için tercih ettiğiniz [Tarih] [Saat] bilgisi klinik ekibi tarafından değerlendirilecektir. ${confirmationSentence}"`);
+   Kapanış mesajı olarak şunu kullan: "Ön randevu talebinizi kliniğimize ilettim. [Hizmet] işlemi için tercih ettiğiniz [Tarih] [Saat] bilgisi klinik ekibi tarafından değerlendirilecektir. ${confirmationSentence}"
+6. ÖNEMLİ: Eğer randevu için kullanıcıdan bilgi (ad, telefon, tarih vb.) İSTİYORSAN veya onay özetini SUNUYORSAN, yanıtının en başına gizli bir etiket olarak [FLOW_ACTIVE] ekle. (Örn: "[FLOW_ACTIVE] Teşekkürler, telefon numaranızı da alabilir miyim?")`);
     } else {
       skillBlocks.push("\nNot: Randevu oluşturma özelliği bu klinik için şu an devre dışıdır. Randevu talepleri için kullanıcıyı kliniği doğrudan aramaya yönlendir.");
     }
@@ -1742,9 +1743,15 @@ ${validationRules}
       // We removed the unconditional override so that the AI can successfully pull doctors from the Knowledge Base.
     }
 
+    let isAppointmentFlowActive = false;
+    if (reply.includes("[FLOW_ACTIVE]")) {
+      isAppointmentFlowActive = true;
+      reply = reply.replace("[FLOW_ACTIVE]", "").trim();
+    }
+
     // GROUNDEDNESS CHECK
     // Only check if we retrieved RAG context and the AI didn't already use the safe fallback
-    if (knowledgeContext.length > 0 && !reply.includes("doğrulamıyorum") && !reply.includes("erişemediğim") && !isDoctorIntent) {
+    if (knowledgeContext.length > 0 && !reply.includes("doğrulamıyorum") && !reply.includes("erişemediğim") && !isDoctorIntent && !isAppointmentFlowActive) {
       const { validateGroundedness } = await import("@/lib/services/retrievalService");
       
       const fullContextForValidation = doctorContext ? `${knowledgeContext}\n\n${doctorContext}` : knowledgeContext;
