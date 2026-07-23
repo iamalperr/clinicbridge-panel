@@ -954,6 +954,13 @@ export async function POST(req: Request) {
     let allowedDoctorNames: string[] = [];
     
     if (isDoctorIntent) {
+      const explicitDoctorDocs = trainingDocs.filter(d => {
+        const t = d.title.toLowerCase();
+        const c = d.content.toLowerCase();
+        const keywords = ["doktor", "hekim", "uzman", "kadro", "dt.", "dr.", "uzm.", "personel", "ekip", "diş tabibi", "dentist"];
+        return keywords.some(k => t.includes(k) || c.includes(k));
+      });
+
       const adminDb = getAdminDb();
       if (adminDb) {
         try {
@@ -964,32 +971,46 @@ export async function POST(req: Request) {
             docsSnap = await adminDb.collection("clinics").doc(clinicId).collection("doctors").get();
           }
           
+          let docsListStrings: string[] = [];
+          
           if (!docsSnap.empty) {
             let docs = docsSnap.docs.map(d => d.data() as any);
-            
             if (docs.length > 0) {
               docs.sort((a, b) => (a.display_order || a.order || 0) - (b.display_order || b.order || 0));
+              docsListStrings = docs.map(data => {
+                const fullName = `${data.title ? data.title + ' ' : ''}${data.doctorName}`.trim();
+                allowedDoctorNames.push(fullName);
+                let text = `Ad: ${fullName}\n`;
+                if (data.specialty) text += `Uzmanlık: ${data.specialty}\n`;
+                if (data.role) text += `Görev: ${data.role}\n`;
+                if (data.education) text += `Eğitim: ${data.education}\n`;
+                if (data.experienceYears) text += `Deneyim: ${data.experienceYears} Yıl\n`;
+                return text.trim();
+              });
+            }
+          }
+          
+          // FORCIBLY MERGE KNOWLEDGE BASE DOCTORS INTO STRUCTURED LIST
+          if (explicitDoctorDocs.length > 0) {
+            const kbDocsStrings = explicitDoctorDocs.map(ed => `Ad/Başlık: ${ed.title}\nBilgi: ${ed.content}`);
+            docsListStrings = [...docsListStrings, ...kbDocsStrings];
+          }
 
-              const docsList = docs.map(data => {
-              const fullName = `${data.title ? data.title + ' ' : ''}${data.doctorName}`.trim();
-              allowedDoctorNames.push(fullName);
-              
-              let text = `Ad: ${fullName}\n`;
-              if (data.specialty) text += `Uzmanlık: ${data.specialty}\n`;
-              if (data.role) text += `Görev: ${data.role}\n`;
-              if (data.education) text += `Eğitim: ${data.education}\n`;
-              if (data.experienceYears) text += `Deneyim: ${data.experienceYears} Yıl\n`;
-              if (data.supportedLanguages?.length) text += `Konuştuğu Diller: ${data.supportedLanguages.join(", ")}\n`;
-              if (data.expertiseAreas?.length) text += `İlgi Alanları/Uzmanlıkları: ${data.expertiseAreas.join(", ")}\n`;
-              if (data.highlightedTreatments?.length) text += `Öne Çıkan Tedavileri: ${data.highlightedTreatments.join(", ")}\n`;
-              return text.trim();
-            });
-            doctorContext = `Sistemimizde şu an bu kliniğe ait ${docs.length} doktor kaydı (yapılandırılmış veritabanında) bulunmaktadır.\n\nYAPILANDIRILMIŞ DOKTORLAR LİSTESİ:\n\n${docsList.join('\n\n---\n\n')}\n\nÖNEMLİ KURAL: Kullanıcı doktorları sorduğunda, yukarıdaki listede bulunan doktorları ve "Bilgi Havuzu (Knowledge Base)" içinde bulduğun DİĞER TÜM doktorları BİRLEŞTİREREK eksiksiz olarak listele. Sadece yukarıdaki listeye bağlı kalma, bilgi havuzundaki doktorları da mutlaka listeye dahil et.`;
+          if (docsListStrings.length > 0) {
+            doctorContext = `[KESİN DOKTOR LİSTESİ]
+Aşağıda veritabanımızdan ve bilgi havuzumuzdan (Knowledge Base) çekilen doktor/hekim kayıtları bulunmaktadır. Bir kaydın içinde birden fazla doktor bilgisi yer alıyor olabilir.
+
+DOKTORLAR BİLGİ KAYITLARI:
+
+${docsListStrings.join('\n\n---\n\n')}
+
+ÖNEMLİ KURAL: Kullanıcı doktorları sorduğunda, yukarıdaki kayıtlarda adı geçen TÜM DOKTORLARI (hiçbirini atlamadan) eksiksiz olarak listele. Bir metnin içinde birden fazla hekim varsa hepsini listeye dahil et. Yukarıdaki listede geçmeyen başka bir hekim uydurma.`;
             
             if (doctorContext.length > 8000) {
               doctorContext = doctorContext.substring(0, 8000) + "\n...[DOKTOR LİSTESİ KESİLDİ]";
             }
-            }
+          } else {
+            doctorDataMissing = true;
           }
         } catch (err) {
           console.error("[chat] Error fetching doctors", err);
@@ -1011,31 +1032,6 @@ export async function POST(req: Request) {
     const { hybridSearch } = await import("@/lib/services/retrievalService");
     
     let topDocs = await hybridSearch(message, trainingDocs, clinicName, sliceLimit);
-    
-    // YENİ: Deterministic retrieval for Doctors in Knowledge Base
-    if (isDoctorIntent) {
-      const explicitDoctorDocs = trainingDocs.filter(d => {
-        const t = d.title.toLowerCase();
-        const c = d.content.toLowerCase();
-        const keywords = ["doktor", "hekim", "uzman", "kadro", "dt.", "dr.", "uzm.", "personel", "ekip", "diş tabibi", "dentist"];
-        return keywords.some(k => t.includes(k) || c.includes(k));
-      });
-      
-      // Append them if they aren't already in topDocs
-      for (const ed of explicitDoctorDocs) {
-        if (!topDocs.some(td => td.doc_id === ed.id)) {
-          topDocs.push({
-            doc_id: ed.id,
-            chunk_index: 0,
-            title: ed.title,
-            text: ed.content,
-            score: 1.0, // Artificial high score
-            vectorScore: 1.0,
-            keywordScore: 1.0
-          });
-        }
-      }
-    }
     
     let knowledgeContext = topDocs.length > 0
       ? topDocs.map(d => `## ${d.title}\n${d.text}`).join("\n\n---\n\n")
