@@ -954,60 +954,41 @@ export async function POST(req: Request) {
     let allowedDoctorNames: string[] = [];
     
     if (isDoctorIntent) {
-      const explicitDoctorDocs = trainingDocs.filter(d => {
-        const t = d.title.toLowerCase();
-        const c = d.content.toLowerCase();
-        const keywords = ["doktor", "hekim", "uzman", "kadro", "dt.", "dr.", "uzm.", "personel", "ekip", "diş tabibi", "dentist"];
-        return keywords.some(k => t.includes(k) || c.includes(k));
-      });
-
       const adminDb = getAdminDb();
       if (adminDb) {
         try {
           let docsSnap;
           if (isAgencyClinic && agencyIdForClinic) {
-            docsSnap = await adminDb.collection("agencies").doc(agencyIdForClinic).collection("clinics").doc(actualClinicId).collection("doctors").get();
+            docsSnap = await adminDb.collection("agencies").doc(agencyIdForClinic).collection("clinics").doc(actualClinicId).collection("doctors").where("is_active", "==", true).get();
           } else {
-            docsSnap = await adminDb.collection("clinics").doc(clinicId).collection("doctors").get();
+            docsSnap = await adminDb.collection("clinics").doc(clinicId).collection("doctors").where("is_active", "==", true).get();
           }
-          
-          let docsListStrings: string[] = [];
           
           if (!docsSnap.empty) {
             let docs = docsSnap.docs.map(d => d.data() as any);
             if (docs.length > 0) {
               docs.sort((a, b) => (a.display_order || a.order || 0) - (b.display_order || b.order || 0));
-              docsListStrings = docs.map(data => {
-                const fullName = `${data.title ? data.title + ' ' : ''}${data.doctorName}`.trim();
+              const docsListStrings = docs.map(data => {
+                const fullName = `${data.title ? data.title + ' ' : ''}${data.doctorName || data.full_name || data.fullName}`.trim();
                 allowedDoctorNames.push(fullName);
-                let text = `Ad: ${fullName}\n`;
-                if (data.specialty) text += `Uzmanlık: ${data.specialty}\n`;
-                if (data.role) text += `Görev: ${data.role}\n`;
-                if (data.education) text += `Eğitim: ${data.education}\n`;
-                if (data.experienceYears) text += `Deneyim: ${data.experienceYears} Yıl\n`;
+                let text = `${docs.indexOf(data) + 1}. Ad: ${fullName}\n`;
+                if (data.specialty) text += `   Uzmanlık: ${data.specialty}\n`;
+                if (data.role) text += `   Görev: ${data.role}\n`;
+                if (data.education) text += `   Eğitim: ${data.education}\n`;
+                if (data.experienceYears) text += `   Deneyim: ${data.experienceYears} Yıl\n`;
                 return text.trim();
               });
-            }
-          }
-          
-          // FORCIBLY MERGE KNOWLEDGE BASE DOCTORS INTO STRUCTURED LIST
-          if (explicitDoctorDocs.length > 0) {
-            const kbDocsStrings = explicitDoctorDocs.map(ed => `Ad/Başlık: ${ed.title}\nBilgi: ${ed.content}`);
-            docsListStrings = [...docsListStrings, ...kbDocsStrings];
-          }
 
-          if (docsListStrings.length > 0) {
-            doctorContext = `[KESİN DOKTOR LİSTESİ]
-Aşağıda veritabanımızdan ve bilgi havuzumuzdan (Knowledge Base) çekilen doktor/hekim kayıtları bulunmaktadır. Bir kaydın içinde birden fazla doktor bilgisi yer alıyor olabilir.
+              console.log(`[DOCTOR INTENT] Resolved ${docs.length} active structured doctors for clinic ${clinicId}`);
 
-DOKTORLAR BİLGİ KAYITLARI:
+              doctorContext = `[KESİN HEKİM KADROSU]
+Aşağıdaki liste kliniğin doğrulanmış hekim kadrosudur.
 
-${docsListStrings.join('\n\n---\n\n')}
+${docsListStrings.join('\n\n')}
 
-ÖNEMLİ KURAL: Kullanıcı doktorları sorduğunda, yukarıdaki kayıtlarda adı geçen TÜM DOKTORLARI (hiçbirini atlamadan) eksiksiz olarak listele. Bir metnin içinde birden fazla hekim varsa hepsini listeye dahil et. Yukarıdaki listede geçmeyen başka bir hekim uydurma.`;
-            
-            if (doctorContext.length > 8000) {
-              doctorContext = doctorContext.substring(0, 8000) + "\n...[DOKTOR LİSTESİ KESİLDİ]";
+ÖNEMLİ KURAL: Kullanıcı doktorları sorduğunda, sadece ve sadece yukarıdaki listede bulunan hekimleri (hiçbirini atlamadan, sırasını değiştirmeden) eksiksiz olarak hastaya sun. Başka hiçbir hekim ismi uydurma.`;
+            } else {
+              doctorDataMissing = true;
             }
           } else {
             doctorDataMissing = true;
@@ -1016,6 +997,7 @@ ${docsListStrings.join('\n\n---\n\n')}
           console.error("[chat] Error fetching doctors", err);
           doctorDataMissing = true;
         }
+
       } else {
         doctorDataMissing = true;
       }
