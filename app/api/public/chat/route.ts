@@ -994,131 +994,6 @@ export async function POST(req: Request) {
     
     debugLog.push(`intent_price=${activePriceIntent || "none"}`);
 
-    // ─── APPOINTMENT SLOT-FILLING STATE MACHINE ──────────────────────────────
-    let appointmentFlow = {
-      status: "inactive",
-      currentStep: "",
-      collectedData: {} as Record<string, string>
-    };
-    let conversationRef: any = null;
-
-    if (adminDb && conversationId) {
-      try {
-        if (isAgencyClinic && agencyIdForClinic) {
-          conversationRef = adminDb.collection("agencies").doc(agencyIdForClinic).collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(conversationId);
-        } else {
-          conversationRef = adminDb.collection("clinics").doc(clinicId).collection("conversationLogs").doc(conversationId);
-        }
-        const logSnap = await conversationRef.get();
-        if (logSnap.exists) {
-          const cData = logSnap.data();
-          if (cData?.appointmentFlow) {
-             appointmentFlow = cData.appointmentFlow;
-          }
-        }
-      } catch (err) {
-        console.warn("[state-machine] Failed to load conversation state:", err);
-      }
-    }
-
-    // Attempt to recover state from history if DB is empty or missing
-    if (appointmentFlow.status === "inactive" && history.length > 0) {
-      // Traverse history backwards to find the last assistant message
-      const lastAiMessage = [...history].reverse().find(m => m.role === "assistant");
-      if (lastAiMessage) {
-         const lastText = lastAiMessage.content.toLowerCase();
-         const isAskingName = /(?:adınızı|isminizi|ad soyad|hitap edebilirim|adınız|isminiz|kiminle görüşüyorum|ad ve soyad)/i.test(lastText);
-         const isAskingPhone = /(?:telefon|numaranızı|iletişim numarası|cep telefonu)/i.test(lastText);
-         
-         if (isAskingName && !isAskingPhone) {
-           appointmentFlow = { status: "collecting", currentStep: "full_name", collectedData: {} };
-         } else if (isAskingPhone) {
-           appointmentFlow = { status: "collecting", currentStep: "phone", collectedData: pendingAppointmentData || {} };
-         }
-      }
-    }
-
-    // Cancellation intent overrides everything
-    const isCancellation = /\\b(vazgeçtim|randevu istemiyorum|iptal et|baştan başlayalım)\\b/i.test(msgLower);
-    if (isCancellation && appointmentFlow.status === "collecting") {
-      appointmentFlow.status = "inactive";
-      appointmentFlow.currentStep = "";
-      appointmentFlow.collectedData = {};
-      if (conversationRef) {
-         await conversationRef.set({ appointmentFlow }, { merge: true });
-      }
-      debugLog.push("appt_flow_cancelled");
-    }
-
-    let slotContext = "";
-    let skipRagForSlot = false;
-
-    // Check if the user is answering a specific field
-    if (!isCancellation && appointmentFlow.status === "collecting" && appointmentFlow.currentStep) {
-      const field = appointmentFlow.currentStep;
-      let matchedValue = "";
-      let validationError = "";
-      
-      // Is this message an interruption? (e.g. asking a question instead of answering)
-      const isInterruption = msgLower.includes("ücret") || msgLower.includes("fiyat") || msgLower.includes("nerede") || msgLower.includes("ücretsiz mi") || msgLower.includes("kaç doktor") || msgLower.includes("ne kadar");
-
-      if (!isInterruption) {
-        if (field === "full_name") {
-           // Accept any reasonable name length
-           const cleanedName = message.replace(/\\b(adım|benim adım|ben|ismim)\\b/gi, "").trim();
-           if (cleanedName.length > 2) {
-             matchedValue = cleanedName;
-           } else {
-             validationError = "Lütfen geçerli bir ad ve soyad giriniz.";
-           }
-        } else if (field === "phone") {
-           // Basic phone normalization: leave only + and numbers
-           const normalizedPhone = message.replace(/[^\\d+]/g, "");
-           if (normalizedPhone.length >= 10 && normalizedPhone.length <= 15) {
-             matchedValue = normalizedPhone;
-           } else {
-             validationError = "Telefon numarasını doğrulayamadım. Lütfen alan kodu ile birlikte (örn: 0555...) geçerli bir numara yazınız.";
-           }
-        }
-      }
-
-      if (matchedValue) {
-         appointmentFlow.collectedData[field] = matchedValue;
-         // Transition state
-         if (field === "full_name") {
-           appointmentFlow.currentStep = "phone";
-           slotContext = `[SİSTEM BİLGİSİ] Hasta "${matchedValue}" adını verdi. Ad başarıyla kaydedildi.
-Şimdi teşekkür edip randevu için telefon numarasını iste. Örn: "Teşekkür ederim ${matchedValue.split(' ')[0]} Bey/Hanım. Size ulaşabilmemiz için telefon numaranızı da paylaşabilir misiniz?"`;
-         } else if (field === "phone") {
-           appointmentFlow.currentStep = "completed"; // Or date/time if required
-           appointmentFlow.status = "ready_for_confirmation";
-           slotContext = `[SİSTEM BİLGİSİ] Hasta "${matchedValue}" telefon numarasını verdi. Başarıyla kaydedildi.
-Şimdi hastaya KESİNLİKLE tam olarak aşağıdaki gibi bir form formatında özet göster ve randevu talebini onaylayıp onaylamadığını sor:
-
-Ad: ${appointmentFlow.collectedData.full_name}
-Telefon: ${appointmentFlow.collectedData.phone}
-Hizmet: Genel Muayene (veya sorulan işlem varsa onu yaz)
-
-Bu bilgilerle randevu talebinizi onaylıyor musunuz?`;
-         }
-
-         if (conversationRef) {
-           await conversationRef.set({ appointmentFlow }, { merge: true });
-         }
-         skipRagForSlot = true;
-         debugLog.push(`slot_filled=${field}`);
-      } else if (validationError) {
-         // Validation failed, ask again
-         slotContext = `[SİSTEM BİLGİSİ] Hastanın girdiği bilgi formata uymadı. Hata: "${validationError}". Lütfen bu hatayı hastaya kibarca iletip bilgiyi tekrar iste.`;
-         skipRagForSlot = true;
-      } else if (isInterruption) {
-         // It is an interruption. Allow RAG to run, but append a reminder.
-         slotContext = `[SİSTEM BİLGİSİ] Hasta randevu bilgisi verirken araya bir soru sordu.
-ÖNEMLİ: Soruyu yanıtla, ancak DİKKAT! Randevu kaydı henüz tamamlanmadı, sistem "${field}" bilgisini bekliyor.
-Soruyu yanıtladıktan sonra, son cümlede hastadan nazikçe eksik olan "${field === 'full_name' ? 'Ad ve soyad' : 'telefon numarası'}" bilgisini tekrar iste.`;
-      }
-    }
-
     // ─── DETERMINISTIC INTENT ROUTING ──────────────────────────────────────────
     // Import shared specialization and treatment registries
     const { findSpecializationCode, findTreatmentCode, getSpecializationLabel, getTreatmentLabel, SPECIALIZATION_REGISTRY } = await import("@/lib/constants/specializations");
@@ -1332,21 +1207,12 @@ Hastaya doğrudan bu hekimlerin isimlerini ve unvanlarını paylaş.`;
 Ancak kliniğimizde bu tedavi sunulabiliyor olabilir. Hastayı randevu oluşturmaya yönlendir.`;
                 }
               } else if (isDoctorCountIntent) {
-                let matchedBySpecialty: any[] = [];
-                let specialtyLabel = "";
-                if (requestedSpecialtyCode) {
-                  matchedBySpecialty = rawDoctorsData.filter(d => doctorMatchesSpecialty(d, requestedSpecialtyCode!));
-                  specialtyLabel = getSpecializationLabel(requestedSpecialtyCode);
-                }
-
                 const verifiedPayload = {
                   intent: "doctor_count",
                   clinic_id: clinicId,
                   total_active_doctors: docs.length,
                   verified_specialist_dentists: specialistCount,
                   general_or_unverified_doctors: generalCount,
-                  requested_specialty: specialtyLabel || null,
-                  requested_specialty_count: specialtyLabel ? matchedBySpecialty.length : null,
                   doctors: rawDoctorsData.map(d => ({ full_name: d.full_name, professional_title: d.professional_title, specialist_status: d.specialist_status }))
                 };
                 
@@ -1358,14 +1224,11 @@ ${JSON.stringify(verifiedPayload, null, 2)}
 \`\`\`
 
 ÖNEMLİ KURALLAR:
-1. DİKKAT: Aşağıda verilecek olan "Knowledge Base" (Bilgi Havuzu/RAG) kayıtları kliniğin tüm hekimlerini İÇERMEZ. Doktor sayısını söylerken veya doktorları listelerken ASLA Bilgi Havuzundan dönen metinlerin/kayıtların sayısını (örn. sadece 3 hekim dönmüş olması) kullanma. SADECE BURADAKİ JSON VERİSİNDEKİ SAYILARI KULLAN.
-2. Doktor sayısı sorusunda SADECE 'total_active_doctors' değerini kullan.
-3. "Uzman diş hekimi" sayısı sorulursa: SADECE 'verified_specialist_dentists' değerini kullan.
-4. "Diş hekimi" sayısı sorulursa: SADECE 'general_or_unverified_doctors' değerini kullan.
-5. Kullanıcı spesifik bir uzmanlık alanı soruyorsa (örn: periodontoloji) SADECE 'requested_specialty_count' değerini kullan.
-6. Asla bilginin doğrulanamadığını söyleme.
-7. İstenmedikçe listeyi tek tek sayma. Doğal bir cümle ile yanıt ver. Örn: "Kliniğimizde 6 uzman diş hekimi, 3 diş hekimi olmak üzere toplam 9 aktif hekim görev yapmaktadır."
-8. Eğer hastalar tüm hekimleri VEYA tüm uzmanları saymanı isterse, JSON'daki "doctors" listesinin İLGİLİ KISMINI (tümünü veya sadece uzmanları) KESİNTİSİZ olarak listele. RAG'de az isim olsa dahi JSON'da kaç isim varsa o kadar yaz.`;
+- Doktor sayısı sorusunda SADECE total_active_doctors değerini kullan.
+- "Uzman diş hekimi" sayısı: SADECE specialist_status=true olan hekimler.
+- "Diş hekimi" sayısı: specialist_status=false olan hekimler.
+- Asla bilginin doğrulanamadığını söyleme.
+- İstenmedikçe listeyi tek tek sayma. Doğal bir cümle ile yanıt ver.`;
               } else {
                 // GENERAL DOCTOR LIST
                 doctorContext = `[HEKİM KADROSU BİLGİSİ]
@@ -1376,11 +1239,11 @@ TAM LİSTE:
 ${docsListStrings.join('\n\n---\n\n')}
 
 ÖNEMLİ KURALLAR (HEKİM BİLGİSİ):
-1. DİKKAT: Aşağıda verilecek Bilgi Havuzu (RAG) kayıtları eksik olabilir. Hastaya doktor sayısını söylerken SADECE BURADAKİ tam sayıları (Toplam: ${docs.length}, Uzman: ${specialistCount}, Diş Hekimi: ${generalCount}) referans al.
-2. SADECE yukarıdaki listede bulunan hekimleri sun. Asla uydurma hekim ekleme.
-3. "Doğrulanmış Uzmanlık" alanı boşsa UZMANLIK UYDURMA. Tedavi yapması o alanın uzmanı olduğu anlamına gelmez.
-4. "Uzman Statüsü" alanına bak: "Doğrulanmış Uzman Diş Hekimi" yazanları uzman olarak tanıt, diğerlerini "Diş Hekimi" olarak tanıt.
-5. Hastalar tüm hekimleri sorarsa TAM LİSTE'deki isimlerin tümünü ver, Bilgi Havuzunda (RAG) az sayıda kişi dönse bile buradaki listeyi baz al.`;
+1. SADECE yukarıdaki listede bulunan hekimleri sun. Asla uydurma hekim ekleme.
+2. "Doğrulanmış Uzmanlık" alanı boşsa UZMANLIK UYDURMA. Tedavi yapması o alanın uzmanı olduğu anlamına gelmez.
+3. "Uzman Statüsü" alanına bak: "Doğrulanmış Uzman Diş Hekimi" yazanları uzman olarak tanıt, diğerlerini "Diş Hekimi" olarak tanıt.
+4. Hekim verilerini birbirine karıştırma; her hekimi kendi ID'si altındaki verilerle değerlendir.
+5. Tedaviler ile uzmanlıkları karıştırma. Tedavi yapması uzman olduğunu göstermez.`;
               }
             } else {
               doctorDataMissing = true;
@@ -1449,19 +1312,12 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
       searchMessage = "röntgen ücreti ücretsiz röntgen fiyatı tomografi bedeli bedava mı";
     }
 
-    let topDocs: any[] = [];
-    if (!skipRagForSlot) {
-      topDocs = await hybridSearch(searchMessage, trainingDocs, clinicName, sliceLimit);
-    }
+    const topDocs = await hybridSearch(searchMessage, trainingDocs, clinicName, sliceLimit);
     
     let knowledgeContext = topDocs.length > 0
-      ? topDocs.map((d: any) => `## ${d.title}\n${d.text}`).join("\n\n---\n\n")
+      ? topDocs.map(d => `## ${d.title}\n${d.text}`).join("\n\n---\n\n")
       : "";
       
-    if (slotContext) {
-      knowledgeContext = `${slotContext}\n\n---\n\n${knowledgeContext}`;
-    }
-    
     // Safeguard: Hard limit knowledgeContext to prevent TPM / max context limits
     if (knowledgeContext.length > 15000) {
        knowledgeContext = knowledgeContext.substring(0, 15000) + "\n...[METİN KESİLDİ]";
