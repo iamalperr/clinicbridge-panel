@@ -965,10 +965,7 @@ export async function POST(req: Request) {
           }
           
           if (!docsSnap.empty) {
-            let docs = docsSnap.docs.map(d => {
-              const data = d.data();
-              return { id: d.id, ...data };
-            });
+            let docs = docsSnap.docs.map(d => d.data() as any);
             
             if (docs.length > 0) {
               docs.sort((a, b) => (a.display_order || a.order || 0) - (b.display_order || b.order || 0));
