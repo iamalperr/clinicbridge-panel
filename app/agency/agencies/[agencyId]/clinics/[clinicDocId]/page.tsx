@@ -328,6 +328,28 @@ export default function ClinicProfilePage() {
     setSaving(false);
   };
 
+  const handleReindexAllKb = async () => {
+    if (!window.confirm("Tüm bilgi havuzu kayıtları yapay zeka araması için yeniden indekslenecektir. Bu işlem birkaç dakika sürebilir. Onaylıyor musunuz?")) return;
+    setSaving(true);
+    try {
+      let successCount = 0;
+      for (const r of kbRecords) {
+        await fetch("/api/admin/embeddings/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ docPath: `agencies/${agencyId}/clinics/${clinicDocId}/knowledgeBase/${r.id}` })
+        });
+        successCount++;
+      }
+      showToast("success", `${successCount} kayıt başarıyla indekslendi.`);
+    } catch (err: any) {
+      console.error(err);
+      showToast("error", "İndeksleme sırasında bir hata oluştu.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSaveKbRecord = async () => {
     if (!kbForm.title.trim() || !kbForm.content.trim()) {
       showToast("error", "Başlık ve içerik zorunludur.");
@@ -335,13 +357,23 @@ export default function ClinicProfilePage() {
     }
     setSaving(true);
     try {
+      let targetId = editingKbId;
       if (editingKbId) {
-        await updateClinicKnowledgeRecord(agencyId, clinicDocId, editingKbId, kbForm);
+        await updateClinicKnowledgeRecord(agencyId, clinicDocId, editingKbId, { ...kbForm, embedding_status: "indexing" });
         showToast("success", "Kayıt güncellendi");
       } else {
-        await addClinicKnowledgeRecord(agencyId, clinicDocId, { ...kbForm, agencyId, clinicId: clinicDocId });
+        targetId = await addClinicKnowledgeRecord(agencyId, clinicDocId, { ...kbForm, agencyId, clinicId: clinicDocId, embedding_status: "indexing" });
         showToast("success", "Kayıt eklendi");
       }
+      
+      if (targetId) {
+        fetch("/api/admin/embeddings/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ docPath: `agencies/${agencyId}/clinics/${clinicDocId}/knowledgeBase/${targetId}` })
+        }).catch(console.error);
+      }
+
       resetKbForm();
       setShowKbForm(false);
     } catch (err) {
@@ -1086,6 +1118,7 @@ export default function ClinicProfilePage() {
                   }
                   setSaving(false);
                 }} isLoading={saving}><Brain size={14} /> Örnek Veri Yükle</Button>
+                <Button variant="secondary" onClick={handleReindexAllKb} disabled={saving || kbRecords.length === 0}><Brain size={14} /> Yeniden İndeksle</Button>
                 <Button onClick={() => { resetKbForm(); setShowKbForm(true); }}><Plus size={14} /> AI'ya Bilgi Ekle</Button>
               </div>
             </div>

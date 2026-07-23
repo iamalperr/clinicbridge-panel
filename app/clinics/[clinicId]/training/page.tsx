@@ -69,14 +69,23 @@ export default function TrainingPage({ params }: PageProps) {
     if (!newNote.title || !newNote.content) return;
     setIsSubmitting(true);
     try {
-      await addDoc(collection(db, "trainingMaterials"), {
+      const docRef = await addDoc(collection(db, "trainingMaterials"), {
         title: newNote.title,
         content: newNote.content,
         category: "", tags: [], type: "note", status: "learned",
         clinicId,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
+        embedding_status: "indexing",
       });
+      
+      // Trigger backend embedding generation asynchronously
+      fetch("/api/admin/embeddings/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ docPath: `trainingMaterials/${docRef.id}` }),
+      }).catch(console.error);
+
       setIsAddSuccess(true);
       setTimeout(() => {
         setIsAddOpen(false);
@@ -109,7 +118,16 @@ export default function TrainingPage({ params }: PageProps) {
         title: editForm.title,
         content: editForm.content,
         updatedAt: serverTimestamp(),
+        embedding_status: "indexing",
       });
+      
+      // Trigger backend embedding generation asynchronously
+      fetch("/api/admin/embeddings/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ docPath: `trainingMaterials/${editTarget.id}` }),
+      }).catch(console.error);
+      
       // Update local state immediately
       setMaterials(prev =>
         prev.map(m => m.id === editTarget.id
@@ -142,6 +160,34 @@ export default function TrainingPage({ params }: PageProps) {
       setDeleteError(err?.message ?? "Silme başarısız.");
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  /* ── Reindex All ── */
+  const [isReindexing, setIsReindexing] = useState(false);
+  const handleReindexAll = async () => {
+    if (!window.confirm("Tüm bilgi havuzu kayıtları yapay zeka araması için yeniden indekslenecektir. Bu işlem birkaç dakika sürebilir. Onaylıyor musunuz?")) return;
+    setIsReindexing(true);
+    try {
+      let successCount = 0;
+      for (const m of materials) {
+        // Optimistically update UI
+        setMaterials(prev => prev.map(item => item.id === m.id ? { ...item, embedding_status: "indexing" } : item));
+        
+        await fetch("/api/admin/embeddings/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ docPath: `trainingMaterials/${m.id}` }),
+        });
+        successCount++;
+      }
+      alert(`${successCount} kayıt başarıyla indekslendi.`);
+      fetchMaterials(); // refresh to get new status
+    } catch (err: any) {
+      console.error(err);
+      alert("İndeksleme sırasında bir hata oluştu.");
+    } finally {
+      setIsReindexing(false);
     }
   };
 
@@ -212,19 +258,29 @@ export default function TrainingPage({ params }: PageProps) {
           <h2 style={{ fontSize: 20, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.5px" }}>
             {t("training.library")}
           </h2>
-          <div style={{ position: "relative", width: 300 }}>
-            <Search size={18} style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: UI_COLORS.textMuted }} />
-            <input
-              type="text" placeholder={t("common.search")} value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              style={{
-                width: "100%", padding: "12px 16px 12px 44px", borderRadius: 12,
-                background: "rgba(255,255,255,0.03)", border: `1px solid ${UI_COLORS.border}`,
-                fontSize: 14, color: UI_COLORS.textPrimary, outline: "none", transition: "all 0.2s",
-              }}
-              onFocus={e => e.currentTarget.style.borderColor = UI_COLORS.brand}
-              onBlur={e => e.currentTarget.style.borderColor = UI_COLORS.border}
-            />
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <Button 
+              variant="secondary" 
+              onClick={handleReindexAll} 
+              disabled={isReindexing || materials.length === 0}
+              style={{ fontSize: 13, padding: "8px 16px" }}
+            >
+              {isReindexing ? "İndeksleniyor..." : "AI Bilgi Havuzunu Yeniden İndeksle"}
+            </Button>
+            <div style={{ position: "relative", width: 300 }}>
+              <Search size={18} style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: UI_COLORS.textMuted }} />
+              <input
+                type="text" placeholder={t("common.search")} value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{
+                  width: "100%", padding: "12px 16px 12px 44px", borderRadius: 12,
+                  background: "rgba(255,255,255,0.03)", border: `1px solid ${UI_COLORS.border}`,
+                  fontSize: 14, color: UI_COLORS.textPrimary, outline: "none", transition: "all 0.2s",
+                }}
+                onFocus={e => e.currentTarget.style.borderColor = UI_COLORS.brand}
+                onBlur={e => e.currentTarget.style.borderColor = UI_COLORS.border}
+              />
+            </div>
           </div>
         </div>
 

@@ -414,6 +414,10 @@ export interface AgencyKnowledgeRecord {
   content: string;
   isActive: boolean;
   priority: AgencyKnowledgePriority;
+  embedding_status?: "indexing" | "success" | "failed";
+  embeddingChunks?: Array<{ text: string, embedding: number[], chunk_index: number }>;
+  indexed_at?: any;
+  index_version?: string;
   createdAt?: any;
   updatedAt?: any;
 }

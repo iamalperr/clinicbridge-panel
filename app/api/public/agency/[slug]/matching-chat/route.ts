@@ -329,8 +329,34 @@ export async function POST(
       console.log(`[matching-chat] Sample pricing:`, JSON.stringify(allPricing[0]));
     }
 
+    // HYBRID SEARCH FOR KNOWLEDGE BASE
+    const { hybridSearch } = await import("@/lib/services/retrievalService");
+    
+    // Convert KB records for hybrid search
+    const docsForSearch = allKbRecords.map(kb => ({
+      id: kb.id,
+      title: kb.title,
+      content: kb.content,
+      embeddingChunks: kb.embeddingChunks || []
+    }));
+    
+    // We want a slightly broader search since it's an agency with multiple clinics
+    const topKbChunks = await hybridSearch(message, docsForSearch, "", 15);
+    
+    // Reconstruct kb records from the top chunks to match buildClinicContext expectations
+    const relevantKbRecords = topKbChunks.map(chunk => {
+      const originalDoc = allKbRecords.find(k => k.id === chunk.doc_id);
+      return {
+        id: chunk.doc_id,
+        clinicId: originalDoc?.clinicId,
+        category: "RAG_MATCH",
+        title: chunk.title,
+        content: chunk.text
+      };
+    });
+
     /* ── 2. Build clinic context for OpenAI ── */
-    const clinicContext = buildClinicContext(allClinics, allPricing, allKbRecords);
+    const clinicContext = buildClinicContext(allClinics, allPricing, relevantKbRecords);
 
     /* ── 3. Build session context hint ── */
     const ctx: SessionContext = sessionContext;
@@ -469,8 +495,21 @@ JSON FORMATI:
     }
 
     // Strip markdown formatting characters from reply text
-    if (parsed && typeof parsed.reply === "string") {
-      parsed.reply = parsed.reply.replace(/\*\*|\*|#/g, '');
+    if (parsed && typeof parsed.replyText === "string") {
+      parsed.replyText = parsed.replyText.replace(/\*\*|\*|#/g, '');
+    }
+
+    // GROUNDEDNESS CHECK FOR RAG
+    if (relevantKbRecords && relevantKbRecords.length > 0 && 
+        (parsed.intent === "clinic_question" || parsed.intent === "pricing_question" || parsed.intent === "doctor_question") &&
+        parsed.replyText && !parsed.replyText.includes("doğrulamıyorum") && !parsed.replyText.includes("erişemediğim")) {
+        const { validateGroundedness } = await import("@/lib/services/retrievalService");
+        const contextStr = relevantKbRecords.map((k: any) => `## ${k.title}\n${k.content}`).join("\n\n");
+        const validation = await validateGroundedness(parsed.replyText, contextStr);
+        if (!validation.isGrounded) {
+           console.warn(`[Groundedness Failed] Reason: ${validation.reason}\nReply: ${parsed.replyText}`);
+           parsed.replyText = "Bu bilgiyi şu anda sistemimizdeki klinik verilerinden güvenilir şekilde doğrulayamıyorum. Yanlış yönlendirmemek için klinik ekibinden teyit edilmesi gerekir.";
+        }
     }
 
     console.log(`[matching-chat] Intent: ${parsed.intent}, Treatment: ${parsed.treatmentCategory}, Sub: ${parsed.subTreatment}, Location: ${parsed.location}, ClinicName: ${parsed.clinicName}`);

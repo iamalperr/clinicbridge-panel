@@ -857,7 +857,12 @@ export async function POST(req: Request) {
         clinicLanguage  = cData.language         ?? "tr";
       }
       if (promptSnap.exists) promptSettings = promptSnap.data();
-      trainingDocs = materialsSnap.docs.map(d => ({ title: d.data().title ?? "", content: d.data().content ?? "" }));
+      trainingDocs = materialsSnap.docs.map(d => ({ 
+        id: d.id, 
+        title: d.data().title ?? "", 
+        content: d.data().content ?? "",
+        embeddingChunks: d.data().embeddingChunks || []
+      }));
       debugLog.push(`[admin] clinic="${clinicName}" docs=${trainingDocs.length}`);
     } else if (clientDb) {
       const [clinicSnap, promptSnap] = await Promise.all([
@@ -874,7 +879,12 @@ export async function POST(req: Request) {
       }
       if (promptSnap.exists()) promptSettings = promptSnap.data();
       const materialsSnap = await getDocs(query(collection(clientDb, "trainingMaterials"), where("clinicId", "==", clinicId)));
-      trainingDocs = materialsSnap.docs.map(d => ({ title: d.data().title ?? "", content: d.data().content ?? "" }));
+      trainingDocs = materialsSnap.docs.map(d => ({ 
+        id: d.id, 
+        title: d.data().title ?? "", 
+        content: d.data().content ?? "",
+        embeddingChunks: d.data().embeddingChunks || []
+      }));
       debugLog.push(`[client] clinic="${clinicName}" docs=${trainingDocs.length}`);
     }
 
@@ -949,32 +959,19 @@ export async function POST(req: Request) {
       }
     }
 
-    const scored = trainingDocs.map(d => {
-      const text = (d.title + " " + d.content).toLowerCase();
-      let score = msgWords.reduce((s: number, w: string) => s + (text.includes(w) ? 1 : 0), 0);
-      
-      if (isAppointmentIntent && /\b(çalışma|saat|mesai|opening|business|working|gün)\b/.test(text)) {
-         score += 50; // Artificial boost to ensure inclusion
-      }
-      if (isLocationIntent && /\b(konum|ulaşım|adres|lokasyon|location|address|karte|adresse)\b/.test(text)) {
-         score += 50; // Artificial boost to ensure inclusion
-      }
-      if (isDoctorIntent && /\b(doktor|hekim|uzman|doctor|dentist|specialist|cerrah|surgeon|dt\.|dr\.)\b/.test(text)) {
-         // YENİ: Doktorlar yapısal veride yoksa Bilgi Havuzundan (RAG) bulunabilmesi için skoru tekrar artırıyoruz.
-         score += 200; 
-      }
-      return { ...d, score };
-    });
-    scored.sort((a, b) => b.score - a.score);
+    // HYBRID SEARCH & QUERY REWRITING
     const sliceLimit = isDoctorIntent ? 15 : 10;
-    let topDocs = scored.slice(0, sliceLimit);
+    
+    // Dynamically import retrievalService to avoid edge runtime issues if applicable, but this is a node API route
+    const { hybridSearch } = await import("@/lib/services/retrievalService");
+    
+    let topDocs = await hybridSearch(message, trainingDocs, clinicName, sliceLimit);
     
     let knowledgeContext = topDocs.length > 0
-      ? topDocs.map(d => `## ${d.title}\n${d.content}`).join("\n\n---\n\n")
+      ? topDocs.map(d => `## ${d.title}\n${d.text}`).join("\n\n---\n\n")
       : "";
       
     // Safeguard: Hard limit knowledgeContext to prevent TPM / max context limits
-    // Roughly 12000 chars is ~3000 tokens, a safe limit to leave room for history + doctors
     if (knowledgeContext.length > 15000) {
        knowledgeContext = knowledgeContext.substring(0, 15000) + "\n...[METİN KESİLDİ]";
     }
@@ -986,7 +983,7 @@ export async function POST(req: Request) {
       console.log(`[RAG-DEBUG] widget_clinic_id: ${clinicId}`);
       console.log(`[RAG-DEBUG] query_text: "${message}"`);
       topDocs.slice(0, 3).forEach((d, i) => {
-        console.log(`[RAG-DEBUG] match_${i + 1} - title: "${d.title}", score: ${d.score}, content_preview: "${d.content.slice(0, 100).replace(/\n/g, ' ')}..."`);
+        console.log(`[RAG-DEBUG] match_${i + 1} - title: "${d.title}", score: ${d.score.toFixed(3)}, vec: ${d.vectorScore.toFixed(3)}, kw: ${d.keywordScore.toFixed(3)}, content_preview: "${d.text.slice(0, 100).replace(/\n/g, ' ')}..."`);
       });
       console.log(`[RAG-DEBUG] final_context_sent_to_llm_length: ${knowledgeContext.length} chars`);
     }
@@ -1073,10 +1070,10 @@ export async function POST(req: Request) {
 
     /* ── PRE-FLIGHT: Deterministic Appointment Working Hours Validation ── */
     if (isAppointmentIntent && !isConfirmation(message)) {
-       const workingHoursDoc = topDocs.find(d => /\b(çalışma|saat|mesai|opening|business|working|gün)\b/.test((d.title + d.content).toLowerCase()));
+       const workingHoursDoc = topDocs.find(d => /\b(çalışma|saat|mesai|opening|business|working|gün)\b/.test((d.title + d.text).toLowerCase()));
        if (workingHoursDoc) {
           const [parsedHours, requestedTime] = await Promise.all([
-             parseWorkingHours(clinicId, workingHoursDoc.content),
+             parseWorkingHours(clinicId, workingHoursDoc.text),
              extractRequestedTime(message, clinicId)
           ]);
 
@@ -1378,8 +1375,19 @@ ${validationRules}
              reply = "Doktor kadromuzla ilgili güncel kayıtların tamamına şu anda erişemediğim için eksik veya yanlış bilgi vermek istemem. Klinik ekibimizden teyit edilmesi gerekir.";
          }
       }
-      // If doctorDataMissing is true, we now rely on the system prompt to enforce the fallback or read from RAG.
+    // If doctorDataMissing is true, we now rely on the system prompt to enforce the fallback or read from RAG.
       // We removed the unconditional override so that the AI can successfully pull doctors from the Knowledge Base.
+    }
+
+    // GROUNDEDNESS CHECK
+    // Only check if we retrieved RAG context and the AI didn't already use the safe fallback
+    if (knowledgeContext.length > 0 && !reply.includes("doğrulamıyorum") && !reply.includes("erişemediğim")) {
+      const { validateGroundedness } = await import("@/lib/services/retrievalService");
+      const validation = await validateGroundedness(reply, knowledgeContext);
+      if (!validation.isGrounded) {
+         console.warn(`[Groundedness Failed] Reason: ${validation.reason}\nReply: ${reply}`);
+         reply = "Bu bilgiyi şu anda güvenilir şekilde doğrulayamıyorum. Yanlış yönlendirmemek için klinik ekibimizden teyit edilmesi gerekir.";
+      }
     }
 
     debugLog.push(`OK reply="${reply.slice(0, 60)}" ms=${Date.now() - startTime}`);
