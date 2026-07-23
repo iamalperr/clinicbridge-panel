@@ -1018,12 +1018,16 @@ export async function POST(req: Request) {
     
     // YENİ: Deterministic retrieval for Doctors in Knowledge Base
     if (isDoctorIntent) {
-      const explicitDoctorDocs = trainingDocs.filter(d => 
-        d.title.toLowerCase().includes("doktor") || 
-        d.title.toLowerCase().includes("hekim") ||
-        d.title.toLowerCase().includes("uzman") ||
-        d.title.toLowerCase().includes("kadro")
-      );
+      const explicitDoctorDocs = trainingDocs.filter(d => {
+        const t = d.title.toLowerCase();
+        return t.includes("doktor") || 
+               t.includes("hekim") ||
+               t.includes("uzman") ||
+               t.includes("kadro") ||
+               t.includes("dt.") ||
+               t.includes("dr.") ||
+               t.includes("uzm.");
+      });
       
       // Append them if they aren't already in topDocs
       for (const ed of explicitDoctorDocs) {
