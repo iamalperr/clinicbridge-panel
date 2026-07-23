@@ -3,7 +3,7 @@
 import { use, useEffect, useState, useMemo, useCallback } from "react";
 import {
   collection, query, where, getDocs, addDoc, deleteDoc,
-  doc, updateDoc, serverTimestamp, orderBy,
+  doc, updateDoc, serverTimestamp, orderBy, onSnapshot
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useI18n } from "@/lib/i18n-context";
@@ -11,7 +11,7 @@ import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import Modal from "@/components/ui/Modal";
-import { FileText, Plus, Search, Trash2, Edit2, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
+import { FileText, Plus, Search, Trash2, Edit2, Loader2, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react";
 import type { TrainingMaterial } from "@/lib/types";
 
 interface PageProps {
@@ -44,25 +44,27 @@ export default function TrainingPage({ params }: PageProps) {
   const [isDeleting, setIsDeleting]     = useState(false);
   const [deleteError, setDeleteError]   = useState("");
 
-  /* ── Fetch ── */
-  const fetchMaterials = useCallback(async () => {
+  /* ── Fetch (Real-time) ── */
+  useEffect(() => {
+    if (!clinicId) return;
     setLoading(true);
-    try {
-      const q = query(
-        collection(db, "trainingMaterials"),
-        where("clinicId", "==", clinicId),
-        orderBy("createdAt", "desc")
-      );
-      const snap = await getDocs(q);
+    
+    const q = query(
+      collection(db, "trainingMaterials"),
+      where("clinicId", "==", clinicId),
+      orderBy("createdAt", "desc")
+    );
+    
+    const unsubscribe = onSnapshot(q, (snap) => {
       setMaterials(snap.docs.map(d => ({ id: d.id, ...d.data() } as TrainingMaterial)));
-    } catch (err) {
-      console.error("Failed to fetch materials:", err);
-    } finally {
       setLoading(false);
-    }
-  }, [clinicId]);
+    }, (err) => {
+      console.error("Failed to fetch materials:", err);
+      setLoading(false);
+    });
 
-  useEffect(() => { fetchMaterials(); }, [fetchMaterials]);
+    return () => unsubscribe();
+  }, [clinicId]);
 
   /* ── Add ── */
   const handleAdd = async () => {
@@ -91,7 +93,6 @@ export default function TrainingPage({ params }: PageProps) {
         setIsAddOpen(false);
         setIsAddSuccess(false);
         setNewNote({ title: "", content: "" });
-        fetchMaterials();
       }, 1500);
     } catch (err) {
       console.error("Failed to add:", err);
@@ -128,13 +129,6 @@ export default function TrainingPage({ params }: PageProps) {
         body: JSON.stringify({ docPath: `trainingMaterials/${editTarget.id}` }),
       }).catch(console.error);
       
-      // Update local state immediately
-      setMaterials(prev =>
-        prev.map(m => m.id === editTarget.id
-          ? { ...m, title: editForm.title, content: editForm.content }
-          : m
-        )
-      );
       setIsEditSuccess(true);
       setTimeout(() => {
         setEditTarget(null);
@@ -154,7 +148,6 @@ export default function TrainingPage({ params }: PageProps) {
     setDeleteError("");
     try {
       await deleteDoc(doc(db, "trainingMaterials", deleteTarget.id));
-      setMaterials(prev => prev.filter(m => m.id !== deleteTarget.id));
       setDeleteTarget(null);
     } catch (err: any) {
       setDeleteError(err?.message ?? "Silme başarısız.");
@@ -171,9 +164,7 @@ export default function TrainingPage({ params }: PageProps) {
     try {
       let successCount = 0;
       for (const m of materials) {
-        // Optimistically update UI
-        setMaterials(prev => prev.map(item => item.id === m.id ? { ...item, embedding_status: "indexing" } : item));
-        
+        await updateDoc(doc(db, "trainingMaterials", m.id), { embedding_status: "indexing" });
         await fetch("/api/admin/embeddings/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -182,13 +173,36 @@ export default function TrainingPage({ params }: PageProps) {
         successCount++;
       }
       alert(`${successCount} kayıt başarıyla indekslendi.`);
-      fetchMaterials(); // refresh to get new status
     } catch (err: any) {
       console.error(err);
       alert("İndeksleme sırasında bir hata oluştu.");
     } finally {
       setIsReindexing(false);
     }
+  };
+
+  /* ── Retry Indexing for Single Record ── */
+  const handleRetryIndex = async (m: TrainingMaterial) => {
+    try {
+      await updateDoc(doc(db, "trainingMaterials", m.id), {
+        embedding_status: "indexing",
+        last_error: null
+      });
+      await fetch("/api/admin/embeddings/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ docPath: `trainingMaterials/${m.id}` }),
+      });
+    } catch (err: any) {
+      console.error(err);
+      alert("Yeniden indeksleme başlatılamadı.");
+    }
+  };
+
+  const getStatusStyle = (status: string | undefined) => {
+    if (status === "indexing" || status === "pending") return { background: "rgba(245, 158, 11, 0.1)", color: "#f59e0b" };
+    if (status === "failed") return { background: "rgba(239, 68, 68, 0.1)", color: "#ef4444" };
+    return { background: "rgba(16, 185, 129, 0.1)", color: "#10b981" };
   };
 
   const filtered = useMemo(() =>
@@ -314,6 +328,9 @@ export default function TrainingPage({ params }: PageProps) {
                   <th style={{ padding: "18px 24px", fontSize: 12, fontWeight: 700, color: UI_COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     {t("training.materialName")}
                   </th>
+                  <th style={{ padding: "18px 24px", fontSize: 12, fontWeight: 700, color: UI_COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    Durum
+                  </th>
                   <th style={{ padding: "18px 24px", fontSize: 12, fontWeight: 700, color: UI_COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "right" }}>
                     İşlemler
                   </th>
@@ -338,6 +355,22 @@ export default function TrainingPage({ params }: PageProps) {
                             {m.content}
                           </p>
                         </div>
+                      </div>
+                    </td>
+                    <td style={{ padding: "18px 24px" }}>
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, ...getStatusStyle(m.embedding_status) }}>
+                        {m.embedding_status === "indexing" || m.embedding_status === "pending" ? (
+                          <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> İndeksleniyor</>
+                        ) : m.embedding_status === "failed" ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }} title={m.last_error || "Bilinmeyen Hata"}>
+                            <AlertTriangle size={14} /> Başarısız
+                            <button onClick={() => handleRetryIndex(m)} style={{ marginLeft: 6, background: "none", border: "none", color: "inherit", cursor: "pointer", display: "flex", alignItems: "center" }} title="Tekrar Dene">
+                              <RefreshCw size={14} />
+                            </button>
+                          </div>
+                        ) : (
+                          <><CheckCircle2 size={14} /> İndekslendi</>
+                        )}
                       </div>
                     </td>
                     <td style={{ padding: "18px 24px", textAlign: "right" }}>

@@ -32,7 +32,7 @@ import { UI_COLORS } from "@/components/ui/ui-shared";
 import {
   ArrowLeft, Loader2, Save, Check, X, Plus, Trash2,
   Building2, FileText, Stethoscope, DollarSign, Brain,
-  HelpCircle, MapPin, Settings, ExternalLink, Globe, UserCircle, Edit2,
+  HelpCircle, MapPin, Settings, ExternalLink, Globe, UserCircle, Edit2, RefreshCw
 } from "lucide-react";
 import type {
   AgencyClinic, ClinicOverview, ClinicKnowledgeBase,
@@ -334,6 +334,7 @@ export default function ClinicProfilePage() {
     try {
       let successCount = 0;
       for (const r of kbRecords) {
+        await updateClinicKnowledgeRecord(agencyId, clinicDocId, r.id!, { embedding_status: "indexing", last_error: null });
         await fetch("/api/admin/embeddings/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -359,10 +360,10 @@ export default function ClinicProfilePage() {
     try {
       let targetId = editingKbId;
       if (editingKbId) {
-        await updateClinicKnowledgeRecord(agencyId, clinicDocId, editingKbId, { ...kbForm, embedding_status: "indexing" });
+        await updateClinicKnowledgeRecord(agencyId, clinicDocId, editingKbId, { ...kbForm, embedding_status: "indexing", last_error: null });
         showToast("success", "Kayıt güncellendi");
       } else {
-        targetId = await addClinicKnowledgeRecord(agencyId, clinicDocId, { ...kbForm, agencyId, clinicId: clinicDocId, embedding_status: "indexing" });
+        targetId = await addClinicKnowledgeRecord(agencyId, clinicDocId, { ...kbForm, agencyId, clinicId: clinicDocId, embedding_status: "indexing", last_error: null });
         showToast("success", "Kayıt eklendi");
       }
       
@@ -378,9 +379,33 @@ export default function ClinicProfilePage() {
       setShowKbForm(false);
     } catch (err) {
       console.error(err);
-      showToast("error", "Kayıt işlemi başarısız");
+      showToast("error", "Kayıt sırasında bir hata oluştu.");
     }
     setSaving(false);
+  };
+
+  const handleRetryIndexKb = async (r: AgencyKnowledgeRecord) => {
+    try {
+      await updateClinicKnowledgeRecord(agencyId, clinicDocId, r.id!, {
+        embedding_status: "indexing",
+        last_error: null
+      });
+      await fetch("/api/admin/embeddings/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ docPath: `agencies/${agencyId}/clinics/${clinicDocId}/knowledgeBase/${r.id}` })
+      });
+      showToast("success", "Yeniden indeksleme başlatıldı.");
+    } catch (err: any) {
+      console.error(err);
+      showToast("error", "Yeniden indeksleme başlatılamadı.");
+    }
+  };
+
+  const getStatusStyle = (status: string | undefined) => {
+    if (status === "indexing" || status === "pending") return { background: "rgba(245, 158, 11, 0.1)", color: "#f59e0b" };
+    if (status === "failed") return { background: "rgba(239, 68, 68, 0.1)", color: "#ef4444" };
+    return { background: "rgba(16, 185, 129, 0.1)", color: "#10b981" };
   };
 
   const handleSaveLocation = async () => {
@@ -1131,6 +1156,7 @@ export default function ClinicProfilePage() {
                     <th style={{ padding: "12px 16px", color: UI_COLORS.textSecondary, fontWeight: 600 }}>Kategori</th>
                     <th style={{ padding: "12px 16px", color: UI_COLORS.textSecondary, fontWeight: 600 }}>Dil</th>
                     <th style={{ padding: "12px 16px", color: UI_COLORS.textSecondary, fontWeight: 600 }}>Öncelik</th>
+                    <th style={{ padding: "12px 16px", color: UI_COLORS.textSecondary, fontWeight: 600 }}>Durum</th>
                     <th style={{ padding: "12px 16px", color: UI_COLORS.textSecondary, fontWeight: 600 }}>AI'da Kullanılsın mı?</th>
                     <th style={{ padding: "12px 16px", color: UI_COLORS.textSecondary, fontWeight: 600, width: 80 }}>İşlemler</th>
                   </tr>
@@ -1138,7 +1164,7 @@ export default function ClinicProfilePage() {
                 <tbody>
                   {kbRecords.length === 0 ? (
                     <tr>
-                      <td colSpan={5} style={{ padding: "30px 16px", textAlign: "center", color: UI_COLORS.textMuted }}>Kayıt bulunamadı. Lütfen AI'ya bilgi ekleyin.</td>
+                      <td colSpan={7} style={{ padding: "30px 16px", textAlign: "center", color: UI_COLORS.textMuted }}>Kayıt bulunamadı. Lütfen AI'ya bilgi ekleyin.</td>
                     </tr>
                   ) : (
                     kbRecords.map((r) => (
@@ -1147,6 +1173,22 @@ export default function ClinicProfilePage() {
                         <td style={{ padding: "12px 16px", color: UI_COLORS.textSecondary }}>{r.category}</td>
                         <td style={{ padding: "12px 16px" }}><Badge variant="info" label={r.language} /></td>
                         <td style={{ padding: "12px 16px", color: UI_COLORS.textSecondary }}>{r.priority}</td>
+                        <td style={{ padding: "12px 16px" }}>
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 8px", borderRadius: 6, fontSize: 11, fontWeight: 600, ...getStatusStyle(r.embedding_status) }}>
+                            {r.embedding_status === "indexing" || r.embedding_status === "pending" ? (
+                              <><Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> İndeksleniyor</>
+                            ) : r.embedding_status === "failed" ? (
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }} title={r.last_error || "Bilinmeyen Hata"}>
+                                <AlertTriangle size={12} /> Başarısız
+                                <button onClick={() => handleRetryIndexKb(r)} style={{ marginLeft: 4, background: "none", border: "none", color: "inherit", cursor: "pointer", display: "flex", alignItems: "center" }} title="Tekrar Dene">
+                                  <RefreshCw size={12} />
+                                </button>
+                              </div>
+                            ) : (
+                              <><Check size={12} /> İndekslendi</>
+                            )}
+                          </div>
+                        </td>
                         <td style={{ padding: "12px 16px" }}>
                           {r.isActive ? <Badge variant="success" label="Evet" /> : <Badge variant="default" label="Hayır" />}
                         </td>

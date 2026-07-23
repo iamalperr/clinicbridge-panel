@@ -143,6 +143,8 @@ export interface TrainingMaterial {
   type: "note";
   status: "learned" | "pending";
   clinicId: string;
+  embedding_status?: "pending" | "indexing" | "indexed" | "failed";
+  last_error?: string;
   createdAt: string | number | object;
   updatedAt: string | number | object;
 }

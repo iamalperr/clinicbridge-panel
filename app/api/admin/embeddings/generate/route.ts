@@ -36,9 +36,10 @@ export async function POST(req: Request) {
 
     if (!fullText) {
       await docRef.update({
-        embedding_status: "success",
+        embedding_status: "indexed",
         embeddingChunks: [],
         indexed_at: new Date(),
+        last_error: null,
       });
       return NextResponse.json({ success: true, chunks: 0 });
     }
@@ -58,10 +59,11 @@ export async function POST(req: Request) {
 
     // Update document
     await docRef.update({
-      embedding_status: "success",
+      embedding_status: "indexed",
       embeddingChunks,
       indexed_at: new Date(),
       index_version: "v1", // track index version
+      last_error: null,
     });
 
     return NextResponse.json({
