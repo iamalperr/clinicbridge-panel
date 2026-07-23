@@ -901,15 +901,17 @@ export async function POST(req: Request) {
         try {
           const docsSnap = await adminDb.collection("clinics").doc(clinicId).collection("doctors")
             .where("status", "==", "active")
-            .where("showOnPublicProfile", "!=", false)
             .get();
           
           if (!docsSnap.empty) {
-            // Memory sort to preserve display_order without requiring composite index
+            // Memory sort and filter to avoid missing field/index issues
             let docs = docsSnap.docs.map(d => d.data());
-            docs.sort((a, b) => (a.display_order || a.order || 0) - (b.display_order || b.order || 0));
+            docs = docs.filter(d => d.showOnPublicProfile !== false);
+            
+            if (docs.length > 0) {
+              docs.sort((a, b) => (a.display_order || a.order || 0) - (b.display_order || b.order || 0));
 
-            const docsList = docs.map(data => {
+              const docsList = docs.map(data => {
               const fullName = `${data.title ? data.title + ' ' : ''}${data.doctorName}`.trim();
               allowedDoctorNames.push(fullName);
               
@@ -928,8 +930,11 @@ export async function POST(req: Request) {
             if (doctorContext.length > 8000) {
               doctorContext = doctorContext.substring(0, 8000) + "\n...[DOKTOR LİSTESİ KESİLDİ]";
             }
+            } else {
+              doctorDataMissing = true; // docs array was empty after filtering
+            }
           } else {
-            doctorDataMissing = true;
+            doctorDataMissing = true; // docsSnap was empty
           }
         } catch (err) {
           console.error("[chat] Error fetching doctors", err);
