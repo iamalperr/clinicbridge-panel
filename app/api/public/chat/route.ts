@@ -836,7 +836,7 @@ export async function POST(req: Request) {
 
     let clinicName    = "Klinik";
     let promptSettings: any = null;
-    let trainingDocs: Array<{ title: string; content: string }> = [];
+    let trainingDocs: Array<{ id: string; title: string; content: string; embeddingChunks?: any[] }> = [];
     let clinicWhatsapp = "";
     let clinicTelegram = "";
     let clinicLanguage = "tr";
