@@ -1020,13 +1020,9 @@ export async function POST(req: Request) {
     if (isDoctorIntent) {
       const explicitDoctorDocs = trainingDocs.filter(d => {
         const t = d.title.toLowerCase();
-        return t.includes("doktor") || 
-               t.includes("hekim") ||
-               t.includes("uzman") ||
-               t.includes("kadro") ||
-               t.includes("dt.") ||
-               t.includes("dr.") ||
-               t.includes("uzm.");
+        const c = d.content.toLowerCase();
+        const keywords = ["doktor", "hekim", "uzman", "kadro", "dt.", "dr.", "uzm.", "personel", "ekip", "diş tabibi", "dentist"];
+        return keywords.some(k => t.includes(k) || c.includes(k));
       });
       
       // Append them if they aren't already in topDocs
