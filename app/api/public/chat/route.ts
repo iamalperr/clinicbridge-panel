@@ -985,18 +985,40 @@ export async function POST(req: Request) {
               let generalCount = 0;
               const specialistKeywords = /uzman|uzm\.|dr\.|doç\.|prof\.|cerrahisi|ortodonti|endodonti|periodontoloji|pedodonti|protetik|restoratif|oral diagnoz/i;
 
-              const docsListStrings = docs.map(data => {
+              const docsListStrings = docs.map((data, index) => {
                 const fullName = `${data.title ? data.title + ' ' : ''}${data.doctorName || data.full_name || data.fullName}`.trim();
                 allowedDoctorNames.push(fullName);
-                let text = `${docs.indexOf(data) + 1}. Ad: ${fullName}\n`;
-                if (data.specialty) text += `   Uzmanlık: ${data.specialty}\n`;
-                if (data.role) text += `   Görev: ${data.role}\n`;
-                if (data.education) text += `   Eğitim: ${data.education}\n`;
-                if (data.experienceYears) text += `   Deneyim: ${data.experienceYears} Yıl\n`;
+                
+                const docId = data.id || data.doctor_id || `doctor_${index + 1}`;
+                let text = `HEKİM ID: ${docId}\n`;
+                text += `Ad: ${fullName}\n`;
+                
+                const titleStr = String(data.title || data.professional_title || "Diş Hekimi").trim();
+                text += `Unvan: ${titleStr}\n`;
+                
+                const specialtyStr = String(data.specialty || data.primary_specialization || "").trim();
+                if (specialtyStr) {
+                  text += `Uzmanlık Alanı: ${specialtyStr}\n`;
+                } else {
+                  text += `Uzmanlık Alanı: Sistem kayıtlarında ayrıca tanımlanmış bir uzmanlık alanı bulunmamaktadır.\n`;
+                }
+                
+                if (data.department) text += `Departman: ${data.department}\n`;
+                
+                let treatments: string[] = [];
+                if (Array.isArray(data.treatments)) {
+                  treatments = data.treatments;
+                } else if (typeof data.treatments === "string") {
+                  treatments = data.treatments.split(",").map((t: string) => t.trim()).filter(Boolean);
+                }
+                if (treatments.length > 0) {
+                  text += `Yaptığı Tedaviler: ${treatments.join(", ")}\n`;
+                }
+                
+                if (data.education) text += `Eğitim: ${data.education}\n`;
+                if (data.experienceYears) text += `Deneyim: ${data.experienceYears} Yıl\n`;
                 
                 // Sınıflandırma
-                const titleStr = String(data.title || "");
-                const specialtyStr = String(data.specialty || "");
                 if (specialistKeywords.test(titleStr) || specialistKeywords.test(specialtyStr)) {
                   specialistCount++;
                 } else {
@@ -1013,11 +1035,15 @@ Kliniğimizde an itibarıyla toplam ${docs.length} aktif hekim görev yapmaktad�
 Bu hekimlerin ${specialistCount} tanesi uzman diş hekimi, ${generalCount} tanesi ise diş hekimidir.
 
 TAM LİSTE:
-${docsListStrings.join('\n\n')}
+${docsListStrings.join('\n\n---\n\n')}
 
-ÖNEMLİ KURAL:
-- Hasta sadece "kaç doktor var" veya benzeri bir sayı soruyorsa, YUKARIDAKİ TOPLAM SAYIYI ve uzman/diş hekimi dağılımını ver. Gerekmiyorsa tüm listeyi TEK TEK YAZMA, sadece dilerse isimlerini paylaşabileceğini belirt.
-- Hasta hekim isimlerini, kadroyu veya uzmanlıkları görmek istiyorsa, SADECE yukarıdaki listede bulunan hekimleri sun. Asla uydurma hekim ismi ekleme.`;
+ÖNEMLİ KURAL (HEKİM BİLGİSİ):
+1. Hasta sadece "kaç doktor var" veya benzeri bir sayı soruyorsa, YUKARIDAKİ TOPLAM SAYIYI ve uzman/diş hekimi dağılımını ver. Gerekmiyorsa tüm listeyi TEK TEK YAZMA, sadece dilerse isimlerini paylaşabileceğini belirt.
+2. Hasta hekim isimlerini veya kadroyu görmek istiyorsa, SADECE yukarıdaki listede bulunan hekimleri sun. Asla uydurma hekim ismi ekleme.
+3. Uzmanlık sorulduğunda SADECE 'Uzmanlık Alanı' alanına bak. Eğer 'Sistem kayıtlarında ayrıca tanımlanmış bir uzmanlık alanı bulunmamaktadır' yazıyorsa, kendi kafandan unvana, biyografiye veya tedavilere bakarak uzmanlık uydurma.
+4. Tedaviler ile uzmanlıkları karıştırma. Bir tedaviyi (örn. implant) yapıyor olması, doktoru o alanın uzmanı (örn. çene cerrahı) yapmaz. 'Yaptığı Tedaviler' alanı sadece hastanın o tedavi için kime gideceğini sorduğu durumlar içindir.
+5. Hekim verilerini birbirine karıştırma; her hekimi sadece kendi ID'si altındaki verilerle değerlendir.
+6. Hasta belirli bir alandaki uzmanı (örn. "Ortodonti uzmanı") sorarsa ve eşleşen uzman yoksa şu cümleyi kur: "Mevcut aktif hekim kayıtlarımızda bu uzmanlık alanıyla eşleşen bir hekim görünmüyor."`;
             } else {
               doctorDataMissing = true;
             }
