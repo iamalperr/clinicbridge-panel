@@ -945,7 +945,7 @@ export async function POST(req: Request) {
       }
       
       if (doctorDataMissing) {
-        doctorContext = `DİKKAT: Sistemde bu kliniğin doktor listesi bulunamadı. Kullanıcı hekim/doktor isimlerini sorarsa KESİNLİKLE uydurma yapma ve SADECE SADECE şu cümleyi söyle: "Doktor kadromuzla ilgili güncel kayıtların tamamına şu anda erişemediğim için eksik veya yanlış bilgi vermek istemem. Klinik ekibimizden teyit edilmesi gerekir."`;
+        doctorContext = `DİKKAT: Sistemde bu kliniğin yapısal (structured) doktor listesi bulunamadı. Lütfen sağlanan 'Bilgi Havuzu' (Knowledge Base) kayıtlarına bak. Eğer Bilgi Havuzunda doktor isimleri AÇIKÇA geçiyorsa, sadece o bilgileri kullan. Eğer Bilgi Havuzunda da doktor bilgisi YOKSA, KESİNLİKLE uydurma yapma ve SADECE SADECE şu cümleyi söyle: "Doktor kadromuzla ilgili güncel kayıtların tamamına şu anda erişemediğim için eksik veya yanlış bilgi vermek istemem. Klinik ekibimizden teyit edilmesi gerekir." (Bu cümlenin sonuna 'Başka bir konuda...' gibi bir ifade Ekleme.)`;
       }
     }
 
@@ -960,8 +960,8 @@ export async function POST(req: Request) {
          score += 50; // Artificial boost to ensure inclusion
       }
       if (isDoctorIntent && /\b(doktor|hekim|uzman|doctor|dentist|specialist|cerrah|surgeon|dt\.|dr\.)\b/.test(text)) {
-         // YENİ: RAG araması doktor isimleri uydurmaya sebep olduğu için, doktor niyetinde RAG'ı güçlendirmek yerine skoru SIFIRLIYORUZ (böylece RAG'dan halüsinasyon gelmez)
-         score -= 1000; 
+         // YENİ: Doktorlar yapısal veride yoksa Bilgi Havuzundan (RAG) bulunabilmesi için skoru tekrar artırıyoruz.
+         score += 200; 
       }
       return { ...d, score };
     });
@@ -1371,17 +1371,15 @@ ${validationRules}
     // HARD VALIDATION for Doctor Intent (Preventing Hallucinations)
     if (isDoctorIntent) {
       const lowerReply = reply.toLowerCase();
-      // Check if AI is attempting to list doctors
-      const hasTitle = ["dr.", "dt.", "uzm.", "prof.", "doç.", "ahmet", "ayşe", "mehmet"].some(t => lowerReply.includes(t));
-      
-      if (doctorDataMissing && hasTitle) {
-         reply = "Doktor kadromuzla ilgili güncel kayıtların tamamına şu anda erişemediğim için eksik veya yanlış bilgi vermek istemem. Klinik ekibimizden teyit edilmesi gerekir.";
-      } else if (!doctorDataMissing && allowedDoctorNames.length > 0) {
+      // If structured data exists, enforce dummy checking
+      if (!doctorDataMissing && allowedDoctorNames.length > 0) {
          const dummyNames = ["ahmet yılmaz", "ayşe kaya", "mehmet demir", "elif özcan", "selin aydın"];
          if (dummyNames.some(d => lowerReply.includes(d))) {
              reply = "Doktor kadromuzla ilgili güncel kayıtların tamamına şu anda erişemediğim için eksik veya yanlış bilgi vermek istemem. Klinik ekibimizden teyit edilmesi gerekir.";
          }
       }
+      // If doctorDataMissing is true, we now rely on the system prompt to enforce the fallback or read from RAG.
+      // We removed the unconditional override so that the AI can successfully pull doctors from the Knowledge Base.
     }
 
     debugLog.push(`OK reply="${reply.slice(0, 60)}" ms=${Date.now() - startTime}`);
