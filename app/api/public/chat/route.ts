@@ -959,7 +959,26 @@ export async function POST(req: Request) {
     debugLog.push(`intent_price=${activePriceIntent || "none"}`);
 
     // YENİ: Doktor niyet tespiti
-    const isDoctorIntent = /\b(doktor|hekim|uzman|doctor|dentist|specialist|cerrah|surgeon|tıbbi|medical team|ekip|doctors|hekimler|doktorlar)/i.test(msgLower);
+    const SPECIALTY_SYNONYMS: Record<string, string[]> = {
+      periodontology: ["diş eti", "dis eti", "periodontolog", "periodontoloji", "periodontist", "gum specialist", "gum disease"],
+      orthodontics: ["ortodonti", "çarpık diş", "tel tedavisi", "braces", "orthodontist"],
+      endodontics: ["endodonti", "kanal tedavisi", "root canal", "endodontist"],
+      pedodontics: ["pedodonti", "çocuk diş", "pediatric dentist", "children's dentist", "pedodontist"],
+      oral_surgery: ["çene cerrah", "ağız ve çene", "oral and maxillofacial", "maxillofacial", "oral surgeon", "oral cerrah"],
+      prosthodontics: ["protez", "protetik", "prosthodont", "denture"],
+      restorative: ["restoratif", "dolgu", "restorative"]
+    };
+
+    let requestedSpecialtyCode: string | null = null;
+    for (const [code, synonyms] of Object.entries(SPECIALTY_SYNONYMS)) {
+      if (synonyms.some(syn => msgLower.includes(syn))) {
+        requestedSpecialtyCode = code;
+        break;
+      }
+    }
+
+    const isBaseDoctorIntent = /\b(doktor|hekim|uzman|doctor|dentist|specialist|cerrah|surgeon|tıbbi|medical team|ekip|doctors|hekimler|doktorlar)/i.test(msgLower);
+    const isDoctorIntent = isBaseDoctorIntent || requestedSpecialtyCode !== null;
     const isDoctorCountIntent = isDoctorIntent && /\b(kaç|sayısı|sayı|how many|number of)\b/i.test(msgLower);
     
     let doctorContext = "";
@@ -1038,7 +1057,28 @@ export async function POST(req: Request) {
 
               console.log(`[DOCTOR INTENT] Resolved ${docs.length} active structured doctors for clinic ${clinicId}. Specialists: ${specialistCount}, General: ${generalCount}`);
 
-              if (isDoctorCountIntent) {
+              if (requestedSpecialtyCode) {
+                 const matchedDoctors = rawDoctorsData.filter(data => {
+                    const combined = (data.professional_title + " " + data.specialization).toLowerCase();
+                    return SPECIALTY_SYNONYMS[requestedSpecialtyCode].some(syn => combined.includes(syn));
+                 });
+
+                 if (matchedDoctors.length > 0) {
+                    doctorContext = `[VERIFIED DOCTOR PAYLOAD]
+Hastanın aradığı uzmanlık alanında (${requestedSpecialtyCode}) kliniğimizde aşağıdaki hekim(ler) görev yapmaktadır. 
+Hastaya doğrudan hekimin isimlerini ve unvanlarını sunarak yanıt ver:
+
+\`\`\`json
+${JSON.stringify(matchedDoctors, null, 2)}
+\`\`\`
+`;
+                 } else {
+                    doctorContext = `[VERIFIED DOCTOR PAYLOAD]
+Hastanın aradığı uzmanlık alanında (${requestedSpecialtyCode}) şu anda sistemimize kayıtlı aktif bir uzman diş hekimimiz bulunmamaktadır. 
+Hastaya bu alanda kayıtlı aktif uzman olmadığını, ancak dilerse kliniğimizden genel değerlendirme için randevu oluşturabileceğini belirt. 
+(Asla kaba bir şekilde 'diş eti uzmanı yok' deme. Sadece 'Şu anda sistem kayıtlarımızda bu alanda uzmanlığı kayıtlı aktif bir hekimimiz görünmüyor' şeklinde profesyonelce belirt.)`;
+                 }
+              } else if (isDoctorCountIntent) {
                 const verifiedPayload = {
                   intent: "doctor_count",
                   clinic_id: clinicId,
