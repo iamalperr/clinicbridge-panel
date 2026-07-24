@@ -168,7 +168,7 @@ function ShowcaseContent() {
       setTyping(true);
       await wait(2000);
       setTyping(false);
-      setMessages(prev => [...prev, { role: "ai", text: "Randevu talebinizi kliniğimize ilettim. Tercih ettiğiniz tarih ve saat bilgisi klinik ekibimiz tarafından değerlendirilecektir. Talebiniz onaylandığında veya farklı bir saat önerildiğinde SMS üzerinden bilgilendirileceksiniz." }]);
+      setMessages(prev => [...prev, { role: "ai", text: "Teşekkür ederim. Ön randevu talebiniz kliniğimizin değerlendirmesine iletildi. Genel Muayene işlemi için tercih ettiğiniz tarih, saat bilgisi klinik ekibi tarafından değerlendirilecektir. Talebiniz henüz kesinleşmiş bir randevu değildir. Klinik ekibimiz talebinizi değerlendirdikten sonra sonucu paylaşmış olduğunuz e-posta adresine iletecektir." }]);
       await wait(4500);
 
       // Scene 7: Admin Panel

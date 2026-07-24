@@ -402,7 +402,10 @@ async function createAppointment(params: {
   const missingFields = [];
   if (!data.patientName) missingFields.push("patientName");
   if (!data.patientPhone) missingFields.push("patientPhone");
-  if (!data.patientEmail) missingFields.push("patientEmail");
+  if (!data.patientEmail) {
+    console.error(`[VALIDATION_ERROR] PATIENT_EMAIL_REQUIRED`);
+    throw new Error(`PATIENT_EMAIL_REQUIRED`);
+  }
   if (missingFields.length > 0) {
     console.error(`[VALIDATION_ERROR] MISSING_REQUIRED_FIELD: ${missingFields.join(", ")}`);
     throw new Error(`MISSING_REQUIRED_FIELD: ${missingFields.join(", ")}`);
@@ -437,9 +440,9 @@ async function createAppointment(params: {
     timezone:         Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Istanbul",
     appointmentDateTime: "",
     notes:            "",
-    source:           "ai_chatbot",
-    status:           "pending_clinic_review",
-    notificationChannel: notificationChannelToSave,
+    source:           "AI Chatbot",
+    status:           "PENDING_REVIEW",
+    notificationChannel: "EMAIL",
     createdBy:        "ai_assistant",
     language:         "tr",
     rawConversationSummary: data.originalText || "",
@@ -1061,10 +1064,10 @@ export async function POST(req: Request) {
                    appointmentState, appointmentDraft
                 }, { merge: true });
              }
-             const summaryMsg = `Randevu talebinizin özeti:\n\nAd Soyad: ${appointmentDraft.patientName || "-"}\nTelefon: ${appointmentDraft.patientPhone || "-"}\nE-posta: ${appointmentDraft.patientEmail}\nHizmet: ${appointmentDraft.requestedService || "-"}\nTercih Edilen Tarih: ${appointmentDraft.requestedDate || "-"}\nTercih Edilen Saat: ${appointmentDraft.requestedTime || "Belirtilmedi"}\n\nBu bilgilerle ön randevu talebinizi kliniğimizin değerlendirmesine iletmemi onaylıyor musunuz? Evet veya Hayır şeklinde yanıtlayabilirsiniz.`;
+             const summaryMsg = `Ön randevu talebinizin özeti:\n\nAd Soyad: ${appointmentDraft.patientName || "-"}\nTelefon: ${appointmentDraft.patientPhone || "-"}\nE-posta: ${appointmentDraft.patientEmail}\nHizmet: ${appointmentDraft.requestedService || "-"}\nTercih Edilen Tarih: ${appointmentDraft.requestedDate || "-"}\nTercih Edilen Saat: ${appointmentDraft.requestedTime || "Belirtilmedi"}\n\nBu bilgilerle ön randevu talebinizi kliniğimizin değerlendirmesine iletmemi onaylıyor musunuz? Evet veya Hayır şeklinde yanıtlayabilirsiniz.`;
              return NextResponse.json({ reply: summaryMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
         } else {
-             return NextResponse.json({ reply: "Lütfen geçerli bir e-posta adresi giriniz. (Örn: adiniz@email.com)" }, { headers: CORS });
+             return NextResponse.json({ reply: "E-posta adresinizi kontrol edebilir misiniz? Bilgilendirme yapabilmemiz için geçerli bir e-posta adresi paylaşmanız gerekiyor." }, { headers: CORS });
         }
     }
 
@@ -1090,7 +1093,7 @@ export async function POST(req: Request) {
                       appointmentState, appointmentDraft
                    }, { merge: true });
                 }
-                return NextResponse.json({ reply: "Randevu talebinizle ilgili bilgilendirmeleri size iletebilmemiz için e-posta adresinizi de paylaşabilir misiniz?", pendingAppointmentData: appointmentDraft }, { headers: CORS });
+                return NextResponse.json({ reply: "Randevu talebinizle ilgili bilgilendirmeleri size iletebilmemiz için e-posta adresinizi paylaşabilir misiniz?", pendingAppointmentData: appointmentDraft }, { headers: CORS });
             }
 
             // All good! Proceed to SUBMITTING_APPOINTMENT
@@ -1131,12 +1134,21 @@ export async function POST(req: Request) {
                   }, { merge: true });
                }
 
-               const successMsg = "Teşekkür ederim, randevu talebiniz kliniğimizin ön değerlendirmesine iletildi. Talebiniz henüz kesinleşmiş bir randevu değildir. Klinik ekibimiz talebinizi değerlendirdikten sonra sonucu sistemde kayıtlı e-posta adresinize iletecektir.";
+               const successMsg = `Teşekkür ederim. Ön randevu talebiniz kliniğimizin değerlendirmesine iletildi.\n\n${appointmentDraft.requestedService || "Genel Muayene"} işlemi için tercih ettiğiniz ${appointmentDraft.requestedDate || "-"}, saat ${appointmentDraft.requestedTime || "Belirtilmedi"} bilgisi klinik ekibi tarafından değerlendirilecektir.\n\nTalebiniz henüz kesinleşmiş bir randevu değildir. Klinik ekibimiz talebinizi değerlendirdikten sonra sonucu paylaşmış olduğunuz e-posta adresine iletecektir.`;
                return NextResponse.json({ reply: successMsg, appointmentCreated: true }, { headers: CORS });
             } catch (e: any) {
                console.error("[chat API] Deterministic createAppointment error:", e);
-               // Handle MISSING_REQUIRED_FIELD specifically
-               if (e.message.includes("MISSING_REQUIRED_FIELD") || e.message.includes("is required")) {
+               // Handle missing email specifically from the backend validation
+               if (e.message?.includes("PATIENT_EMAIL_REQUIRED") || e.message?.includes("MISSING_REQUIRED_FIELD: patientEmail")) {
+                   appointmentState = "COLLECTING_EMAIL";
+                   if (adminDb && convId) {
+                       await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).set({
+                          appointmentState, appointmentDraft
+                       }, { merge: true });
+                   }
+                   return NextResponse.json({ reply: "Randevu talebinizle ilgili bilgilendirmeleri size iletebilmemiz için e-posta adresinizi paylaşabilir misiniz?", pendingAppointmentData: appointmentDraft }, { headers: CORS });
+               }
+               if (e.message?.includes("MISSING_REQUIRED_FIELD") || e.message?.includes("is required")) {
                    return NextResponse.json({ reply: "Randevu talebi oluşturulurken eksik bilgiler tespit edildi. Lütfen gerekli tüm bilgileri sağladığınızdan emin olun." }, { headers: CORS });
                }
                return NextResponse.json({ reply: "Randevu talebinizi şu an iletemiyorum. Lütfen kliniği doğrudan arayarak iletişime geçin." }, { headers: CORS });
@@ -1653,50 +1665,32 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
         requirePhone: false
       };
 
-      const { patientAppointmentChannel, requireEmail, requirePhone } = notificationSettings;
-
-      const requiresEmailStr = requireEmail ? "- E-posta Adresi (Mutlaka geçerli bir adres alınmalı)" : "";
-      const requiresPhoneStr = requirePhone ? "- Telefon Numarası" : "";
+      const requiresPhoneStr = notificationSettings?.requirePhone ? "- Telefon Numarası" : "";
       
-      const validationRules = requireEmail 
-          ? `3. E-posta adresi geçerliliğini kontrol et (@ işareti, alan adı vs.). Hatalıysa: "E-posta adresinizde küçük bir eksiklik görünüyor. Klinik dönüşünü iletebilmemiz için adresinizi örneğin adiniz@example.com formatında tekrar paylaşabilir misiniz?" şeklinde nazikçe uyar.`
-          : `3. Bilgileri doğrula.`;
-          
-      let confirmationSentence = "";
-      switch (patientAppointmentChannel) {
-        case "whatsapp":
-          confirmationSentence = `Talebiniz onaylandığında veya farklı bir saat önerildiğinde, WhatsApp üzerinden bilgilendirileceksiniz.`;
-          break;
-        case "email":
-          confirmationSentence = `Talebiniz onaylandığında veya farklı bir saat önerildiğinde, paylaştığınız e-posta adresi üzerinden bilgilendirileceksiniz.`;
-          break;
-        case "sms":
-        default:
-          confirmationSentence = `Talebiniz onaylandığında veya farklı bir saat önerildiğinde, SMS üzerinden bilgilendirileceksiniz.`;
-          break;
-      }
-
       skillBlocks.push(`\nRANDEVU AKIŞI:
 Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın diş beyazlatma", "Doktora görünmek istiyorum", vb.):
 1. Şu bilgileri adım adım, tek tek ve DOĞAL bir dille topla:
    - Ad ve Soyad
    ${requiresPhoneStr}
-   ${requiresEmailStr}
+   - E-posta Adresi (Mutlaka geçerli bir adres alınmalı)
    - Tedavi/İşlem Türü
    - Tercih edilen Tarih
    - Tercih edilen Saat (Eğer hasta saat belirtmediyse mutlaka şu soruyu sor: "Randevu talebinizi kliniğe doğru şekilde iletebilmem için tercih ettiğiniz saat veya saat aralığını da paylaşabilir misiniz?" Hasta saat belirtmeden devam etmek isterse boş bırakabilirsin.)
 2. Eğer bir bilgi eksikse sadece o bilgiyi sor. (Aynı konuşmada daha önce verilen bir bilgiyi tekrar sorma).
-${validationRules}
+3. E-posta adresi geçerliliğini kontrol et (@ işareti, alan adı vs.). Hatalıysa: "E-posta adresinizde küçük bir eksiklik görünüyor. Klinik dönüşünü iletebilmemiz için adresinizi örneğin adiniz@example.com formatında tekrar paylaşabilir misiniz?" şeklinde nazikçe uyar.
 4. Tüm bilgiler tamam olunca MUTLAKA şu formatta özet ve onay iste:
-   "Harika! Şu bilgilerle randevu talebi oluşturayım mı?
-   Ad: [isim]
-   ${requirePhone ? 'Telefon: [telefon]\n   ' : ''}${requireEmail ? 'E-posta: [email]\n   ' : ''}Hizmet: [hizmet]
-   Tarih: [tarih]
-   Saat: [Tercih edilen saat. Sadece şu formatlardan birini kullan: Net saat ise "14:00", Aralık ise "10:00-12:00", Dönem ise "sabah" / "öğleden_sonra" / "akşamüstü" / "en_erken", Belirtilmediyse "Belirtilmedi"]
-   Onaylıyor musunuz? (Evet/Hayır)"
+   "Ön randevu talebinizin özeti:
+
+   Ad Soyad: [isim]
+   ${notificationSettings?.requirePhone ? 'Telefon: [telefon]\n   ' : ''}E-posta: [email]
+   Hizmet: [hizmet]
+   Tercih Edilen Tarih: [tarih]
+   Tercih Edilen Saat: [Tercih edilen saat. Sadece şu formatlardan birini kullan: Net saat ise "14:00", Aralık ise "10:00-12:00", Dönem ise "sabah" / "öğleden_sonra" / "akşamüstü" / "en_erken", Belirtilmediyse "Belirtilmedi"]
+
+   Bu bilgilerle ön randevu talebinizi kliniğimizin değerlendirmesine iletmemi onaylıyor musunuz? Evet veya Hayır şeklinde yanıtlayabilirsiniz."
 5. Kullanıcı "Evet" dediğinde sistem klinik onayına sunulmak üzere bir ÖN RANDEVU TALEBİ oluşturacak. 
    Kesinlikle "randevunuz oluşturuldu", "onaylandı" deme.
-   Kapanış mesajı olarak şunu kullan: "Ön randevu talebinizi kliniğimize ilettim. [Hizmet] işlemi için tercih ettiğiniz [Tarih] [Saat] bilgisi klinik ekibi tarafından değerlendirilecektir. ${confirmationSentence}"
+   Kapanış mesajı olarak şunu kullan: "Teşekkür ederim. Ön randevu talebiniz kliniğimizin değerlendirmesine iletildi. [Hizmet] işlemi için tercih ettiğiniz [Tarih], saat [Saat] bilgisi klinik ekibi tarafından değerlendirilecektir. Talebiniz henüz kesinleşmiş bir randevu değildir. Klinik ekibimiz talebinizi değerlendirdikten sonra sonucu paylaşmış olduğunuz e-posta adresine iletecektir."
 6. ÖNEMLİ: Eğer randevu için kullanıcıdan bilgi (ad, telefon, tarih vb.) İSTİYORSAN veya onay özetini SUNUYORSAN, yanıtının en başına gizli bir etiket olarak [FLOW_ACTIVE] ekle. (Örn: "[FLOW_ACTIVE] Teşekkürler, telefon numaranızı da alabilir miyim?")`);
     } else {
       skillBlocks.push("\nNot: Randevu oluşturma özelliği bu klinik için şu an devre dışıdır. Randevu talepleri için kullanıcıyı kliniği doğrudan aramaya yönlendir.");
