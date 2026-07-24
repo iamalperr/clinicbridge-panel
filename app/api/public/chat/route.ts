@@ -239,6 +239,7 @@ function isConfirmation(msg: string): boolean {
 /* ── Deterministic Appointment State Machine ──────────────── */
 export type AppointmentState = 
   | 'IDLE' 
+  | 'COLLECTING_INFO'
   | 'COLLECTING_NAME' 
   | 'COLLECTING_PHONE' 
   | 'COLLECTING_EMAIL' 
@@ -641,6 +642,7 @@ async function logConversation(params: {
   knowledgeBaseId?: string;
   retrievedDocumentCount?: number;
   fallbackReason?: string;
+  appointmentState?: AppointmentState;
 }) {
   const adminDb = getAdminDb();
   if (!adminDb) return;
@@ -680,6 +682,10 @@ async function logConversation(params: {
       status,
       needsTraining,
     };
+
+    if (params.appointmentState) {
+      logData.appointmentState = params.appointmentState;
+    }
 
     if (params.apptData) {
       logData.appointmentState = "AWAITING_CONFIRMATION";
@@ -1837,11 +1843,15 @@ ${validationRules}
     if (reply.includes("[FLOW_ACTIVE]")) {
       isAppointmentFlowActive = true;
       reply = reply.replace("[FLOW_ACTIVE]", "").trim();
+      if (appointmentState === "IDLE") {
+        appointmentState = "COLLECTING_INFO";
+      }
     }
 
     // GROUNDEDNESS CHECK
     // Only check if we retrieved RAG context and the AI didn't already use the safe fallback
-    if (knowledgeContext.length > 0 && !reply.includes("doğrulamıyorum") && !reply.includes("erişemediğim") && !isDoctorIntent && !isAppointmentFlowActive) {
+    const isStateActive = appointmentState !== "IDLE" || isAppointmentFlowActive;
+    if (knowledgeContext.length > 0 && !reply.includes("doğrulamıyorum") && !reply.includes("erişemediğim") && !isDoctorIntent && !isStateActive) {
       const { validateGroundedness } = await import("@/lib/services/retrievalService");
       
       const fullContextForValidation = doctorContext ? `${knowledgeContext}\n\n${doctorContext}` : knowledgeContext;
@@ -1916,6 +1926,7 @@ ${validationRules}
       knowledgeBaseId: "default",
       retrievedDocumentCount: trainingDocs.length,
       fallbackReason: responsePayload.reply.includes("doğrulayamıyorum") ? "groundedness_failure" : "",
+      appointmentState,
     });
 
     return NextResponse.json(responsePayload, { headers: CORS });
