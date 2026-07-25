@@ -275,17 +275,18 @@ async function handleStatusUpdate(req: Request, paramsPromise: Promise<{ clinicI
 
     // 6. Update Notification Status in Firestore if applicable
     if (notificationResult) {
+      const isAccepted = notificationResult.success;
       const notifUpdateData: any = {
-        patientNotificationStatus: notificationResult.success ? "sent" : ((notificationResult as any).reason === "no_email" || (notificationResult as any).reason === "no_phone" ? "missing_contact" : "failed"),
+        patientNotificationSent: isAccepted,
+        patientNotificationStatus: isAccepted ? "ACCEPTED" : "FAILED",
+        patientNotificationProviderId: (notificationResult as any).messageId || null,
+        patientNotificationErrorCode: (notificationResult as any).errorCode || null,
+        patientNotificationErrorMessage: (notificationResult as any).errorMessage || notificationResult.error || null,
         notificationSentAt: now,
       };
       
       if (notificationChannelUsed !== undefined) {
         notifUpdateData.notificationChannel = notificationChannelUsed;
-      }
-
-      if (notificationResult.error !== undefined) {
-        notifUpdateData.notificationError = notificationResult.error;
       }
       
       const safeUpdateData = Object.fromEntries(

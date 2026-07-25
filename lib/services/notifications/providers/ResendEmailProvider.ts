@@ -1,5 +1,6 @@
 import { NotificationProvider, NotificationPayload, NotificationProviderResult } from './NotificationProvider';
 import { NotificationChannel } from '../../../types/notification';
+import { Resend } from "resend";
 
 export class ResendEmailProvider implements NotificationProvider {
   channel: NotificationChannel = 'email';
@@ -20,45 +21,52 @@ export class ResendEmailProvider implements NotificationProvider {
         attempted: false,
         accepted: false,
         status: "NOT_CONFIGURED",
-        errorCode: "missing_api_key",
+        errorCode: "API_KEY_MISSING",
         errorMessage: "Missing RESEND_API_KEY",
         rawResponse: 'missing_api_key',
       };
     }
 
     try {
-      // Build the email HTML. We'll improve this with a robust template engine later.
-      // For now, we use a basic fallback template.
       let html = payload.variables.htmlContent;
       if (!html) {
           html = this.buildFallbackHtml(payload);
       }
 
-      const res = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          from: payload.variables.from || this.defaultFrom,
-          reply_to: payload.variables.replyTo,
-          to: [payload.to],
-          subject: payload.subject || 'Notification from ClinicBridge',
-          html: html,
-        }),
-      });
+      const resend = new Resend(this.apiKey);
+      const emailPayload: any = {
+        from: payload.variables.from || this.defaultFrom,
+        to: [payload.to],
+        subject: payload.subject || 'Notification from ClinicBridge',
+        html: html,
+      };
 
-      const data = await res.json();
+      if (payload.variables.replyTo) {
+        emailPayload.reply_to = payload.variables.replyTo;
+      }
 
-      if (!res.ok || !data.id) {
+      const { data, error } = await resend.emails.send(emailPayload);
+
+      if (error) {
         return {
           success: false,
           attempted: true,
           accepted: false,
           status: "FAILED",
-          errorCode: data.name || "provider_error",
-          errorMessage: data.message || JSON.stringify(data),
+          errorCode: error.name || "RESEND_ERROR",
+          errorMessage: error.message,
+          rawResponse: error
+        };
+      }
+
+      if (!data?.id) {
+        return {
+          success: false,
+          attempted: true,
+          accepted: false,
+          status: "FAILED",
+          errorCode: "PROVIDER_MESSAGE_ID_MISSING",
+          errorMessage: "Resend did not return a message ID.",
           rawResponse: data
         };
       }
