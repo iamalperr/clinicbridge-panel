@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { trackableAIRequest } from "@/lib/services/aiGateway";
 import { getAdminDb } from "@/lib/firebase-admin";
+import { AppointmentDateValidator } from "@/lib/skills/AppointmentDateValidator";
 import { initializeApp, getApps } from "firebase/app";
 import {
   getFirestore, collection, query, where, getDocs,
@@ -282,6 +283,7 @@ export type AppointmentState =
   | 'COLLECTING_TREATMENT' 
   | 'COLLECTING_DATE' 
   | 'COLLECTING_TIME' 
+  | 'AWAITING_DATE_CLARIFICATION'
   | 'AWAITING_CONFIRMATION' 
   | 'SUBMITTING_APPOINTMENT' 
   | 'APPOINTMENT_SUBMITTED' 
@@ -1343,12 +1345,14 @@ export async function POST(req: Request) {
     let appointmentDraft: Partial<AppointmentData> = {};
     let appointmentVersion: number = 0;
     let processedMessageIds: string[] = [];
+    let stateData: any = {};
 
     if (adminDb && convId) {
       try {
         const logSnap = await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).get();
         if (logSnap.exists) {
           const lData = logSnap.data();
+          stateData = lData || {};
           if (lData?.appointmentState) appointmentState = lData.appointmentState;
           if (lData?.appointmentDraft) appointmentDraft = lData.appointmentDraft;
           if (typeof lData?.appointmentVersion === "number") appointmentVersion = lData.appointmentVersion;
@@ -1382,7 +1386,54 @@ export async function POST(req: Request) {
 
 
     // 2. Handle specific collection phases
-    if (appointmentState === "COLLECTING_NAME") {
+    if (appointmentState === "AWAITING_DATE_CLARIFICATION") {
+        // Evaluate the user's input to resolve the date
+        const validationResult = AppointmentDateValidator.validate(message, appointmentDraft.requestedTime || null, "Europe/Istanbul");
+        
+        // Let's also check if they just typed "1" or "2"
+        let chosenAlt = null;
+        if (message.trim() === "1" && stateData.dateAlternatives && stateData.dateAlternatives[0]) {
+           chosenAlt = stateData.dateAlternatives[0];
+        } else if (message.trim() === "2" && stateData.dateAlternatives && stateData.dateAlternatives[1]) {
+           chosenAlt = stateData.dateAlternatives[1];
+        }
+
+        if (chosenAlt) {
+           // E.g. "2026-07-26 Pazar"
+           const parts = chosenAlt.split(" ");
+           appointmentDraft.requestedDate = parts[0];
+        } else if (validationResult.isValid && !validationResult.hasConflict) {
+           appointmentDraft.requestedDate = validationResult.resolvedDate || appointmentDraft.requestedDate;
+        } else {
+           // Still invalid or conflict
+           return NextResponse.json({ 
+             responseType: "CHAT_REPLY", 
+             reply: validationResult.clarificationMessage || "Tarih anlaşılamadı. Lütfen tekrar belirtin.", 
+             pendingAppointmentData: appointmentDraft 
+           }, { headers: CORS });
+        }
+
+        // Successfully resolved. Now clear alternatives and decide next state.
+        const newStateData = { ...stateData, dateAlternatives: null };
+        
+        // Progress to next missing field, or AWAITING_CONFIRMATION
+        if (!appointmentDraft.patientName) {
+            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_NAME", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId] });
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: "Teşekkürler. Ön randevu talebinizi oluşturabilmem için adınızı ve soyadınızı öğrenebilir miyim?" }, { headers: CORS });
+        } else if (!appointmentDraft.patientPhone) {
+            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_PHONE", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId] });
+            const firstName = (appointmentDraft.patientName || "").split(" ")[0];
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: `Teşekkür ederim, ${firstName} Bey/Hanım. İletişime geçebilmemiz için telefon numaranızı paylaşabilir misiniz?` }, { headers: CORS });
+        } else if (!appointmentDraft.patientEmail) {
+            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId] });
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: "Son olarak bilgilendirme için e-posta adresinizi paylaşabilir misiniz?" }, { headers: CORS });
+        } else {
+            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId] });
+            let phoneDisplay = appointmentDraft.patientPhone || "-";
+            const summaryMsg = `Ön randevu talebinizin özeti:\n\nAd Soyad: ${appointmentDraft.patientName}\nTelefon: ${phoneDisplay}\nE-posta: ${appointmentDraft.patientEmail}\nHizmet: ${appointmentDraft.requestedService}\nTercih Edilen Tarih: ${appointmentDraft.requestedDate}\nTercih Edilen Saat: ${appointmentDraft.requestedTime || "Belirtilmedi"}\n\nBu bilgilerle ön randevu talebinizi iletmemi onaylıyor musunuz? Evet veya Hayır şeklinde yanıtlayabilirsiniz.`;
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: summaryMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
+        }
+    } else if (appointmentState === "COLLECTING_NAME") {
         if (message.trim().length < 2) {
             return NextResponse.json({ success: true, appointmentCreated: false, responseType: "CHAT_REPLY", reply: "Lütfen geçerli bir ad ve soyad giriniz." }, { headers: CORS });
         }
@@ -2200,39 +2251,8 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
     let dtStr  = dtMatch?.[1]?.trim() ?? "";
     const rawDateText = rawDateMatch?.[1]?.trim() ?? "";
     const rawTimeStr = timeMatch?.[1]?.trim() ?? "";
+    // SERVER-SIDE DETERMINISTIC DATE VALIDATION has been moved to the AWAITING_DATE_CLARIFICATION interceptor
     
-    // SERVER-SIDE DETERMINISTIC DATE VALIDATION
-    if (dtStr && dtStr.toLowerCase() !== "belirtilmedi") {
-      const clinicTimeZone = "Europe/Istanbul";
-      
-      const nowForLog = new Date();
-      const formatter = new Intl.DateTimeFormat("en-US", { timeZone: clinicTimeZone, weekday: "long", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false });
-      const parts = formatter.formatToParts(nowForLog);
-      const currentClinicWeekday = parts.find(p => p.type === "weekday")?.value || "";
-      const currentClinicDate = `${parts.find(p => p.type === "year")?.value}-${parts.find(p => p.type === "month")?.value}-${parts.find(p => p.type === "day")?.value}`;
-
-      console.log(JSON.stringify({
-        event: "APPOINTMENT_DATE_PARSE_START",
-        traceId: activeTraceId,
-        conversationId: convId,
-        rawDateText,
-        rawTimeText: rawTimeStr,
-        clinicTimeZone,
-        currentClinicDate,
-        currentClinicWeekday,
-        inferredDateText: dtStr
-      }));
-      
-      const dateToResolve = rawDateText && rawDateText.toLowerCase() !== "belirtilmedi" ? rawDateText : dtStr;
-      const deterministicDate = resolveRelativeDate(dateToResolve, clinicTimeZone);
-      
-      if (deterministicDate.validationPassed && deterministicDate.displayText && deterministicDate.displayText !== dateToResolve) {
-         // Replace the LLM's hallucinated date with the correct deterministic date in the reply sent to the user
-         reply = reply.replace(dtStr, deterministicDate.displayText);
-         dtStr = deterministicDate.displayText;
-      }
-    }
-
     // Clean up the reply so we don't expose the hidden raw date prompt instruction to the user
     reply = reply.replace(/(?:Kullanıcının Söylediği Orijinal Tarih|Orijinal Tarih|Raw Date):\s*([^\n\r]+)[\n\r]*/i, "");
 
