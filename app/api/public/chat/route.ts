@@ -2111,7 +2111,7 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
     // If AI response contains a confirmation summary, extract and return pendingAppointmentData
     // so the widget can send it back on confirmation — more reliable than history parsing
     const isConfirmSummary =
-      (reply.includes("Ad:") || reply.includes("Name:")) &&
+      (reply.includes("Ad:") || reply.includes("Ad Soyad:") || reply.includes("Name:")) &&
       (reply.includes("Telefon:") || reply.includes("Phone:") || reply.includes("E-posta:") || reply.includes("Email:") || reply.includes("E-mail:")) &&
       (reply.includes("Onaylıyor") || reply.includes("Onaylay") || reply.includes("Confirm"));
 
