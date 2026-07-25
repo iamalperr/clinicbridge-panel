@@ -40,7 +40,17 @@ export class NotificationService {
       idempotency_key?: string;
     },
     payload: Omit<NotificationPayload, 'to' | 'idempotencyKey'>
-  ): Promise<{ success: boolean; eventId?: string; error?: string }> {
+  ): Promise<{ 
+    success: boolean; 
+    attempted: boolean;
+    accepted: boolean;
+    status: "ACCEPTED" | "FAILED" | "MISSING_RECIPIENT" | "NOT_CONFIGURED" | "UNKNOWN";
+    messageId?: string;
+    errorCode?: string | null;
+    errorMessage?: string | null;
+    eventId?: string; 
+    error?: string; 
+  }> {
     const adminDb = getAdminDb();
     
     // 1. Idempotency Check
@@ -54,7 +64,13 @@ export class NotificationService {
       if (!existingEvents.empty) {
         const doc = existingEvents.docs[0];
         console.log(`[NotificationService] Idempotency hit for key: ${eventData.idempotency_key}`);
-        return { success: true, eventId: doc.id };
+        return { 
+          success: true, 
+          attempted: false, 
+          accepted: true, 
+          status: "ACCEPTED", 
+          eventId: doc.id 
+        };
       }
     }
 
@@ -74,12 +90,20 @@ export class NotificationService {
       await eventDocRef.set(eventLog);
     }
 
-    // 3. Find Provider
     const provider = this.providers.get(eventData.channel);
     if (!provider) {
       const errorMsg = `No provider registered for channel: ${eventData.channel}`;
       await this.updateEventStatus(eventDocRef, 'permanently_failed', { failure_reason: errorMsg });
-      return { success: false, error: errorMsg, eventId: eventLog.id };
+      return { 
+        success: false, 
+        attempted: false,
+        accepted: false,
+        status: "NOT_CONFIGURED",
+        errorCode: "missing_provider",
+        errorMessage: errorMsg,
+        error: errorMsg, 
+        eventId: eventLog.id 
+      };
     }
 
     // 4. Send Notification
@@ -91,7 +115,20 @@ export class NotificationService {
       idempotencyKey: eventData.idempotency_key,
     };
 
-    const result = await provider.send(sendPayload);
+    let result;
+    try {
+      result = await provider.send(sendPayload);
+    } catch (err: any) {
+      result = {
+        success: false,
+        attempted: true,
+        accepted: false,
+        status: "FAILED" as const,
+        errorCode: "provider_exception",
+        errorMessage: err.message || "Unknown provider error",
+        error: err.message
+      };
+    }
 
     // 5. Update Status
     if (result.success) {
@@ -99,11 +136,20 @@ export class NotificationService {
         provider_message_id: result.messageId,
         sent_at: new Date(),
       });
-      return { success: true, eventId: eventLog.id };
+      return { 
+        success: true, 
+        attempted: result.attempted,
+        accepted: result.accepted,
+        status: result.status,
+        messageId: result.messageId,
+        errorCode: result.errorCode,
+        errorMessage: result.errorMessage,
+        eventId: eventLog.id 
+      };
     } else {
       // Logic for retry could be implemented here
       await this.updateEventStatus(eventDocRef, 'failed', {
-        failure_reason: result.error,
+        failure_reason: result.errorMessage || "Unknown error",
         failed_at: new Date(),
       });
       
@@ -112,13 +158,22 @@ export class NotificationService {
         await adminDb.collection('notification_delivery_attempts').add({
           event_id: eventDocRef.id,
           attempt_number: 1,
-          error: result.error,
-          raw_response: result.rawResponse,
+          error: result.errorMessage || "Unknown error",
+          raw_response: result.rawResponse || null,
           created_at: new Date()
         });
       }
 
-      return { success: false, error: result.error, eventId: eventLog.id };
+      return { 
+        success: false, 
+        attempted: result.attempted,
+        accepted: result.accepted,
+        status: result.status,
+        errorCode: result.errorCode,
+        errorMessage: result.errorMessage,
+        error: result.errorMessage || "Unknown error", 
+        eventId: eventLog.id 
+      };
     }
   }
 

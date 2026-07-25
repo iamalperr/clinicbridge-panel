@@ -183,21 +183,26 @@ async function handleStatusUpdate(req: Request, paramsPromise: Promise<{ clinicI
 
       if (primaryChannel === "email") {
         if (apptData.patientEmail) {
-          notificationResult = await sendPatientAppointmentStatusEmail({
-            patientEmail: apptData.patientEmail,
-            patientName: apptData.patientName || "Değerli Hastamız",
-            clinicName,
-            treatment,
-            requestedDate: date,
-            requestedTime: time,
-            status: reqStatus,
-            appointmentId
-          });
-          
-          if (notificationResult.success) {
-            console.log(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_SUCCESS", traceId, appointmentId, status: reqStatus }));
-          } else {
-            console.error(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_FAILED", traceId, appointmentId, status: reqStatus, errorCode: "EMAIL_FAILED", errorMessage: notificationResult.error }));
+          try {
+            notificationResult = await sendPatientAppointmentStatusEmail({
+              patientEmail: apptData.patientEmail,
+              patientName: apptData.patientName || "Değerli Hastamız",
+              clinicName,
+              treatment,
+              requestedDate: date,
+              requestedTime: time,
+              status: reqStatus,
+              appointmentId
+            });
+            
+            if (notificationResult.success) {
+              console.log(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_SUCCESS", traceId, appointmentId, status: reqStatus }));
+            } else {
+              console.error(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_FAILED", traceId, appointmentId, status: reqStatus, errorCode: "EMAIL_FAILED", errorMessage: notificationResult.error || (notificationResult as any).errorMessage }));
+            }
+          } catch (notifErr: any) {
+            notificationResult = { success: false, reason: "exception", error: notifErr.message };
+            console.error(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_FAILED", traceId, appointmentId, status: reqStatus, errorCode: "EXCEPTION", errorMessage: notifErr.message }));
           }
         } else {
           notificationResult = { success: false, reason: "no_email", error: "Hastanın e-posta adresi bulunmuyor." };
@@ -230,20 +235,25 @@ async function handleStatusUpdate(req: Request, paramsPromise: Promise<{ clinicI
           }
 
           if (smsMessage) {
-            notificationResult = await sendPatientSms({
-              phone: apptData.patientPhone,
-              clinicName: clinicName,
-              requestedDate: date,
-              requestedTime: time,
-              requestedService: treatment,
-            });
-            (notificationResult as any).smsType = smsType;
-            (notificationResult as any).smsMessage = smsMessage;
-            
-            if (notificationResult.success) {
-              console.log(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_SUCCESS", traceId, appointmentId, status: reqStatus }));
-            } else {
-              console.error(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_FAILED", traceId, appointmentId, status: reqStatus, errorCode: "SMS_FAILED", errorMessage: notificationResult.error }));
+            try {
+              notificationResult = await sendPatientSms({
+                phone: apptData.patientPhone,
+                clinicName: clinicName,
+                requestedDate: date,
+                requestedTime: time,
+                requestedService: treatment,
+              });
+              (notificationResult as any).smsType = smsType;
+              (notificationResult as any).smsMessage = smsMessage;
+              
+              if (notificationResult.success) {
+                console.log(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_SUCCESS", traceId, appointmentId, status: reqStatus }));
+              } else {
+                console.error(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_FAILED", traceId, appointmentId, status: reqStatus, errorCode: "SMS_FAILED", errorMessage: notificationResult.error }));
+              }
+            } catch (smsErr: any) {
+              notificationResult = { success: false, reason: "exception", error: smsErr.message };
+              console.error(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_FAILED", traceId, appointmentId, status: reqStatus, errorCode: "EXCEPTION", errorMessage: smsErr.message }));
             }
           }
         } else {

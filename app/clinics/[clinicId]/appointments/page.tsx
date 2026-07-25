@@ -327,7 +327,7 @@ export default function AppointmentsPage({ params }: PageProps) {
                                 if (status === "ACCEPTED" || status === "SENT" || status === "sent") {
                                   return (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500, backgroundColor: "rgba(34, 197, 94, 0.1)", color: "#16a34a", padding: '4px 8px', borderRadius: '12px', width: 'fit-content' }}>
-                                      <CheckCircle size={12} /> Hasta e-postası gönderildi
+                                      <CheckCircle size={12} /> Hasta e-postası sağlayıcıya iletildi
                                     </div>
                                   );
                                 } else if (status === "DELIVERED") {

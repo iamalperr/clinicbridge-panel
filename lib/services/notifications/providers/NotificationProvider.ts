@@ -11,8 +11,12 @@ export interface NotificationPayload {
 
 export interface NotificationProviderResult {
   success: boolean;
-  messageId?: string;
-  error?: string;
+  attempted: boolean;
+  accepted: boolean;
+  status: "ACCEPTED" | "FAILED" | "MISSING_RECIPIENT" | "NOT_CONFIGURED" | "UNKNOWN";
+  messageId?: string; // corresponds to providerMessageId
+  errorCode?: string | null;
+  errorMessage?: string | null;
   rawResponse?: any;
 }
 

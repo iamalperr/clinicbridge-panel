@@ -17,7 +17,11 @@ export class ResendEmailProvider implements NotificationProvider {
       console.warn('[ResendEmailProvider] RESEND_API_KEY is missing. Failing instead of simulating success.');
       return {
         success: false,
-        error: "Missing RESEND_API_KEY",
+        attempted: false,
+        accepted: false,
+        status: "NOT_CONFIGURED",
+        errorCode: "missing_api_key",
+        errorMessage: "Missing RESEND_API_KEY",
         rawResponse: 'missing_api_key',
       };
     }
@@ -47,24 +51,37 @@ export class ResendEmailProvider implements NotificationProvider {
 
       const data = await res.json();
 
-      if (!res.ok) {
+      if (!res.ok || !data.id) {
         return {
           success: false,
-          error: data.message || JSON.stringify(data),
+          attempted: true,
+          accepted: false,
+          status: "FAILED",
+          errorCode: data.name || "provider_error",
+          errorMessage: data.message || JSON.stringify(data),
           rawResponse: data
         };
       }
 
       return {
         success: true,
+        attempted: true,
+        accepted: true,
+        status: "ACCEPTED",
         messageId: data.id,
-        rawResponse: data
+        errorCode: null,
+        errorMessage: null,
+        rawResponse: data,
       };
 
     } catch (error: any) {
       return {
         success: false,
-        error: error.message || 'Unknown network error',
+        attempted: true,
+        accepted: false,
+        status: "FAILED",
+        errorCode: "network_or_internal_error",
+        errorMessage: error.message || 'Unknown network error',
       };
     }
   }

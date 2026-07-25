@@ -239,11 +239,15 @@ export async function sendPatientAppointmentAcknowledgement(appointment: Partial
           traceId: "auto",
           appointmentId: appointment.id,
           provider: "resend",
-          providerStatus: patientResult.success ? "ACCEPTED" : "FAILED",
-          error: patientResult.error || null
+          providerStatus: patientResult.status,
+          attempted: patientResult.attempted,
+          accepted: patientResult.accepted,
+          messageId: patientResult.messageId || null,
+          errorCode: patientResult.errorCode || null,
+          error: patientResult.errorMessage || patientResult.error || null
         }));
         
-        patientEmailSentStatus = patientResult.success ? "ACCEPTED" : "FAILED";
+        patientEmailSentStatus = patientResult.status;
       } catch (e: any) {
         console.log(JSON.stringify({
           checkpoint: "PATIENT_EMAIL_SEND_FAILED",

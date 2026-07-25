@@ -148,7 +148,27 @@ export async function sendClinicAppointmentEmail(
 
 export async function sendPatientAppointmentEmail(
   payload: AppointmentEmailPayload
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ 
+  success: boolean; 
+  attempted: boolean;
+  accepted: boolean;
+  status: "ACCEPTED" | "FAILED" | "MISSING_RECIPIENT" | "NOT_CONFIGURED" | "UNKNOWN";
+  messageId?: string;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  error?: string 
+}> {
+  const patientEmailToUse = (payload.patientEmail || "").trim();
+  if (!patientEmailToUse || patientEmailToUse.length < 5) {
+    return {
+      success: false,
+      attempted: false,
+      accepted: false,
+      status: "MISSING_RECIPIENT",
+      errorCode: "missing_recipient",
+      errorMessage: "Geçerli bir hasta e-posta adresi bulunamadı."
+    };
+  }
   let timeLabel = "Tercih Edilen Saat";
   let timeValue = payload.requestedTime || "Saat belirtilmedi";
   if (payload.preferredTimeText && payload.preferredTimeText.toLowerCase() !== "belirtilmedi" && payload.preferredTimeText.toLowerCase() !== "belirtilmemiş") {
@@ -196,7 +216,7 @@ export async function sendPatientAppointmentEmail(
       appointment_id: payload.appointmentId,
       event_type: 'appointment.request.created',
       channel: 'email',
-      recipient: payload.clinicEmails[0], // Note: clinicEmails in the payload is actually the recipient. For patient, pass patientEmail here.
+      recipient: patientEmailToUse,
     },
     {
       language: 'tr',
@@ -207,7 +227,16 @@ export async function sendPatientAppointmentEmail(
     }
   );
 
-  return { success: result.success, error: result.error };
+  return { 
+    success: result.success, 
+    attempted: result.attempted,
+    accepted: result.accepted,
+    status: result.status,
+    messageId: result.messageId,
+    errorCode: result.errorCode,
+    errorMessage: result.errorMessage,
+    error: result.error 
+  };
 }
 
 export interface AppointmentStatusEmailPayload {
@@ -223,7 +252,28 @@ export interface AppointmentStatusEmailPayload {
 
 export async function sendPatientAppointmentStatusEmail(
   payload: AppointmentStatusEmailPayload
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ 
+  success: boolean; 
+  attempted: boolean;
+  accepted: boolean;
+  status: "ACCEPTED" | "FAILED" | "MISSING_RECIPIENT" | "NOT_CONFIGURED" | "UNKNOWN";
+  messageId?: string;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  error?: string 
+}> {
+  const patientEmailToUse = (payload.patientEmail || "").trim();
+  if (!patientEmailToUse || patientEmailToUse.length < 5) {
+    return {
+      success: false,
+      attempted: false,
+      accepted: false,
+      status: "MISSING_RECIPIENT",
+      errorCode: "missing_recipient",
+      errorMessage: "Geçerli bir hasta e-posta adresi bulunamadı."
+    };
+  }
+
   let subject = "";
   let bodyContent = "";
 
@@ -267,7 +317,15 @@ export async function sendPatientAppointmentStatusEmail(
     `;
   } else {
     // If it's another status, don't send an email
-    return { success: false, error: "Unsupported status for email notification" };
+    return { 
+      success: false, 
+      attempted: false,
+      accepted: false,
+      status: "NOT_CONFIGURED",
+      errorCode: "unsupported_status",
+      errorMessage: "Unsupported status for email notification",
+      error: "Unsupported status for email notification" 
+    };
   }
 
   const html = `
@@ -292,7 +350,7 @@ export async function sendPatientAppointmentStatusEmail(
       appointment_id: payload.appointmentId,
       event_type: eventType,
       channel: 'email',
-      recipient: payload.patientEmail,
+      recipient: patientEmailToUse,
     },
     {
       language: 'tr',
@@ -303,7 +361,16 @@ export async function sendPatientAppointmentStatusEmail(
     }
   );
 
-  return { success: result.success, error: result.error };
+  return { 
+    success: result.success, 
+    attempted: result.attempted,
+    accepted: result.accepted,
+    status: result.status,
+    messageId: result.messageId,
+    errorCode: result.errorCode,
+    errorMessage: result.errorMessage,
+    error: result.error 
+  };
 }
 
 /* ── SMS (mock / provider-ready) ───────────────────────────────────────── */
