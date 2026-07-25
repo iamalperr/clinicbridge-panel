@@ -37,9 +37,15 @@
   var API_BASE  = 'https://app.clinicbridge-ai.com';
   var POLL_MS   = 5000;
   var VERSION   = '6.2.0';
-
   /* ── Session ID ── */
   var sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
+
+  console.log('[WIDGET_VERSION]', {
+    commit: '7b4cb09',
+    apiHost: API_BASE,
+    widgetScriptUrl: scriptEl ? scriptEl.src : 'unknown',
+    testMode: embedTestMode
+  });
 
   /* ── Debug helper ── */
   function dbg() {
@@ -758,6 +764,21 @@
       }
 
       /* API call */
+      var traceId = 'trace_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      var clientMessageId = 'msg_' + Date.now();
+      
+      console.log('[WIDGET_SEND_START]');
+      console.log('[WIDGET_CHAT_ENDPOINT]', API_BASE + '/api/public/chat');
+      console.log('[WIDGET_REQUEST_STARTED]', {
+        endpoint: API_BASE + '/api/public/chat',
+        method: 'POST',
+        conversationId: sessionId,
+        clinicId: clinicId,
+        traceId: traceId,
+        clientMessageId: clientMessageId,
+        host: w.location.hostname
+      });
+
       fetch(API_BASE + '/api/public/chat', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -768,10 +789,27 @@
           conversationId:        sessionId,
           language:              lang,
           pendingAppointmentData: pendingApptData || undefined,
+          traceId:               traceId,
+          clientMessageId:       clientMessageId
         }),
       })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
+      .then(function (r) { 
+        console.log('[WIDGET_RESPONSE_STATUS]', r.status);
+        return r.json().then(function(data) {
+          return { status: r.status, data: data };
+        }); 
+      })
+      .then(function (result) {
+        var data = result.data;
+        console.log('[WIDGET_RESPONSE_BODY]', {
+          reply: data.reply,
+          appointmentCreated: data.appointmentCreated,
+          diagnostics: data.diagnostics,
+          success: data.success,
+          step_failed: data.step_failed,
+          traceId: traceId
+        });
+        
         var t = shadow.getElementById('cbw-typing'); if (t) t.remove();
         var reply = (data && data.reply) ? data.reply : sys.noReply;
         chatHistory.push({ role: 'assistant', content: reply });
@@ -789,7 +827,8 @@
           q.className = 'cbw-contextual'; // Use contextual styling
         }
       })
-      .catch(function () {
+      .catch(function (err) {
+        console.log('[WIDGET_REQUEST_FAILED]', err);
         var t = shadow.getElementById('cbw-typing'); if (t) t.remove();
         appendMsg(shadow, sys.connErr, false, '', false);
       });
