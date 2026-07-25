@@ -322,7 +322,12 @@ async function handleStatusUpdate(req: Request, paramsPromise: Promise<{ clinicI
       previousStatus: oldStatus,
       status: reqStatus,
       patientNotificationSent: notificationResult ? notificationResult.success : false,
-      patientNotificationError: notificationResult && !notificationResult.success ? notificationResult.error : null,
+      patientNotificationStatus: notificationResult ? ((notificationResult as any).status || (notificationResult.success ? "ACCEPTED" : "FAILED")) : "NOT_ATTEMPTED",
+      patientNotificationErrorCode: notificationResult ? ((notificationResult as any).errorCode || null) : null,
+      patientNotificationErrorMessage: notificationResult ? ((notificationResult as any).errorMessage || notificationResult.error || null) : null,
+      patientNotificationProvider: notificationChannelUsed,
+      patientNotificationAttempted: notificationResult ? (notificationResult as any).attempted : false,
+      patientNotificationProviderId: notificationResult ? ((notificationResult as any).messageId || (notificationResult as any).providerMessageId || null) : null,
       notification: {
         channel: notificationChannelUsed,
         result: notificationResult

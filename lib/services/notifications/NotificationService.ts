@@ -117,8 +117,45 @@ export class NotificationService {
 
     let result;
     try {
+      console.log(JSON.stringify({
+        checkpoint: "PATIENT_STATUS_EMAIL_REQUEST",
+        traceId: "auto",
+        appointmentId: eventData.appointment_id || "unknown",
+        provider: provider.channel,
+        hasApiKey: true,
+        hasFromAddress: true,
+        fromDomain: "system",
+        hasRecipient: !!sendPayload.to,
+        maskedRecipient: sendPayload.to ? sendPayload.to.replace(/(.{2})(.*)(@.*)/, "$1***$3") : "none",
+        subjectPresent: !!sendPayload.subject,
+        htmlPresent: !!sendPayload.variables?.htmlContent
+      }));
+
       result = await provider.send(sendPayload);
+
+      console.log(JSON.stringify({
+        checkpoint: "PATIENT_STATUS_EMAIL_PROVIDER_RESPONSE",
+        traceId: "auto",
+        appointmentId: eventData.appointment_id || "unknown",
+        provider: provider.channel,
+        httpStatus: (result as any).rawResponse?.statusCode || 200,
+        success: result.success,
+        providerMessageId: result.messageId || null,
+        accepted: result.accepted,
+        rejected: !result.accepted,
+        errorCode: result.errorCode || null,
+        safeErrorMessage: result.errorMessage || null
+      }));
     } catch (err: any) {
+      console.error(JSON.stringify({
+        checkpoint: "PATIENT_STATUS_EMAIL_EXCEPTION",
+        traceId: "auto",
+        appointmentId: eventData.appointment_id || "unknown",
+        errorName: err.name || "Exception",
+        errorCode: err.code || "UNKNOWN_ERR",
+        safeErrorMessage: err.message,
+        stackLocation: "NotificationService"
+      }));
       result = {
         success: false,
         attempted: true,
