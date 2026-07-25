@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase-admin";
 import { sendSms } from "@/lib/sms/sendSms";
-import { sendPatientAppointmentStatusEmail } from "@/lib/appointment-notifications";
+import { sendPatientAppointmentStatusEmail, resolvePatientEmail } from "@/lib/appointment-notifications";
 
 interface RouteParams {
   params: Promise<{ clinicId: string; appointmentId: string }>;
@@ -182,31 +182,29 @@ async function handleStatusUpdate(req: Request, paramsPromise: Promise<{ clinicI
       }));
 
       if (primaryChannel === "email") {
-        if (apptData.patientEmail) {
-          try {
-            notificationResult = await sendPatientAppointmentStatusEmail({
-              patientEmail: apptData.patientEmail,
-              patientName: apptData.patientName || "Değerli Hastamız",
-              clinicName,
-              treatment,
-              requestedDate: date,
-              requestedTime: time,
-              status: reqStatus,
-              appointmentId
-            });
-            
-            if (notificationResult.success) {
-              console.log(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_SUCCESS", traceId, appointmentId, status: reqStatus }));
-            } else {
-              console.error(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_FAILED", traceId, appointmentId, status: reqStatus, errorCode: "EMAIL_FAILED", errorMessage: notificationResult.error || (notificationResult as any).errorMessage }));
-            }
-          } catch (notifErr: any) {
-            notificationResult = { success: false, reason: "exception", error: notifErr.message };
-            console.error(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_FAILED", traceId, appointmentId, status: reqStatus, errorCode: "EXCEPTION", errorMessage: notifErr.message }));
+        try {
+          notificationResult = await sendPatientAppointmentStatusEmail({
+            patientEmail: apptData.patientEmail,
+            email: apptData.email,
+            patient: apptData.patient,
+            contactEmail: apptData.contactEmail,
+            patientName: apptData.patientName || "Değerli Hastamız",
+            clinicName,
+            treatment,
+            requestedDate: date,
+            requestedTime: time,
+            status: reqStatus,
+            appointmentId
+          } as any);
+          
+          if (notificationResult.success) {
+            console.log(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_SUCCESS", traceId, appointmentId, status: reqStatus }));
+          } else {
+            console.error(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_FAILED", traceId, appointmentId, status: reqStatus, errorCode: "EMAIL_FAILED", errorMessage: notificationResult.error || (notificationResult as any).errorMessage }));
           }
-        } else {
-          notificationResult = { success: false, reason: "no_email", error: "Hastanın e-posta adresi bulunmuyor." };
-          console.warn(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_FAILED", traceId, appointmentId, status: reqStatus, errorCode: "PATIENT_EMAIL_MISSING", errorMessage: "Hastanın e-posta adresi bulunmuyor." }));
+        } catch (notifErr: any) {
+          notificationResult = { success: false, reason: "exception", error: notifErr.message };
+          console.error(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_FAILED", traceId, appointmentId, status: reqStatus, errorCode: "EXCEPTION", errorMessage: notifErr.message }));
         }
       } else if (primaryChannel === "sms") {
         if (apptData.patientPhone) {
@@ -315,7 +313,7 @@ async function handleStatusUpdate(req: Request, paramsPromise: Promise<{ clinicI
 
     console.log(JSON.stringify({ checkpoint: "APPT_STATUS_UPDATE_SUCCESS", traceId, appointmentId, previousStatus: oldStatus, status: reqStatus }));
 
-    return NextResponse.json({ 
+    const responsePayload = { 
       success: true, 
       appointmentUpdated: true,
       appointmentId,
@@ -332,7 +330,11 @@ async function handleStatusUpdate(req: Request, paramsPromise: Promise<{ clinicI
         channel: notificationChannelUsed,
         result: notificationResult
       } 
-    });
+    };
+
+    console.log("[APPOINTMENT_STATUS_NOTIFICATION_RESULT]", JSON.stringify(responsePayload));
+
+    return NextResponse.json(responsePayload);
     
   } catch (error: any) {
     console.error("Error updating appointment status:", error);

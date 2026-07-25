@@ -250,6 +250,17 @@ export interface AppointmentStatusEmailPayload {
   appointmentId: string;
 }
 
+export function resolvePatientEmail(appointment: any): string | null {
+  const value =
+    appointment.patientEmail ??
+    appointment.email ??
+    appointment?.patient?.email ??
+    appointment.contactEmail ??
+    null;
+
+  return typeof value === "string" ? value.trim().toLowerCase() : null;
+}
+
 export async function sendPatientAppointmentStatusEmail(
   payload: AppointmentStatusEmailPayload
 ): Promise<{ 
@@ -262,17 +273,34 @@ export async function sendPatientAppointmentStatusEmail(
   errorMessage?: string | null;
   error?: string 
 }> {
-  const patientEmailToUse = (payload.patientEmail || "").trim();
+  const patientEmailToUse = resolvePatientEmail(payload);
+  
   if (!patientEmailToUse || patientEmailToUse.length < 5) {
     return {
       success: false,
       attempted: false,
       accepted: false,
       status: "MISSING_RECIPIENT",
-      errorCode: "missing_recipient",
-      errorMessage: "Geçerli bir hasta e-posta adresi bulunamadı."
+      errorCode: "PATIENT_EMAIL_MISSING",
+      errorMessage: "Patient email could not be resolved from appointment data."
     };
   }
+
+  // 8. TEMPLATE RENDER HATASINI AYIR
+  console.log("[STATUS_EMAIL_TEMPLATE_DEBUG]", JSON.stringify({
+    hasPatientName: !!payload.patientName,
+    hasClinicName: !!payload.clinicName,
+    hasServiceName: !!payload.treatment,
+    hasAppointmentDate: !!payload.requestedDate,
+    hasAppointmentTime: !!payload.requestedTime,
+    hasStatus: !!payload.status
+  }));
+
+  const safePatientName = payload.patientName || "Değerli Hastamız";
+  const safeClinicName = payload.clinicName || "Klinik";
+  const safeTreatment = payload.treatment || "Randevu talebiniz";
+  const safeRequestedDate = payload.requestedDate || "Klinik tarafından bildirilecektir";
+  const safeRequestedTime = payload.requestedTime || "Klinik tarafından bildirilecektir";
 
   let subject = "";
   let bodyContent = "";
@@ -280,39 +308,39 @@ export async function sendPatientAppointmentStatusEmail(
   if (payload.status === "APPROVED") {
     subject = "Ön Randevu Talebiniz Klinik Tarafından Onaylandı";
     bodyContent = `
-      <p>Merhaba ${payload.patientName},</p>
-      <p><strong>${payload.clinicName}</strong> için oluşturduğunuz ön randevu talebi klinik ekibi tarafından değerlendirilmiş ve uygun bulunmuştur.</p>
-      <p>Talep edilen hizmet: ${payload.treatment}<br/>
-      Talep edilen tarih: ${payload.requestedDate}<br/>
-      Talep edilen saat: ${payload.requestedTime}</p>
+      <p>Merhaba ${safePatientName},</p>
+      <p><strong>${safeClinicName}</strong> için oluşturduğunuz ön randevu talebi klinik ekibi tarafından değerlendirilmiş ve uygun bulunmuştur.</p>
+      <p>Talep edilen hizmet: ${safeTreatment}<br/>
+      Talep edilen tarih: ${safeRequestedDate}<br/>
+      Talep edilen saat: ${safeRequestedTime}</p>
       <p>Bu bildirim, randevunuzun klinik tarafından değerlendirildiğini gösterir. Klinik ekibi gerekmesi halinde son detaylar için sizinle iletişime geçebilir.</p>
     `;
   } else if (payload.status === "CONFIRMED") {
     subject = "Randevunuz Kesinleştirildi";
     bodyContent = `
-      <p>Merhaba ${payload.patientName},</p>
-      <p><strong>${payload.clinicName}</strong> randevunuz kesinleştirilmiştir.</p>
-      <p>Hizmet: ${payload.treatment}<br/>
-      Randevu tarihi: ${payload.requestedDate}<br/>
-      Randevu saati: ${payload.requestedTime}</p>
+      <p>Merhaba ${safePatientName},</p>
+      <p><strong>${safeClinicName}</strong> randevunuz kesinleştirilmiştir.</p>
+      <p>Hizmet: ${safeTreatment}<br/>
+      Randevu tarihi: ${safeRequestedDate}<br/>
+      Randevu saati: ${safeRequestedTime}</p>
       <p>Randevu saatinden kısa bir süre önce klinikte olmanızı rica ederiz.</p>
     `;
   } else if (payload.status === "REJECTED") {
     subject = "Ön Randevu Talebiniz Hakkında";
     bodyContent = `
-      <p>Merhaba ${payload.patientName},</p>
-      <p><strong>${payload.clinicName}</strong> için oluşturduğunuz ön randevu talebi klinik ekibi tarafından değerlendirilmiştir.</p>
+      <p>Merhaba ${safePatientName},</p>
+      <p><strong>${safeClinicName}</strong> için oluşturduğunuz ön randevu talebi klinik ekibi tarafından değerlendirilmiştir.</p>
       <p>Talep ettiğiniz tarih veya saat için şu aşamada randevu oluşturulamamıştır.</p>
       <p>Klinik ekibi alternatif bir tarih ve saat belirlemek amacıyla sizinle iletişime geçebilir. Dilerseniz yeni bir ön randevu talebi de oluşturabilirsiniz.</p>
     `;
   } else if (payload.status === "CANCELLED") {
     subject = "Randevu İptal Bilgilendirmesi";
     bodyContent = `
-      <p>Merhaba ${payload.patientName},</p>
-      <p><strong>${payload.clinicName}</strong> randevunuz iptal edilmiştir.</p>
-      <p>Hizmet: ${payload.treatment}<br/>
-      Tarih: ${payload.requestedDate}<br/>
-      Saat: ${payload.requestedTime}</p>
+      <p>Merhaba ${safePatientName},</p>
+      <p><strong>${safeClinicName}</strong> randevunuz iptal edilmiştir.</p>
+      <p>Hizmet: ${safeTreatment}<br/>
+      Tarih: ${safeRequestedDate}<br/>
+      Saat: ${safeRequestedTime}</p>
       <p>Yeni bir randevu planlamak için klinikle iletişime geçebilir veya yeniden ön randevu talebi oluşturabilirsiniz.</p>
     `;
   } else {
