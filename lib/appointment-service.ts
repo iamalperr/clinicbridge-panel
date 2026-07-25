@@ -255,26 +255,47 @@ export async function createAppointmentAndNotify(draft: CreateAppointmentPayload
 }> {
   try {
     const validatedPayload = validateAppointmentPayload(draft);
+    
+    // ── INSTRUMENTATION LOG 6 ──
+    console.log(JSON.stringify({ checkpoint: "APPT_06_DATABASE_INSERT_STARTED", clinicId: validatedPayload.clinicId, timestamp: new Date().toISOString() }));
+    
     const { record, step_failed, reason, stack } = await createAppointmentRecord(validatedPayload);
     
     if (!record || !record.id) { 
         return { success: false, step_failed: step_failed || "STEP 5", reason: reason || "APPOINTMENT_INSERT_FAILED", stack }; 
     }
+    
+    // ── INSTRUMENTATION LOG 7 & 8 ──
+    console.log(JSON.stringify({ checkpoint: "APPT_07_DATABASE_INSERT_SUCCEEDED", clinicId: validatedPayload.clinicId, timestamp: new Date().toISOString() }));
+    console.log(JSON.stringify({ checkpoint: "APPT_08_APPOINTMENT_ID_CREATED", clinicId: validatedPayload.clinicId, appointmentId: record.id, timestamp: new Date().toISOString() }));
+
     let clinicNotificationStatus = "NOT_CONFIGURED";
     let patientNotificationStatus = "NOT_ATTEMPTED";
 
     try {
+        // ── INSTRUMENTATION LOG 9 & 11 ──
+        console.log(JSON.stringify({ checkpoint: "APPT_09_NOTIFICATION_SETTINGS_LOOKUP_STARTED", clinicId: validatedPayload.clinicId, appointmentId: record.id, timestamp: new Date().toISOString() }));
+        console.log(JSON.stringify({ checkpoint: "APPT_11_CLINIC_EMAIL_SEND_STARTED", clinicId: validatedPayload.clinicId, appointmentId: record.id, timestamp: new Date().toISOString() }));
+        
         const clinicNotification = await sendClinicNewAppointmentNotification(record);
         clinicNotificationStatus = clinicNotification.status.toLowerCase();
+        
+        // ── INSTRUMENTATION LOG 12 ──
+        console.log(JSON.stringify({ checkpoint: "APPT_12_CLINIC_EMAIL_SEND_RESULT", clinicId: validatedPayload.clinicId, appointmentId: record.id, result: clinicNotificationStatus, timestamp: new Date().toISOString() }));
     } catch (e: any) {
         console.error(`[CLINIC_NOTIFICATION_ERROR] ${e.message}`);
+        console.log(JSON.stringify({ checkpoint: "APPT_12_CLINIC_EMAIL_SEND_RESULT", clinicId: validatedPayload.clinicId, appointmentId: record.id, result: "FAILED_EXCEPTION", error: e.message, timestamp: new Date().toISOString() }));
     }
 
     try {
         const patientNotification = await sendPatientAppointmentAcknowledgement(record);
         patientNotificationStatus = patientNotification.status.toLowerCase();
+        
+        // ── INSTRUMENTATION LOG 13 ──
+        console.log(JSON.stringify({ checkpoint: "APPT_13_PATIENT_EMAIL_SEND_RESULT", clinicId: validatedPayload.clinicId, appointmentId: record.id, result: patientNotificationStatus, timestamp: new Date().toISOString() }));
     } catch (e: any) {
         console.error(`[PATIENT_NOTIFICATION_ERROR] ${e.message}`);
+        console.log(JSON.stringify({ checkpoint: "APPT_13_PATIENT_EMAIL_SEND_RESULT", clinicId: validatedPayload.clinicId, appointmentId: record.id, result: "FAILED_EXCEPTION", error: e.message, timestamp: new Date().toISOString() }));
     }
     
     const adminDb = getAdminDb();
@@ -292,13 +313,17 @@ export async function createAppointmentAndNotify(draft: CreateAppointmentPayload
         }
     }
 
-    return { 
+    // ── INSTRUMENTATION LOG 14 ──
+    const transactionResponse = { 
         success: true, 
         appointmentId: record.id, 
         status: record.status as string, 
         clinicNotificationStatus: clinicNotificationStatus, 
         patientNotificationStatus: patientNotificationStatus 
     };
+    console.log(JSON.stringify({ checkpoint: "APPT_14_TRANSACTION_RESPONSE_RETURNED", ...transactionResponse, timestamp: new Date().toISOString() }));
+
+    return transactionResponse;
   } catch (err: any) {
       console.log(`[APPOINTMENT_SUBMISSION_EXCEPTION] convId=${draft.conversationId} clinicId=${draft.clinicId} error=${err.message} timestamp=${new Date().toISOString()}`);
       return { success: false, step_failed: "UNKNOWN", reason: err.message, stack: err.stack };

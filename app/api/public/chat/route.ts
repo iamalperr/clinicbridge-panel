@@ -1143,6 +1143,13 @@ export async function POST(req: Request) {
     /* ====================================================================
        1. STRICT CONFIRMATION INTERCEPTOR (BYPASSES ALL NORMAL CHAT LOGIC)
        ==================================================================== */
+    // ── INSTRUMENTATION LOG 1 ──
+    const activeTraceId = traceId || Math.random().toString(36).substring(7);
+    const isConfirm = isConfirmation(message);
+    const positiveConfirmationDetected = isConfirm || msgLower === "evet" || msgLower === "yes";
+
+    console.log(JSON.stringify({ checkpoint: "APPT_01_CONFIRMATION_REQUEST_RECEIVED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, message: msgLower, positiveConfirmationDetected, timestamp: new Date().toISOString() }));
+
     let loadedState = "IDLE";
     let loadedDraft: any = {};
     if (adminDb && convId) {
@@ -1158,23 +1165,13 @@ export async function POST(req: Request) {
         }
     }
 
-    const isConfirm = isConfirmation(message);
-    const positiveConfirmationDetected = isConfirm || msgLower === "evet" || msgLower === "yes";
-
-    console.log("[CONFIRMATION_DEBUG]", {
-      traceId,
-      conversationId: convId,
-      inboundClinicId: clinicId,
-      message,
-      normalizedMessage: msgLower,
-      loadedAppointmentState: loadedState,
-      persistedDraftExists: Object.keys(loadedDraft).length > 0,
-      persistedDraftFields: Object.keys(loadedDraft).join(","),
-      positiveConfirmationDetected
-    });
+    // ── INSTRUMENTATION LOG 2 & 3 ──
+    console.log(JSON.stringify({ checkpoint: "APPT_02_STATE_LOADED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, appointmentState: loadedState, timestamp: new Date().toISOString() }));
+    console.log(JSON.stringify({ checkpoint: "APPT_03_DRAFT_LOADED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, draftFields: Object.keys(loadedDraft), timestamp: new Date().toISOString() }));
 
     if (loadedState === "AWAITING_CONFIRMATION" && positiveConfirmationDetected && adminDb) {
-         console.log("[CONFIRMATION_HANDLER_ENTERED]");
+         // ── INSTRUMENTATION LOG 4 ──
+         console.log(JSON.stringify({ checkpoint: "APPT_04_CONFIRMATION_HANDLER_ENTERED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, timestamp: new Date().toISOString() }));
          
          // 1. Validate persisted draft
          if (!loadedDraft.patientName) {
@@ -1194,6 +1191,9 @@ export async function POST(req: Request) {
              await saveAppointmentState(adminDb, actualClinicId, convId, 0, "SUBMITTING_APPOINTMENT", loadedDraft, {});
 
              const { createAppointmentAndNotify } = await import("@/lib/appointment-service");
+
+             // ── INSTRUMENTATION LOG 5 ──
+             console.log(JSON.stringify({ checkpoint: "APPT_05_CREATE_APPOINTMENT_CALLED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, timestamp: new Date().toISOString() }));
 
              const result = await createAppointmentAndNotify({
                  clinicId: actualClinicId, // Must be the real Firestore doc ID
