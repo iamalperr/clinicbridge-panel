@@ -1264,6 +1264,33 @@ export async function POST(req: Request) {
              await saveAppointmentState(adminDb, actualClinicId, convId, 0, "COLLECTING_PHONE", loadedDraft, {});
              return NextResponse.json({ success: true, responseType: "appointment_information_required", appointmentCreated: false, reply: "Kliniğimizin sizinle iletişime geçebilmesi için telefon numaranızı öğrenebilir miyim?" }, { headers: CORS });
          }
+         
+         // 1.5 Final Strict Date & Time Hard Block
+         const finalDateValidation = AppointmentDateValidator.validateAppointmentDateConsistency({
+            rawDateText: loadedDraft.requestedDate,
+            rawTimeText: loadedDraft.requestedTime || null,
+            inferredDate: loadedDraft.requestedDate || null,
+            inferredTime: loadedDraft.requestedTime || null,
+            currentClinicDateTime: new Date(),
+            timeZone: "Europe/Istanbul"
+         });
+
+         if (finalDateValidation.hasConflict || !finalDateValidation.isValid) {
+            console.error(`[CONFIRMATION_BLOCKED] Final date validation failed before creation:`, JSON.stringify(finalDateValidation));
+            await saveAppointmentState(adminDb, actualClinicId, convId, 0, "AWAITING_DATE_CLARIFICATION", loadedDraft, {
+               dateAlternatives: finalDateValidation.alternatives
+            });
+            return NextResponse.json({ 
+               success: true, 
+               responseType: "appointment_date_clarification_required", 
+               appointmentCreated: false, 
+               reply: finalDateValidation.clarificationMessage || "Tarih ile ilgili bir tutarsızlık fark ettim. Lütfen randevu tarihinizi tekrar onaylayın veya düzeltin." 
+            }, { headers: CORS });
+         }
+
+         // Override with canonical just to be absolutely sure
+         loadedDraft.requestedDate = finalDateValidation.resolvedDate || loadedDraft.requestedDate;
+         (loadedDraft as any).requestedWeekday = finalDateValidation.resolvedWeekday;
 
          // 2. Call and await createAppointmentAndNotify
          try {
@@ -1387,11 +1414,8 @@ export async function POST(req: Request) {
 
     // 2. Handle specific collection phases
     if (appointmentState === "AWAITING_DATE_CLARIFICATION") {
-        // Evaluate the user's input to resolve the date
-        const validationResult = AppointmentDateValidator.validate(message, appointmentDraft.requestedTime || null, "Europe/Istanbul");
-        
-        // Let's also check if they just typed "1" or "2"
-        let chosenAlt = null;
+        // Let's check if they just typed "1" or "2"
+        let chosenAlt: { date: string; weekday: string } | null = null;
         if (message.trim() === "1" && stateData.dateAlternatives && stateData.dateAlternatives[0]) {
            chosenAlt = stateData.dateAlternatives[0];
         } else if (message.trim() === "2" && stateData.dateAlternatives && stateData.dateAlternatives[1]) {
@@ -1399,18 +1423,30 @@ export async function POST(req: Request) {
         }
 
         if (chosenAlt) {
-           // E.g. "2026-07-26 Pazar"
-           const parts = chosenAlt.split(" ");
-           appointmentDraft.requestedDate = parts[0];
-        } else if (validationResult.isValid && !validationResult.hasConflict) {
-           appointmentDraft.requestedDate = validationResult.resolvedDate || appointmentDraft.requestedDate;
+           appointmentDraft.requestedDate = chosenAlt.date;
+           (appointmentDraft as any).requestedWeekday = chosenAlt.weekday;
         } else {
-           // Still invalid or conflict
-           return NextResponse.json({ 
-             responseType: "CHAT_REPLY", 
-             reply: validationResult.clarificationMessage || "Tarih anlaşılamadı. Lütfen tekrar belirtin.", 
-             pendingAppointmentData: appointmentDraft 
-           }, { headers: CORS });
+           // Evaluate the user's input to resolve the date using V2
+           const validationResult = AppointmentDateValidator.validateAppointmentDateConsistency({
+             rawDateText: message,
+             rawTimeText: appointmentDraft.requestedTime || null,
+             inferredDate: null,
+             inferredTime: appointmentDraft.requestedTime || null,
+             currentClinicDateTime: new Date(),
+             timeZone: "Europe/Istanbul"
+           });
+           
+           if (validationResult.isValid && !validationResult.hasConflict) {
+              appointmentDraft.requestedDate = validationResult.resolvedDate || appointmentDraft.requestedDate;
+              (appointmentDraft as any).requestedWeekday = validationResult.resolvedWeekday;
+           } else {
+              // Still invalid or conflict
+              return NextResponse.json({ 
+                responseType: "CHAT_REPLY", 
+                reply: validationResult.clarificationMessage || "Tarih anlaşılamadı. Lütfen tekrar belirtin.", 
+                pendingAppointmentData: appointmentDraft 
+              }, { headers: CORS });
+           }
         }
 
         // Successfully resolved. Now clear alternatives and decide next state.
@@ -2306,6 +2342,83 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
     const isConfirmSummary = shouldAwaitConfirmation || containsConfirmationQuestion;
 
     if (isConfirmSummary && pending.patientName && (pending.patientPhone || pending.patientEmail)) {
+      
+      const timeZone = "Europe/Istanbul"; // Hardcoded fallback as requested, unless clinic.timezone exists
+      const currentClinicDateTime = new Date();
+
+      console.log(JSON.stringify({
+         event: "APPOINTMENT_DATE_VALIDATION_START",
+         traceId: activeTraceId,
+         conversationId: convId,
+         rawDateText: rawDateText,
+         rawTimeText: rawTimeStr,
+         inferredDate: pending.requestedDate,
+         inferredTime: pending.requestedTime,
+         timeZone,
+         currentClinicDateTime
+      }));
+
+      const dateValidation = AppointmentDateValidator.validateAppointmentDateConsistency({
+         rawDateText: rawDateText && rawDateText.toLowerCase() !== "belirtilmedi" ? rawDateText : dtStr,
+         rawTimeText: rawTimeStr,
+         inferredDate: pending.requestedDate,
+         inferredTime: pending.requestedTime,
+         currentClinicDateTime,
+         timeZone
+      });
+
+      console.log(JSON.stringify({
+         event: "APPOINTMENT_DATE_VALIDATION_RESULT",
+         traceId: activeTraceId,
+         mentionedWeekday: dateValidation.mentionedWeekday,
+         resolvedDate: dateValidation.resolvedDate,
+         resolvedWeekday: dateValidation.resolvedWeekday,
+         resolvedTime: dateValidation.resolvedTime,
+         isValid: dateValidation.isValid,
+         hasConflict: dateValidation.hasConflict,
+         conflictType: dateValidation.conflictType
+      }));
+
+      if (dateValidation.requiresClarification) {
+          responsePayload.responseType = "appointment_date_clarification_required";
+          responsePayload.reply = dateValidation.clarificationMessage || "Tarih ve saat anlaşılamadı. Lütfen tekrar belirtin.";
+          responsePayload.pendingAppointmentData = pending;
+          
+          appointmentState = "AWAITING_DATE_CLARIFICATION";
+          appointmentDraft = pending;
+          
+          await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_DATE_CLARIFICATION", appointmentDraft, { 
+             processedMessageIds: [...processedMessageIds, messageId],
+             dateAlternatives: dateValidation.alternatives 
+          });
+          
+          console.log(JSON.stringify({
+             event: "APPOINTMENT_DATE_CONFLICT_BLOCKED",
+             traceId: activeTraceId,
+             conversationId: convId,
+             conflictType: dateValidation.conflictType,
+             alternativesCount: dateValidation.alternatives?.length,
+             nextState: "AWAITING_DATE_CLARIFICATION"
+          }));
+
+          return NextResponse.json(responsePayload, { headers: CORS });
+      }
+
+      // V2 Validation passed or was automatically deterministically resolved
+      pending.requestedDate = dateValidation.resolvedDate || pending.requestedDate;
+      // Also update the display text to be perfectly canonical
+      const canonicalLabel = dateValidation.resolvedDate && dateValidation.resolvedWeekday ? 
+         `${dateValidation.resolvedDate} ${dateValidation.resolvedWeekday}` : pending.requestedDate;
+      
+      // We overwrite the raw inputs so they don't leak into the summary incorrectly
+      pending.requestedDate = canonicalLabel.split(" ")[0]; // just ISO
+      (pending as any).requestedWeekday = dateValidation.resolvedWeekday;
+
+      // Construct a clean, canonical summary as per AŞAMA 10
+      let phoneDisplay = pending.patientPhone || "-";
+      const summaryMsg = `Ön randevu talebinizin özeti:\n\nAd Soyad: ${pending.patientName}\nTelefon: ${phoneDisplay}\nE-posta: ${pending.patientEmail || "-"}\nHizmet: ${pending.requestedService}\nTercih Edilen Tarih: ${dateValidation.resolvedDate || "-"} ${dateValidation.resolvedWeekday || ""}\nTercih Edilen Saat: ${dateValidation.resolvedTime || "Belirtilmedi"}\n\nBu bilgilerle ön randevu talebinizi kliniğin değerlendirmesine iletmemi onaylıyor musunuz?`;
+      
+      responsePayload.reply = summaryMsg;
       responsePayload.pendingAppointmentData = pending;
       responsePayload.responseType = "appointment_confirmation_required";
       
