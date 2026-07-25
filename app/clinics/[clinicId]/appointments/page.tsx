@@ -5,7 +5,7 @@ import { collection, query, where, orderBy, onSnapshot, doc, updateDoc } from "f
 import { db, auth } from "@/lib/firebase";
 import { useI18n } from "@/lib/i18n-context";
 import { UI_COLORS } from "@/components/ui/ui-shared";
-import { Loader2, Calendar, Clock, User, Stethoscope, ChevronRight, Inbox, Phone, Mail, CheckCircle, XCircle, MessageSquare } from "lucide-react";
+import { Loader2, Calendar, Clock, User, Stethoscope, ChevronRight, Inbox, Phone, Mail, CheckCircle, XCircle, MessageSquare, Plus } from "lucide-react";
 import Badge from "@/components/ui/Badge";
 import type { Appointment } from "@/lib/types";
 
@@ -20,6 +20,11 @@ export default function AppointmentsPage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  // Manual Appointment Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newApptData, setNewApptData] = useState({ patientName: "", patientPhone: "", patientEmail: "", requestedService: "", requestedDate: "", requestedTime: "", notes: "" });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const q = query(
@@ -99,6 +104,40 @@ export default function AppointmentsPage({ params }: PageProps) {
     }
   };
 
+  const handleAddAppointment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Unauthorized");
+
+      const res = await fetch(`/api/clinics/${clinicId}/appointments/manual`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify(newApptData)
+      });
+
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || "Randevu eklenemedi");
+      }
+
+      setToastMsg("Randevu başarıyla eklendi.");
+      setIsModalOpen(false);
+      setNewApptData({ patientName: "", patientPhone: "", patientEmail: "", requestedService: "", requestedDate: "", requestedTime: "", notes: "" });
+    } catch (e: any) {
+      console.error(e);
+      setToastMsg(e.message || "Randevu eklenirken hata oluştu.");
+    } finally {
+      setIsSubmitting(false);
+      setTimeout(() => setToastMsg(null), 4000);
+    }
+  };
+
   if (loading) {
     return (
       <div style={{ padding: 100, textAlign: "center", color: UI_COLORS.textMuted }}>
@@ -130,13 +169,38 @@ export default function AppointmentsPage({ params }: PageProps) {
         </div>
       )}
 
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.6px" }}>
-          {t("appointments.title") || "Recent Appointments"}
-        </h1>
-        <p style={{ color: UI_COLORS.textSecondary, marginTop: 6, fontSize: 14.5, fontWeight: 500 }}>
-          {t("appointments.subtitle") || "View recent appointments booked via AI or manually."}
-        </p>
+      <div style={{ marginBottom: 32, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.6px" }}>
+            {t("appointments.title") || "Recent Appointments"}
+          </h1>
+          <p style={{ color: UI_COLORS.textSecondary, marginTop: 6, fontSize: 14.5, fontWeight: 500 }}>
+            {t("appointments.subtitle") || "View recent appointments booked via AI or manually."}
+          </p>
+        </div>
+        <button
+          onClick={() => setIsModalOpen(true)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 16px",
+            background: UI_COLORS.brand,
+            color: "white",
+            border: "none",
+            borderRadius: 8,
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: "pointer",
+            boxShadow: "0 2px 4px rgba(99, 102, 241, 0.2)",
+            transition: "all 0.2s"
+          }}
+          onMouseEnter={e => e.currentTarget.style.transform = "translateY(-1px)"}
+          onMouseLeave={e => e.currentTarget.style.transform = "translateY(0)"}
+        >
+          <Plus size={16} strokeWidth={2.5} />
+          Manuel Randevu Ekle
+        </button>
       </div>
 
       {appointments.length === 0 ? (
@@ -351,6 +415,69 @@ export default function AppointmentsPage({ params }: PageProps) {
                   })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Appointment Modal */}
+      {isModalOpen && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)",
+          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999
+        }}>
+          <div style={{
+            background: "white", borderRadius: 16, width: 480, maxWidth: "90%",
+            boxShadow: "0 20px 40px rgba(0,0,0,0.1)", overflow: "hidden",
+            display: "flex", flexDirection: "column"
+          }}>
+            <div style={{ padding: "20px 24px", borderBottom: `1px solid ${UI_COLORS.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h2 style={{ fontSize: 18, fontWeight: 700, color: UI_COLORS.textPrimary, margin: 0 }}>Manuel Randevu Ekle</h2>
+              <button onClick={() => setIsModalOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", color: UI_COLORS.textSecondary }}>
+                <XCircle size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleAddAppointment} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: UI_COLORS.textSecondary, marginBottom: 6 }}>Hasta Adı Soyadı *</label>
+                <input required type="text" value={newApptData.patientName} onChange={e => setNewApptData({...newApptData, patientName: e.target.value})} style={{ width: "100%", padding: "10px 12px", border: `1px solid ${UI_COLORS.border}`, borderRadius: 8, fontSize: 14 }} />
+              </div>
+              <div style={{ display: "flex", gap: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: UI_COLORS.textSecondary, marginBottom: 6 }}>Telefon *</label>
+                  <input required type="text" value={newApptData.patientPhone} onChange={e => setNewApptData({...newApptData, patientPhone: e.target.value})} style={{ width: "100%", padding: "10px 12px", border: `1px solid ${UI_COLORS.border}`, borderRadius: 8, fontSize: 14 }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: UI_COLORS.textSecondary, marginBottom: 6 }}>E-posta</label>
+                  <input type="email" value={newApptData.patientEmail} onChange={e => setNewApptData({...newApptData, patientEmail: e.target.value})} style={{ width: "100%", padding: "10px 12px", border: `1px solid ${UI_COLORS.border}`, borderRadius: 8, fontSize: 14 }} />
+                </div>
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: UI_COLORS.textSecondary, marginBottom: 6 }}>Tedavi / Hizmet *</label>
+                <input required type="text" value={newApptData.requestedService} onChange={e => setNewApptData({...newApptData, requestedService: e.target.value})} style={{ width: "100%", padding: "10px 12px", border: `1px solid ${UI_COLORS.border}`, borderRadius: 8, fontSize: 14 }} />
+              </div>
+              <div style={{ display: "flex", gap: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: UI_COLORS.textSecondary, marginBottom: 6 }}>Tarih *</label>
+                  <input required type="date" value={newApptData.requestedDate} onChange={e => setNewApptData({...newApptData, requestedDate: e.target.value})} style={{ width: "100%", padding: "10px 12px", border: `1px solid ${UI_COLORS.border}`, borderRadius: 8, fontSize: 14 }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: UI_COLORS.textSecondary, marginBottom: 6 }}>Saat *</label>
+                  <input required type="time" value={newApptData.requestedTime} onChange={e => setNewApptData({...newApptData, requestedTime: e.target.value})} style={{ width: "100%", padding: "10px 12px", border: `1px solid ${UI_COLORS.border}`, borderRadius: 8, fontSize: 14 }} />
+                </div>
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: UI_COLORS.textSecondary, marginBottom: 6 }}>Notlar</label>
+                <textarea value={newApptData.notes} onChange={e => setNewApptData({...newApptData, notes: e.target.value})} style={{ width: "100%", padding: "10px 12px", border: `1px solid ${UI_COLORS.border}`, borderRadius: 8, fontSize: 14, minHeight: 60 }} />
+              </div>
+              <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end", gap: 12 }}>
+                <button type="button" onClick={() => setIsModalOpen(false)} style={{ padding: "10px 16px", background: "none", border: "none", color: UI_COLORS.textSecondary, fontWeight: 600, cursor: "pointer" }}>İptal</button>
+                <button type="submit" disabled={isSubmitting} style={{ padding: "10px 24px", background: UI_COLORS.brand, color: "white", border: "none", borderRadius: 8, fontWeight: 600, cursor: isSubmitting ? "not-allowed" : "pointer", opacity: isSubmitting ? 0.7 : 1, display: "flex", alignItems: "center", gap: 8 }}>
+                  {isSubmitting && <Loader2 size={16} className="animate-spin" />}
+                  Kaydet
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
