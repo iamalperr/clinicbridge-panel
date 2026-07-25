@@ -260,27 +260,44 @@ export async function createAppointmentAndNotify(draft: CreateAppointmentPayload
     if (!record || !record.id) { 
         return { success: false, step_failed: step_failed || "STEP 5", reason: reason || "APPOINTMENT_INSERT_FAILED", stack }; 
     }
-    
-    const clinicNotification = await sendClinicNewAppointmentNotification(record);
-    const patientNotification = await sendPatientAppointmentAcknowledgement(record);
+    let clinicNotificationStatus = "NOT_CONFIGURED";
+    let patientNotificationStatus = "NOT_ATTEMPTED";
+
+    try {
+        const clinicNotification = await sendClinicNewAppointmentNotification(record);
+        clinicNotificationStatus = clinicNotification.status.toLowerCase();
+    } catch (e: any) {
+        console.error(`[CLINIC_NOTIFICATION_ERROR] ${e.message}`);
+    }
+
+    try {
+        const patientNotification = await sendPatientAppointmentAcknowledgement(record);
+        patientNotificationStatus = patientNotification.status.toLowerCase();
+    } catch (e: any) {
+        console.error(`[PATIENT_NOTIFICATION_ERROR] ${e.message}`);
+    }
     
     const adminDb = getAdminDb();
     if (adminDb) {
-        await adminDb.collection("clinics").doc(record.clinicId!).collection("appointments").doc(record.id).update({
-            notificationStatus: {
-              emailToClinic: clinicNotification.status.toLowerCase(),
-              smsToPatient: (record.notificationChannel === "sms" || record.notificationChannel === "email_and_sms") ? "sent" : "skipped"
-            },
-            patientNotificationStatus: patientNotification.status.toLowerCase()
-        });
+        try {
+            await adminDb.collection("clinics").doc(record.clinicId!).collection("appointments").doc(record.id).update({
+                notificationStatus: {
+                  emailToClinic: clinicNotificationStatus,
+                  smsToPatient: (record.notificationChannel === "sms" || record.notificationChannel === "email_and_sms") ? "sent" : "skipped"
+                },
+                patientNotificationStatus: patientNotificationStatus
+            });
+        } catch (e: any) {
+             console.error(`[NOTIFICATION_STATUS_UPDATE_ERROR] ${e.message}`);
+        }
     }
 
     return { 
         success: true, 
         appointmentId: record.id, 
         status: record.status as string, 
-        clinicNotificationStatus: clinicNotification.status, 
-        patientNotificationStatus: patientNotification.status 
+        clinicNotificationStatus: clinicNotificationStatus, 
+        patientNotificationStatus: patientNotificationStatus 
     };
   } catch (err: any) {
       console.log(`[APPOINTMENT_SUBMISSION_EXCEPTION] convId=${draft.conversationId} clinicId=${draft.clinicId} error=${err.message} timestamp=${new Date().toISOString()}`);
