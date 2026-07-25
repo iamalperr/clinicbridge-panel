@@ -2145,6 +2145,7 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
         
         // CRITICAL FIX: We must update the state to AWAITING_CONFIRMATION so the strict handler catches the 'evet'
         appointmentState = "AWAITING_CONFIRMATION";
+        appointmentDraft = pending;
       }
     }
 
@@ -2165,6 +2166,14 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
       fallbackReason: responsePayload.reply.includes("doğrulayamıyorum") ? "groundedness_failure" : "",
       appointmentState,
     });
+
+    if (adminDb && actualClinicId && convId && appointmentState !== "IDLE") {
+        try {
+            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, appointmentState, appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
+        } catch (e: any) {
+            console.error("[chat API] Error saving deterministic state at end of flow:", e.message);
+        }
+    }
 
     return NextResponse.json(responsePayload, { headers: CORS });
 
