@@ -153,6 +153,44 @@ function toFirestoreFields(data: Record<string, any>): Record<string, any> {
   return fields;
 }
 
+export function safeMergeDraft(currentDraft: Partial<AppointmentData>, llmExtractedData?: Partial<AppointmentData>): Partial<AppointmentData> {
+  if (!llmExtractedData) return currentDraft;
+  const merged = { ...currentDraft };
+  for (const key in llmExtractedData) {
+    const val = (llmExtractedData as any)[key];
+    if (val !== null && val !== undefined && val !== "") {
+      (merged as any)[key] = val;
+    }
+  }
+  return merged;
+}
+
+async function saveAppointmentState(
+  adminDb: any, 
+  clinicId: string, 
+  convId: string, 
+  expectedVersion: number, 
+  newState: AppointmentState, 
+  newDraft: Partial<AppointmentData>, 
+  extras: Record<string, any> = {}
+): Promise<boolean> {
+  const logRef = adminDb.collection("clinics").doc(clinicId).collection("conversationLogs").doc(convId);
+  return await adminDb.runTransaction(async (t: any) => {
+    const snap = await t.get(logRef);
+    if (!snap.exists) {
+       t.set(logRef, { appointmentState: newState, appointmentDraft: newDraft, appointmentVersion: 1, ...extras }, { merge: true });
+       return true;
+    }
+    const currentVersion = snap.data()?.appointmentVersion || 0;
+    if (currentVersion !== expectedVersion) {
+       console.error(`[STALE_STATE_REJECTED] convId=${convId} expected=${expectedVersion} found=${currentVersion}`);
+       return false; // Stale!
+    }
+    t.set(logRef, { appointmentState: newState, appointmentDraft: newDraft, appointmentVersion: currentVersion + 1, ...extras }, { merge: true });
+    return true;
+  });
+}
+
 /* ── Firebase Anonymous Auth → get idToken ─────────────────────────────── */
 async function getFirebaseAnonToken(apiKey: string): Promise<string | null> {
   try {
@@ -899,10 +937,13 @@ export async function POST(req: Request) {
       }, { status: 404, headers: CORS });
     }
 
+    const messageId = body.messageId || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
     /* ── Deterministic Appointment State Machine Init ──────────────────── */
     let appointmentState: AppointmentState = "IDLE";
     let appointmentDraft: Partial<AppointmentData> = {};
     let appointmentVersion: number = 0;
+    let processedMessageIds: string[] = [];
 
     if (adminDb && convId) {
       try {
@@ -912,30 +953,27 @@ export async function POST(req: Request) {
           if (lData?.appointmentState) appointmentState = lData.appointmentState;
           if (lData?.appointmentDraft) appointmentDraft = lData.appointmentDraft;
           if (typeof lData?.appointmentVersion === "number") appointmentVersion = lData.appointmentVersion;
+          if (Array.isArray(lData?.processedMessageIds)) processedMessageIds = lData.processedMessageIds;
+          
+          if (processedMessageIds.includes(messageId)) {
+             console.log(`[IDEMPOTENCY_SKIPPED] convId=${convId} messageId=${messageId}`);
+             return NextResponse.json({ duplicate: true, reply: "" }, { headers: CORS });
+          }
         }
       } catch (e: any) {
         console.error("[chat API] Error fetching conversationLog for state machine:", e.message);
       }
     }
 
-    // Always merge pendingAppointmentData from frontend into our draft
-    if (pendingAppointmentData) {
-      appointmentDraft = { ...appointmentDraft, ...pendingAppointmentData };
-    }
+    // Always merge pendingAppointmentData from frontend into our draft SAFELY
+    appointmentDraft = safeMergeDraft(appointmentDraft, pendingAppointmentData);
 
     const msgLower = message.toLowerCase().trim();
 
     /* ── DETERMINISTIC STATE MACHINE INTERCEPTOR ───────────────────────── */
-    // 1. Check Cancellation at any point
     const isCancel = /^(hayır|h|onaylamıyorum|iptal|vazgeçtim|hayir|no|cancel)$/i.test(msgLower);
     if (isCancel && (appointmentState !== "IDLE" || pendingAppointmentData)) {
-        appointmentState = "IDLE";
-        appointmentDraft = {};
-        if (adminDb && convId) {
-           await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).set({
-              appointmentState, appointmentDraft
-           }, { merge: true });
-        }
+        await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "IDLE", {}, { processedMessageIds: [...processedMessageIds, messageId] });
         return NextResponse.json({ reply: "Randevu talebiniz iptal edildi. Size başka nasıl yardımcı olabilirim?" }, { headers: CORS });
     }
 
@@ -947,34 +985,21 @@ export async function POST(req: Request) {
         appointmentDraft.patientName = message.trim();
         console.log(`[APPOINTMENT_STATE] COLLECTING_NAME completed: name="${appointmentDraft.patientName}" convId=${convId}`);
 
-        // After name → check if phone is already collected, otherwise ask for phone
         if (!appointmentDraft.patientPhone) {
-            appointmentState = "COLLECTING_PHONE";
-            if (adminDb && convId) {
-                await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).set({ appointmentState, appointmentDraft }, { merge: true });
-            }
+            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_PHONE", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
             const firstName = (appointmentDraft.patientName || "").split(" ")[0];
             const replyMsg = firstName ? `Teşekkür ederim, ${firstName}. Kliniğimizin randevu talebinizle ilgili sizinle iletişime geçebilmesi için telefon numaranızı paylaşabilir misiniz?` : `Teşekkür ederim. Kliniğimizin randevu talebinizle ilgili sizinle iletişime geçebilmesi için telefon numaranızı paylaşabilir misiniz?`;
             return NextResponse.json({ reply: replyMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
         }
-        // Phone already exists, check email
         if (!appointmentDraft.patientEmail) {
-            appointmentState = "COLLECTING_EMAIL";
-            if (adminDb && convId) {
-                await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).set({ appointmentState, appointmentDraft }, { merge: true });
-            }
+            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
             return NextResponse.json({ reply: "Teşekkür ederim. Randevu talebinizle ilgili bilgilendirmeleri size iletebilmemiz için e-posta adresinizi de paylaşabilir misiniz?", pendingAppointmentData: appointmentDraft }, { headers: CORS });
         }
-        // Both phone and email exist → go to confirmation
-        appointmentState = "AWAITING_CONFIRMATION";
-        if (adminDb && convId) {
-            await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).set({ appointmentState, appointmentDraft }, { merge: true });
-        }
+        await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
         const phoneDisplay = appointmentDraft.patientPhone;
         const summaryMsg = `Ön randevu talebinizin özeti:\n\nAd Soyad: ${appointmentDraft.patientName || "-"}\nTelefon: ${phoneDisplay || "-"}\nE-posta: ${appointmentDraft.patientEmail || "-"}\nHizmet: ${appointmentDraft.requestedService || "-"}\nTercih Edilen Tarih: ${appointmentDraft.preferredDateDisplay || appointmentDraft.requestedDate || "-"}\nTercih Edilen Saat: ${appointmentDraft.requestedTime || "Belirtilmedi"}\n\nBu bilgilerle ön randevu talebinizi kliniğimizin değerlendirmesine iletmemi onaylıyor musunuz? Evet veya Hayır şeklinde yanıtlayabilirsiniz.`;
         return NextResponse.json({ reply: summaryMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
     } else if (appointmentState === "COLLECTING_PHONE") {
-        // Validate and normalize Turkish phone number
         const phoneResult = normalizeTurkishPhone(message.trim());
         if (!phoneResult.valid) {
             console.log(`[APPOINTMENT_STATE] COLLECTING_PHONE invalid: raw="${message.trim()}" error=${phoneResult.error} convId=${convId}`);
@@ -984,19 +1009,11 @@ export async function POST(req: Request) {
         appointmentDraft.patientPhoneRaw = phoneResult.raw;
         console.log(`[APPOINTMENT_PHONE_COLLECTED] normalized="${phoneResult.normalized}" convId=${convId} clinicId=${actualClinicId}`);
 
-        // After phone → check if email is already collected, otherwise ask for email
         if (!appointmentDraft.patientEmail) {
-            appointmentState = "COLLECTING_EMAIL";
-            if (adminDb && convId) {
-                await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).set({ appointmentState, appointmentDraft }, { merge: true });
-            }
+            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
             return NextResponse.json({ reply: "Teşekkür ederim. Randevu talebinizle ilgili bilgilendirmeleri size iletebilmemiz için e-posta adresinizi de paylaşabilir misiniz?", pendingAppointmentData: appointmentDraft }, { headers: CORS });
         }
-        // Email already exists → go to confirmation
-        appointmentState = "AWAITING_CONFIRMATION";
-        if (adminDb && convId) {
-            await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).set({ appointmentState, appointmentDraft }, { merge: true });
-        }
+        await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
         const summaryMsg = `Ön randevu talebinizin özeti:\n\nAd Soyad: ${appointmentDraft.patientName || "-"}\nTelefon: ${phoneResult.display}\nE-posta: ${appointmentDraft.patientEmail}\nHizmet: ${appointmentDraft.requestedService || "-"}\nTercih Edilen Tarih: ${appointmentDraft.preferredDateDisplay || appointmentDraft.requestedDate || "-"}\nTercih Edilen Saat: ${appointmentDraft.requestedTime || "Belirtilmedi"}\n\nBu bilgilerle ön randevu talebinizi kliniğimizin değerlendirmesine iletmemi onaylıyor musunuz? Evet veya Hayır şeklinde yanıtlayabilirsiniz.`;
         return NextResponse.json({ reply: summaryMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
     } else if (appointmentState === "COLLECTING_EMAIL") {
@@ -1007,10 +1024,7 @@ export async function POST(req: Request) {
         if (emailRegex.test(potentialEmail)) {
              appointmentDraft.patientEmail = potentialEmail;
              console.log(`[APPOINTMENT_EMAIL_COLLECTED] email="${potentialEmail}" convId=${convId} clinicId=${actualClinicId}`);
-             appointmentState = "AWAITING_CONFIRMATION";
-             if (adminDb && convId) {
-                await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).set({ appointmentState, appointmentDraft }, { merge: true });
-             }
+             await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
              // Build display phone from normalized value
              let phoneDisplay = appointmentDraft.patientPhone || "-";
              const phoneCheck = normalizeTurkishPhone(phoneDisplay);
@@ -1032,60 +1046,43 @@ export async function POST(req: Request) {
 
     // 4. Handle Confirmation trigger
     if (isConfirmation(message) || appointmentState === "AWAITING_CONFIRMATION") {
-        // If they said yes or they are explicitly in AWAITING_CONFIRMATION
         const isConfirm = isConfirmation(message);
         
         if (isConfirm && appointmentDraft) {
             console.log(`[APPOINTMENT_CONFIRMATION_RECEIVED] convId=${convId} clinicId=${actualClinicId}`);
-            // Check mandatory fields BEFORE creating appointment
+
+            // Check mandatory fields BEFORE locking submission
             if (!appointmentDraft.patientName) {
-                appointmentState = "COLLECTING_NAME";
-                if (adminDb && convId) {
-                   await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).set({ appointmentState, appointmentDraft }, { merge: true });
-                }
+                await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_NAME", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
                 return NextResponse.json({ reply: "İşleme devam edebilmem için adınızı ve soyadınızı öğrenebilir miyim?" }, { headers: CORS });
             }
-            
-            // Phone is ALWAYS mandatory for AI Chatbot appointments
             if (!appointmentDraft.patientPhone) {
-                appointmentState = "COLLECTING_PHONE";
-                if (adminDb && convId) {
-                   await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).set({ appointmentState, appointmentDraft }, { merge: true });
-                }
+                await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_PHONE", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
                 const firstName = (appointmentDraft.patientName || "").split(" ")[0];
                 const phoneAskMsg = firstName 
                   ? `Teşekkür ederim, ${firstName}. Kliniğimizin randevu talebinizle ilgili sizinle iletişime geçebilmesi için telefon numaranızı paylaşabilir misiniz?`
                   : "Kliniğimizin randevu talebinizle ilgili sizinle iletişime geçebilmesi için telefon numaranızı paylaşabilir misiniz?";
                 return NextResponse.json({ reply: phoneAskMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
             }
-
-            // Email is ALWAYS mandatory for AI Chatbot appointments
             if (!appointmentDraft.patientEmail) {
-                appointmentState = "COLLECTING_EMAIL";
-                if (adminDb && convId) {
-                   await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).set({ appointmentState, appointmentDraft }, { merge: true });
-                }
+                await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
                 return NextResponse.json({ reply: "Teşekkür ederim. Randevu talebinizle ilgili bilgilendirmeleri size iletebilmemiz için e-posta adresinizi de paylaşabilir misiniz?", pendingAppointmentData: appointmentDraft }, { headers: CORS });
             }
-            
-            // If they reach here, all required fields are present.
-            // Proceed to SUBMITTING_APPOINTMENT
-            console.log(`[APPOINTMENT_SUBMISSION_STARTED] convId=${convId} clinicId=${actualClinicId}`);
-            appointmentState = "SUBMITTING_APPOINTMENT";
-            if (adminDb && convId) {
-               await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).set({
-                  appointmentState, appointmentDraft
-               }, { merge: true });
+
+            // Transition to SUBMITTING_APPOINTMENT immediately
+            const saveSuccess = await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "SUBMITTING_APPOINTMENT", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
+            if (!saveSuccess) {
+                return NextResponse.json({ reply: "Bir önceki talebiniz hala işleniyor, lütfen bekleyin..." }, { headers: CORS });
             }
 
-            // Resolve relative dates to ISO before submission
+            console.log(`[APPOINTMENT_SUBMISSION_STARTED] convId=${convId} clinicId=${actualClinicId}`);
+
             if (appointmentDraft.requestedDate) {
               const resolved = resolveRelativeDate(appointmentDraft.requestedDate);
               appointmentDraft.preferredDateDisplay = appointmentDraft.requestedDate;
               appointmentDraft.requestedDate = resolved.isoDate;
             }
 
-            // Normalize phone if not already normalized
             if (appointmentDraft.patientPhone && !appointmentDraft.patientPhone.startsWith("+90")) {
               const phoneResult = normalizeTurkishPhone(appointmentDraft.patientPhone);
               if (phoneResult.valid) {
@@ -1096,6 +1093,8 @@ export async function POST(req: Request) {
 
             try {
                const ns = clinicData?.notificationSettings || {};
+               const { createAppointmentAndNotify } = await import("@/lib/appointment-service");
+
                // Make sure all required fields are passed
                const apptDataToSend = {
                   ...appointmentDraft,
@@ -1106,13 +1105,24 @@ export async function POST(req: Request) {
                   requestedService: appointmentDraft.requestedService || "Genel Muayene"
                } as AppointmentData;
 
-               const appointmentResult = await createAppointment({
+               const appointmentResult = await createAppointmentAndNotify({
                  clinicId: actualClinicId,
-                 widgetId,
-                 clinicName,
-                 data: apptDataToSend,
+                 patientName: appointmentDraft.patientName,
+                 patientPhone: appointmentDraft.patientPhone,
+                 patientEmail: appointmentDraft.patientEmail,
+                 requestedService: appointmentDraft.requestedService || "Genel Muayene",
+                 requestedDate: appointmentDraft.requestedDate || "",
+                 requestedTime: appointmentDraft.requestedTime || undefined,
+                 preferredTimeStart: appointmentDraft.preferredTimeStart || undefined,
+                 preferredTimeEnd: appointmentDraft.preferredTimeEnd || undefined,
+                 preferredTimePeriod: appointmentDraft.preferredTimePeriod || undefined,
+                 preferredTimeText: appointmentDraft.preferredTimeText || undefined,
+                 notes: "",
+                 source: "ai_chatbot",
+                 status: "PENDING_REVIEW",
+                 createdBy: "ai_assistant",
                  conversationId: convId,
-                 notificationSettings: ns
+                 notificationChannelToSave: ns.patient?.appointmentChannel || "email"
                });
 
                if (!appointmentResult.success || !appointmentResult.appointmentId) {
@@ -1121,13 +1131,7 @@ export async function POST(req: Request) {
                }
 
                // State -> APPOINTMENT_SUBMITTED
-               appointmentState = "APPOINTMENT_SUBMITTED";
-               if (adminDb && convId) {
-                  await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).set({
-                     appointmentState, appointmentDraft,
-                     appointmentCreated: true
-                  }, { merge: true });
-               }
+               await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion + 1, "APPOINTMENT_SUBMITTED", appointmentDraft, { appointmentCreated: true });
 
                console.log(`[APPOINTMENT_SUBMISSION_COMPLETED] appointmentId=${appointmentResult.appointmentId} convId=${convId} clinicId=${actualClinicId}`);
                const dateDisplay = appointmentDraft.preferredDateDisplay || appointmentDraft.requestedDate || "-";
@@ -1135,32 +1139,9 @@ export async function POST(req: Request) {
                return NextResponse.json({ reply: successMsg, appointmentCreated: true, appointmentId: appointmentResult.appointmentId }, { headers: CORS });
             } catch (e: any) {
                console.error(`[APPOINTMENT_SUBMISSION_FAILED] error=${e.message} convId=${convId} clinicId=${actualClinicId}`);
-                if (e.message?.includes("PATIENT_EMAIL_REQUIRED") || e.message?.includes("MISSING_REQUIRED_FIELD: patientEmail")) {
-                    appointmentState = "COLLECTING_EMAIL";
-                    if (adminDb && convId) {
-                        await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).set({ appointmentState, appointmentDraft }, { merge: true });
-                    }
-                    return NextResponse.json({ reply: "Teşekkür ederim. Randevu talebinizle ilgili bilgilendirmeleri size iletebilmemiz için e-posta adresinizi de paylaşabilir misiniz?", pendingAppointmentData: appointmentDraft }, { headers: CORS });
-                }
-                if (e.message?.includes("MISSING_REQUIRED_FIELD: patientPhone") || e.message?.includes("patientPhone")) {
-                    appointmentState = "COLLECTING_PHONE";
-                    if (adminDb && convId) {
-                        await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).set({ appointmentState, appointmentDraft }, { merge: true });
-                    }
-                    return NextResponse.json({ reply: "Kliniğimizin randevu talebinizle ilgili sizinle iletişime geçebilmesi için telefon numaranızı paylaşabilir misiniz?", pendingAppointmentData: appointmentDraft }, { headers: CORS });
-                }
-                if (e.message?.includes("MISSING_REQUIRED_FIELD") || e.message?.includes("is required")) {
-                    appointmentState = "COLLECTING_INFO";
-                    if (adminDb && convId) {
-                        await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).set({ appointmentState, appointmentDraft }, { merge: true });
-                    }
-                    return NextResponse.json({ reply: "Randevu talebi oluşturulurken eksik bilgiler tespit edildi. Lütfen gerekli tüm bilgileri sağladığınızdan emin olun.", pendingAppointmentData: appointmentDraft }, { headers: CORS });
-                }
-                appointmentState = "APPOINTMENT_FAILED";
-                if (adminDb && convId) {
-                        await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).set({ appointmentState, appointmentDraft }, { merge: true });
-                }
-                return NextResponse.json({ reply: "Üzgünüm, ön randevu talebinizi şu anda sisteme kaydederken teknik bir sorun oluştu. Bilgileriniz henüz kliniğe iletilmedi. Lütfen kısa bir süre sonra yeniden deneyin.", pendingAppointmentData: appointmentDraft }, { headers: CORS });
+               // Retain the draft, mark as failed. Don't go back to COLLECTING.
+               await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion + 1, "APPOINTMENT_FAILED", appointmentDraft);
+               return NextResponse.json({ reply: "Üzgünüm, ön randevu talebinizi şu anda sisteme kaydederken teknik bir sorun oluştu. Daha sonra tekrar deneyebilirsiniz.", pendingAppointmentData: appointmentDraft }, { headers: CORS });
             }
         } else if (appointmentState === "AWAITING_CONFIRMATION" && !isConfirm) {
             // Unrecognized response while waiting for confirmation
