@@ -175,20 +175,14 @@ async function saveAppointmentState(
   extras: Record<string, any> = {}
 ): Promise<boolean> {
   const logRef = adminDb.collection("clinics").doc(clinicId).collection("conversationLogs").doc(convId);
-  return await adminDb.runTransaction(async (t: any) => {
-    const snap = await t.get(logRef);
-    if (!snap.exists) {
-       t.set(logRef, { appointmentState: newState, appointmentDraft: newDraft, appointmentVersion: 1, ...extras }, { merge: true });
-       return true;
-    }
-    const currentVersion = snap.data()?.appointmentVersion || 0;
-    if (currentVersion !== expectedVersion) {
-       console.error(`[STALE_STATE_REJECTED] convId=${convId} expected=${expectedVersion} found=${currentVersion}`);
-       return false; // Stale!
-    }
-    t.set(logRef, { appointmentState: newState, appointmentDraft: newDraft, appointmentVersion: currentVersion + 1, ...extras }, { merge: true });
+  try {
+    await logRef.set({ appointmentState: newState, appointmentDraft: newDraft, ...extras }, { merge: true });
+    console.log(`[STATE_SAVED] convId=${convId} state=${newState}`);
     return true;
-  });
+  } catch (e: any) {
+    console.error(`[STATE_SAVE_FAILED] convId=${convId} error=${e.message}`);
+    return false;
+  }
 }
 
 /* ── Firebase Anonymous Auth → get idToken ─────────────────────────────── */
