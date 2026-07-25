@@ -157,7 +157,7 @@ async function handleStatusUpdate(req: Request, paramsPromise: Promise<{ clinicI
       hasValidConfig = false;
     }
 
-    const primaryChannel = notificationSettings.patientAppointmentChannel;
+    const primaryChannel = notificationSettings.patientAppointmentChannel ?? "NOT_CONFIGURED";
 
     let notificationResult = null;
     let notificationChannelUsed = "";
@@ -278,11 +278,21 @@ async function handleStatusUpdate(req: Request, paramsPromise: Promise<{ clinicI
       const notifUpdateData: any = {
         patientNotificationStatus: notificationResult.success ? "sent" : ((notificationResult as any).reason === "no_email" || (notificationResult as any).reason === "no_phone" ? "missing_contact" : "failed"),
         notificationSentAt: now,
-        notificationChannel: notificationChannelUsed
       };
-      if (notificationResult.error) notifUpdateData.notificationError = notificationResult.error;
       
-      await adminDb.collection("clinics").doc(clinicId).collection("appointments").doc(appointmentId).update(notifUpdateData);
+      if (notificationChannelUsed !== undefined) {
+        notifUpdateData.notificationChannel = notificationChannelUsed;
+      }
+
+      if (notificationResult.error !== undefined) {
+        notifUpdateData.notificationError = notificationResult.error;
+      }
+      
+      const safeUpdateData = Object.fromEntries(
+        Object.entries(notifUpdateData).filter(([, value]) => value !== undefined)
+      );
+
+      await adminDb.collection("clinics").doc(clinicId).collection("appointments").doc(appointmentId).update(safeUpdateData);
     }
 
     // Create Notification Log if applicable (for SMS to preserve legacy log)
