@@ -768,6 +768,17 @@
       var clientMessageId = 'msg_' + Date.now();
       
       console.log('[WIDGET_SEND_START]');
+      
+      var isConfirmationSubmit = text.trim().toLowerCase() === 'evet' || text.trim().toLowerCase() === 'yes';
+      if (isConfirmationSubmit && pendingApptData) {
+         console.log('[APPOINTMENT_CONFIRMATION_REQUEST_STARTED]', {
+            traceId: traceId,
+            conversationId: sessionId,
+            clinicId: clinicId,
+            endpoint: API_BASE + '/api/public/chat'
+         });
+      }
+
       console.log('[WIDGET_CHAT_ENDPOINT]', API_BASE + '/api/public/chat');
       console.log('[WIDGET_REQUEST_STARTED]', {
         endpoint: API_BASE + '/api/public/chat',
@@ -801,21 +812,45 @@
       })
       .then(function (result) {
         var data = result.data;
+        
+        if (isConfirmationSubmit && pendingApptData) {
+          console.log('[APPOINTMENT_CONFIRMATION_RESPONSE]', {
+            traceId: traceId,
+            status: result.status,
+            success: data.success,
+            appointmentId: data.appointmentId,
+            errorCode: data.errorCode
+          });
+        }
+        
         console.log('[WIDGET_RESPONSE_BODY]', {
+          responseType: data.responseType,
           reply: data.reply,
           appointmentCreated: data.appointmentCreated,
-          diagnostics: data.diagnostics,
           success: data.success,
-          step_failed: data.step_failed,
           traceId: traceId
         });
         
         var t = shadow.getElementById('cbw-typing'); if (t) t.remove();
-        var reply = (data && data.reply) ? data.reply : sys.noReply;
+        var reply = "";
+
+        if (data && data.responseType === "APPOINTMENT_SUBMISSION_SUCCESS") {
+           if (data.success === true && typeof data.appointmentId === "string" && data.appointmentId.length > 0 && data.databaseInsertSucceeded === true) {
+              reply = data.reply;
+              pendingApptData = null;
+           } else {
+              // This should theoretically never happen if backend is strict, but as per user requirements:
+              reply = "Randevu onayı başarısız oldu (Kimlik eksik).";
+           }
+        } else if (data && data.responseType === "APPOINTMENT_SUBMISSION_FAILED") {
+           reply = data.reply || "Üzgünüm, bilgileriniz henüz kliniğe iletilmedi.";
+        } else {
+           reply = (data && data.reply) ? data.reply : sys.noReply;
+           if (data && data.pendingAppointmentData) pendingApptData = data.pendingAppointmentData;
+        }
+
         chatHistory.push({ role: 'assistant', content: reply });
         appendMsg(shadow, reply, false, '', false);
-        if (data && data.pendingAppointmentData) pendingApptData = data.pendingAppointmentData;
-        if (data && data.appointmentCreated)     pendingApptData = null;
 
         /* Show contextual actions if any */
         var q = shadow.getElementById('cbw-quick');
