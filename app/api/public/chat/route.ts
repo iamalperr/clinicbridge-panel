@@ -1307,8 +1307,8 @@ export async function POST(req: Request) {
                      appointmentCreated: true,
                      appointmentId: result.appointmentId,
                      appointmentStatus: result.status || "PENDING_REVIEW",
-                     clinicNotificationSent: result.clinicNotificationStatus === "SENT",
-                     patientNotificationSent: result.patientNotificationStatus === "SENT",
+                     clinicNotificationSent: result.clinicNotificationStatus === "SENT" || result.clinicNotificationStatus === "ACCEPTED",
+                     patientNotificationSent: result.patientNotificationStatus === "SENT" || result.patientNotificationStatus === "ACCEPTED",
                      reply: successReply
                  }, { headers: CORS });
 

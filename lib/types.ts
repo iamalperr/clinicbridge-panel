@@ -388,7 +388,7 @@ export interface Appointment {
   smsNotificationError?: string;
   smsNotificationMessagePreview?: string;
   notificationChannel?: string;
-  patientNotificationStatus?: string;
+  patientNotificationStatus?: "NOT_CONFIGURED" | "NOT_REQUESTED" | "MISSING_RECIPIENT" | "QUEUED" | "ACCEPTED" | "SENT" | "DELIVERED" | "FAILED" | "UNKNOWN" | string;
   notificationSentAt?: string;
   notificationError?: string;
   createdBy?: string;

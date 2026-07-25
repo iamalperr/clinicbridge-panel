@@ -198,7 +198,7 @@ export async function sendClinicNewAppointmentNotification(appointment: Partial<
 }
 
 export async function sendPatientAppointmentAcknowledgement(appointment: Partial<Appointment>): Promise<{ status: string }> {
-  let patientEmailSentStatus = "SKIPPED";
+  let patientEmailSentStatus = "NOT_CONFIGURED";
   
   const adminDb = getAdminDb();
   if (!adminDb || !appointment.clinicId) return { status: "FAILED" };
@@ -207,6 +207,15 @@ export async function sendPatientAppointmentAcknowledgement(appointment: Partial
 
   if (appointment.notificationChannel === "email" || appointment.notificationChannel === "email_and_sms" || appointment.notificationChannel === "email_and_whatsapp") {
     if (appointment.patientEmail) {
+      console.log(JSON.stringify({
+        checkpoint: "PATIENT_EMAIL_SEND_START",
+        traceId: "auto",
+        appointmentId: appointment.id,
+        clinicId: appointment.clinicId,
+        hasPatientEmail: true,
+        notificationChannel: appointment.notificationChannel
+      }));
+      
       try {
         const { sendPatientAppointmentEmail } = await import("@/lib/appointment-notifications");
         const patientResult = await sendPatientAppointmentEmail({
@@ -224,20 +233,37 @@ export async function sendPatientAppointmentAcknowledgement(appointment: Partial
           preferredTimeText: appointment.preferredTimeText,
           appointmentId: appointment.id!,
         });
-        patientEmailSentStatus = patientResult.success ? "SENT" : "FAILED";
+        
+        console.log(JSON.stringify({
+          checkpoint: "PATIENT_EMAIL_PROVIDER_RESPONSE",
+          traceId: "auto",
+          appointmentId: appointment.id,
+          provider: "resend",
+          providerStatus: patientResult.success ? "ACCEPTED" : "FAILED",
+          error: patientResult.error || null
+        }));
+        
+        patientEmailSentStatus = patientResult.success ? "ACCEPTED" : "FAILED";
       } catch (e: any) {
+        console.log(JSON.stringify({
+          checkpoint: "PATIENT_EMAIL_SEND_FAILED",
+          traceId: "auto",
+          appointmentId: appointment.id,
+          errorMessage: e.message
+        }));
         patientEmailSentStatus = "FAILED";
       }
     } else {
-        patientEmailSentStatus = "FAILED";
+        patientEmailSentStatus = "MISSING_RECIPIENT";
     }
   }
 
-  if (patientEmailSentStatus === "SENT") {
-      console.log(`[PATIENT_NOTIFICATION_SENT] convId=${appointment.conversationId} clinicId=${appointment.clinicId} appointmentId=${appointment.id} timestamp=${new Date().toISOString()}`);
-  } else if (patientEmailSentStatus === "FAILED") {
-      console.log(`[PATIENT_NOTIFICATION_FAILED] convId=${appointment.conversationId} clinicId=${appointment.clinicId} appointmentId=${appointment.id} timestamp=${new Date().toISOString()}`);
-  }
+  console.log(JSON.stringify({
+    checkpoint: "PATIENT_NOTIFICATION_STATE_SAVED",
+    traceId: "auto",
+    appointmentId: appointment.id,
+    patientNotificationStatus: patientEmailSentStatus
+  }));
 
   return { status: patientEmailSentStatus };
 }
@@ -289,7 +315,7 @@ export async function createAppointmentAndNotify(draft: CreateAppointmentPayload
 
     try {
         const patientNotification = await sendPatientAppointmentAcknowledgement(record);
-        patientNotificationStatus = patientNotification.status.toLowerCase();
+        patientNotificationStatus = patientNotification.status; // It is already uppercase canonical status
         
         // ── INSTRUMENTATION LOG 13 ──
         console.log(JSON.stringify({ checkpoint: "APPT_13_PATIENT_EMAIL_SEND_RESULT", clinicId: validatedPayload.clinicId, appointmentId: record.id, result: patientNotificationStatus, timestamp: new Date().toISOString() }));

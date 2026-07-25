@@ -14,11 +14,11 @@ export class ResendEmailProvider implements NotificationProvider {
 
   async send(payload: NotificationPayload): Promise<NotificationProviderResult> {
     if (!this.apiKey) {
-      console.warn('[ResendEmailProvider] RESEND_API_KEY is missing. Simulating success.');
+      console.warn('[ResendEmailProvider] RESEND_API_KEY is missing. Failing instead of simulating success.');
       return {
-        success: true,
-        messageId: `simulated_${Date.now()}`,
-        rawResponse: 'simulated',
+        success: false,
+        error: "Missing RESEND_API_KEY",
+        rawResponse: 'missing_api_key',
       };
     }
 

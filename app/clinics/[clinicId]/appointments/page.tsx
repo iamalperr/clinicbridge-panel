@@ -304,56 +304,77 @@ export default function AppointmentsPage({ params }: PageProps) {
                                 {apt.patientEmail}
                               </span>
                             )}
-                            {/* Determine whether to show SMS or Email info based on notificationChannel or fallback */}
-                              {apt.notificationStatus?.emailToClinic !== undefined ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
-                                  <div style={{
-                                    display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500,
-                                    backgroundColor: apt.notificationStatus?.emailToClinic === 'sent' ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)",
-                                    color: apt.notificationStatus?.emailToClinic === 'sent' ? "#16a34a" : "#dc2626",
-                                    padding: '4px 8px', borderRadius: '12px', width: 'fit-content'
-                                  }}>
-                                    {apt.notificationStatus?.emailToClinic === 'sent' ? <CheckCircle size={12} /> : <XCircle size={12} />}
-                                    {apt.notificationStatus?.emailToClinic === 'sent' ? "Klinik e-postası gönderildi" : "Klinik e-postası gönderilemedi"}
-                                  </div>
-                                  
-                                  <div style={{
-                                    display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500,
-                                    backgroundColor: apt.patientNotificationStatus === 'sent' ? "rgba(34, 197, 94, 0.1)" : apt.patientNotificationStatus === 'SKIPPED' ? "rgba(100, 116, 139, 0.1)" : apt.patientNotificationStatus !== undefined ? "rgba(239, 68, 68, 0.1)" : "rgba(100, 116, 139, 0.1)",
-                                    color: apt.patientNotificationStatus === 'sent' ? "#16a34a" : apt.patientNotificationStatus === 'SKIPPED' ? "#475569" : apt.patientNotificationStatus !== undefined ? "#dc2626" : "#475569",
-                                    padding: '4px 8px', borderRadius: '12px', width: 'fit-content'
-                                  }}>
-                                    {apt.patientNotificationStatus === 'sent' ? <CheckCircle size={12} /> : apt.patientNotificationStatus === 'SKIPPED' ? <MessageSquare size={12} /> : apt.patientNotificationStatus !== undefined ? <XCircle size={12} /> : <MessageSquare size={12} />}
-                                    {apt.patientNotificationStatus === 'sent' ? "Hasta e-postası gönderildi" : apt.patientNotificationStatus === 'SKIPPED' ? "Hasta e-postası gönderilmedi" : apt.patientNotificationStatus !== undefined ? "E-posta gönderilemedi" : `${apt.notificationChannel === 'email' ? 'E-posta' : apt.notificationChannel === 'whatsapp' ? 'WhatsApp' : 'SMS'} seçili`}
-                                  </div>
-                                </div>
-                              ) : apt.notificationChannel && apt.patientNotificationStatus ? (
+                            {/* Notifications Status Block */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
+                              
+                              {/* Clinic Notification */}
+                              {apt.notificationStatus?.emailToClinic !== undefined && (
                                 <div style={{
                                   display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500,
-                                  backgroundColor: apt.patientNotificationStatus === "sent" ? "rgba(34, 197, 94, 0.1)" : 
-                                                   apt.patientNotificationStatus === "failed" ? "rgba(239, 68, 68, 0.1)" : "rgba(100, 116, 139, 0.1)",
-                                  color: apt.patientNotificationStatus === "sent" ? "#16a34a" : 
-                                         apt.patientNotificationStatus === "failed" ? "#dc2626" : "#475569",
-                                  padding: '4px 8px', borderRadius: '12px', width: 'fit-content', marginTop: '6px'
+                                  backgroundColor: apt.notificationStatus?.emailToClinic === 'sent' ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)",
+                                  color: apt.notificationStatus?.emailToClinic === 'sent' ? "#16a34a" : "#dc2626",
+                                  padding: '4px 8px', borderRadius: '12px', width: 'fit-content'
                                 }}>
-                                  {apt.patientNotificationStatus === "sent" ? <CheckCircle size={12} /> : 
-                                   apt.patientNotificationStatus === "failed" ? <XCircle size={12} /> : <MessageSquare size={12} />}
-                                  
-                                  {apt.patientNotificationStatus === "sent" ? `${apt.notificationChannel === 'email' ? 'E-Posta' : apt.notificationChannel === 'whatsapp' ? 'WhatsApp' : 'SMS'} Gönderildi` : 
-                                   apt.patientNotificationStatus === "failed" ? `${apt.notificationChannel === 'email' ? 'E-Posta' : apt.notificationChannel === 'whatsapp' ? 'WhatsApp' : 'SMS'} Gönderilemedi` : 
-                                   apt.patientNotificationStatus === "missing_contact" ? "İletişim Bilgisi Yok" :
-                                   "Bildirim Durumu Bekleniyor"}
-                                </div>
-                              ) : (
-                                <div style={{
-                                  display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500,
-                                  backgroundColor: "rgba(100, 116, 139, 0.1)", color: "#475569",
-                                  padding: '4px 8px', borderRadius: '12px', width: 'fit-content', marginTop: '6px'
-                                }}>
-                                  <MessageSquare size={12} />
-                                  {apt.notificationChannel ? `${apt.notificationChannel === 'email' ? 'E-posta' : apt.notificationChannel === 'whatsapp' ? 'WhatsApp' : 'SMS'} seçili` : "Bildirim Ayarlanmadı"}
+                                  {apt.notificationStatus?.emailToClinic === 'sent' ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                                  {apt.notificationStatus?.emailToClinic === 'sent' ? "Klinik e-postası gönderildi" : "Klinik e-postası gönderilemedi"}
                                 </div>
                               )}
+
+                              {/* Patient Notification */}
+                              {(() => {
+                                const status = apt.patientNotificationStatus;
+                                
+                                if (status === "ACCEPTED" || status === "SENT" || status === "sent") {
+                                  return (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500, backgroundColor: "rgba(34, 197, 94, 0.1)", color: "#16a34a", padding: '4px 8px', borderRadius: '12px', width: 'fit-content' }}>
+                                      <CheckCircle size={12} /> Hasta e-postası gönderildi
+                                    </div>
+                                  );
+                                } else if (status === "DELIVERED") {
+                                  return (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500, backgroundColor: "rgba(34, 197, 94, 0.1)", color: "#16a34a", padding: '4px 8px', borderRadius: '12px', width: 'fit-content' }}>
+                                      <CheckCircle size={12} /> Hasta e-postası teslim edildi
+                                    </div>
+                                  );
+                                } else if (status === "MISSING_RECIPIENT" || status === "missing_contact") {
+                                  return (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500, backgroundColor: "rgba(100, 116, 139, 0.1)", color: "#475569", padding: '4px 8px', borderRadius: '12px', width: 'fit-content' }}>
+                                      <MessageSquare size={12} /> Hasta e-postası bulunmuyor
+                                    </div>
+                                  );
+                                } else if (status === "NOT_CONFIGURED") {
+                                  return (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500, backgroundColor: "rgba(100, 116, 139, 0.1)", color: "#475569", padding: '4px 8px', borderRadius: '12px', width: 'fit-content' }}>
+                                      <MessageSquare size={12} /> Hasta bildirimi ayarlanmadı
+                                    </div>
+                                  );
+                                } else if (status === "NOT_REQUESTED" || status === "SKIPPED") {
+                                  return (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500, backgroundColor: "rgba(100, 116, 139, 0.1)", color: "#475569", padding: '4px 8px', borderRadius: '12px', width: 'fit-content' }}>
+                                      <MessageSquare size={12} /> Hasta bildirimi gönderilmedi
+                                    </div>
+                                  );
+                                } else if (status === "QUEUED") {
+                                  return (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500, backgroundColor: "rgba(234, 179, 8, 0.1)", color: "#ca8a04", padding: '4px 8px', borderRadius: '12px', width: 'fit-content' }}>
+                                      <Clock size={12} /> Hasta e-postası gönderiliyor
+                                    </div>
+                                  );
+                                } else if (status === "FAILED" || status === "failed") {
+                                  return (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500, backgroundColor: "rgba(239, 68, 68, 0.1)", color: "#dc2626", padding: '4px 8px', borderRadius: '12px', width: 'fit-content' }}>
+                                      <XCircle size={12} /> Hasta e-postası gönderilemedi
+                                    </div>
+                                  );
+                                } else {
+                                  return (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500, backgroundColor: "rgba(100, 116, 139, 0.1)", color: "#475569", padding: '4px 8px', borderRadius: '12px', width: 'fit-content' }}>
+                                      <MessageSquare size={12} /> Hasta e-posta durumu bilinmiyor
+                                    </div>
+                                  );
+                                }
+                              })()}
+                            </div>
                             </div>
                           </div>
                         </td>
