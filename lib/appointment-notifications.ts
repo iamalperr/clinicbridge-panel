@@ -227,31 +227,43 @@ export async function sendPatientAppointmentStatusEmail(
   let subject = "";
   let bodyContent = "";
 
-  if (payload.status === "confirmed" || payload.status === "approved") {
-    subject = "Ön Randevu Talebiniz Onaylandı";
+  if (payload.status === "APPROVED") {
+    subject = "Ön Randevu Talebiniz Klinik Tarafından Onaylandı";
     bodyContent = `
       <p>Merhaba ${payload.patientName},</p>
-      <p><strong>${payload.clinicName}</strong> için oluşturduğunuz <strong>${payload.treatment}</strong> ön randevu talebiniz onaylanmıştır.</p>
-      <p><strong>Tarih:</strong> ${payload.requestedDate}<br/>
-      <strong>Saat:</strong> ${payload.requestedTime}</p>
-      <p>Herhangi bir değişiklik olması durumunda kliniğimiz sizinle yeniden iletişime geçecektir.</p>
+      <p><strong>${payload.clinicName}</strong> için oluşturduğunuz ön randevu talebi klinik ekibi tarafından değerlendirilmiş ve uygun bulunmuştur.</p>
+      <p>Talep edilen hizmet: ${payload.treatment}<br/>
+      Talep edilen tarih: ${payload.requestedDate}<br/>
+      Talep edilen saat: ${payload.requestedTime}</p>
+      <p>Bu bildirim, randevunuzun klinik tarafından değerlendirildiğini gösterir. Klinik ekibi gerekmesi halinde son detaylar için sizinle iletişime geçebilir.</p>
     `;
-  } else if (payload.status === "alternative_time_proposed") {
-    subject = "Ön Randevu Talebiniz İçin Yeni Saat Önerisi";
+  } else if (payload.status === "CONFIRMED") {
+    subject = "Randevunuz Kesinleştirildi";
     bodyContent = `
       <p>Merhaba ${payload.patientName},</p>
-      <p><strong>${payload.clinicName}</strong> için oluşturduğunuz <strong>${payload.treatment}</strong> ön randevu talebiniz değerlendirilmiştir.</p>
-      <p>Klinik ekibimiz aşağıdaki tarih ve saati önermektedir:</p>
-      <p><strong>Tarih:</strong> ${payload.requestedDate}<br/>
-      <strong>Saat:</strong> ${payload.requestedTime}</p>
-      <p>Önerilen tarih ve saat sizin için uygunsa kliniğimizle iletişime geçerek onaylayabilirsiniz.</p>
+      <p><strong>${payload.clinicName}</strong> randevunuz kesinleştirilmiştir.</p>
+      <p>Hizmet: ${payload.treatment}<br/>
+      Randevu tarihi: ${payload.requestedDate}<br/>
+      Randevu saati: ${payload.requestedTime}</p>
+      <p>Randevu saatinden kısa bir süre önce klinikte olmanızı rica ederiz.</p>
     `;
-  } else if (payload.status === "rejected" || payload.status === "cancelled") {
+  } else if (payload.status === "REJECTED") {
     subject = "Ön Randevu Talebiniz Hakkında";
     bodyContent = `
       <p>Merhaba ${payload.patientName},</p>
-      <p><strong>${payload.clinicName}</strong> için oluşturduğunuz <strong>${payload.treatment}</strong> ön randevu talebiniz, seçtiğiniz tarih ve saat için onaylanamamıştır.</p>
-      <p>Yeni bir tarih ve saat tercihi oluşturmak için kliniğimizle iletişime geçebilirsiniz.</p>
+      <p><strong>${payload.clinicName}</strong> için oluşturduğunuz ön randevu talebi klinik ekibi tarafından değerlendirilmiştir.</p>
+      <p>Talep ettiğiniz tarih veya saat için şu aşamada randevu oluşturulamamıştır.</p>
+      <p>Klinik ekibi alternatif bir tarih ve saat belirlemek amacıyla sizinle iletişime geçebilir. Dilerseniz yeni bir ön randevu talebi de oluşturabilirsiniz.</p>
+    `;
+  } else if (payload.status === "CANCELLED") {
+    subject = "Randevu İptal Bilgilendirmesi";
+    bodyContent = `
+      <p>Merhaba ${payload.patientName},</p>
+      <p><strong>${payload.clinicName}</strong> randevunuz iptal edilmiştir.</p>
+      <p>Hizmet: ${payload.treatment}<br/>
+      Tarih: ${payload.requestedDate}<br/>
+      Saat: ${payload.requestedTime}</p>
+      <p>Yeni bir randevu planlamak için klinikle iletişime geçebilir veya yeniden ön randevu talebi oluşturabilirsiniz.</p>
     `;
   } else {
     // If it's another status, don't send an email
@@ -268,11 +280,10 @@ export async function sendPatientAppointmentStatusEmail(
   `;
 
   let eventType: any = "appointment.request.created";
-  if (payload.status === "approved") eventType = "appointment.clinic.approved";
-  else if (payload.status === "alternative_time_proposed") eventType = "appointment.alternative.proposed";
-  else if (payload.status === "rejected") eventType = "appointment.rejected";
-  else if (payload.status === "confirmed") eventType = "appointment.confirmed";
-  else if (payload.status === "cancelled") eventType = "appointment.cancelled";
+  if (payload.status === "APPROVED") eventType = "appointment.clinic.approved";
+  else if (payload.status === "REJECTED") eventType = "appointment.rejected";
+  else if (payload.status === "CONFIRMED") eventType = "appointment.confirmed";
+  else if (payload.status === "CANCELLED") eventType = "appointment.cancelled";
 
   const result = await notificationService.sendNotification(
     {

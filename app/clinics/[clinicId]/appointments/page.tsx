@@ -66,6 +66,7 @@ export default function AppointmentsPage({ params }: PageProps) {
 
   const updateStatus = async (id: string, newStatus: string, convId?: string) => {
     setUpdatingId(id);
+    console.log("[APPOINTMENT_STATUS_UPDATE_START]", { appointmentId: id, newStatus });
     try {
       const token = await auth.currentUser?.getIdToken();
       if (!token) throw new Error("Unauthorized");
@@ -80,24 +81,27 @@ export default function AppointmentsPage({ params }: PageProps) {
       });
 
       const data = await res.json();
+      console.log("[APPOINTMENT_STATUS_UPDATE_RESPONSE]", data);
       
       if (!res.ok) {
-        throw new Error(data.error || "Güncelleme başarısız");
+        throw new Error(data.message || data.error || "Güncelleme başarısız");
       }
 
-      if (data.notificationChannel) {
-        const channelName = data.notificationChannel === "email" ? "e-posta" : data.notificationChannel === "whatsapp" ? "WhatsApp mesajı" : "SMS";
-        if (data.notificationStatus === "sent" || data.success) { // Fallback if backend doesn't send exact status but succeeded
-          setToastMsg(`Randevu durumu güncellendi ve hastaya ${channelName} gönderildi.`);
-        } else {
-          setToastMsg(`Randevu durumu güncellendi ancak hastaya ${channelName} gönderilemedi.`);
-        }
+      if (data.unchanged) {
+         setToastMsg("Randevu durumu zaten güncel.");
+      } else if (data.patientNotificationSent) {
+         setToastMsg("Randevu durumu güncellendi ve hastaya bilgilendirme gönderildi.");
+      } else if (data.patientNotificationError) {
+         setToastMsg("Randevu durumu güncellendi ancak hasta bilgilendirmesi gönderilemedi.");
+      } else if (data.notification?.result?.reason === "no_email" || data.notification?.result?.reason === "no_phone") {
+         setToastMsg("Randevu durumu güncellendi. Hastanın kayıtlı iletişim bilgisi bulunmuyor.");
       } else {
-        setToastMsg(t("appointments.updateSuccess") || "Randevu durumu güncellendi.");
+         setToastMsg("Randevu durumu güncellendi.");
       }
-    } catch (e) {
-      console.error(e);
-      setToastMsg(t("appointments.updateError") || "Randevu durumu güncellenemedi.");
+      
+    } catch (e: any) {
+      console.error("[APPOINTMENT_STATUS_UPDATE_FAILED]", e);
+      setToastMsg(e.message || "Randevu durumu güncellenemedi.");
     } finally {
       setUpdatingId(null);
       setTimeout(() => setToastMsg(null), 4000);
@@ -380,7 +384,7 @@ export default function AppointmentsPage({ params }: PageProps) {
                         <td style={{ padding: "16px 24px" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <select 
-                              value={apt.status || "pending"}
+                              value={apt.status || "PENDING_REVIEW"}
                               onChange={(e) => updateStatus(apt.id!, e.target.value, apt.conversationId)}
                               disabled={updatingId === apt.id}
                               style={{
@@ -396,11 +400,15 @@ export default function AppointmentsPage({ params }: PageProps) {
                                 outline: "none"
                               }}
                             >
-                              <option value="pending">{t("appointments.status.pending") || "Bekliyor"}</option>
                               <option value="PENDING_REVIEW">Ön Değerlendirme Bekliyor</option>
-                              <option value="confirmed">{t("appointments.status.confirmed") || "Onaylandı"}</option>
-                              <option value="cancelled">{t("appointments.status.cancelled") || "Reddedildi"}</option>
-                              <option value="completed">{t("appointments.status.completed") || "Tamamlandı"}</option>
+                              <option value="APPROVED">Talep Onaylandı</option>
+                              <option value="CONFIRMED">Randevu Kesinleştirildi</option>
+                              <option value="REJECTED">Talep Reddedildi</option>
+                              <option value="CANCELLED">Randevu İptal Edildi</option>
+                              {/* Legacy fallbacks just in case the DB has old status that is not yet mapped */}
+                              {!["PENDING_REVIEW", "APPROVED", "CONFIRMED", "REJECTED", "CANCELLED"].includes(apt.status || "PENDING_REVIEW") && (
+                                <option value={apt.status}>{apt.status}</option>
+                              )}
                             </select>
                             {updatingId === apt.id && <Loader2 size={14} className="animate-spin" color={UI_COLORS.textMuted} />}
                           </div>
