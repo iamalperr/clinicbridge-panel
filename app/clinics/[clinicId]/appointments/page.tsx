@@ -315,12 +315,12 @@ export default function AppointmentsPage({ params }: PageProps) {
                                   
                                   <div style={{
                                     display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500,
-                                    backgroundColor: apt.patientNotificationStatus === 'sent' ? "rgba(34, 197, 94, 0.1)" : apt.patientNotificationStatus !== undefined ? "rgba(239, 68, 68, 0.1)" : "rgba(100, 116, 139, 0.1)",
-                                    color: apt.patientNotificationStatus === 'sent' ? "#16a34a" : apt.patientNotificationStatus !== undefined ? "#dc2626" : "#475569",
+                                    backgroundColor: apt.patientNotificationStatus === 'sent' ? "rgba(34, 197, 94, 0.1)" : apt.patientNotificationStatus === 'SKIPPED' ? "rgba(100, 116, 139, 0.1)" : apt.patientNotificationStatus !== undefined ? "rgba(239, 68, 68, 0.1)" : "rgba(100, 116, 139, 0.1)",
+                                    color: apt.patientNotificationStatus === 'sent' ? "#16a34a" : apt.patientNotificationStatus === 'SKIPPED' ? "#475569" : apt.patientNotificationStatus !== undefined ? "#dc2626" : "#475569",
                                     padding: '4px 8px', borderRadius: '12px', width: 'fit-content'
                                   }}>
-                                    {apt.patientNotificationStatus === 'sent' ? <CheckCircle size={12} /> : apt.patientNotificationStatus !== undefined ? <XCircle size={12} /> : <MessageSquare size={12} />}
-                                    {apt.patientNotificationStatus === 'sent' ? "Hasta e-postası gönderildi" : apt.patientNotificationStatus !== undefined ? "E-posta gönderilemedi" : `${apt.notificationChannel === 'email' ? 'E-posta' : apt.notificationChannel === 'whatsapp' ? 'WhatsApp' : 'SMS'} seçili`}
+                                    {apt.patientNotificationStatus === 'sent' ? <CheckCircle size={12} /> : apt.patientNotificationStatus === 'SKIPPED' ? <MessageSquare size={12} /> : apt.patientNotificationStatus !== undefined ? <XCircle size={12} /> : <MessageSquare size={12} />}
+                                    {apt.patientNotificationStatus === 'sent' ? "Hasta e-postası gönderildi" : apt.patientNotificationStatus === 'SKIPPED' ? "Hasta e-postası gönderilmedi" : apt.patientNotificationStatus !== undefined ? "E-posta gönderilemedi" : `${apt.notificationChannel === 'email' ? 'E-posta' : apt.notificationChannel === 'whatsapp' ? 'WhatsApp' : 'SMS'} seçili`}
                                   </div>
                                 </div>
                               ) : apt.notificationChannel && apt.patientNotificationStatus ? (
