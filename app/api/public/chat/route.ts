@@ -1859,7 +1859,7 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
 
     if (isConfirmSummary) {
       // Parse the summary from AI reply and attach as pendingAppointmentData
-      const nameMatch    = reply.match(/(?:Ad|Name|İsim):\s*([^\n\r]+)/i);
+      const nameMatch    = reply.match(/(?:Ad Soyad|Ad|Name|İsim):\s*([^\n\r]+)/i);
       const phoneMatch   = reply.match(/(?:Telefon|Phone|Tel):\s*([0-9\s+\-().]+)/i);
       const emailMatch   = reply.match(/(?:E-posta|Email|Mail|E-mail):\s*([^\n\r\s]+)/i);
       const serviceMatch = reply.match(/(?:Hizmet|Service|Tedavi):\s*([^\n\r]+)/i);
