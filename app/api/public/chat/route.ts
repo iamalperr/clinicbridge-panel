@@ -305,51 +305,90 @@ export interface AppointmentData {
 }
 
 /* ── Resolve relative/weekday date expressions to ISO date ──────────── */
-function resolveRelativeDate(dateText: string): { isoDate: string; displayText: string } {
+function resolveRelativeDate(dateText: string, clinicTimeZone = "Europe/Istanbul"): { isoDate: string; displayText: string; validationPassed: boolean; expectedWeekday: string; resolvedWeekday: string } {
   const lower = dateText.toLowerCase().trim();
+  
+  // Format current date explicitly in the target timezone to avoid UTC midnight skew
   const now = new Date();
-  // Use Turkey timezone offset (+3)
-  const turkeyOffset = 3 * 60 * 60 * 1000;
-  const turkeyNow = new Date(now.getTime() + turkeyOffset - (now.getTimezoneOffset() * 60 * 1000));
+  const formatter = new Intl.DateTimeFormat("en-US", { timeZone: clinicTimeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false });
+  const parts = formatter.formatToParts(now);
+  const getPart = (type: string) => parts.find(p => p.type === type)?.value;
+  
+  const currentYear = parseInt(getPart("year")!, 10);
+  const currentMonth = parseInt(getPart("month")!, 10) - 1;
+  const currentDay = parseInt(getPart("day")!, 10);
+  const currentHour = parseInt(getPart("hour")!, 10);
+  
+  const clinicNow = new Date(currentYear, currentMonth, currentDay, currentHour, 0, 0);
 
   const turkishDays: Record<string, number> = {
     "pazar": 0, "pazartesi": 1, "salı": 2, "sali": 2,
     "çarşamba": 3, "carsamba": 3, "perşembe": 4, "persembe": 4,
     "cuma": 5, "cumartesi": 6,
+    "sunday": 0, "monday": 1, "tuesday": 2, "wednesday": 3, "thursday": 4, "friday": 5, "saturday": 6
   };
 
-  // Check if it's already an ISO date
+  const getIso = (d: Date) => {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const getWeekdayName = (d: Date) => {
+    return ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"][d.getDay()];
+  };
+
+  // Check if it's already an ISO date (if LLM passed an ISO directly, we still validate weekday if it exists)
   if (/^\d{4}-\d{2}-\d{2}$/.test(dateText.trim())) {
-    return { isoDate: dateText.trim(), displayText: dateText.trim() };
+    const d = new Date(dateText.trim() + "T12:00:00Z");
+    return { isoDate: dateText.trim(), displayText: dateText.trim(), validationPassed: true, expectedWeekday: "", resolvedWeekday: getWeekdayName(d) };
   }
 
   // Check "bugün" / "today"
   if (lower.includes("bugün") || lower.includes("bugun") || lower === "today") {
-    const iso = turkeyNow.toISOString().split("T")[0];
-    return { isoDate: iso, displayText: dateText };
+    return { isoDate: getIso(clinicNow), displayText: dateText, validationPassed: true, expectedWeekday: getWeekdayName(clinicNow), resolvedWeekday: getWeekdayName(clinicNow) };
   }
 
   // Check "yarın" / "tomorrow"
   if (lower.includes("yarın") || lower.includes("yarin") || lower === "tomorrow") {
-    const tomorrow = new Date(turkeyNow.getTime() + 24 * 60 * 60 * 1000);
-    const iso = tomorrow.toISOString().split("T")[0];
-    return { isoDate: iso, displayText: dateText };
+    const tomorrow = new Date(clinicNow.getFullYear(), clinicNow.getMonth(), clinicNow.getDate() + 1);
+    return { isoDate: getIso(tomorrow), displayText: dateText, validationPassed: true, expectedWeekday: getWeekdayName(tomorrow), resolvedWeekday: getWeekdayName(tomorrow) };
   }
 
-  // Check Turkish weekday names
-  for (const [dayName, dayIndex] of Object.entries(turkishDays)) {
+  // Check week days
+  for (const [dayName, targetWeekday] of Object.entries(turkishDays)) {
     if (lower.includes(dayName)) {
-      const currentDay = turkeyNow.getDay();
-      let daysAhead = dayIndex - currentDay;
-      if (daysAhead <= 0) daysAhead += 7; // next week if today or past
-      const target = new Date(turkeyNow.getTime() + daysAhead * 24 * 60 * 60 * 1000);
-      const iso = target.toISOString().split("T")[0];
-      return { isoDate: iso, displayText: dateText };
+      const currentWeekday = clinicNow.getDay();
+      let daysAhead = (targetWeekday - currentWeekday + 7) % 7;
+      
+      if (daysAhead === 0 && currentHour >= 18) {
+         // Same day, but it's past 18:00, push to next week
+         daysAhead += 7;
+      } else if (daysAhead <= 0 && !(daysAhead === 0 && currentHour < 18)) {
+         // Past day of this week
+         daysAhead += 7;
+      }
+      
+      // If text implies "next week" (gelecek, next)
+      if (lower.includes("gelecek") || lower.includes("next") || lower.includes("haftaya")) {
+          // If daysAhead is less than 7, it means it's coming up this week, so push it to next week.
+          if (daysAhead < 7) {
+              daysAhead += 7;
+          }
+      }
+
+      const targetDate = new Date(clinicNow.getFullYear(), clinicNow.getMonth(), clinicNow.getDate() + daysAhead);
+      
+      const properDayName = getWeekdayName(targetDate);
+      return { 
+          isoDate: getIso(targetDate), 
+          displayText: `${getIso(targetDate)} ${properDayName}`, 
+          validationPassed: true, 
+          expectedWeekday: properDayName, 
+          resolvedWeekday: properDayName 
+      };
     }
   }
 
-  // Not a relative date — return as-is (the LLM may have already resolved it)
-  return { isoDate: dateText.trim(), displayText: dateText.trim() };
+  return { isoDate: dateText.trim(), displayText: dateText.trim(), validationPassed: true, expectedWeekday: "", resolvedWeekday: "" };
 }
 
 function parseTimeText(text: string) {
@@ -1894,7 +1933,10 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
     const customPrompt  = promptSettings?.systemPrompt ?? "";
     const aiSkills      = (promptSettings?.aiSkills    ?? {}) as Record<string, boolean>;
     const guardrails    = (promptSettings?.guardrails   ?? {}) as Record<string, { enabled: boolean; text: string }>;
-    const today = new Date().toLocaleDateString("tr-TR", {
+    const clinicTimeZone = "Europe/Istanbul"; // Default, could be dynamic later if clinic document provides it
+    const nowForPrompt = new Date();
+    const today = nowForPrompt.toLocaleDateString("tr-TR", {
+      timeZone: clinicTimeZone,
       weekday: "long", year: "numeric", month: "long", day: "numeric",
     });
 
@@ -1927,7 +1969,8 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
    Telefon: [telefon]
    E-posta: [email]
    Hizmet: [hizmet]
-   Tercih Edilen Tarih: [tarih]
+   Tercih Edilen Tarih: [Tarihin Açık Hali (Örn: 27 Temmuz 2026 Pazartesi)]
+   Kullanıcının Söylediği Orijinal Tarih: [Kullanıcının tam cümlesi veya kelimesi, örn: "Pazartesi" veya "Yarın" veya "Belirtilmedi"]
    Tercih Edilen Saat: [Tercih edilen saat. Sadece şu formatlardan birini kullan: Net saat ise "14:00", Aralık ise "10:00-12:00", Dönem ise "sabah" / "öğleden_sonra" / "akşamüstü" / "en_erken", Belirtilmediyse "Belirtilmedi"]
 
    Bu bilgilerle ön randevu talebinizi kliniğimizin değerlendirmesine iletmemi onaylıyor musunuz? Evet veya Hayır şeklinde yanıtlayabilirsiniz."
@@ -2145,15 +2188,54 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
     }
 
     // ── AŞAMA 2: Parse regardless of isConfirmSummary ──
+    // ── AŞAMA 2: Parse regardless of isConfirmSummary ──
     const nameMatch    = reply.match(/(?:Ad Soyad|Ad|Name|İsim):\s*([^\n\r]+)/i);
     const phoneMatch   = reply.match(/(?:Telefon|Phone|Tel):\s*([0-9\s+\-().]+)/i);
     const emailMatch   = reply.match(/(?:E-posta|Email|Mail|E-mail):\s*([^\n\r\s]+)/i);
     const serviceMatch = reply.match(/(?:Hizmet|Service|Tedavi):\s*([^\n\r]+)/i);
-    const dtMatch      = reply.match(/(?:Tarih|Date):\s*([^\n\r]+)/i);
+    const dtMatch      = reply.match(/(?:Tercih Edilen Tarih|Tarih|Date):\s*([^\n\r]+)/i);
+    const rawDateMatch = reply.match(/(?:Kullanıcının Söylediği Orijinal Tarih|Orijinal Tarih|Raw Date):\s*([^\n\r]+)/i);
     const timeMatch    = reply.match(/(?:Saat|Time):\s*([^\n\r]+)/i);
 
-    const dtStr  = dtMatch?.[1]?.trim() ?? "";
+    let dtStr  = dtMatch?.[1]?.trim() ?? "";
+    const rawDateText = rawDateMatch?.[1]?.trim() ?? "";
     const rawTimeStr = timeMatch?.[1]?.trim() ?? "";
+    
+    // SERVER-SIDE DETERMINISTIC DATE VALIDATION
+    if (dtStr && dtStr.toLowerCase() !== "belirtilmedi") {
+      const clinicTimeZone = "Europe/Istanbul";
+      
+      const nowForLog = new Date();
+      const formatter = new Intl.DateTimeFormat("en-US", { timeZone: clinicTimeZone, weekday: "long", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false });
+      const parts = formatter.formatToParts(nowForLog);
+      const currentClinicWeekday = parts.find(p => p.type === "weekday")?.value || "";
+      const currentClinicDate = `${parts.find(p => p.type === "year")?.value}-${parts.find(p => p.type === "month")?.value}-${parts.find(p => p.type === "day")?.value}`;
+
+      console.log(JSON.stringify({
+        event: "APPOINTMENT_DATE_PARSE_START",
+        traceId: activeTraceId,
+        conversationId: convId,
+        rawDateText,
+        rawTimeText: rawTimeStr,
+        clinicTimeZone,
+        currentClinicDate,
+        currentClinicWeekday,
+        inferredDateText: dtStr
+      }));
+      
+      const dateToResolve = rawDateText && rawDateText.toLowerCase() !== "belirtilmedi" ? rawDateText : dtStr;
+      const deterministicDate = resolveRelativeDate(dateToResolve, clinicTimeZone);
+      
+      if (deterministicDate.validationPassed && deterministicDate.displayText && deterministicDate.displayText !== dateToResolve) {
+         // Replace the LLM's hallucinated date with the correct deterministic date in the reply sent to the user
+         reply = reply.replace(dtStr, deterministicDate.displayText);
+         dtStr = deterministicDate.displayText;
+      }
+    }
+
+    // Clean up the reply so we don't expose the hidden raw date prompt instruction to the user
+    reply = reply.replace(/(?:Kullanıcının Söylediği Orijinal Tarih|Orijinal Tarih|Raw Date):\s*([^\n\r]+)[\n\r]*/i, "");
+
     const parsedTime = parseTimeText(rawTimeStr);
 
     const pending: AppointmentData = {
