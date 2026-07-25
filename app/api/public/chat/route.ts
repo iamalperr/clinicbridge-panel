@@ -1141,6 +1141,32 @@ export async function POST(req: Request) {
     const msgLower = message.toLowerCase().trim();
 
     /* ====================================================================
+       0. EMERGENCY APPOINTMENT MAINTENANCE BLOCKER
+       ==================================================================== */
+    const APPOINTMENT_SYSTEM_MAINTENANCE = true;
+    if (APPOINTMENT_SYSTEM_MAINTENANCE) {
+        const isApptIntent = /\b(randevu|appointment|saat|gün|müsait|boş|yarın|bugün|alabilir|evet|onay)\b/.test(msgLower) || body.pendingAppointmentData || (adminDb && convId);
+        // We do a soft check. If they are in any appointment flow state, intercept.
+        // To be safe and intercept all intent, we check the query.
+        if (isApptIntent) {
+            let currentState = "IDLE";
+            if (adminDb && convId) {
+                const snap = await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).get();
+                if (snap.exists && snap.data()?.appointmentState) currentState = snap.data()?.appointmentState;
+            }
+            if (currentState !== "IDLE" || /\b(randevu|appointment)\b/.test(msgLower)) {
+                if (adminDb && convId) {
+                    await saveAppointmentState(adminDb, actualClinicId, convId, 0, "IDLE", {}, {});
+                }
+                return NextResponse.json({ 
+                    responseType: "CHAT_REPLY", 
+                    reply: "Şu anda çevrim içi ön randevu oluşturma sistemimizde geçici bir teknik çalışma bulunuyor. İletişim bilgilerinizi paylaşmanız hâlinde klinik ekibimizin sizinle iletişime geçmesi için talebinizi destek kaydı olarak iletebilirim." 
+                }, { headers: CORS });
+            }
+        }
+    }
+
+    /* ====================================================================
        1. STRICT CONFIRMATION INTERCEPTOR (BYPASSES ALL NORMAL CHAT LOGIC)
        ==================================================================== */
     // ── INSTRUMENTATION LOG 1 ──
