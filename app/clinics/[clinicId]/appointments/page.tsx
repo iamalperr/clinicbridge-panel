@@ -333,6 +333,7 @@ export default function AppointmentsPage({ params }: PageProps) {
                               }}
                             >
                               <option value="pending">{t("appointments.status.pending") || "Bekliyor"}</option>
+                              <option value="PENDING_REVIEW">Ön Değerlendirme Bekliyor</option>
                               <option value="confirmed">{t("appointments.status.confirmed") || "Onaylandı"}</option>
                               <option value="cancelled">{t("appointments.status.cancelled") || "Reddedildi"}</option>
                               <option value="completed">{t("appointments.status.completed") || "Tamamlandı"}</option>

@@ -352,12 +352,14 @@ export interface Appointment {
   patientId?: string;
   patientName: string;
   patientPhone?: string;
+  patientPhoneRaw?: string;
   patientEmail?: string;
   service?: string;
   requestedService?: string;
   treatmentType?: string;
   reason?: string;
   preferredDate?: string;
+  preferredDateDisplay?: string;
   requestedDate?: string;
   preferredTime?: string | null;
   requestedTime?: string | null;
@@ -367,16 +369,19 @@ export interface Appointment {
   preferredTimeText?: string | null;
   timezone?: string;
   appointmentDateTime?: string;
-  status: "pending" | "confirmed" | "cancelled" | "completed";
-  source: "ai_chat" | "manual" | "widget" | string;
+  status: "pending" | "PENDING_REVIEW" | "confirmed" | "cancelled" | "completed";
+  source: "ai_chat" | "ai_chatbot" | "AI Chatbot" | "manual" | "widget" | string;
   notes?: string;
   originalText?: string;
   rawConversationSummary?: string;
   conversationId?: string;
+  idempotencyKey?: string;
   notificationStatus?: {
     smsToPatient: "pending" | "sent" | "failed" | "skipped";
     emailToClinic: "pending" | "sent" | "failed" | "skipped";
   };
+  clinicNotificationStatus?: "SENT" | "FAILED" | "NOT_CONFIGURED" | "DISABLED";
+  patientNotificationStatusResult?: "SENT" | "FAILED";
   smsNotificationStatus?: "sent" | "failed" | "skipped" | "invalid_phone";
   smsNotificationLastSentAt?: string;
   smsNotificationLastType?: string;

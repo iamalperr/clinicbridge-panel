@@ -37,6 +37,7 @@ export interface AppointmentEmailPayload {
   clinicEmails: string[]; // recipients
   patientName: string;
   patientPhone: string;
+  patientEmail?: string;
   requestedService: string;
   requestedDate: string;
   requestedTime?: string | null;
@@ -79,11 +80,12 @@ export async function sendClinicAppointmentEmail(
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600;width:170px">Klinik</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.clinicName}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Hasta</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.patientName}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Telefon</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.patientPhone}</td></tr>
+        ${payload.patientEmail ? `<tr><td style="padding:10px;background:#f8fafc;font-weight:600">E-posta</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.patientEmail}</td></tr>` : ''}
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Hizmet / İşlem</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedService}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Tercih Edilen Tarih</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedDate}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">${timeLabel}</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${timeValue}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Kaynak</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">AI Chatbot</td></tr>
-        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Durum</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">Bekliyor</td></tr>
+        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Durum</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">Ön Değerlendirme Bekliyor</td></tr>
       </table>
       <p style="color:#64748b;font-size:14px">
         Lütfen <a href="https://app.clinicbridge-ai.com" style="color:#6366f1">ClinicBridge panelinizden</a> randevu talebini kontrol ediniz.
