@@ -1150,10 +1150,24 @@ export async function POST(req: Request) {
        ==================================================================== */
     // ── INSTRUMENTATION LOG 1 ──
     const activeTraceId = traceId || Math.random().toString(36).substring(7);
-    const isConfirm = isConfirmation(message);
-    const positiveConfirmationDetected = isConfirm || msgLower === "evet" || msgLower === "yes";
 
-    console.log(JSON.stringify({ checkpoint: "APPT_01_CONFIRMATION_REQUEST_RECEIVED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, message: msgLower, positiveConfirmationDetected, timestamp: new Date().toISOString() }));
+    // ── AŞAMA 3: POZİTİF VE NEGATİF ONAY ALGILAMASINI SAĞLAMLAŞTIR ──
+    const negativeConfirmationRegex = /^(hayır|hayir|yanlış|yanlis|değiştirmek istiyorum|emin değilim|bir dakika|tarih yanlış|saat yanlış|telefon yanlış|no|incorrect|not yet|i want to change it)/i;
+    const negativeConfirmationDetected = negativeConfirmationRegex.test(message.trim());
+
+    const isConfirm = isConfirmation(message);
+    const positiveConfirmationWords = ["evet", "evet onaylıyorum", "onaylıyorum", "doğru", "bilgiler doğru", "iletebilirsiniz", "olur", "tamam", "uygun", "kabul ediyorum", "yes", "yes, i confirm", "confirmed", "correct", "the information is correct", "you may proceed", "please proceed"];
+    
+    let positiveConfirmationDetected = false;
+    if (!negativeConfirmationDetected) {
+       positiveConfirmationDetected = isConfirm || 
+                                      positiveConfirmationWords.some(w => msgLower === w) || 
+                                      msgLower.includes("onaylıyorum") || 
+                                      msgLower.startsWith("evet") || 
+                                      msgLower.startsWith("yes");
+    }
+
+    console.log(JSON.stringify({ checkpoint: "APPT_01_CONFIRMATION_REQUEST_RECEIVED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, message: msgLower, positiveConfirmationDetected, negativeConfirmationDetected, timestamp: new Date().toISOString() }));
 
     let loadedState = "IDLE";
     let loadedDraft: any = {};
@@ -1179,7 +1193,22 @@ export async function POST(req: Request) {
     console.log(JSON.stringify({ checkpoint: "APPT_02_STATE_LOADED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, appointmentState: loadedState, timestamp: new Date().toISOString() }));
     console.log(JSON.stringify({ checkpoint: "APPT_03_DRAFT_LOADED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, draftFields: Object.keys(loadedDraft), timestamp: new Date().toISOString() }));
 
-    if (loadedState === "AWAITING_CONFIRMATION" && positiveConfirmationDetected && adminDb) {
+    // ── AŞAMA 4: CONFIRMATION HANDLER GARANTİSİ (EFFECTIVE STATE) ──
+    const effectiveAppointmentState = loadedState; // Since this handler is at the top of the file before any new state is generated.
+    const isAwaitingConfirmation = effectiveAppointmentState === "AWAITING_CONFIRMATION";
+
+    console.log(JSON.stringify({
+      checkpoint: "APPT_CONFIRMATION_RECEIVED",
+      traceId: activeTraceId,
+      conversationId: convId,
+      loadedState,
+      effectiveState: effectiveAppointmentState,
+      positiveConfirmationDetected,
+      negativeConfirmationDetected,
+      handlerWillRun: isAwaitingConfirmation && positiveConfirmationDetected && !negativeConfirmationDetected
+    }));
+
+    if (isAwaitingConfirmation && positiveConfirmationDetected && !negativeConfirmationDetected && adminDb) {
          // ── INSTRUMENTATION LOG 4 ──
          console.log(JSON.stringify({ checkpoint: "APPT_04_CONFIRMATION_HANDLER_ENTERED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, timestamp: new Date().toISOString() }));
          
@@ -1187,12 +1216,12 @@ export async function POST(req: Request) {
          if (!loadedDraft.patientName) {
              console.error(`[CONFIRMATION_FAILED] Missing patientName in persisted draft for convId=${convId}`);
              await saveAppointmentState(adminDb, actualClinicId, convId, 0, "COLLECTING_NAME", loadedDraft, {});
-             return NextResponse.json({ responseType: "CHAT_REPLY", reply: "İşleme devam edebilmem için adınızı ve soyadınızı öğrenebilir miyim?", success: null, appointmentCreated: false, appointmentId: null }, { headers: CORS });
+             return NextResponse.json({ success: true, responseType: "appointment_information_required", appointmentCreated: false, reply: "İşleme devam edebilmem için adınızı ve soyadınızı öğrenebilir miyim?" }, { headers: CORS });
          }
          if (!loadedDraft.patientPhone) {
              console.error(`[CONFIRMATION_FAILED] Missing patientPhone in persisted draft for convId=${convId}`);
              await saveAppointmentState(adminDb, actualClinicId, convId, 0, "COLLECTING_PHONE", loadedDraft, {});
-             return NextResponse.json({ responseType: "CHAT_REPLY", reply: "Kliniğimizin sizinle iletişime geçebilmesi için telefon numaranızı öğrenebilir miyim?", success: null, appointmentCreated: false, appointmentId: null }, { headers: CORS });
+             return NextResponse.json({ success: true, responseType: "appointment_information_required", appointmentCreated: false, reply: "Kliniğimizin sizinle iletişime geçebilmesi için telefon numaranızı öğrenebilir miyim?" }, { headers: CORS });
          }
 
          // 2. Call and await createAppointmentAndNotify
@@ -1316,7 +1345,7 @@ export async function POST(req: Request) {
     // 2. Handle specific collection phases
     if (appointmentState === "COLLECTING_NAME") {
         if (message.trim().length < 2) {
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: "Lütfen geçerli bir ad ve soyad giriniz." }, { headers: CORS });
+            return NextResponse.json({ success: true, appointmentCreated: false, responseType: "CHAT_REPLY", reply: "Lütfen geçerli bir ad ve soyad giriniz." }, { headers: CORS });
         }
         appointmentDraft.patientName = message.trim();
         console.log(`[APPOINTMENT_STATE] COLLECTING_NAME completed: name="${appointmentDraft.patientName}" convId=${convId}`);
@@ -2052,7 +2081,15 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
     // We only do this if it's the general LLM flow, which it is here.
     if (forbiddenClaims.some(claim => reply.toLowerCase().includes(claim.toLowerCase()))) {
       console.warn("[FORBIDDEN_CLAIM_INTERCEPTED] LLM tried to claim success without transaction:", reply);
-      reply = "Randevu talebiniz henüz sisteme kaydedilmedi. İşlemi tamamlamak için gerekli adımları sürdürüyorum.";
+      
+      // AŞAMA 7 - State'e göre dinamik fallback metni
+      if (appointmentState === "AWAITING_CONFIRMATION" || loadedState === "AWAITING_CONFIRMATION") {
+         reply = "Randevu talebinizi oluşturabilmem için yukarıdaki bilgileri onaylamanız gerekiyor.";
+      } else if (appointmentState.startsWith("COLLECTING_")) {
+         reply = "Lütfen eksik randevu bilgilerinizi tamamlayınız.";
+      } else {
+         reply = "Randevu talebiniz şu anda oluşturulamadı. Lütfen kısa bir süre sonra yeniden deneyin veya klinikle doğrudan iletişime geçin.";
+      }
     }
 
     let suggestedActions: string[] = [];
@@ -2094,54 +2131,98 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
     debugLog.push(`OK reply="${reply.slice(0, 60)}" ms=${Date.now() - startTime}`);
     console.log("[widget-chat]", debugLog.join(" | "));
 
-    const responsePayload: any = { reply, conversationId: convId };
+    // ── AŞAMA 6: RESPONSE CONTRACT DEFAULTLARI ──
+    const responsePayload: any = { 
+      reply, 
+      conversationId: convId,
+      success: true,
+      responseType: "chat_message",
+      appointmentCreated: false
+    };
+
     if (suggestedActions.length > 0) {
       responsePayload.suggestedActions = suggestedActions;
     }
 
-    // If AI response contains a confirmation summary, extract and return pendingAppointmentData
-    // so the widget can send it back on confirmation — more reliable than history parsing
-    const isConfirmSummary =
-      (reply.includes("Ad:") || reply.includes("Ad Soyad:") || reply.includes("Name:")) &&
-      (reply.includes("Telefon:") || reply.includes("Phone:") || reply.includes("E-posta:") || reply.includes("Email:") || reply.includes("E-mail:")) &&
-      (reply.includes("Onaylıyor") || reply.includes("Onaylay") || reply.includes("Confirm"));
+    // ── AŞAMA 2: Parse regardless of isConfirmSummary ──
+    const nameMatch    = reply.match(/(?:Ad Soyad|Ad|Name|İsim):\s*([^\n\r]+)/i);
+    const phoneMatch   = reply.match(/(?:Telefon|Phone|Tel):\s*([0-9\s+\-().]+)/i);
+    const emailMatch   = reply.match(/(?:E-posta|Email|Mail|E-mail):\s*([^\n\r\s]+)/i);
+    const serviceMatch = reply.match(/(?:Hizmet|Service|Tedavi):\s*([^\n\r]+)/i);
+    const dtMatch      = reply.match(/(?:Tarih|Date):\s*([^\n\r]+)/i);
+    const timeMatch    = reply.match(/(?:Saat|Time):\s*([^\n\r]+)/i);
 
-    if (isConfirmSummary) {
-      // Parse the summary from AI reply and attach as pendingAppointmentData
-      const nameMatch    = reply.match(/(?:Ad Soyad|Ad|Name|İsim):\s*([^\n\r]+)/i);
-      const phoneMatch   = reply.match(/(?:Telefon|Phone|Tel):\s*([0-9\s+\-().]+)/i);
-      const emailMatch   = reply.match(/(?:E-posta|Email|Mail|E-mail):\s*([^\n\r\s]+)/i);
-      const serviceMatch = reply.match(/(?:Hizmet|Service|Tedavi):\s*([^\n\r]+)/i);
-      const dtMatch      = reply.match(/(?:Tarih|Date):\s*([^\n\r]+)/i);
-      const timeMatch    = reply.match(/(?:Saat|Time):\s*([^\n\r]+)/i);
+    const dtStr  = dtMatch?.[1]?.trim() ?? "";
+    const rawTimeStr = timeMatch?.[1]?.trim() ?? "";
+    const parsedTime = parseTimeText(rawTimeStr);
 
-      const dtStr  = dtMatch?.[1]?.trim() ?? "";
-      const rawTimeStr = timeMatch?.[1]?.trim() ?? "";
+    const pending: AppointmentData = {
+      patientName:      nameMatch?.[1]?.trim()    ?? "",
+      patientPhone:     phoneMatch?.[1]?.replace(/\s+/g, "").trim() ?? "",
+      patientEmail:     emailMatch?.[1]?.trim().toLowerCase() ?? "",
+      requestedService: serviceMatch?.[1]?.trim() ?? "Genel Muayene",
+      requestedDate:    dtStr,
+      requestedTime:    parsedTime.preferredTime,
+      preferredTimeStart: parsedTime.preferredTimeStart,
+      preferredTimeEnd: parsedTime.preferredTimeEnd,
+      preferredTimePeriod: parsedTime.preferredTimePeriod,
+      preferredTimeText: parsedTime.preferredTimeText,
+      originalText:     reply,
+    };
+
+    const appointmentDataComplete = 
+      Boolean(pending.patientName) && 
+      Boolean(pending.patientPhone) && 
+      Boolean(pending.requestedDate) && 
+      Boolean(pending.requestedTime || pending.preferredTimeText);
+
+    // ── AŞAMA 1: ACİL CASE-INSENSITIVE HOTFIX ──
+    const normalizedReply = reply.toLocaleLowerCase("tr-TR").replace(/\s+/g, " ").trim();
+    const containsConfirmationQuestion =
+      normalizedReply.includes("onaylıyor musunuz") ||
+      normalizedReply.includes("onaylar mısınız") ||
+      normalizedReply.includes("onaylayabilir misiniz") ||
+      normalizedReply.includes("iletmemi onaylıyor musunuz") ||
+      normalizedReply.includes("iletmemi ister misiniz") ||
+      normalizedReply.includes("bilgiler doğru mu") ||
+      normalizedReply.includes("bilgileriniz doğru mu") ||
+      normalizedReply.includes("shall i forward") ||
+      normalizedReply.includes("would you like me to forward") ||
+      normalizedReply.includes("do you confirm") ||
+      normalizedReply.includes("onaylıyor") ||
+      normalizedReply.includes("onaylay") ||
+      normalizedReply.includes("confirm");
+
+    const appointmentAlreadyCreated = loadedState === "CREATED" || loadedState === "COMPLETED";
+    const isAppointmentIntentDetected = isAppointmentFlowActive || appointmentState !== "IDLE" || /\b(randevu|appointment)\b/i.test(reply);
+
+    const shouldAwaitConfirmation = 
+      isAppointmentIntentDetected &&
+      appointmentDataComplete &&
+      !appointmentAlreadyCreated;
+
+    const isConfirmSummary = shouldAwaitConfirmation || containsConfirmationQuestion;
+
+    if (isConfirmSummary && pending.patientName && (pending.patientPhone || pending.patientEmail)) {
+      responsePayload.pendingAppointmentData = pending;
+      responsePayload.responseType = "appointment_confirmation_required";
       
-      const parsedTime = parseTimeText(rawTimeStr);
+      const previousState = appointmentState;
+      appointmentState = "AWAITING_CONFIRMATION";
+      appointmentDraft = pending;
 
-      const pending: AppointmentData = {
-        patientName:      nameMatch?.[1]?.trim()    ?? "",
-        patientPhone:     phoneMatch?.[1]?.replace(/\s+/g, "").trim() ?? "",
-        patientEmail:     emailMatch?.[1]?.trim().toLowerCase() ?? "",
-        requestedService: serviceMatch?.[1]?.trim() ?? "Genel Muayene",
-        requestedDate:    dtStr,
-        requestedTime:    parsedTime.preferredTime,
-        preferredTimeStart: parsedTime.preferredTimeStart,
-        preferredTimeEnd: parsedTime.preferredTimeEnd,
-        preferredTimePeriod: parsedTime.preferredTimePeriod,
-        preferredTimeText: parsedTime.preferredTimeText,
-        originalText:     reply,
-      };
-
-      if (pending.patientName && (pending.patientPhone || pending.patientEmail)) {
-        responsePayload.pendingAppointmentData = pending;
-        console.log("[widget-chat] pendingAppointmentData attached:", JSON.stringify(pending));
-        
-        // CRITICAL FIX: We must update the state to AWAITING_CONFIRMATION so the strict handler catches the 'evet'
-        appointmentState = "AWAITING_CONFIRMATION";
-        appointmentDraft = pending;
-      }
+      console.log(JSON.stringify({
+        checkpoint: "APPT_STATE_TRANSITION",
+        traceId: activeTraceId,
+        conversationId: convId,
+        previousState,
+        nextState: "AWAITING_CONFIRMATION",
+        reason: "isConfirmSummary_detected",
+        appointmentDataComplete,
+        containsConfirmationQuestion
+      }));
+    } else if (isAppointmentIntentDetected && !appointmentDataComplete && !appointmentAlreadyCreated) {
+      responsePayload.responseType = "appointment_information_required";
     }
 
     await logConversation({
