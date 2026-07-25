@@ -47,6 +47,8 @@ export interface AppointmentEmailPayload {
   preferredTimeText?: string | null;
   appointmentId: string;
   notes?: string;
+  source?: string;
+  status?: string;
 }
 
 export async function sendClinicAppointmentEmail(
@@ -72,6 +74,21 @@ export async function sendClinicAppointmentEmail(
     timeValue = `${payload.preferredTimeStart} - ${payload.preferredTimeEnd}`;
   }
 
+  const sourceMap: Record<string, string> = {
+    manual: "Manuel",
+    ai_chatbot: "AI Chatbot",
+    admin: "Admin",
+    api: "API"
+  };
+  const displaySource = payload.source ? (sourceMap[payload.source] || payload.source) : "AI Chatbot";
+  
+  const statusMap: Record<string, string> = {
+    "PENDING_REVIEW": "Ön Değerlendirme Bekliyor",
+    "pending": "Bekliyor",
+    "confirmed": "Onaylandı"
+  };
+  const displayStatus = payload.status ? (statusMap[payload.status] || payload.status) : "Ön Değerlendirme Bekliyor";
+
   const html = `
     <div style="font-family:sans-serif;max-width:560px;margin:0 auto;line-height:1.6;">
       <h2 style="color:#6366f1">Yeni Randevu Talebi - ClinicBridge AI</h2>
@@ -85,8 +102,9 @@ export async function sendClinicAppointmentEmail(
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Hizmet / İşlem</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedService}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Tercih Edilen Tarih</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedDate}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">${timeLabel}</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${timeValue}</td></tr>
-        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Kaynak</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">AI Chatbot</td></tr>
-        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Durum</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">Ön Değerlendirme Bekliyor</td></tr>
+        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Kaynak</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${displaySource}</td></tr>
+        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Durum</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${displayStatus}</td></tr>
+        <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Randevu ID</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.appointmentId}</td></tr>
         ${payload.notes ? `<tr><td style="padding:10px;background:#f8fafc;font-weight:600">Notlar</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.notes}</td></tr>` : ''}
       </table>
       <p style="color:#64748b;font-size:14px">

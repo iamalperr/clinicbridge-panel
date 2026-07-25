@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase-admin";
-import { sendClinicAppointmentEmail, sendPatientAppointmentEmail } from "@/lib/appointment-notifications";
-import { Appointment } from "@/lib/types";
+import { createAppointmentAndNotify } from "@/lib/appointment-service";
 
 interface RouteParams {
   params: Promise<{ clinicId: string }>;
@@ -19,7 +18,7 @@ export async function POST(req: Request, { params }: RouteParams) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    // 1. Verify Authorization
+    // Verify Authorization
     const authHeader = req.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -44,107 +43,25 @@ export async function POST(req: Request, { params }: RouteParams) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // 2. Fetch Clinic Data
-    const clinicSnap = await adminDb.collection("clinics").doc(clinicId).get();
-    if (!clinicSnap.exists) {
-      return NextResponse.json({ error: "Clinic not found" }, { status: 404 });
-    }
-    const clinicData = clinicSnap.data()!;
-    const clinicName = clinicData.name || "Klinik";
-
-    // Prepare clinic emails
-    let clinicEmailsToUse: string[] = [];
-    if (clinicData.email) clinicEmailsToUse.push(clinicData.email);
-    if (clinicData.notificationEmails && Array.isArray(clinicData.notificationEmails)) {
-      clinicEmailsToUse = clinicEmailsToUse.concat(clinicData.notificationEmails);
-    }
-    clinicEmailsToUse = Array.from(new Set(clinicEmailsToUse)); // remove duplicates
-
-    // 3. Create Appointment Document
-    const now = new Date().toISOString();
-    const appointmentRef = adminDb.collection("clinics").doc(clinicId).collection("appointments").doc();
-    const appointmentId = appointmentRef.id;
-
-    const newAppointment: Partial<Appointment> = {
-      id: appointmentId,
+    // Call unified service
+    const result = await createAppointmentAndNotify({
       clinicId,
       patientName,
       patientPhone,
-      patientPhoneRaw: patientPhone,
-      patientEmail: patientEmail || "",
+      patientEmail,
       requestedService,
       requestedDate,
       requestedTime,
-      preferredDate: requestedDate,
-      preferredTime: requestedTime,
-      notes: notes || "Manuel eklendi.",
+      notes,
       source: "manual",
       status: "PENDING_REVIEW",
-      createdAt: now,
-      updatedAt: now,
       createdBy: decodedToken.uid
-    };
-
-    await appointmentRef.set(newAppointment);
-
-    // 4. Send Notifications
-    let clinicEmailSent = false;
-    let patientEmailSent = false;
-
-    // Clinic Email
-    if (clinicEmailsToUse.length > 0) {
-      try {
-        const result = await sendClinicAppointmentEmail({
-          clinicName,
-          clinicEmails: clinicEmailsToUse,
-          patientName,
-          patientPhone,
-          patientEmail,
-          requestedService,
-          requestedDate,
-          requestedTime,
-          appointmentId,
-          notes
-        });
-        clinicEmailSent = result.success;
-      } catch (e: any) {
-        console.error("[manual-appointment] Clinic email error:", e.message);
-      }
-    }
-
-    // Patient Email
-    if (patientEmail) {
-      try {
-        const result = await sendPatientAppointmentEmail({
-          clinicName,
-          clinicEmails: [patientEmail], // Used as recipient internally
-          patientName,
-          patientPhone,
-          patientEmail,
-          requestedService,
-          requestedDate,
-          requestedTime,
-          appointmentId
-        });
-        patientEmailSent = result.success;
-      } catch (e: any) {
-        console.error("[manual-appointment] Patient email error:", e.message);
-      }
-    }
-
-    // Update appointment with notification status
-    await appointmentRef.update({
-      clinicNotificationStatus: clinicEmailSent ? "SENT" : "FAILED",
-      patientNotificationStatusResult: patientEmailSent ? "SENT" : "FAILED",
     });
 
     return NextResponse.json({ 
       success: true, 
-      appointmentId,
-      notifications: {
-        clinicEmail: clinicEmailSent,
-        patientEmail: patientEmailSent
-      }
+      appointmentId: result.appointmentId,
+      clinicNotificationStatus: result.clinicNotificationStatus
     });
 
   } catch (error: any) {

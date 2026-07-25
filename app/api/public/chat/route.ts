@@ -482,235 +482,32 @@ async function createAppointment(params: {
 
   const idempotencyKey = conversationId ? `${conversationId}_${data.requestedDate}_${data.requestedService}` : undefined;
 
-  const apptDoc = {
-    clinicId:         clinicId || "",
-    conversationId:   conversationId || "",
-    patientName:      data.patientName || "",
-    patientPhone:     data.patientPhone || "",
-    patientPhoneRaw:  data.patientPhoneRaw || data.patientPhone || "",
-    patientEmail:     data.patientEmail || "",
-    treatmentType:    data.requestedService || "Genel Muayene",
-    preferredDate:    data.requestedDate || "",
-    preferredDateDisplay: data.preferredDateDisplay || data.requestedDate || "",
-    preferredTime:    validRequestedTime,
-    preferredTimeStart: data.preferredTimeStart || null,
-    preferredTimeEnd: data.preferredTimeEnd || null,
-    preferredTimePeriod: data.preferredTimePeriod || null,
-    preferredTimeText: data.preferredTimeText || null,
-    timezone:         "Europe/Istanbul",
-    appointmentDateTime: "",
-    notes:            "",
-    source:           "ai_chatbot",
-    status:           "PENDING_REVIEW",
-    notificationChannel: "EMAIL",
-    createdBy:        "ai_assistant",
-    language:         "tr",
-    rawConversationSummary: data.originalText || "",
-    createdAt: now,
-    updatedAt: now,
-    idempotencyKey: idempotencyKey,
-  };
+  const { createAppointmentAndNotify } = await import("@/lib/appointment-service");
 
-  let appointmentId = "";
+  const result = await createAppointmentAndNotify({
+      clinicId,
+      patientName: data.patientName || "",
+      patientPhone: data.patientPhone || "",
+      patientEmail: data.patientEmail || "",
+      requestedService: data.requestedService || "Genel Muayene",
+      requestedDate: data.requestedDate,
+      requestedTime: validRequestedTime || undefined,
+      preferredTimeText: data.preferredTimeText || undefined,
+      preferredTimePeriod: data.preferredTimePeriod || undefined,
+      preferredTimeStart: data.preferredTimeStart || undefined,
+      preferredTimeEnd: data.preferredTimeEnd || undefined,
+      notes: "",
+      source: "ai_chatbot",
+      status: "PENDING_REVIEW",
+      createdBy: "ai_assistant",
+      conversationId: conversationId || undefined,
+      idempotencyKey: idempotencyKey,
+      notificationChannelToSave: patientChannel
+  });
 
-  /* ── Strategy 1: Firebase Admin SDK (bypasses security rules entirely) ── */
-  const adminDb = getAdminDb();
-  console.log(`[APPOINTMENT_DATABASE_INSERT_STARTED] adminDb=${!!adminDb} clinicId=${clinicId} convId=${conversationId}`);
-
-  // Idempotency check — prevent duplicate appointments
-  if (adminDb && idempotencyKey) {
-    const existingSnap = await adminDb.collection("clinics").doc(clinicId).collection("appointments")
-      .where("idempotencyKey", "==", idempotencyKey).limit(1).get();
-    if (!existingSnap.empty) {
-      const existingDoc = existingSnap.docs[0];
-      console.log(`[APPOINTMENT_DUPLICATE_DETECTED] existingId=${existingDoc.id} idempotencyKey=${idempotencyKey}`);
-      return { success: true, appointmentId: existingDoc.id, emailSent: false, duplicate: true };
-    }
-  }
-
-  if (adminDb) {
-    console.log("[APPOINTMENT_DATABASE_INSERT_STARTED] Using Admin SDK...");
-    const ref = await adminDb.collection("clinics").doc(clinicId).collection("appointments").add(apptDoc);
-    appointmentId = ref.id;
-    
-    // Read back and verify
-    const verifySnap = await adminDb.collection("clinics").doc(clinicId).collection("appointments").doc(appointmentId).get();
-    if (!verifySnap.exists) {
-      console.error(`[APPOINTMENT_DATABASE_INSERT_FAILED] Readback failed for appointmentId=${appointmentId}`);
-      throw new Error("APPOINTMENT_READBACK_FAILED");
-    }
-    const verifiedData = verifySnap.data();
-    console.log(`[APPOINTMENT_DATABASE_INSERT_SUCCEEDED] appointmentId=${appointmentId} status=${verifiedData?.status} source=${verifiedData?.source} phone=${verifiedData?.patientPhone ? "***" : "MISSING"} email=${verifiedData?.patientEmail ? "***" : "MISSING"}`);
-  } else {
-    /* ── Strategy 2: Firestore REST API with anon token then API key ─────── */
-    console.log("[APPOINTMENT_DATABASE_INSERT_STARTED] Admin SDK unavailable — trying REST API...");
-    if (!projectId || !apiKey) throw new Error("No Firebase config (projectId or apiKey missing)");
-
-    const idToken = await getFirebaseAnonToken(apiKey);
-    const collectionPath = `clinics/${clinicId}/appointments`;
-    console.log(`[APPOINTMENT_DATABASE_INSERT_STARTED] anonToken=${idToken ? "OK" : "null — will try API key only"}`);
-    appointmentId = await firestoreRestAdd(projectId, apiKey, collectionPath, apptDoc, idToken);
-    if (!appointmentId || appointmentId === "unknown") {
-      console.error(`[APPOINTMENT_DATABASE_INSERT_FAILED] REST API returned no valid appointmentId`);
-      throw new Error("APPOINTMENT_REST_INSERT_FAILED");
-    }
-    console.log(`[APPOINTMENT_DATABASE_INSERT_SUCCEEDED] REST appointmentId=${appointmentId}`);
-  }
-
-  /* ── Notification to clinic ────────────────────────────── */
-  if (adminDb && appointmentId) {
-    try {
-      await adminDb.collection("clinics").doc(clinicId).collection("notifications").add({
-        type: "appointment_request",
-        title: "Yeni randevu talebi",
-        message: `${data.patientName} (${data.patientPhone}) adlı hasta ${data.requestedService} için randevu talebinde bulundu.`,
-        appointmentId,
-        conversationId,
-        read: false,
-        createdAt: now,
-      });
-      console.log(`[appointment-notification] Created notification for clinicId=${clinicId}`);
-    } catch (e: any) {
-      console.error("[appointment-notification] Error:", e.message);
-    }
-  }
-
-
-  /* ── Find clinic email ────────────────────────────── */
-  let clinicEmailsToUse: string[] = [];
-  
-  if (clinicEmailEnabled) {
-    if (clinicRecipientEmails && clinicRecipientEmails.length > 0) {
-      clinicEmailsToUse = clinicRecipientEmails;
-      console.log(`[appointment-create] Using clinicRecipientEmails from settings: ${clinicEmailsToUse.join(", ")}`);
-    } else {
-      let clinicEmail = "";
-      try {
-        const adminDb = getAdminDb();
-        const clientDb = adminDb ? null : getClientDb();
-
-        if (adminDb) {
-          const cSnap = await adminDb.collection("clinics").doc(clinicId).get();
-          if (cSnap.exists) {
-            clinicEmail = cSnap.data()!.notificationEmail ?? cSnap.data()!.email ?? "";
-          }
-          if (!clinicEmail) {
-            const uSnap = await adminDb.collection("users").where("clinicId", "==", clinicId).limit(3).get();
-            clinicEmail = uSnap.docs.map((d: any) => d.data().email).filter(Boolean)[0] ?? "";
-          }
-        } else if (clientDb) {
-          const cSnap = await getDoc(doc(clientDb, "clinics", clinicId));
-          if (cSnap.exists()) {
-            clinicEmail = cSnap.data()!.notificationEmail ?? cSnap.data()!.email ?? "";
-          }
-          if (!clinicEmail) {
-            const uSnap = await getDocs(query(collection(clientDb, "users"), where("clinicId", "==", clinicId)));
-            clinicEmail = uSnap.docs.map(d => d.data().email).filter(Boolean)[0] ?? "";
-          }
-        }
-        if (clinicEmail) clinicEmailsToUse.push(clinicEmail);
-        console.log(`[appointment-create] Fallback clinicEmail=${clinicEmail || "(none found)"}`);
-      } catch (e: any) {
-        console.warn("[appointment-create] Email lookup failed:", e.message);
-      }
-    }
-  } else {
-    console.log("[appointment-create] clinicEmailEnabled is false, skipping clinic email.");
-  }
-
-  /* ── SMS (mock) ───────────────────────────────────── */
-  if (notificationChannelToSave === "sms" || notificationChannelToSave === "email_and_sms") {
-    try {
-      await sendPatientSms({
-        phone:            data.patientPhone,
-        clinicName,
-        requestedDate:    data.requestedDate,
-        requestedTime:    data.requestedTime,
-        requestedService: data.requestedService,
-      });
-    } catch (e: any) {
-      console.error("[appointment-sms] Error:", e.message);
-    }
-  }
-
-  /* ── Patient Email ────────────────────────────────── */
-  if ((notificationChannelToSave === "email" || notificationChannelToSave === "email_and_sms" || notificationChannelToSave === "email_and_whatsapp") && data.patientEmail) {
-    try {
-      await sendPatientAppointmentEmail({
-        clinicName,
-        clinicEmails: [data.patientEmail], // Reusing clinicEmails field in payload for recipient email
-        patientName: data.patientName,
-        patientPhone: data.patientPhone,
-        patientEmail: data.patientEmail,
-        requestedService: data.requestedService,
-        requestedDate: data.requestedDate,
-        requestedTime: data.requestedTime,
-        preferredTimeStart: data.preferredTimeStart,
-        preferredTimeEnd: data.preferredTimeEnd,
-        preferredTimePeriod: data.preferredTimePeriod,
-        preferredTimeText: data.preferredTimeText,
-        appointmentId,
-      });
-    } catch (e: any) {
-      console.error("[appointment-patient-email] Error:", e.message);
-    }
-  }
-
-  /* ── Email to clinic ──────────────────────────────── */
-  let emailSent = false;
-  if (clinicEmailsToUse.length > 0) {
-    try {
-      const result = await sendClinicAppointmentEmail({
-        clinicName,
-        clinicEmails: clinicEmailsToUse,
-        patientName:      data.patientName,
-        patientPhone: data.patientPhone,
-        patientEmail: data.patientEmail,
-        requestedService: data.requestedService,
-        requestedDate: data.requestedDate,
-        requestedTime: data.requestedTime,
-        preferredTimeStart: data.preferredTimeStart,
-        preferredTimeEnd: data.preferredTimeEnd,
-        preferredTimePeriod: data.preferredTimePeriod,
-        preferredTimeText: data.preferredTimeText,
-        appointmentId,
-      });
-      emailSent = result.success;
-      console.log(`[appointment-email] ${result.success ? "✅ sent" : "❌ failed"} → ${clinicEmailsToUse.join(", ")}`);
-    } catch (e: any) {
-      console.error("[appointment-email] Error:", e.message);
-    }
-  } else {
-    console.warn(`[appointment-email] No emails found for clinicId=${clinicId} or notifications disabled.`);
-  }
-
-  /* ── Update notification status via REST ──────────── */
-  try {
-    if (!projectId || !apiKey) throw new Error("Missing projectId or apiKey for notification update");
-    const updateUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/appointments/${appointmentId}` +
-      `?updateMask.fieldPaths=notificationStatus.smsToPatient&updateMask.fieldPaths=notificationStatus.emailToClinic&key=${apiKey}`;
-    await fetch(updateUrl, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        fields: {
-          notificationStatus: {
-            mapValue: {
-              fields: {
-                smsToPatient:  { stringValue: "sent" },
-                emailToClinic: { stringValue: emailSent ? "sent" : (clinicEmailsToUse.length > 0 ? "failed" : "skipped") },
-              },
-            },
-          },
-        },
-      }),
-    });
-  } catch (e) { /* non-critical */ }
-
-  // Determine notification statuses for structured response
-  const clinicNotificationStatus = clinicEmailsToUse.length === 0 
-    ? (clinicEmailEnabled ? "NOT_CONFIGURED" : "DISABLED")
-    : (emailSent ? "SENT" : "FAILED");
+  const appointmentId = result.appointmentId;
+  const clinicNotificationStatus = result.clinicNotificationStatus;
+  const emailSent = clinicNotificationStatus === "SENT";
 
   console.log(`[APPOINTMENT_SUBMISSION_COMPLETED] appointmentId=${appointmentId} clinicNotification=${clinicNotificationStatus} convId=${conversationId} clinicId=${clinicId}`);
 
