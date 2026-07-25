@@ -988,7 +988,13 @@ export async function POST(req: Request) {
         const isConfirm = isConfirmation(message);
         
         if (isConfirm) {
-            console.log(`[APPOINTMENT_CONFIRMATION_RECEIVED] convId=${convId} clinicId=${actualClinicId}`);
+            console.log(`[APPOINTMENT_CONFIRMATION_RECEIVED] convId=${convId} clinicId=${actualClinicId} state=${appointmentState} timestamp=${new Date().toISOString()}`);
+
+            // 6. VERIFY CLINIC CONTEXT
+            if (clinicId && actualClinicId !== clinicId && !isAgencyClinic) {
+                console.error(`[CLINIC_CONTEXT_MISMATCH] convId=${convId} widgetClinicId=${clinicId} resolvedClinicId=${actualClinicId}`);
+                return NextResponse.json({ reply: "Sistemde bir kimlik doğrulama hatası oluştu. Lütfen sayfayı yenileyip tekrar deneyin." }, { headers: CORS });
+            }
 
             // Server-side strict validation. If any required field is missing from the PERSISTED draft, return error.
             if (!appointmentDraft.patientName) {
@@ -1034,6 +1040,8 @@ export async function POST(req: Request) {
                const ns = clinicData?.notificationSettings || {};
                const { createAppointmentAndNotify } = await import("@/lib/appointment-service");
 
+               console.log(`[APPOINTMENT_SUBMISSION_FUNCTION_CALLED] convId=${convId} clinicId=${actualClinicId} state=${appointmentState} draftVersion=${appointmentVersion} timestamp=${new Date().toISOString()}`);
+
                const appointmentResult = await createAppointmentAndNotify({
                  clinicId: actualClinicId,
                  patientName: appointmentDraft.patientName,
@@ -1062,7 +1070,7 @@ export async function POST(req: Request) {
                // State -> APPOINTMENT_SUBMITTED
                await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion + 1, "APPOINTMENT_SUBMITTED", appointmentDraft, { appointmentCreated: true });
 
-               console.log(`[APPOINTMENT_SUBMISSION_COMPLETED] appointmentId=${appointmentResult.appointmentId} convId=${convId} clinicId=${actualClinicId}`);
+               console.log(`[APPOINTMENT_SUCCESS_RESPONSE_RETURNED] convId=${convId} clinicId=${actualClinicId} appointmentId=${appointmentResult.appointmentId} state=APPOINTMENT_SUBMITTED timestamp=${new Date().toISOString()}`);
                const dateDisplay = appointmentDraft.preferredDateDisplay || appointmentDraft.requestedDate || "-";
                const successMsg = `Teşekkür ederim. Ön randevu talebiniz kliniğimizin değerlendirmesine iletildi. ${appointmentDraft.requestedService || "Genel Muayene"} işlemi için tercih ettiğiniz ${dateDisplay}, saat ${appointmentDraft.requestedTime || "Belirtilmedi"} bilgisi klinik ekibi tarafından değerlendirilecektir. Talebiniz henüz kesinleşmiş bir randevu değildir. Klinik ekibimiz talebinizi değerlendirdikten sonra sonucu paylaşmış olduğunuz e-posta adresine iletecektir.`;
 
@@ -1072,7 +1080,7 @@ export async function POST(req: Request) {
                console.error("[chat API] Appointment submission failed:", err.message);
                // If creation fails, we revert to APPOINTMENT_FAILED instead of collecting name.
                await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion + 1, "APPOINTMENT_FAILED", appointmentDraft);
-               return NextResponse.json({ reply: "Randevu talebiniz oluşturulurken teknik bir hata oluştu. Lütfen biraz sonra tekrar deneyin veya kliniğimizle doğrudan iletişime geçin." }, { headers: CORS });
+               return NextResponse.json({ reply: "Üzgünüm, ön randevu talebinizi şu anda sisteme kaydederken teknik bir sorun oluştu. Bilgileriniz henüz kliniğe iletilmedi. Lütfen kısa bir süre sonra yeniden deneyin." }, { headers: CORS });
             }
         } else {
             // It's AWAITING_CONFIRMATION, but they didn't say "evet" or "hayır".
