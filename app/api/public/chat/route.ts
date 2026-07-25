@@ -1040,7 +1040,10 @@ export async function POST(req: Request) {
                const ns = clinicData?.notificationSettings || {};
                const { createAppointmentAndNotify } = await import("@/lib/appointment-service");
 
-               console.log(`[APPOINTMENT_SUBMISSION_FUNCTION_CALLED] convId=${convId} clinicId=${actualClinicId} state=${appointmentState} draftVersion=${appointmentVersion} timestamp=${new Date().toISOString()}`);
+               console.log(`[STEP 1] conversation id: ${convId}`);
+               console.log(`[STEP 2] resolved clinic slug: ${clinicId}`);
+               console.log(`[STEP 3] resolved canonical clinic id: ${clinicId}`);
+               console.log(`[STEP 4] resolved Firestore write path: clinics/${clinicId}/appointments`);
 
                const appointmentResult = await createAppointmentAndNotify({
                  clinicId: clinicId, // CRITICAL FIX: The dashboard queries by URL slug (clinicId), not actualClinicId (document ID)
@@ -1063,14 +1066,26 @@ export async function POST(req: Request) {
                });
 
                if (!appointmentResult.success || !appointmentResult.appointmentId) {
-                   console.error("[chat API] createAppointment returned success=false or missing appointmentId", appointmentResult);
-                   throw new Error("APPOINTMENT_CREATION_FAILED");
+                   console.error("[chat API] createAppointment returned success=false", appointmentResult);
+                   
+                   // State -> APPOINTMENT_FAILED
+                   await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion + 1, "APPOINTMENT_FAILED", appointmentDraft);
+                   
+                   return NextResponse.json({ 
+                     reply: `Üzgünüm, ön randevu talebinizi şu anda sisteme kaydederken teknik bir sorun oluştu. Bilgileriniz henüz kliniğe iletilmedi. (Hata: ${appointmentResult.step_failed})`,
+                     appointmentCreated: false,
+                     success: false,
+                     step_failed: appointmentResult.step_failed || "UNKNOWN",
+                     reason: appointmentResult.reason || "APPOINTMENT_CREATION_FAILED",
+                     stack: appointmentResult.stack
+                   }, { headers: CORS });
                }
 
                // State -> APPOINTMENT_SUBMITTED
                await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion + 1, "APPOINTMENT_SUBMITTED", appointmentDraft, { appointmentCreated: true });
 
-               console.log(`[APPOINTMENT_SUCCESS_RESPONSE_RETURNED] convId=${convId} clinicId=${actualClinicId} appointmentId=${appointmentResult.appointmentId} state=APPOINTMENT_SUBMITTED timestamp=${new Date().toISOString()}`);
+               console.log(`[STEP 12] return success`);
+
                const dateDisplay = appointmentDraft.preferredDateDisplay || appointmentDraft.requestedDate || "-";
                const successMsg = `Teşekkür ederim. Ön randevu talebiniz kliniğimizin değerlendirmesine iletildi. ${appointmentDraft.requestedService || "Genel Muayene"} işlemi için tercih ettiğiniz ${dateDisplay}, saat ${appointmentDraft.requestedTime || "Belirtilmedi"} bilgisi klinik ekibi tarafından değerlendirilecektir. Talebiniz henüz kesinleşmiş bir randevu değildir. Klinik ekibimiz talebinizi değerlendirdikten sonra sonucu paylaşmış olduğunuz e-posta adresine iletecektir.`;
                
@@ -1089,6 +1104,7 @@ export async function POST(req: Request) {
                  reply: successMsg, 
                  appointmentCreated: true, 
                  appointmentId: appointmentResult.appointmentId,
+                 emailSent: appointmentResult.clinicNotificationStatus === "SENT",
                  diagnostics 
                }, { headers: CORS });
 
@@ -1097,21 +1113,13 @@ export async function POST(req: Request) {
                // If creation fails, we revert to APPOINTMENT_FAILED instead of collecting name.
                await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion + 1, "APPOINTMENT_FAILED", appointmentDraft);
                
-               const diagnostics = message.includes("DEBUG_MODE") ? {
-                 deploymentCommit: "1ae1624",
-                 canonicalClinicId: clinicId,
-                 appointmentWritePath: `clinics/${clinicId}/appointments`,
-                 notificationSettingsPath: `clinics/${clinicId}`,
-                 databaseInsertSucceeded: false,
-                 clinicNotificationAttempted: false,
-                 clinicNotificationStatus: "NOT_CONFIGURED",
-                 errorCode: err.message || "DB_INSERT_FAILED"
-               } : undefined;
-
                return NextResponse.json({ 
                  reply: "Üzgünüm, ön randevu talebinizi şu anda sisteme kaydederken teknik bir sorun oluştu. Bilgileriniz henüz kliniğe iletilmedi.", 
                  appointmentCreated: false,
-                 diagnostics 
+                 success: false,
+                 step_failed: "UNKNOWN",
+                 reason: err.message,
+                 stack: err.stack
                }, { headers: CORS });
             }
         } else {

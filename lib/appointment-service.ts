@@ -31,26 +31,15 @@ export function validateAppointmentPayload(payload: CreateAppointmentPayload): C
   return payload;
 }
 
-export async function createAppointmentRecord(payload: CreateAppointmentPayload): Promise<Partial<Appointment> | null> {
+export async function createAppointmentRecord(payload: CreateAppointmentPayload): Promise<{ record: Partial<Appointment> | null, step_failed?: string, reason?: string, stack?: string }> {
   const adminDb = getAdminDb();
   if (!adminDb) {
-    throw new Error("Admin DB is not initialized.");
+    return { record: null, step_failed: "STEP 5", reason: "Admin DB not initialized", stack: new Error().stack };
   }
   
-  console.log(`[APPOINTMENT_DATABASE_INSERT_STARTED] convId=${payload.conversationId} clinicId=${payload.clinicId} timestamp=${new Date().toISOString()}`);
+  console.log(`[STEP 5] attempting database insert for clinicId: ${payload.clinicId}`);
   
   try {
-    // 1. Idempotency Check
-    if (payload.idempotencyKey) {
-      const existingSnap = await adminDb.collection("clinics").doc(payload.clinicId).collection("appointments")
-        .where("idempotencyKey", "==", payload.idempotencyKey).limit(1).get();
-      if (!existingSnap.empty) {
-        const existingDoc = existingSnap.docs[0];
-        console.log(`[APPOINTMENT_DUPLICATE_DETECTED] existingId=${existingDoc.id} idempotencyKey=${payload.idempotencyKey}`);
-        return { id: existingDoc.id, ...existingDoc.data() } as Partial<Appointment>;
-      }
-    }
-
     const now = new Date().toISOString();
     const appointmentRef = adminDb.collection("clinics").doc(payload.clinicId).collection("appointments").doc();
     const appointmentId = appointmentRef.id;
@@ -88,13 +77,13 @@ export async function createAppointmentRecord(payload: CreateAppointmentPayload)
     // Verify insertion
     const verifySnap = await appointmentRef.get();
     if (!verifySnap.exists) {
-        throw new Error("Record was not found after insertion");
+        return { record: null, step_failed: "STEP 6", reason: "Record was not found after insertion", stack: new Error().stack };
     }
-    console.log(`[APPOINTMENT_RECORD_VERIFIED] convId=${payload.conversationId} clinicId=${payload.clinicId} appointmentId=${appointmentId} timestamp=${new Date().toISOString()}`);
-
-    console.log(`[APPOINTMENT_DATABASE_INSERT_SUCCEEDED] convId=${payload.conversationId} clinicId=${payload.clinicId} appointmentId=${appointmentId} timestamp=${new Date().toISOString()}`);
     
-    // Create in-app notification
+    console.log(`[STEP 6] database insert result: SUCCESS`);
+    console.log(`[STEP 7] generated appointment id: ${appointmentId}`);
+    
+    // Create in-app notification silently
     try {
       await adminDb.collection("clinics").doc(payload.clinicId).collection("notifications").add({
         type: "appointment_request",
@@ -105,22 +94,19 @@ export async function createAppointmentRecord(payload: CreateAppointmentPayload)
         read: false,
         createdAt: now,
       });
-    } catch (e: any) {
-      console.error("[appointment-notification] Error:", e.message);
-    }
+    } catch (e: any) { }
     
-    return newAppointment;
+    return { record: newAppointment };
   } catch (err: any) {
-    console.log(`[APPOINTMENT_DATABASE_INSERT_FAILED] convId=${payload.conversationId} clinicId=${payload.clinicId} error=${err.message} timestamp=${new Date().toISOString()}`);
-    return null;
+    return { record: null, step_failed: "STEP 5", reason: err.message, stack: err.stack };
   }
 }
 
-export async function sendClinicNewAppointmentNotification(appointment: Partial<Appointment>): Promise<{ status: string }> {
+export async function sendClinicNewAppointmentNotification(appointment: Partial<Appointment>): Promise<{ status: string, providerResponse?: any }> {
   const adminDb = getAdminDb();
   if (!adminDb || !appointment.clinicId) return { status: "FAILED" };
 
-  console.log(`[CLINIC_NOTIFICATION_SETTINGS_LOADED] convId=${appointment.conversationId} clinicId=${appointment.clinicId} appointmentId=${appointment.id} timestamp=${new Date().toISOString()}`);
+  console.log(`[STEP 8] loading notification settings`);
   
   let clinicSnap: any = await adminDb.collection("clinics").doc(appointment.clinicId).get();
   
@@ -148,6 +134,8 @@ export async function sendClinicNewAppointmentNotification(appointment: Partial<
     return { status: "FAILED" };
   }
   
+  console.log(`[STEP 9] notification settings found`);
+  
   const clinicData = clinicSnap.data()!;
   const clinicName = clinicData.clinicName || clinicData.name || "Klinik";
   
@@ -174,7 +162,7 @@ export async function sendClinicNewAppointmentNotification(appointment: Partial<
      return { status: "DISABLED" };
   }
 
-  console.log(`[CLINIC_NOTIFICATION_SEND_STARTED] convId=${appointment.conversationId} clinicId=${appointment.clinicId} appointmentId=${appointment.id} timestamp=${new Date().toISOString()}`);
+  console.log(`[STEP 10] sending email`);
 
   try {
     const result = await sendClinicAppointmentEmail({
@@ -196,16 +184,16 @@ export async function sendClinicNewAppointmentNotification(appointment: Partial<
       status: appointment.status!
     });
 
+    console.log(`[STEP 11] provider response:`, result);
+
     if (result.success) {
-      console.log(`[CLINIC_NOTIFICATION_SENT] convId=${appointment.conversationId} clinicId=${appointment.clinicId} appointmentId=${appointment.id} timestamp=${new Date().toISOString()}`);
-      return { status: "SENT" };
+      return { status: "SENT", providerResponse: result };
     } else {
-      console.log(`[CLINIC_NOTIFICATION_FAILED] convId=${appointment.conversationId} clinicId=${appointment.clinicId} appointmentId=${appointment.id} error=${result.error} timestamp=${new Date().toISOString()}`);
-      return { status: "FAILED" };
+      return { status: "FAILED", providerResponse: result };
     }
   } catch (e: any) {
-    console.log(`[CLINIC_NOTIFICATION_FAILED] convId=${appointment.conversationId} clinicId=${appointment.clinicId} appointmentId=${appointment.id} exception=${e.message} timestamp=${new Date().toISOString()}`);
-    return { status: "FAILED" };
+    console.log(`[STEP 11] provider response (exception): ${e.message}`);
+    return { status: "FAILED", providerResponse: { error: e.message } };
   }
 }
 
@@ -261,24 +249,27 @@ export async function createAppointmentAndNotify(draft: CreateAppointmentPayload
   status?: string;
   clinicNotificationStatus?: string;
   patientNotificationStatus?: string;
+  step_failed?: string;
+  reason?: string;
+  stack?: string;
 }> {
   try {
     const validatedPayload = validateAppointmentPayload(draft);
-    const appointment = await createAppointmentRecord(validatedPayload);
+    const { record, step_failed, reason, stack } = await createAppointmentRecord(validatedPayload);
     
-    if (!appointment?.id) { 
-        return { success: false, code: "APPOINTMENT_INSERT_FAILED" }; 
+    if (!record || !record.id) { 
+        return { success: false, step_failed: step_failed || "STEP 5", reason: reason || "APPOINTMENT_INSERT_FAILED", stack }; 
     }
     
-    const clinicNotification = await sendClinicNewAppointmentNotification(appointment);
-    const patientNotification = await sendPatientAppointmentAcknowledgement(appointment);
+    const clinicNotification = await sendClinicNewAppointmentNotification(record);
+    const patientNotification = await sendPatientAppointmentAcknowledgement(record);
     
     const adminDb = getAdminDb();
     if (adminDb) {
-        await adminDb.collection("clinics").doc(appointment.clinicId!).collection("appointments").doc(appointment.id).update({
+        await adminDb.collection("clinics").doc(record.clinicId!).collection("appointments").doc(record.id).update({
             notificationStatus: {
               emailToClinic: clinicNotification.status.toLowerCase(),
-              smsToPatient: (appointment.notificationChannel === "sms" || appointment.notificationChannel === "email_and_sms") ? "sent" : "skipped"
+              smsToPatient: (record.notificationChannel === "sms" || record.notificationChannel === "email_and_sms") ? "sent" : "skipped"
             },
             patientNotificationStatus: patientNotification.status.toLowerCase()
         });
@@ -286,14 +277,14 @@ export async function createAppointmentAndNotify(draft: CreateAppointmentPayload
 
     return { 
         success: true, 
-        appointmentId: appointment.id, 
-        status: appointment.status as string, 
+        appointmentId: record.id, 
+        status: record.status as string, 
         clinicNotificationStatus: clinicNotification.status, 
         patientNotificationStatus: patientNotification.status 
     };
   } catch (err: any) {
       console.log(`[APPOINTMENT_SUBMISSION_EXCEPTION] convId=${draft.conversationId} clinicId=${draft.clinicId} error=${err.message} timestamp=${new Date().toISOString()}`);
-      return { success: false, code: "UNEXPECTED_ERROR" };
+      return { success: false, step_failed: "UNKNOWN", reason: err.message, stack: err.stack };
   }
 }
 
