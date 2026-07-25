@@ -932,7 +932,7 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { clinicId, widgetId, message, history = [], conversationId = "", pendingAppointmentData, _systemAction } = body;
+    const { clinicId, widgetId, message, history = [], conversationId = "", pendingAppointmentData, _systemAction, traceId } = body;
     const convId = conversationId || `session_${Date.now()}`;
     debugLog.push(`clinicId=${clinicId} msg="${message?.slice(0, 60)}"`);
 
@@ -1187,10 +1187,23 @@ export async function POST(req: Request) {
     }
 
     // STRICT CONFIRMATION HANDLER
+    const isConfirm = isConfirmation(message);
+    
+    // Add definitive route logs
+    if (msgLower === "evet" || msgLower === "yes" || isConfirm) {
+        console.log("[CONFIRMATION_ROUTE_CHECK]", {
+            traceId,
+            conversationId: convId,
+            appointmentState,
+            normalizedMessage: msgLower,
+            isPositiveConfirmation: isConfirm,
+            persistedDraftFound: Object.keys(appointmentDraft).length > 0
+        });
+    }
+
     if (appointmentState === "AWAITING_CONFIRMATION") {
-        const isConfirm = isConfirmation(message);
-        
         if (isConfirm) {
+            console.log("[CONFIRMATION_HANDLER_ENTERED]");
             console.log(`[APPOINTMENT_CONFIRMATION_RECEIVED] convId=${convId} clinicId=${actualClinicId} state=${appointmentState} timestamp=${new Date().toISOString()}`);
 
             // 6. VERIFY CLINIC CONTEXT
@@ -1294,10 +1307,13 @@ export async function POST(req: Request) {
                }, { headers: CORS });
             }
         } else {
+            console.log("[CONFIRMATION_HANDLER_BYPASSED]", { reason: "not_positive_confirmation" });
             // It's AWAITING_CONFIRMATION, but they didn't say "evet" or "hayır".
             // Ask for clear confirmation without changing state, preventing fallback to COLLECTING_NAME or IDLE.
             return NextResponse.json({ responseType: "CHAT_REPLY", reply: "Ön randevu talebinizi iletmemi onaylıyor musunuz? (Evet veya Hayır şeklinde yanıtlayabilirsiniz)" }, { headers: CORS });
         }
+    } else if (msgLower === "evet" || msgLower === "yes" || isConfirm) {
+        console.log("[CONFIRMATION_HANDLER_BYPASSED]", { reason: "state_not_awaiting_confirmation" });
     }
 
     // 2. Handle specific collection phases
@@ -1768,7 +1784,7 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
                 }
                 
                 await logConversation({
-                  clinicId,
+                  clinicId: actualClinicId,
                   convId,
                   userMessage: message,
                   aiReply: fallbackMsg,
@@ -1834,7 +1850,7 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
 
       // Log the handoff event
       await logConversation({
-        clinicId,
+        clinicId: actualClinicId,
         convId,
         userMessage: message,
         aiReply: handoffMsg,
@@ -1959,6 +1975,7 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
        When the clinic has provided a comprehensive custom prompt (e.g. İDA),
        it becomes the PRIMARY identity. Otherwise, use the default intro.
     */
+    console.log("[NORMAL_LLM_CALL_STARTED]");
     const hasCustomPrompt = customPrompt && customPrompt.trim().length > 0;
 
     const systemPrompt = [
@@ -2017,6 +2034,23 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
 
     // Strip markdown formatting characters (**, *, #) as requested
     reply = reply.replace(/\*\*|\*|#/g, '');
+
+    // HARD FORBIDDEN PHRASES FOR NORMAL CHAT
+    // Normal chat must never claim the appointment was successfully sent.
+    const forbiddenClaims = [
+      "randevu talebiniz iletildi",
+      "kliniğimize ilettim",
+      "talebiniz oluşturuldu",
+      "randevunuz kaydedildi",
+      "başarıyla gönderildi",
+      "değerlendirmesine iletildi"
+    ];
+    
+    // We only do this if it's the general LLM flow, which it is here.
+    if (forbiddenClaims.some(claim => reply.toLowerCase().includes(claim.toLowerCase()))) {
+      console.warn("[FORBIDDEN_CLAIM_INTERCEPTED] LLM tried to claim success without transaction:", reply);
+      reply = "Randevu talebiniz henüz sisteme kaydedilmedi. İşlemi tamamlamak için gerekli adımları sürdürüyorum.";
+    }
 
     let suggestedActions: string[] = [];
     const actionsMatch = reply.match(/\[ACTIONS:\s*(.*?)\]/);
@@ -2107,7 +2141,7 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
     }
 
     await logConversation({
-      clinicId,
+      clinicId: actualClinicId,
       convId,
       userMessage: message,
       aiReply: responsePayload.reply,
