@@ -103,7 +103,8 @@ export async function POST(req: Request, { params }: RouteParams) {
           requestedService,
           requestedDate,
           requestedTime,
-          appointmentId
+          appointmentId,
+          notes
         });
         clinicEmailSent = result.success;
       } catch (e: any) {

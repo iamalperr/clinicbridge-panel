@@ -46,6 +46,7 @@ export interface AppointmentEmailPayload {
   preferredTimePeriod?: string | null;
   preferredTimeText?: string | null;
   appointmentId: string;
+  notes?: string;
 }
 
 export async function sendClinicAppointmentEmail(
@@ -86,6 +87,7 @@ export async function sendClinicAppointmentEmail(
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">${timeLabel}</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${timeValue}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Kaynak</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">AI Chatbot</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Durum</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">Ön Değerlendirme Bekliyor</td></tr>
+        ${payload.notes ? `<tr><td style="padding:10px;background:#f8fafc;font-weight:600">Notlar</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.notes}</td></tr>` : ''}
       </table>
       <p style="color:#64748b;font-size:14px">
         Lütfen <a href="https://app.clinicbridge-ai.com" style="color:#6366f1">ClinicBridge panelinizden</a> randevu talebini kontrol ediniz.
