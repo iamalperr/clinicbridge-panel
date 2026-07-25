@@ -1230,48 +1230,39 @@ export async function POST(req: Request) {
              if (result.success && result.appointmentId) {
                  await saveAppointmentState(adminDb, actualClinicId, convId, 0, "APPOINTMENT_SUBMITTED", loadedDraft, {});
 
-                 const dateDisplay = loadedDraft.preferredDateDisplay || loadedDraft.requestedDate || "-";
-                 const timeDisplay = loadedDraft.requestedTime || "Belirtilmedi";
-                 const treatment = loadedDraft.requestedService || "Genel Muayene";
-
-                 const successReply = `Teşekkür ederim. Ön randevu talebiniz kliniğimizin değerlendirmesine iletildi.\n\n${treatment} işlemi için tercih ettiğiniz ${dateDisplay}, saat ${timeDisplay} bilgisi klinik ekibi tarafından değerlendirilecektir.\n\nTalebiniz henüz kesinleşmiş bir randevu değildir. Klinik ekibimiz talebinizi değerlendirdikten sonra sonucu paylaşmış olduğunuz e-posta adresine iletecektir.`;
+                 const successReply = `Teşekkür ederim. Ön randevu talebiniz ${clinicName}'e iletildi. Klinik ekibi talebinizi değerlendirdikten sonra kayıtlı iletişim bilgileriniz üzerinden size bilgi verecektir.`;
 
                  // 5. Return strict response
                  return NextResponse.json({
-                     responseType: "APPOINTMENT_SUBMISSION_SUCCESS",
                      success: true,
+                     responseType: "appointment_created",
                      appointmentCreated: true,
                      appointmentId: result.appointmentId,
-                     databaseInsertSucceeded: true,
-                     status: result.status || "PENDING_REVIEW",
-                     clinicNotificationStatus: result.clinicNotificationStatus || "NOT_CONFIGURED",
-                     patientNotificationStatus: result.patientNotificationStatus || "FAILED",
+                     appointmentStatus: result.status || "PENDING_REVIEW",
+                     clinicNotificationSent: result.clinicNotificationStatus === "SENT",
+                     patientNotificationSent: result.patientNotificationStatus === "SENT",
                      reply: successReply
                  }, { headers: CORS });
 
              } else {
                  await saveAppointmentState(adminDb, actualClinicId, convId, 0, "AWAITING_CONFIRMATION", loadedDraft, {});
                  return NextResponse.json({
-                     responseType: "APPOINTMENT_SUBMISSION_FAILED",
                      success: false,
+                     responseType: "appointment_creation_failed",
                      appointmentCreated: false,
-                     appointmentId: null,
-                     databaseInsertSucceeded: false,
-                     errorCode: result.reason || "INSERT_FAILED",
-                     reply: "Üzgünüm, ön randevu talebiniz şu anda sisteme kaydedilemedi ve henüz kliniğe iletilmedi. Bilgileriniz korunuyor; işlemi yeniden deneyebiliriz."
+                     errorCode: "APPOINTMENT_CREATE_FAILED",
+                     reply: "Üzgünüm, ön randevu talebiniz şu anda sisteme kaydedilemedi. Lütfen daha sonra tekrar deneyin."
                  }, { headers: CORS });
              }
 
          } catch (err: any) {
              await saveAppointmentState(adminDb, actualClinicId, convId, 0, "AWAITING_CONFIRMATION", loadedDraft, {});
              return NextResponse.json({
-                 responseType: "APPOINTMENT_SUBMISSION_FAILED",
                  success: false,
+                 responseType: "appointment_creation_failed",
                  appointmentCreated: false,
-                 appointmentId: null,
-                 databaseInsertSucceeded: false,
-                 errorCode: err.message,
-                 reply: "Üzgünüm, ön randevu talebiniz şu anda sisteme kaydedilemedi ve henüz kliniğe iletilmedi. Bilgileriniz korunuyor; işlemi yeniden deneyebiliriz."
+                 errorCode: "APPOINTMENT_CREATE_FAILED",
+                 reply: "Üzgünüm, ön randevu talebiniz şu anda sisteme kaydedilemedi. Lütfen daha sonra tekrar deneyin."
              }, { headers: CORS });
          }
     } else if (positiveConfirmationDetected) {

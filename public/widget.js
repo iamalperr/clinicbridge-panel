@@ -834,16 +834,17 @@
         var t = shadow.getElementById('cbw-typing'); if (t) t.remove();
         var reply = "";
 
-        if (data && data.responseType === "APPOINTMENT_SUBMISSION_SUCCESS") {
-           if (data.success === true && typeof data.appointmentId === "string" && data.appointmentId.length > 0 && data.databaseInsertSucceeded === true) {
+        if (data && data.responseType === "appointment_created") {
+           if (data.success === true && typeof data.appointmentId === "string" && data.appointmentId.length > 0) {
               reply = data.reply;
               pendingApptData = null;
            } else {
-              // This should theoretically never happen if backend is strict, but as per user requirements:
               reply = "Randevu onayı başarısız oldu (Kimlik eksik).";
            }
-        } else if (data && data.responseType === "APPOINTMENT_SUBMISSION_FAILED") {
+        } else if (data && data.responseType === "appointment_creation_failed") {
            reply = data.reply || "Üzgünüm, bilgileriniz henüz kliniğe iletilmedi.";
+        } else if (data && data.responseType === "appointment_information_required") {
+           reply = data.reply;
         } else {
            reply = (data && data.reply) ? data.reply : sys.noReply;
            if (data && data.pendingAppointmentData) pendingApptData = data.pendingAppointmentData;
