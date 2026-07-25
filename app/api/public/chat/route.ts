@@ -1889,6 +1889,9 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
       if (pending.patientName && (pending.patientPhone || pending.patientEmail)) {
         responsePayload.pendingAppointmentData = pending;
         console.log("[widget-chat] pendingAppointmentData attached:", JSON.stringify(pending));
+        
+        // CRITICAL FIX: We must update the state to AWAITING_CONFIRMATION so the strict handler catches the 'evet'
+        appointmentState = "AWAITING_CONFIRMATION";
       }
     }
 
