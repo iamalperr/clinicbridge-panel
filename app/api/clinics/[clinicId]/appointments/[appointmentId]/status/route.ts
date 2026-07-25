@@ -8,13 +8,21 @@ interface RouteParams {
 }
 
 export async function POST(req: Request, { params }: RouteParams) {
-  try {
-    const { clinicId, appointmentId } = await params;
-    const body = await req.json();
-    const { newStatus } = body;
+  return handleStatusUpdate(req, params);
+}
 
-    if (!newStatus) {
-      return NextResponse.json({ error: "Missing newStatus" }, { status: 400 });
+export async function PATCH(req: Request, { params }: RouteParams) {
+  return handleStatusUpdate(req, params);
+}
+
+async function handleStatusUpdate(req: Request, paramsPromise: Promise<{ clinicId: string; appointmentId: string }>) {
+  try {
+    const { clinicId, appointmentId } = await paramsPromise;
+    const body = await req.json();
+    const reqStatus = body.status || body.newStatus;
+
+    if (!reqStatus) {
+      return NextResponse.json({ error: "Missing status" }, { status: 400 });
     }
 
     // 1. Verify Authorization
@@ -31,13 +39,24 @@ export async function POST(req: Request, { params }: RouteParams) {
     }
 
     const decodedToken = await adminAuth.verifyIdToken(token);
+    
+    // Robust User Authentication Check
     const userSnap = await adminDb.collection("users").where("uid", "==", decodedToken.uid).limit(1).get();
+    let userData = null;
     
     if (userSnap.empty) {
+      const docSnap = await adminDb.collection("users").doc(decodedToken.uid).get();
+      if (docSnap.exists) {
+        userData = docSnap.data();
+      }
+    } else {
+      userData = userSnap.docs[0].data();
+    }
+    
+    if (!userData) {
       return NextResponse.json({ error: "User not found" }, { status: 403 });
     }
     
-    const userData = userSnap.docs[0].data();
     if (userData.role !== "admin" && userData.clinicId !== clinicId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -65,13 +84,13 @@ export async function POST(req: Request, { params }: RouteParams) {
       appointmentId,
       clinicId,
       previousStatus: oldStatus,
-      requestedStatus: newStatus,
+      requestedStatus: reqStatus,
       userId: decodedToken.uid
     }));
 
     // ── AŞAMA 3: ENUM KONTROLÜ ──
     const allowedStatuses = ["PENDING_REVIEW", "APPROVED", "CONFIRMED", "REJECTED", "CANCELLED"];
-    if (!allowedStatuses.includes(newStatus)) {
+    if (!allowedStatuses.includes(reqStatus)) {
       console.log(JSON.stringify({ checkpoint: "APPT_STATUS_UPDATE_FAILED", traceId, appointmentId, reason: "INVALID_APPOINTMENT_STATUS" }));
       return NextResponse.json({
         success: false,
@@ -82,21 +101,48 @@ export async function POST(req: Request, { params }: RouteParams) {
     }
 
     // ── AŞAMA 7: IDEMPOTENCY ──
-    if (oldStatus === newStatus) {
+    if (oldStatus === reqStatus) {
       return NextResponse.json({ 
         success: true, 
         appointmentUpdated: false,
         unchanged: true,
-        status: newStatus,
+        status: reqStatus,
         patientNotificationSent: false
       });
     }
 
+    // ── AŞAMA 4: UPDATE FIRESTORE FIRST ──
+    const now = new Date().toISOString();
+    const updateData: any = {
+      status: reqStatus,
+      updatedAt: now,
+      statusUpdatedAt: now,
+      statusUpdatedBy: decodedToken.uid
+    };
+
+    try {
+      await adminDb.collection("clinics").doc(clinicId).collection("appointments").doc(appointmentId).update(updateData);
+      
+      if (apptData.conversationId) {
+        const logRef = adminDb.collection("clinics").doc(clinicId).collection("conversationLogs").doc(apptData.conversationId);
+        await logRef.update({
+          appointmentStatus: reqStatus,
+          updatedAt: now
+        }).catch(e => console.warn("Failed to update conversation log:", e));
+      }
+    } catch (dbError) {
+      console.error("Firestore update error:", dbError);
+      throw new Error("Veritabanı güncellenemedi.");
+    }
+
+    // ── AŞAMA 5: SEND NOTIFICATION ──
     let notificationSettings = {
       patientAppointmentChannel: "email",
       requireEmail: true,
       requirePhone: false
     };
+    
+    let hasValidConfig = true;
 
     if (clinicData.notificationSettings) {
       notificationSettings = clinicData.notificationSettings;
@@ -107,8 +153,8 @@ export async function POST(req: Request, { params }: RouteParams) {
         requirePhone: clinicData.patientNotificationSettings.collectPhone ?? false
       };
     } else {
-      // No configuration found
-      return NextResponse.json({ error: "Clinic notification channel is missing or invalid. Please configure notification settings." }, { status: 400 });
+      console.warn("Clinic notification channel is missing. Proceeding without email notification.");
+      hasValidConfig = false;
     }
 
     const primaryChannel = notificationSettings.patientAppointmentChannel;
@@ -117,7 +163,7 @@ export async function POST(req: Request, { params }: RouteParams) {
     let notificationChannelUsed = "";
     
     // Check if we should trigger a notification
-    const shouldNotify = newStatus === "CONFIRMED" || newStatus === "APPROVED" || newStatus === "CANCELLED" || newStatus === "REJECTED";
+    const shouldNotify = hasValidConfig && (reqStatus === "CONFIRMED" || reqStatus === "APPROVED" || reqStatus === "CANCELLED" || reqStatus === "REJECTED");
 
     if (shouldNotify) {
       const treatment = apptData.treatmentType || apptData.requestedService || apptData.service || apptData.reason || "Genel Muayene";
@@ -130,7 +176,7 @@ export async function POST(req: Request, { params }: RouteParams) {
         checkpoint: "PATIENT_STATUS_NOTIFICATION_START",
         traceId,
         appointmentId,
-        status: newStatus,
+        status: reqStatus,
         hasPatientEmail: !!apptData.patientEmail,
         notificationChannel: primaryChannel
       }));
@@ -144,18 +190,18 @@ export async function POST(req: Request, { params }: RouteParams) {
             treatment,
             requestedDate: date,
             requestedTime: time,
-            status: newStatus,
+            status: reqStatus,
             appointmentId
           });
           
           if (notificationResult.success) {
-            console.log(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_SUCCESS", traceId, appointmentId, status: newStatus }));
+            console.log(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_SUCCESS", traceId, appointmentId, status: reqStatus }));
           } else {
-            console.error(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_FAILED", traceId, appointmentId, status: newStatus, errorCode: "EMAIL_FAILED", errorMessage: notificationResult.error }));
+            console.error(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_FAILED", traceId, appointmentId, status: reqStatus, errorCode: "EMAIL_FAILED", errorMessage: notificationResult.error }));
           }
         } else {
           notificationResult = { success: false, reason: "no_email", error: "Hastanın e-posta adresi bulunmuyor." };
-          console.warn(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_FAILED", traceId, appointmentId, status: newStatus, errorCode: "PATIENT_EMAIL_MISSING", errorMessage: "Hastanın e-posta adresi bulunmuyor." }));
+          console.warn(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_FAILED", traceId, appointmentId, status: reqStatus, errorCode: "PATIENT_EMAIL_MISSING", errorMessage: "Hastanın e-posta adresi bulunmuyor." }));
         }
       } else if (primaryChannel === "sms") {
         if (apptData.patientPhone) {
@@ -165,7 +211,7 @@ export async function POST(req: Request, { params }: RouteParams) {
           let smsMessage = "";
           let smsType = "";
 
-          if (newStatus === "CONFIRMED" || newStatus === "APPROVED") {
+          if (reqStatus === "CONFIRMED" || reqStatus === "APPROVED") {
             smsType = "appointment_confirmed";
             if (treatment && date && time) {
               smsMessage = isEn
@@ -176,7 +222,7 @@ export async function POST(req: Request, { params }: RouteParams) {
                 ? `ClinicBridge AI: Your appointment request at ${clinicName} has been approved. The clinic may contact you for details.`
                 : `ClinicBridge AI: ${clinicName} randevu talebinizi onayladı. Detaylar için kliniğiniz sizinle iletişime geçebilir. Sağlıklı günler dileriz.`;
             }
-          } else if (newStatus === "CANCELLED" || newStatus === "REJECTED") {
+          } else if (reqStatus === "CANCELLED" || reqStatus === "REJECTED") {
             smsType = "appointment_cancelled";
             smsMessage = isEn
               ? `ClinicBridge AI: Your appointment request at ${clinicName} could not be approved at this time. The clinic may contact you for alternative options.`
@@ -195,20 +241,20 @@ export async function POST(req: Request, { params }: RouteParams) {
             (notificationResult as any).smsMessage = smsMessage;
             
             if (notificationResult.success) {
-              console.log(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_SUCCESS", traceId, appointmentId, status: newStatus }));
+              console.log(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_SUCCESS", traceId, appointmentId, status: reqStatus }));
             } else {
-              console.error(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_FAILED", traceId, appointmentId, status: newStatus, errorCode: "SMS_FAILED", errorMessage: notificationResult.error }));
+              console.error(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_FAILED", traceId, appointmentId, status: reqStatus, errorCode: "SMS_FAILED", errorMessage: notificationResult.error }));
             }
           }
         } else {
           notificationResult = { success: false, reason: "no_phone", error: "Hastanın telefon numarası bulunmuyor." };
-          console.warn(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_FAILED", traceId, appointmentId, status: newStatus, errorCode: "PATIENT_PHONE_MISSING", errorMessage: "Hastanın telefon numarası bulunmuyor." }));
+          console.warn(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_FAILED", traceId, appointmentId, status: reqStatus, errorCode: "PATIENT_PHONE_MISSING", errorMessage: "Hastanın telefon numarası bulunmuyor." }));
         }
       } else if (primaryChannel === "whatsapp") {
         if (apptData.patientPhone) {
-          console.log(`[WhatsApp Mock] Sending to ${apptData.patientPhone} for appointment ${appointmentId} status ${newStatus}`);
+          console.log(`[WhatsApp Mock] Sending to ${apptData.patientPhone} for appointment ${appointmentId} status ${reqStatus}`);
           notificationResult = { success: true, reason: "mock_whatsapp", message: "WhatsApp notification logged (not sent to real API yet)." };
-          console.log(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_SUCCESS", traceId, appointmentId, status: newStatus }));
+          console.log(JSON.stringify({ checkpoint: "PATIENT_STATUS_NOTIFICATION_SUCCESS", traceId, appointmentId, status: reqStatus }));
         } else {
           notificationResult = { success: false, reason: "no_phone", error: "Hastanın telefon numarası bulunmuyor." };
         }
@@ -217,24 +263,19 @@ export async function POST(req: Request, { params }: RouteParams) {
       }
     }
 
-    // 3. Update Appointment Document
-    const now = new Date().toISOString();
-    const updateData: any = {
-      status: newStatus,
-      updatedAt: now,
-      updatedBy: decodedToken.uid
-    };
-
+    // 6. Update Notification Status in Firestore if applicable
     if (notificationResult) {
-      updateData.patientNotificationStatus = notificationResult.success ? "sent" : ((notificationResult as any).reason === "no_email" || (notificationResult as any).reason === "no_phone" ? "missing_contact" : "failed");
-      updateData.notificationSentAt = now;
-      updateData.notificationChannel = notificationChannelUsed;
-      if (notificationResult.error) updateData.notificationError = notificationResult.error;
+      const notifUpdateData: any = {
+        patientNotificationStatus: notificationResult.success ? "sent" : ((notificationResult as any).reason === "no_email" || (notificationResult as any).reason === "no_phone" ? "missing_contact" : "failed"),
+        notificationSentAt: now,
+        notificationChannel: notificationChannelUsed
+      };
+      if (notificationResult.error) notifUpdateData.notificationError = notificationResult.error;
+      
+      await adminDb.collection("clinics").doc(clinicId).collection("appointments").doc(appointmentId).update(notifUpdateData);
     }
 
-    await adminDb.collection("clinics").doc(clinicId).collection("appointments").doc(appointmentId).update(updateData);
-
-    // 4. Create Notification Log if applicable (for SMS to preserve legacy log, and maybe for Email)
+    // Create Notification Log if applicable (for SMS to preserve legacy log)
     if (notificationResult && notificationChannelUsed === "sms" && (notificationResult as any).smsType) {
       await adminDb.collection("clinics").doc(clinicId).collection("appointments").doc(appointmentId).collection("smsLogs").add({
         type: (notificationResult as any).smsType,
@@ -247,27 +288,18 @@ export async function POST(req: Request, { params }: RouteParams) {
         createdAt: now,
         triggeredBy: decodedToken.uid,
         oldStatus,
-        newStatus
+        newStatus: reqStatus
       });
     }
 
-    // 5. Update Conversation Log
-    if (apptData.conversationId) {
-      const logRef = adminDb.collection("clinics").doc(clinicId).collection("conversationLogs").doc(apptData.conversationId);
-      await logRef.update({
-        appointmentStatus: newStatus,
-        updatedAt: now
-      }).catch(e => console.warn("Failed to update conversation log:", e));
-    }
-
-    console.log(JSON.stringify({ checkpoint: "APPT_STATUS_UPDATE_SUCCESS", traceId, appointmentId, previousStatus: oldStatus, status: newStatus }));
+    console.log(JSON.stringify({ checkpoint: "APPT_STATUS_UPDATE_SUCCESS", traceId, appointmentId, previousStatus: oldStatus, status: reqStatus }));
 
     return NextResponse.json({ 
       success: true, 
       appointmentUpdated: true,
       appointmentId,
       previousStatus: oldStatus,
-      status: newStatus,
+      status: reqStatus,
       patientNotificationSent: notificationResult ? notificationResult.success : false,
       patientNotificationError: notificationResult && !notificationResult.success ? notificationResult.error : null,
       notification: {

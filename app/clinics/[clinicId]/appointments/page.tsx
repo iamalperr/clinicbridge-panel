@@ -72,12 +72,12 @@ export default function AppointmentsPage({ params }: PageProps) {
       if (!token) throw new Error("Unauthorized");
 
       const res = await fetch(`/api/clinics/${clinicId}/appointments/${id}/status`, {
-        method: "POST",
+        method: "PATCH",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         },
-        body: JSON.stringify({ newStatus })
+        body: JSON.stringify({ status: newStatus })
       });
 
       const data = await res.json();
