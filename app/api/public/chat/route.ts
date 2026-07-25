@@ -1043,7 +1043,7 @@ export async function POST(req: Request) {
                console.log(`[APPOINTMENT_SUBMISSION_FUNCTION_CALLED] convId=${convId} clinicId=${actualClinicId} state=${appointmentState} draftVersion=${appointmentVersion} timestamp=${new Date().toISOString()}`);
 
                const appointmentResult = await createAppointmentAndNotify({
-                 clinicId: actualClinicId,
+                 clinicId: clinicId, // CRITICAL FIX: The dashboard queries by URL slug (clinicId), not actualClinicId (document ID)
                  patientName: appointmentDraft.patientName,
                  patientPhone: appointmentDraft.patientPhone,
                  patientEmail: appointmentDraft.patientEmail,

@@ -122,10 +122,34 @@ export async function sendClinicNewAppointmentNotification(appointment: Partial<
 
   console.log(`[CLINIC_NOTIFICATION_SETTINGS_LOADED] convId=${appointment.conversationId} clinicId=${appointment.clinicId} appointmentId=${appointment.id} timestamp=${new Date().toISOString()}`);
   
-  const clinicSnap = await adminDb.collection("clinics").doc(appointment.clinicId).get();
-  if (!clinicSnap.exists) return { status: "FAILED" };
+  let clinicSnap: any = await adminDb.collection("clinics").doc(appointment.clinicId).get();
+  
+  // Fallback for agency clinics where clinicId is a slug instead of the root document ID
+  if (!clinicSnap.exists) {
+    const agenciesSnap = await adminDb.collection("agencies").get();
+    for (const agency of agenciesSnap.docs) {
+      const aClinicsQuery = await adminDb.collection("agencies").doc(agency.id).collection("clinics").where("clinicSlug", "==", appointment.clinicId).limit(1).get();
+      if (!aClinicsQuery.empty) {
+        clinicSnap = aClinicsQuery.docs[0];
+        break;
+      }
+      
+      // Also try to check if the doc ID matches in case it was passed
+      const directSnap = await adminDb.collection("agencies").doc(agency.id).collection("clinics").doc(appointment.clinicId).get();
+      if (directSnap.exists) {
+        clinicSnap = directSnap;
+        break;
+      }
+    }
+  }
+
+  if (!clinicSnap.exists) {
+    console.error(`[CLINIC_NOTIFICATION_FAILED] Could not find clinic data for clinicId=${appointment.clinicId}`);
+    return { status: "FAILED" };
+  }
+  
   const clinicData = clinicSnap.data()!;
-  const clinicName = clinicData.name || "Klinik";
+  const clinicName = clinicData.clinicName || clinicData.name || "Klinik";
   
   const ns = clinicData.notificationSettings || {};
   const clinicEmailEnabled = ns.clinic?.newAppointmentEmailEnabled ?? true;
