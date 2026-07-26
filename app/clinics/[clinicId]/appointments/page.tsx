@@ -5,9 +5,24 @@ import { collection, query, where, orderBy, onSnapshot, doc, updateDoc } from "f
 import { db, auth } from "@/lib/firebase";
 import { useI18n } from "@/lib/i18n-context";
 import { UI_COLORS } from "@/components/ui/ui-shared";
-import { Loader2, Calendar, Clock, User, Stethoscope, ChevronRight, Inbox, Phone, Mail, CheckCircle, XCircle, MessageSquare, Plus } from "lucide-react";
+import { Loader2, Calendar, Clock, User, Stethoscope, ChevronRight, Inbox, Phone, Mail, CheckCircle, XCircle, MessageSquare, Plus, RefreshCw } from "lucide-react";
 import Badge from "@/components/ui/Badge";
 import type { Appointment } from "@/lib/types";
+
+// Client-side helper
+const mapToCanonicalStatus = (status: string | undefined | null) => {
+  if (!status) return "pending";
+  const s = status.toLowerCase().trim();
+  if (s === "pending_review" || s === "under_review") return "under_review";
+  if (s === "approved") return "approved";
+  if (s === "confirmed") return "confirmed";
+  if (s === "rejected") return "rejected";
+  if (s === "cancelled" || s === "canceled") return "cancelled";
+  if (s === "reschedule_requested" || s === "reschedule") return "reschedule_requested";
+  if (s === "completed") return "completed";
+  return "pending";
+};
+
 
 interface PageProps {
   params: Promise<{ clinicId: string }>;
@@ -89,12 +104,16 @@ export default function AppointmentsPage({ params }: PageProps) {
 
       if (data.unchanged) {
          setToastMsg("Randevu durumu zaten güncel.");
-      } else if (data.patientNotificationSent) {
+      } else if (data.emailSent) {
          setToastMsg("Randevu durumu güncellendi ve hastaya bilgilendirme gönderildi.");
-      } else if (data.patientNotificationError) {
-         setToastMsg("Randevu durumu güncellendi ancak hasta bilgilendirmesi gönderilemedi.");
-      } else if (data.notification?.result?.reason === "no_email" || data.notification?.result?.reason === "no_phone") {
-         setToastMsg("Randevu durumu güncellendi. Hastanın kayıtlı iletişim bilgisi bulunmuyor.");
+      } else if (data.emailSkipped) {
+         if (data.skipReason === "EMAIL_CHANNEL_DISABLED" || data.skipReason === "PATIENT_EMAIL_MISSING") {
+           setToastMsg("Randevu durumu güncellendi. E-posta gönderilmedi (İletişim eksik veya ayar kapalı).");
+         } else {
+           setToastMsg("Randevu durumu güncellendi. Hasta bilgilendirmesine gerek duyulmadı.");
+         }
+      } else if (!data.emailSent && !data.emailSkipped && data.appointmentUpdated) {
+         setToastMsg("Randevu güncellendi ancak e-posta gönderilemedi (" + (data.errorCode || "Bilinmeyen hata") + ")");
       } else {
          setToastMsg("Randevu durumu güncellendi.");
       }
@@ -102,6 +121,35 @@ export default function AppointmentsPage({ params }: PageProps) {
     } catch (e: any) {
       console.error("[APPOINTMENT_STATUS_UPDATE_FAILED]", e);
       setToastMsg(e.message || "Randevu durumu güncellenemedi.");
+    } finally {
+      setUpdatingId(null);
+      setTimeout(() => setToastMsg(null), 4000);
+    }
+  };
+
+  const retryNotification = async (id: string) => {
+    setUpdatingId(id);
+    setToastMsg("E-posta tekrar gönderiliyor...");
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Unauthorized");
+
+      const res = await fetch(`/api/clinics/${clinicId}/appointments/${id}/notifications/retry`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Yeniden gönderme başarısız");
+      }
+
+      setToastMsg("E-posta başarıyla gönderildi.");
+    } catch (e: any) {
+      console.error("Retry failed:", e);
+      setToastMsg(e.message || "E-posta gönderilemedi.");
     } finally {
       setUpdatingId(null);
       setTimeout(() => setToastMsg(null), 4000);
@@ -364,6 +412,14 @@ export default function AppointmentsPage({ params }: PageProps) {
                                   return (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500, backgroundColor: "rgba(239, 68, 68, 0.1)", color: "#dc2626", padding: '4px 8px', borderRadius: '12px', width: 'fit-content' }}>
                                       <XCircle size={12} /> Hasta e-postası gönderilemedi
+                                      <button 
+                                        onClick={(e) => { e.stopPropagation(); retryNotification(apt.id!); }}
+                                        disabled={updatingId === apt.id}
+                                        style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', display: 'flex', padding: '0 4px' }}
+                                        title="Tekrar Dene"
+                                      >
+                                        <RefreshCw size={12} className={updatingId === apt.id ? "animate-spin" : ""} />
+                                      </button>
                                     </div>
                                   );
                                 } else {
@@ -405,7 +461,7 @@ export default function AppointmentsPage({ params }: PageProps) {
                         <td style={{ padding: "16px 24px" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <select 
-                              value={apt.status || "PENDING_REVIEW"}
+                              value={mapToCanonicalStatus(apt.status)}
                               onChange={(e) => updateStatus(apt.id!, e.target.value, apt.conversationId)}
                               disabled={updatingId === apt.id}
                               style={{
@@ -421,15 +477,14 @@ export default function AppointmentsPage({ params }: PageProps) {
                                 outline: "none"
                               }}
                             >
-                              <option value="PENDING_REVIEW">Ön Değerlendirme Bekliyor</option>
-                              <option value="APPROVED">Talep Onaylandı</option>
-                              <option value="CONFIRMED">Randevu Kesinleştirildi</option>
-                              <option value="REJECTED">Talep Reddedildi</option>
-                              <option value="CANCELLED">Randevu İptal Edildi</option>
-                              {/* Legacy fallbacks just in case the DB has old status that is not yet mapped */}
-                              {!["PENDING_REVIEW", "APPROVED", "CONFIRMED", "REJECTED", "CANCELLED"].includes(apt.status || "PENDING_REVIEW") && (
-                                <option value={apt.status}>{apt.status}</option>
-                              )}
+                              <option value="pending">Beklemede</option>
+                              <option value="under_review">Ön Değerlendirme Bekliyor</option>
+                              <option value="approved">Talep Onaylandı</option>
+                              <option value="confirmed">Randevu Kesinleştirildi</option>
+                              <option value="rejected">Talep Reddedildi</option>
+                              <option value="cancelled">Randevu İptal Edildi</option>
+                              <option value="reschedule_requested">Yeni Tarih Talep Edildi</option>
+                              <option value="completed">Tamamlandı</option>
                             </select>
                             {updatingId === apt.id && <Loader2 size={14} className="animate-spin" color={UI_COLORS.textMuted} />}
                           </div>
