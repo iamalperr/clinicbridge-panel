@@ -275,7 +275,25 @@ export async function sendPatientAppointmentStatusEmail(
 }> {
   const patientEmailToUse = resolvePatientEmail(payload);
   
+  // Maskeli log
+  console.log("[STATUS_EMAIL_FLOW_START]", JSON.stringify({
+    traceId: "auto",
+    appointmentId: payload.appointmentId,
+    hasRecipient: !!patientEmailToUse,
+    maskedRecipient: patientEmailToUse ? patientEmailToUse.replace(/(.{1})(.*)(@.*)/, "$1***$3") : null,
+    provider: "resend",
+    hasApiKey: !!process.env.RESEND_API_KEY,
+    hasFromAddress: true
+  }));
+
   if (!patientEmailToUse || patientEmailToUse.length < 5) {
+    console.log("[STATUS_EMAIL_FLOW_FAILED]", JSON.stringify({
+      traceId: "auto",
+      appointmentId: payload.appointmentId,
+      failureStage: "RECIPIENT_RESOLUTION",
+      errorCode: "PATIENT_EMAIL_MISSING",
+      safeErrorMessage: "Patient email could not be resolved from appointment data."
+    }));
     return {
       success: false,
       attempted: false,
@@ -301,6 +319,15 @@ export async function sendPatientAppointmentStatusEmail(
   const safeTreatment = payload.treatment || "Randevu talebiniz";
   const safeRequestedDate = payload.requestedDate || "Klinik tarafından bildirilecektir";
   const safeRequestedTime = payload.requestedTime || "Klinik tarafından bildirilecektir";
+
+  console.log("[STATUS_EMAIL_TEMPLATE_RESULT]", JSON.stringify({
+    traceId: "auto",
+    appointmentId: payload.appointmentId,
+    templateCreated: true,
+    hasSubject: true,
+    hasHtml: true,
+    hasText: false
+  }));
 
   let subject = "";
   let bodyContent = "";
@@ -388,6 +415,28 @@ export async function sendPatientAppointmentStatusEmail(
       }
     }
   );
+
+  console.log("[STATUS_EMAIL_PROVIDER_RESULT]", JSON.stringify({
+    traceId: "auto",
+    appointmentId: payload.appointmentId,
+    provider: "resend",
+    success: result.success,
+    providerMessageId: result.messageId || null,
+    accepted: result.accepted,
+    rejected: !result.accepted,
+    errorCode: result.errorCode || null,
+    safeErrorMessage: result.errorMessage || result.error || null
+  }));
+
+  if (!result.success) {
+    console.log("[STATUS_EMAIL_FLOW_FAILED]", JSON.stringify({
+      traceId: "auto",
+      appointmentId: payload.appointmentId,
+      failureStage: "PROVIDER_CALL",
+      errorCode: result.errorCode || "PROVIDER_ERROR",
+      safeErrorMessage: result.errorMessage || result.error || "Bilinmeyen provider hatası"
+    }));
+  }
 
   return { 
     success: result.success, 
