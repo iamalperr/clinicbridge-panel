@@ -16,10 +16,10 @@ if (fs.existsSync(envLocal)) {
 // Initialize Firebase Admin
 let app;
 if (!admin.apps.length) {
-  let certBase64 = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
+  const certBase64 = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
   
   if (certBase64) {
-      let certStr = Buffer.from(certBase64, 'base64').toString('utf-8');
+      const certStr = Buffer.from(certBase64, 'base64').toString('utf-8');
       app = admin.initializeApp({
         credential: admin.credential.cert(JSON.parse(certStr)),
       });
@@ -35,7 +35,7 @@ if (!admin.apps.length) {
   app = admin.apps[0];
 }
 
-const adminDb = app.firestore();
+const adminDb = app!.firestore();
 
 async function run() {
   console.log("Starting sync...");
