@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
 
-export async function POST(req: Request) {
+export async function GET(req: Request) {
   try {
     const adminDb = getAdminDb();
     if (!adminDb) return NextResponse.json({ error: "No DB" }, { status: 500 });

@@ -74,8 +74,23 @@ export async function GET(
       totalConversations++;
       const data = doc.data();
       totalMessages += data.totalMessages || 0;
-      if (data.status === "appointment" || data.status === "answered" || data.status === "resolved") {
+      if (data.status === "answered" || data.status === "resolved") {
         resolvedConversations++;
+      }
+    });
+
+    // Get accurate appointments count from appointments collection
+    const apptSnap = await adminDb.collection("clinics").doc(clinicId).collection("appointments")
+      .where("createdAt", ">=", `${startDateStr}T00:00:00.000Z`)
+      .where("createdAt", "<=", `${endDateStr}T23:59:59.999Z`)
+      .get();
+      
+    let aiAppointmentsCount = 0;
+    apptSnap.docs.forEach(doc => {
+      const data = doc.data();
+      if (data.source === "ai_chatbot" || data.createdBy === "ai_assistant" || data.source === "ai_agent" || !data.source) {
+        aiAppointmentsCount++;
+        resolvedConversations++; // Appointments also count as resolved conversations
       }
     });
 
