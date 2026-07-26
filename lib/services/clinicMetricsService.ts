@@ -23,6 +23,15 @@ export interface ClinicMetrics {
   unanswered: number;
   liveSupport: number;
   appointments: number;
+  
+  // Funnel Metrics
+  appointmentRequestsCreated: number;
+  appointmentsPendingReview: number;
+  appointmentsApproved: number;
+  appointmentsRejected: number;
+  appointmentsPatientNotified: number;
+  appointmentsCompleted: number;
+  conversionRate: number | null;
 }
 
 /**
@@ -40,6 +49,13 @@ export const EMPTY_METRICS: ClinicMetrics = {
   unanswered: 0,
   liveSupport: 0,
   appointments: 0,
+  appointmentRequestsCreated: 0,
+  appointmentsPendingReview: 0,
+  appointmentsApproved: 0,
+  appointmentsRejected: 0,
+  appointmentsPatientNotified: 0,
+  appointmentsCompleted: 0,
+  conversionRate: null,
 };
 
 /**
@@ -50,47 +66,102 @@ export function subscribeToClinicMetrics(
   clinicId: string,
   onMetrics: (metrics: ClinicMetrics) => void
 ): () => void {
-  const q = query(
+  const qLogs = query(
     collection(db, "clinics", clinicId, "conversationLogs"),
     orderBy("updatedAt", "desc")
   );
 
-  const unsub = onSnapshot(
-    q,
+  const qAppointments = query(
+    collection(db, "clinics", clinicId, "appointments"),
+    orderBy("createdAt", "desc")
+  );
+
+  let logsData: any[] | null = null;
+  let appointmentsData: any[] | null = null;
+
+  const emitMetrics = () => {
+    if (logsData === null || appointmentsData === null) return; // Wait for both
+
+    const totalConversations = logsData.length;
+    const totalMessages = logsData.reduce(
+      (sum, d) => sum + (typeof d.totalMessages === "number" ? d.totalMessages : 0),
+      0
+    );
+
+    const resolvedCount = logsData.filter((d) => RESOLVED_STATUSES.has(d.status)).length;
+    const unanswered = logsData.filter((d) => d.status === "unanswered").length;
+    const liveSupport = logsData.filter((d) => d.status === "liveSupport").length;
+    // Keep legacy conversation-level appointment metric for logs tab fallback
+    const appointments = logsData.filter((d) => d.status === "appointment").length;
+
+    const resolvedRate =
+      totalConversations > 0
+        ? Math.round((resolvedCount / totalConversations) * 100)
+        : null;
+
+    // Funnel metrics from appointments collection
+    // Filter only AI-created appointments for accurate funnel if needed, 
+    // or assume all if clinic uses AI chatbot heavily. Let's count all or AI specific:
+    const aiAppointments = appointmentsData.filter(d => d.source === "ai_chatbot" || d.createdBy === "ai_assistant" || d.source === "ai_agent" || !d.source);
+
+    const appointmentRequestsCreated = aiAppointments.length;
+    const appointmentsPendingReview = aiAppointments.filter(d => d.status === "PENDING_REVIEW").length;
+    const appointmentsApproved = aiAppointments.filter(d => d.status === "APPROVED").length;
+    const appointmentsRejected = aiAppointments.filter(d => d.status === "REJECTED").length;
+    const appointmentsCompleted = aiAppointments.filter(d => d.status === "CONFIRMED").length;
+    
+    // Check if patient was notified. This relies on patientNotificationSent field.
+    const appointmentsPatientNotified = aiAppointments.filter(d => d.patientNotificationSent === true).length;
+
+    const conversionRate =
+      totalConversations > 0
+        ? Math.round((appointmentRequestsCreated / totalConversations) * 100)
+        : null;
+
+    onMetrics({
+      totalConversations,
+      totalMessages,
+      resolvedCount,
+      resolvedRate,
+      unanswered,
+      liveSupport,
+      appointments,
+      appointmentRequestsCreated,
+      appointmentsPendingReview,
+      appointmentsApproved,
+      appointmentsRejected,
+      appointmentsPatientNotified,
+      appointmentsCompleted,
+      conversionRate
+    });
+  };
+
+  const unsubLogs = onSnapshot(
+    qLogs,
     (snap) => {
-      const docs = snap.docs.map((d) => d.data());
-
-      const totalConversations = docs.length;
-      const totalMessages = docs.reduce(
-        (sum, d) => sum + (typeof d.totalMessages === "number" ? d.totalMessages : 0),
-        0
-      );
-
-      const resolvedCount = docs.filter((d) => RESOLVED_STATUSES.has(d.status)).length;
-      const unanswered = docs.filter((d) => d.status === "unanswered").length;
-      const liveSupport = docs.filter((d) => d.status === "liveSupport").length;
-      const appointments = docs.filter((d) => d.status === "appointment").length;
-
-      const resolvedRate =
-        totalConversations > 0
-          ? Math.round((resolvedCount / totalConversations) * 100)
-          : null;
-
-      onMetrics({
-        totalConversations,
-        totalMessages,
-        resolvedCount,
-        resolvedRate,
-        unanswered,
-        liveSupport,
-        appointments,
-      });
+      logsData = snap.docs.map((d) => d.data());
+      emitMetrics();
     },
     () => {
-      // Erişim hatası veya koleksiyon yoksa boş metrik dön
-      onMetrics(EMPTY_METRICS);
+      logsData = [];
+      emitMetrics();
     }
   );
 
-  return unsub;
+  const unsubAppointments = onSnapshot(
+    qAppointments,
+    (snap) => {
+      appointmentsData = snap.docs.map((d) => d.data());
+      emitMetrics();
+    },
+    () => {
+      appointmentsData = [];
+      emitMetrics();
+    }
+  );
+
+  return () => {
+    unsubLogs();
+    unsubAppointments();
+  };
 }

@@ -1292,7 +1292,7 @@ export async function POST(req: Request) {
          loadedDraft.requestedDate = finalDateValidation.resolvedDate || loadedDraft.requestedDate;
          (loadedDraft as any).requestedWeekday = finalDateValidation.resolvedWeekday;
 
-         // 2. Call and await createAppointmentAndNotify
+          // 2. Call and await createAppointmentAndNotify
          try {
              // State -> SUBMITTING_APPOINTMENT
              await saveAppointmentState(adminDb, actualClinicId, convId, 0, "SUBMITTING_APPOINTMENT", loadedDraft, {});
@@ -1328,6 +1328,22 @@ export async function POST(req: Request) {
                  await saveAppointmentState(adminDb, actualClinicId, convId, 0, "APPOINTMENT_SUBMITTED", loadedDraft, {});
 
                  const successReply = `Teşekkür ederim. Ön randevu talebiniz ${clinicName}'e iletildi. Klinik ekibi talebinizi değerlendirdikten sonra kayıtlı iletişim bilgileriniz üzerinden size bilgi verecektir.`;
+
+                 // LOG THE SUCCESSFUL APPOINTMENT CREATION
+                 await logConversation({
+                   clinicId: actualClinicId,
+                   convId,
+                   userMessage: message,
+                   aiReply: successReply,
+                   historyLength: history.length,
+                   apptData: loadedDraft,
+                   appointmentId: result.appointmentId,
+                   isAppointmentCreated: true,
+                   appointmentState: "APPOINTMENT_SUBMITTED",
+                   tenantId: "legacy",
+                   widgetId: body.widgetId,
+                   sourceDomain: body.originUrl || "unknown"
+                 });
 
                  // 5. Return strict response
                  return NextResponse.json({

@@ -139,6 +139,62 @@ export default function ClinicOverviewPage() {
         />
       </div>
 
+      {/* AI Appointment Funnel */}
+      <SectionCard title="AI Appointment Funnel" subtitle="Comprehensive breakdown of AI lead generation to final confirmation">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+          
+          {/* AI Lead Generation */}
+          <div style={{ padding: 16, background: "rgba(255,255,255,0.02)", borderRadius: 12, border: `1px solid ${UI_COLORS.border}` }}>
+            <p style={{ fontSize: 11.5, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>AI Lead Generation</p>
+            <p style={{ fontSize: 24, fontWeight: 700, color: UI_COLORS.textPrimary }}>{noData ? "—" : formatNumber(metrics.totalConversations)}</p>
+            <p style={{ fontSize: 12, color: UI_COLORS.textMuted, marginTop: 4 }}>Toplam Görüşme (Qualified)</p>
+          </div>
+
+          {/* Appointment Requests */}
+          <div style={{ padding: 16, background: "rgba(255,255,255,0.02)", borderRadius: 12, border: `1px solid ${UI_COLORS.border}` }}>
+            <p style={{ fontSize: 11.5, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Appointment Requests</p>
+            <p style={{ fontSize: 24, fontWeight: 700, color: UI_COLORS.textPrimary }}>{noData ? "—" : formatNumber(metrics.appointmentRequestsCreated)}</p>
+            <p style={{ fontSize: 12, color: UI_COLORS.textMuted, marginTop: 4 }}>
+              Dönüşüm Oranı: <strong style={{ color: UI_COLORS.brand }}>{metrics.conversionRate !== null ? `%${metrics.conversionRate}` : "—"}</strong>
+            </p>
+          </div>
+
+          {/* Clinic Decisions */}
+          <div style={{ padding: 16, background: "rgba(255,255,255,0.02)", borderRadius: 12, border: `1px solid ${UI_COLORS.border}` }}>
+            <p style={{ fontSize: 11.5, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Clinic Decisions</p>
+            <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
+              <div>
+                <p style={{ fontSize: 16, fontWeight: 700, color: UI_COLORS.textPrimary }}>{metrics.appointmentsPendingReview}</p>
+                <p style={{ fontSize: 11, color: UI_COLORS.textMuted }}>Bekleyen</p>
+              </div>
+              <div>
+                <p style={{ fontSize: 16, fontWeight: 700, color: "#34d399" }}>{metrics.appointmentsApproved}</p>
+                <p style={{ fontSize: 11, color: UI_COLORS.textMuted }}>Onaylandı</p>
+              </div>
+              <div>
+                <p style={{ fontSize: 16, fontWeight: 700, color: UI_COLORS.danger }}>{metrics.appointmentsRejected}</p>
+                <p style={{ fontSize: 11, color: UI_COLORS.textMuted }}>Reddedildi</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Final Confirmations */}
+          <div style={{ padding: 16, background: "rgba(255,255,255,0.02)", borderRadius: 12, border: `1px solid ${UI_COLORS.border}` }}>
+            <p style={{ fontSize: 11.5, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Final Confirmations</p>
+            <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
+              <div>
+                <p style={{ fontSize: 20, fontWeight: 700, color: UI_COLORS.textPrimary }}>{metrics.appointmentsCompleted}</p>
+                <p style={{ fontSize: 11, color: UI_COLORS.textMuted }}>Kesinleşti</p>
+              </div>
+              <div>
+                <p style={{ fontSize: 20, fontWeight: 700, color: UI_COLORS.textPrimary }}>{metrics.appointmentsPatientNotified}</p>
+                <p style={{ fontSize: 11, color: UI_COLORS.textMuted }}>Bildirildi</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </SectionCard>
+
       {/* Module status */}
       <SectionCard title={t("clinics.overview.moduleStatus")} subtitle={t("clinics.overview.moduleSubtitle")}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
