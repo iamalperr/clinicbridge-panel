@@ -33,6 +33,8 @@ export const getPatientNotificationMessages = (channel: string) => {
 /* ── Email via Resend ────────────────────────────────────────────────────── */
 
 export interface AppointmentEmailPayload {
+  clinicId: string;
+  tenantId?: string;
   clinicName: string;
   clinicEmails: string[]; // recipients
   patientName: string;
@@ -209,33 +211,26 @@ export async function sendPatientAppointmentEmail(
     </div>
   `;
 
-  const result = await notificationService.sendNotification(
-    {
-      tenant_id: 'legacy',
-      clinic_id: 'unknown',
-      appointment_id: payload.appointmentId,
-      event_type: 'appointment.request.created',
-      channel: 'email',
-      recipient: patientEmailToUse,
-    },
-    {
-      language: 'tr',
-      subject: `${payload.clinicName} Randevu Talebiniz Alındı`,
-      variables: {
-        htmlContent: html,
-      }
-    }
-  );
+  const result = await notificationService.sendTransactionalEmail({
+    tenantId: payload.tenantId || 'legacy',
+    clinicId: payload.clinicId,
+    to: patientEmailToUse,
+    subject: `${payload.clinicName} Randevu Talebiniz Alındı`,
+    html: html,
+    locale: "tr", // Or dynamically derived
+    notificationType: 'appointment.request.created',
+    appointmentId: payload.appointmentId
+  });
 
   return { 
     success: result.success, 
-    attempted: result.attempted,
-    accepted: result.accepted,
-    status: result.status,
-    messageId: result.messageId,
+    attempted: true,
+    accepted: result.emailSent,
+    status: result.success ? (result.emailSent ? "ACCEPTED" : "NOT_CONFIGURED") : "FAILED",
+    messageId: result.providerMessageId,
     errorCode: result.errorCode,
-    errorMessage: result.errorMessage,
-    error: result.error 
+    errorMessage: result.message,
+    error: result.message 
   };
 }
 

@@ -25,6 +25,179 @@ export class NotificationService {
     this.providers.set(provider.channel, provider);
   }
 
+  public async getClinicEmailSettings(clinicId: string): Promise<any | null> {
+    const adminDb = getAdminDb();
+    if (!adminDb) return null;
+    try {
+      const snap = await adminDb.collection('clinics').doc(clinicId).collection('settings').doc('email').get();
+      if (snap.exists) {
+        return snap.data();
+      }
+      return null;
+    } catch (e) {
+      console.error("[NotificationService] getClinicEmailSettings failed:", e);
+      return null;
+    }
+  }
+
+  public async sendTransactionalEmail(params: {
+    tenantId: string;
+    clinicId: string;
+    to: string;
+    subject: string;
+    html: string;
+    text?: string;
+    senderDisplayName?: string;
+    replyTo?: string;
+    locale?: "tr" | "en";
+    notificationType: string;
+    appointmentId?: string;
+    idempotencyKey?: string;
+  }): Promise<{
+    success: boolean;
+    emailSent: boolean;
+    emailSkipped?: boolean;
+    errorCode?: string;
+    message?: string;
+    providerMessageId?: string;
+    provider?: string;
+    recipient?: string;
+    skipReason?: string;
+  }> {
+    const adminDb = getAdminDb();
+    const settings = await this.getClinicEmailSettings(params.clinicId);
+    
+    const emailEnabled = settings?.emailEnabled ?? true;
+    if (!emailEnabled) {
+      return {
+        success: true,
+        emailSent: false,
+        emailSkipped: true,
+        skipReason: "EMAIL_CHANNEL_DISABLED",
+        message: "Bu klinik için e-posta gönderimi kapalı."
+      };
+    }
+
+    const provider = this.providers.get("email");
+    if (!provider) {
+      return {
+        success: false,
+        emailSent: false,
+        errorCode: "EMAIL_SEND_FAILED",
+        message: "No email provider configured."
+      };
+    }
+
+    const senderDisplayName = params.senderDisplayName || settings?.senderDisplayName || "";
+    const replyTo = params.replyTo || settings?.replyToEmail || "";
+    const signature = settings?.emailSignature || "";
+    
+    let finalHtml = params.html;
+    if (signature) {
+      const formattedSignature = signature.replace(/\n/g, '<br/>');
+      finalHtml = finalHtml.replace('</body>', `<br/><br/><div style="color:#64748b;font-size:13px;line-height:1.5;">${formattedSignature}</div></body>`);
+      // If no body tag, just append
+      if (!finalHtml.includes('</body>')) {
+        finalHtml += `<br/><br/><div style="color:#64748b;font-size:13px;line-height:1.5;">${formattedSignature}</div>`;
+      }
+    }
+
+    let finalSubject = params.subject;
+    // Replace {clinicName} in subject for test emails etc if not already replaced
+    if (finalSubject.includes("{clinicName}")) {
+      finalSubject = finalSubject.replace("{clinicName}", senderDisplayName || "ClinicBridge");
+    }
+
+    const fromAddress = senderDisplayName ? `${senderDisplayName} <no-reply@clinicbridge-ai.com>` : undefined;
+
+    let eventDocRef: any = null;
+    let notificationLogId = "";
+    if (adminDb) {
+      eventDocRef = adminDb.collection('notification_events').doc();
+      notificationLogId = eventDocRef.id;
+      await eventDocRef.set({
+        id: notificationLogId,
+        tenant_id: params.tenantId,
+        clinic_id: params.clinicId,
+        appointment_id: params.appointmentId || null,
+        event_type: params.notificationType,
+        channel: 'email',
+        recipient: params.to,
+        status: 'queued',
+        attempt_count: 0,
+        idempotency_key: params.idempotencyKey || null,
+        created_at: new Date(),
+        updated_at: new Date()
+      });
+    }
+
+    if (adminDb && notificationLogId) {
+       await eventDocRef.update({ status: "processing", attempt_count: 1, updated_at: new Date() });
+    }
+
+    try {
+      const result = await provider.send({
+        to: params.to,
+        subject: finalSubject,
+        language: params.locale || settings?.defaultLocale || "tr",
+        idempotencyKey: params.idempotencyKey,
+        variables: {
+          htmlContent: finalHtml,
+          from: fromAddress,
+          replyTo: replyTo,
+        }
+      });
+
+      if (result.success) {
+        if (adminDb && notificationLogId) {
+          await eventDocRef.update({
+            status: "sent",
+            provider_message_id: result.messageId,
+            sent_at: new Date(),
+            updated_at: new Date()
+          });
+        }
+        return {
+          success: true,
+          emailSent: true,
+          provider: "resend",
+          providerMessageId: result.messageId,
+          recipient: params.to
+        };
+      } else {
+        if (adminDb && notificationLogId) {
+          await eventDocRef.update({
+            status: "failed",
+            failure_reason: result.errorMessage || "Provider error",
+            failed_at: new Date(),
+            updated_at: new Date()
+          });
+        }
+        return {
+          success: false,
+          emailSent: false,
+          errorCode: result.errorCode || "EMAIL_SEND_FAILED",
+          message: result.errorMessage || "E-posta gönderilemedi."
+        };
+      }
+    } catch (err: any) {
+      if (adminDb && notificationLogId) {
+        await eventDocRef.update({
+          status: "failed",
+          failure_reason: err.message,
+          failed_at: new Date(),
+          updated_at: new Date()
+        });
+      }
+      return {
+        success: false,
+        emailSent: false,
+        errorCode: "EMAIL_SEND_EXCEPTION",
+        message: err.message || "Exception during email send."
+      };
+    }
+  }
+
   /**
    * Send a notification for a specific event
    */
@@ -258,9 +431,6 @@ export class NotificationService {
       };
     }
 
-    let notificationLogId = "";
-    let emailSkipped = false;
-    let skipReason = "";
     let patientEmailToUse = "";
     let locale: "tr" | "en" = "tr";
     let clinicName = "";
@@ -303,27 +473,7 @@ export class NotificationService {
 
         patientEmailToUse = (apptData.patientEmail || apptData.email || apptData.contactEmail || "")?.trim().toLowerCase();
 
-        // 1. Resolve notification settings
-        let primaryChannel = "email";
-        let emailEnabled = true;
-
-        if (clinicData.notificationSettings) {
-          primaryChannel = clinicData.notificationSettings.patientAppointmentChannel || "email";
-        } else if (clinicData.patientNotificationSettings) {
-          primaryChannel = clinicData.patientNotificationSettings.primaryChannel || "email";
-        }
-
-        if (!primaryChannel.includes("email") && primaryChannel !== "all") {
-          emailEnabled = false;
-          emailSkipped = true;
-          skipReason = "EMAIL_CHANNEL_DISABLED";
-        } else if (!patientEmailToUse) {
-          emailEnabled = false;
-          emailSkipped = true;
-          skipReason = "PATIENT_EMAIL_MISSING";
-        }
-
-        // 2. Perform the update
+        // Perform the update
         const now = new Date().toISOString();
         t.update(apptRef, {
           status: params.newStatus,
@@ -335,36 +485,6 @@ export class NotificationService {
         if (apptData.conversationId) {
           const logRef = clinicRef.collection("conversationLogs").doc(apptData.conversationId);
           t.update(logRef, { appointmentStatus: params.newStatus, updatedAt: now });
-        }
-
-        // 3. Create Outbox Notification Log
-        if (emailEnabled) {
-          const notifRef = adminDb.collection('notification_events').doc();
-          notificationLogId = notifRef.id;
-          
-          const eventTypeMap: Record<string, any> = {
-            "approved": "appointment.clinic.approved",
-            "confirmed": "appointment.confirmed",
-            "rejected": "appointment.rejected",
-            "cancelled": "appointment.cancelled"
-          };
-          
-          const eventType = eventTypeMap[params.newStatus] || "appointment.request.created";
-          
-          const notifEvent: NotificationEvent = {
-            id: notificationLogId,
-            tenant_id: params.tenantId,
-            clinic_id: params.clinicId,
-            appointment_id: params.appointmentId,
-            event_type: eventType as AppointmentEventType,
-            channel: 'email',
-            recipient: patientEmailToUse,
-            status: 'queued',
-            attempt_count: 0,
-            created_at: new Date(),
-            updated_at: new Date()
-          };
-          t.set(notifRef, notifEvent);
         }
       });
     } catch (e: any) {
@@ -382,23 +502,15 @@ export class NotificationService {
       };
     }
 
-    if (emailSkipped) {
+    if (!patientEmailToUse) {
       return {
         success: true, appointmentUpdated: true, emailSent: false, emailSkipped: true,
         appointmentId: params.appointmentId, oldStatus: params.oldStatus, newStatus: params.newStatus,
-        skipReason: skipReason
-      };
-    }
-    
-    if (!notificationLogId) {
-      return {
-        success: true, appointmentUpdated: true, emailSent: false, emailSkipped: true,
-        appointmentId: params.appointmentId, oldStatus: params.oldStatus, newStatus: params.newStatus,
-        skipReason: "NO_NOTIFICATION_LOG_CREATED"
+        skipReason: "PATIENT_EMAIL_MISSING"
       };
     }
 
-    // 4. Resolve Template and Send Email
+    // Resolve Template and Send Email
     const template = getAppointmentStatusEmailTemplate({
       tenantId: params.tenantId,
       clinicId: params.clinicId,
@@ -412,7 +524,6 @@ export class NotificationService {
     });
 
     if (!template) {
-      await adminDb.collection('notification_events').doc(notificationLogId).update({ status: "skipped", failure_reason: "TEMPLATE_NOT_FOUND" });
       return {
         success: true, appointmentUpdated: true, emailSent: false, emailSkipped: true,
         appointmentId: params.appointmentId, oldStatus: params.oldStatus, newStatus: params.newStatus,
@@ -420,38 +531,33 @@ export class NotificationService {
       };
     }
 
-    const provider = this.providers.get("email");
-    if (!provider) {
-       await adminDb.collection('notification_events').doc(notificationLogId).update({ status: "permanently_failed", failure_reason: "NO_PROVIDER" });
-       return {
-        success: false, appointmentUpdated: true, emailSent: false, emailSkipped: false,
-        appointmentId: params.appointmentId, oldStatus: params.oldStatus, newStatus: params.newStatus,
-        notificationId: notificationLogId, errorCode: "EMAIL_SEND_FAILED", message: "No email provider configured."
-       };
-    }
+    const eventTypeMap: Record<string, string> = {
+      "approved": "appointment.clinic.approved",
+      "confirmed": "appointment.confirmed",
+      "rejected": "appointment.rejected",
+      "cancelled": "appointment.cancelled"
+    };
+    
+    const eventType = eventTypeMap[params.newStatus] || "appointment.request.created";
 
-    await adminDb.collection('notification_events').doc(notificationLogId).update({ status: "processing", attempt_count: 1, updated_at: new Date() });
+    const result = await this.sendTransactionalEmail({
+      tenantId: params.tenantId,
+      clinicId: params.clinicId,
+      to: patientEmailToUse,
+      subject: template.subject,
+      html: template.htmlContent,
+      locale,
+      notificationType: eventType,
+      appointmentId: params.appointmentId
+    });
 
+    // Update appointment document with email status
     try {
-      const result = await provider.send({
-        language: locale,
-        to: patientEmailToUse,
-        subject: template.subject,
-        variables: { htmlContent: template.htmlContent }
-      });
-
-      if (result.success) {
-        await adminDb.collection('notification_events').doc(notificationLogId).update({
-          status: "sent",
-          provider_message_id: result.messageId,
-          sent_at: new Date(),
-          updated_at: new Date()
-        });
-        
+      if (result.success && result.emailSent) {
         await adminDb.collection("clinics").doc(params.clinicId).collection("appointments").doc(params.appointmentId).update({
           patientNotificationSent: true,
           patientNotificationStatus: "ACCEPTED",
-          patientNotificationProviderId: result.messageId || null,
+          patientNotificationProviderId: result.providerMessageId || null,
           notificationSentAt: new Date().toISOString(),
           notificationChannel: "email"
         });
@@ -459,41 +565,34 @@ export class NotificationService {
         return {
           success: true, appointmentUpdated: true, emailSent: true, emailSkipped: false,
           appointmentId: params.appointmentId, oldStatus: params.oldStatus, newStatus: params.newStatus,
-          notificationId: notificationLogId, provider: "email", providerMessageId: result.messageId
+          provider: "resend", providerMessageId: result.providerMessageId
+        };
+      } else if (result.emailSkipped) {
+         return {
+          success: true, appointmentUpdated: true, emailSent: false, emailSkipped: true,
+          appointmentId: params.appointmentId, oldStatus: params.oldStatus, newStatus: params.newStatus,
+          skipReason: result.skipReason
         };
       } else {
-        await adminDb.collection('notification_events').doc(notificationLogId).update({
-          status: "failed",
-          failure_reason: result.errorMessage || "Provider error",
-          failed_at: new Date(),
-          updated_at: new Date()
-        });
-        
         await adminDb.collection("clinics").doc(params.clinicId).collection("appointments").doc(params.appointmentId).update({
           patientNotificationSent: false,
           patientNotificationStatus: "FAILED",
           patientNotificationErrorCode: result.errorCode || null,
-          patientNotificationErrorMessage: result.errorMessage || null,
+          patientNotificationErrorMessage: result.message || null,
         });
 
         return {
           success: false, appointmentUpdated: true, emailSent: false, emailSkipped: false,
           appointmentId: params.appointmentId, oldStatus: params.oldStatus, newStatus: params.newStatus,
-          notificationId: notificationLogId, errorCode: result.errorCode || "EMAIL_SEND_FAILED",
-          message: result.errorMessage || "Appointment status was updated, but the patient email could not be sent."
+          errorCode: result.errorCode || "EMAIL_SEND_FAILED",
+          message: result.message || "Appointment status was updated, but the patient email could not be sent."
         };
       }
     } catch (err: any) {
-      await adminDb.collection('notification_events').doc(notificationLogId).update({
-        status: "failed",
-        failure_reason: err.message,
-        failed_at: new Date(),
-        updated_at: new Date()
-      });
       return {
         success: false, appointmentUpdated: true, emailSent: false, emailSkipped: false,
         appointmentId: params.appointmentId, oldStatus: params.oldStatus, newStatus: params.newStatus,
-        notificationId: notificationLogId, errorCode: "EMAIL_SEND_EXCEPTION",
+        errorCode: "EMAIL_SEND_EXCEPTION",
         message: err.message || "Exception during email send."
       };
     }

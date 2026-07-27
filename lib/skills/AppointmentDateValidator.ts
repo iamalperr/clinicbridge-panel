@@ -255,7 +255,7 @@ export class AppointmentDateValidator {
       if (diff > 3) diff -= 7;
       if (diff < -3) diff += 7;
 
-      let alt2Obj = new Date(parsedDateObj.getFullYear(), parsedDateObj.getMonth(), parsedDateObj.getDate() + diff);
+      const alt2Obj = new Date(parsedDateObj.getFullYear(), parsedDateObj.getMonth(), parsedDateObj.getDate() + diff);
       
       // If alt2Obj is in the past compared to clinicNow, push it to next week
       if (alt2Obj.getTime() < new Date(currentYear, currentMonth, currentDay).getTime()) {

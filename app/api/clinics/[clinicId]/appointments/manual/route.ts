@@ -95,6 +95,7 @@ export async function POST(req: Request, { params }: RouteParams) {
     if (clinicEmailsToUse.length > 0) {
       try {
         const result = await sendClinicAppointmentEmail({
+          clinicId,
           clinicName,
           clinicEmails: clinicEmailsToUse,
           patientName,
@@ -116,6 +117,7 @@ export async function POST(req: Request, { params }: RouteParams) {
     if (patientEmail) {
       try {
         const result = await sendPatientAppointmentEmail({
+          clinicId,
           clinicName,
           clinicEmails: [patientEmail], // Used as recipient internally
           patientName,

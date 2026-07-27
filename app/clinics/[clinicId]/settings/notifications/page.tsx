@@ -10,7 +10,7 @@ import { Select } from "@/components/ui/Select";
 import { UI_COLORS } from "@/components/ui/ui-shared";
 import { Loader2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { ClinicNotificationSettings } from "@/lib/types/notification";
+import { ClinicNotificationSettings, ClinicEmailSettings } from "@/lib/types/notification";
 
 interface PageProps {
   params: Promise<{ clinicId: string }>;
@@ -50,6 +50,12 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
+  
+  // New Email Settings state
+  const [emailSettings, setEmailSettings] = useState<Partial<ClinicEmailSettings>>({});
+  const [testEmailAddress, setTestEmailAddress] = useState("");
+  const [isSendingTest, setIsSendingTest] = useState(false);
+  const [testResult, setTestResult] = useState<{success?: boolean; message?: string} | null>(null);
 
   const [notificationSettings, setNotificationSettings] = useState({
     patient: {
@@ -121,6 +127,18 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
           });
         }
       }
+
+      // Load new email settings from API
+      try {
+        const emailRes = await fetch(`/api/clinics/${clinicId}/settings/email`);
+        if (emailRes.ok) {
+          const emailData = await emailRes.json();
+          setEmailSettings(emailData);
+        }
+      } catch (err) {
+        console.error("Failed to fetch email settings API", err);
+      }
+
     } catch (err) {
       console.error("Failed to load notification settings", err);
     } finally {
@@ -141,6 +159,14 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
       await updateDoc(doc(db, "clinics", clinicId), {
         notificationSettings: notificationSettings
       });
+
+      // Save new email settings via API
+      const emailRes = await fetch(`/api/clinics/${clinicId}/settings/email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(emailSettings)
+      });
+      if (!emailRes.ok) throw new Error("E-posta ayarları API üzerinden kaydedilemedi.");
 
       // Save subcollection settings
       await updateDoc(doc(db, "clinics", clinicId, "settings", "notifications"), {
@@ -179,13 +205,34 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
     );
   }
 
-  const emailChannel = settings.channels.find(c => c.channel === 'email') || DEFAULT_SETTINGS.channels[0];
+  const updateEmailSetting = (updates: Partial<ClinicEmailSettings>) => {
+    setEmailSettings(prev => ({ ...prev, ...updates }));
+  };
 
-  const updateEmailChannel = (updates: any) => {
-    setSettings(prev => ({
-      ...prev,
-      channels: prev.channels.map(c => c.channel === 'email' ? { ...c, ...updates } : c)
-    }));
+  const handleSendTestEmail = async () => {
+    if (!testEmailAddress) {
+      setTestResult({ success: false, message: "Lütfen bir e-posta adresi girin." });
+      return;
+    }
+    setIsSendingTest(true);
+    setTestResult(null);
+    try {
+      const res = await fetch(`/api/clinics/${clinicId}/settings/email/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: testEmailAddress })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setTestResult({ success: true, message: data.message || "Test e-postası başarıyla gönderildi." });
+      } else {
+        setTestResult({ success: false, message: data.error || "E-posta gönderilemedi." });
+      }
+    } catch (err: any) {
+      setTestResult({ success: false, message: "Sunucu bağlantı hatası." });
+    } finally {
+      setIsSendingTest(false);
+    }
   };
 
   const handleEventToggle = (event: any, checked: boolean) => {
@@ -318,30 +365,30 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
             <span style={{ fontSize: 14, fontWeight: 600 }}>E-Posta Gönderimi</span>
             <input
               type="checkbox"
-              checked={emailChannel.enabled}
-              onChange={(e) => updateEmailChannel({ enabled: e.target.checked })}
+              checked={emailSettings.emailEnabled ?? true}
+              onChange={(e) => updateEmailSetting({ emailEnabled: e.target.checked })}
               style={{ width: 18, height: 18, accentColor: UI_COLORS.brand, cursor: "pointer" }}
             />
           </div>
 
-          {emailChannel.enabled && (
+          {(emailSettings.emailEnabled ?? true) && (
             <>
               <Input
                 label="Gönderen Görünen Adı"
-                value={emailChannel.sender_name || ''}
-                onChange={(e) => updateEmailChannel({ sender_name: e.target.value })}
+                value={emailSettings.senderDisplayName || ''}
+                onChange={(e) => updateEmailSetting({ senderDisplayName: e.target.value })}
                 placeholder="Örn: Nova Dental Kliniği"
               />
               <Input
                 label="Reply-To (Yanıt) Adresi"
-                value={emailChannel.reply_to || ''}
-                onChange={(e) => updateEmailChannel({ reply_to: e.target.value })}
+                value={emailSettings.replyToEmail || ''}
+                onChange={(e) => updateEmailSetting({ replyToEmail: e.target.value })}
                 placeholder="Örn: iletisim@novadental.com"
               />
               <Select
                 label="Varsayılan Dil"
-                value={emailChannel.default_language}
-                onChange={(e) => updateEmailChannel({ default_language: e.target.value })}
+                value={emailSettings.defaultLocale || 'tr'}
+                onChange={(e) => updateEmailSetting({ defaultLocale: e.target.value as any })}
                 options={[
                   { label: "Türkçe", value: "tr" },
                   { label: "İngilizce", value: "en" },
@@ -352,8 +399,8 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
                   E-Posta İmzası
                 </label>
                 <textarea
-                  value={emailChannel.signature || ''}
-                  onChange={(e) => updateEmailChannel({ signature: e.target.value })}
+                  value={emailSettings.emailSignature || ''}
+                  onChange={(e) => updateEmailSetting({ emailSignature: e.target.value })}
                   rows={4}
                   style={{
                     width: "100%", padding: "12px", fontSize: 14, color: UI_COLORS.textPrimary,
@@ -362,6 +409,27 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
                   }}
                   placeholder="Saygılarımızla,&#10;Nova Dental Ekibi"
                 />
+              </div>
+
+              <div style={{ marginTop: 16, padding: 16, borderRadius: 8, border: `1px solid ${UI_COLORS.border}`, background: UI_COLORS.bgPage }}>
+                <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Test E-Postası Gönder</h4>
+                <p style={{ fontSize: 13, color: UI_COLORS.textSecondary, marginBottom: 16 }}>Kaydetmeden önce yukarıdaki ayarların e-posta üzerinde nasıl görüneceğini test edebilirsiniz.</p>
+                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                  <Input 
+                    value={testEmailAddress}
+                    onChange={(e) => setTestEmailAddress(e.target.value)}
+                    placeholder="Test edilecek e-posta adresi"
+                    style={{ flex: 1, marginBottom: 0 }}
+                  />
+                  <Button variant="secondary" onClick={handleSendTestEmail} disabled={isSendingTest || !testEmailAddress}>
+                    {isSendingTest ? <Loader2 size={16} className="animate-spin" /> : "Test Gönder"}
+                  </Button>
+                </div>
+                {testResult && (
+                  <div style={{ marginTop: 12, fontSize: 13, color: testResult.success ? "#10b981" : UI_COLORS.danger }}>
+                    {testResult.message}
+                  </div>
+                )}
               </div>
             </>
           )}

@@ -89,3 +89,17 @@ export interface ClinicNotificationSettings {
   created_at: Date;
   updated_at: Date;
 }
+
+export interface ClinicEmailSettings {
+  id?: string;
+  tenantId: string;
+  clinicId: string;
+  emailEnabled: boolean;
+  senderDisplayName: string;
+  replyToEmail: string;
+  defaultLocale: 'tr' | 'en';
+  emailSignature: string;
+  logoUrl?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}

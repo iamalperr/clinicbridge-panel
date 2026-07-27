@@ -713,6 +713,7 @@ async function createAppointment(params: {
   if ((notificationChannelToSave === "email" || notificationChannelToSave === "email_and_sms" || notificationChannelToSave === "email_and_whatsapp") && data.patientEmail) {
     try {
       await sendPatientAppointmentEmail({
+        clinicId: clinicId,
         clinicName,
         clinicEmails: [data.patientEmail], // Reusing clinicEmails field in payload for recipient email
         patientName: data.patientName,
@@ -737,6 +738,7 @@ async function createAppointment(params: {
   if (clinicEmailsToUse.length > 0) {
     try {
       const result = await sendClinicAppointmentEmail({
+        clinicId: clinicId,
         clinicName,
         clinicEmails: clinicEmailsToUse,
         patientName:      data.patientName,
@@ -1481,7 +1483,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ responseType: "CHAT_REPLY", reply: "Son olarak bilgilendirme için e-posta adresinizi paylaşabilir misiniz?" }, { headers: CORS });
         } else {
             await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId] });
-            let phoneDisplay = appointmentDraft.patientPhone || "-";
+            const phoneDisplay = appointmentDraft.patientPhone || "-";
             const summaryMsg = `Ön randevu talebinizin özeti:\n\nAd Soyad: ${appointmentDraft.patientName}\nTelefon: ${phoneDisplay}\nE-posta: ${appointmentDraft.patientEmail}\nHizmet: ${appointmentDraft.requestedService}\nTercih Edilen Tarih: ${appointmentDraft.requestedDate}\nTercih Edilen Saat: ${appointmentDraft.requestedTime || "Belirtilmedi"}\n\nBu bilgilerle ön randevu talebinizi iletmemi onaylıyor musunuz? Evet veya Hayır şeklinde yanıtlayabilirsiniz.`;
             return NextResponse.json({ responseType: "CHAT_REPLY", reply: summaryMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
         }
@@ -2300,7 +2302,7 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
     const rawDateMatch = reply.match(/(?:Kullanıcının Söylediği Orijinal Tarih|Orijinal Tarih|Raw Date):\s*([^\n\r]+)/i);
     const timeMatch    = reply.match(/(?:Saat|Time):\s*([^\n\r]+)/i);
 
-    let dtStr  = dtMatch?.[1]?.trim() ?? "";
+    const dtStr  = dtMatch?.[1]?.trim() ?? "";
     const rawDateText = rawDateMatch?.[1]?.trim() ?? "";
     const rawTimeStr = timeMatch?.[1]?.trim() ?? "";
     // SERVER-SIDE DETERMINISTIC DATE VALIDATION has been moved to the AWAITING_DATE_CLARIFICATION interceptor
@@ -2431,7 +2433,7 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
       (pending as any).requestedWeekday = dateValidation.resolvedWeekday;
 
       // Construct a clean, canonical summary as per AŞAMA 10
-      let phoneDisplay = pending.patientPhone || "-";
+      const phoneDisplay = pending.patientPhone || "-";
       const summaryMsg = `Ön randevu talebinizin özeti:\n\nAd Soyad: ${pending.patientName}\nTelefon: ${phoneDisplay}\nE-posta: ${pending.patientEmail || "-"}\nHizmet: ${pending.requestedService}\nTercih Edilen Tarih: ${dateValidation.resolvedDate || "-"} ${dateValidation.resolvedWeekday || ""}\nTercih Edilen Saat: ${dateValidation.resolvedTime || "Belirtilmedi"}\n\nBu bilgilerle ön randevu talebinizi kliniğin değerlendirmesine iletmemi onaylıyor musunuz?`;
       
       responsePayload.reply = summaryMsg;

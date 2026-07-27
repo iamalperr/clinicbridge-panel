@@ -141,7 +141,7 @@ export async function sendClinicNewAppointmentNotification(appointment: Partial<
   
   const ns = clinicData.notificationSettings || {};
   const clinicEmailEnabled = ns.clinic?.newAppointmentEmailEnabled ?? true;
-  let rawRecipients: string[] = ns.clinic?.recipientEmails || [];
+  const rawRecipients: string[] = ns.clinic?.recipientEmails || [];
   
   if (!rawRecipients || rawRecipients.length === 0) {
     if (clinicData.notificationEmail) rawRecipients.push(clinicData.notificationEmail);
@@ -150,9 +150,9 @@ export async function sendClinicNewAppointmentNotification(appointment: Partial<
 
   const validRecipients: string[] = [];
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  for (let email of rawRecipients) {
+  for (const email of rawRecipients) {
     if (!email) continue;
-    let cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = email.trim().toLowerCase();
     if (cleanEmail === "ornek@klinik.com" || cleanEmail === "ornek@clinic.com") continue;
     if (emailRegex.test(cleanEmail)) validRecipients.push(cleanEmail);
   }
@@ -166,6 +166,7 @@ export async function sendClinicNewAppointmentNotification(appointment: Partial<
 
   try {
     const result = await sendClinicAppointmentEmail({
+      clinicId: appointment.clinicId!,
       clinicName,
       clinicEmails: uniqueRecipients,
       patientName: appointment.patientName!,
@@ -219,6 +220,7 @@ export async function sendPatientAppointmentAcknowledgement(appointment: Partial
       try {
         const { sendPatientAppointmentEmail } = await import("@/lib/appointment-notifications");
         const patientResult = await sendPatientAppointmentEmail({
+          clinicId: appointment.clinicId,
           clinicName,
           clinicEmails: [appointment.patientEmail],
           patientName: appointment.patientName!,

@@ -198,6 +198,7 @@ export async function POST(req: Request) {
     if (clinicEmail) {
       try {
         const emailResult = await sendClinicAppointmentEmail({
+          clinicId,
           clinicName,
           clinicEmails: [clinicEmail],
           patientName:      name,
