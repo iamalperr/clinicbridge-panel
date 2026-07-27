@@ -79,6 +79,17 @@ export interface AgencyBranding {
   accentColor?: string;
 }
 
+export interface AgencyPrivacySettings {
+  enabled: boolean;
+  mode: "kvkk" | "gdpr" | "kvkk_and_gdpr";
+  version: string;
+  consentTextTr: string;
+  consentTextEn: string;
+  noticeUrlTr?: string;
+  noticeUrlEn?: string;
+  requiredBeforePersonalData: boolean;
+}
+
 export interface Agency {
   id: string;
   name: string;
@@ -94,6 +105,7 @@ export interface Agency {
   contactEmail?: string;
   timezone?: string;
   allowedDomains?: string[];
+  privacySettings?: AgencyPrivacySettings;
   createdAt: any; // Firestore Timestamp
   updatedAt: any;
 }

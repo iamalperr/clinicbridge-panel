@@ -45,7 +45,8 @@ interface ClinicRecommendation {
 }
 
 interface SessionContext {
-  leadStage?: string; // discovery | recommendation | clinic_selected | lead_capture | collecting_email | collecting_consent | quote_request_created | completed
+  sessionId?: string;
+  leadStage?: "discovery" | "recommendation" | "clinic_selected" | "lead_capture" | "collecting_email" | "collecting_consent" | "quote_request_created" | "completed";
   selectedClinicId?: string;
   selectedClinicName?: string;
   patientName?: string;
@@ -281,104 +282,52 @@ export async function POST(
     }
     const agencyId = agencySnap.docs[0].id;
 
-    /* ── DETERMINISTIC INTERCEPTORS (PHASE 2) ── */
+    /* ── DETERMINISTIC INTERCEPTORS (PHASE 3) ── */
+    const { requireAcceptedAgencyConsent, saveConsentRecord } = await import("@/lib/services/agencyConsentService");
+    
     const ctx: SessionContext = sessionContext || {};
+    if (!ctx.sessionId) {
+      ctx.sessionId = typeof window !== 'undefined' ? crypto.randomUUID() : `sess_${Date.now()}`;
+    }
 
-    if (ctx.leadStage === "collecting_email") {
-      const rawEmail = message.replace(/[\u200B-\u200D\uFEFF]/g, '').trim().toLowerCase();
-      const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+    const privacySettings = agencySnap.docs[0].data().privacySettings || {
+      enabled: true,
+      mode: "kvkk",
+      version: "v1.0",
+      consentTextTr: "Size uygun klinikleri önerebilmemiz ve talebinizi değerlendirebilmemiz için paylaşacağınız kişisel ve sağlıkla ilgili verileri işlememize yönelik onayınıza ihtiyacımız bulunuyor. Aydınlatma metnini inceleyerek devam edebilirsiniz.",
+      consentTextEn: "We need your consent to process the personal and health-related information you may share so that we can recommend suitable clinics and evaluate your request. You can review the privacy notice before continuing.",
+      requiredBeforePersonalData: true
+    };
+
+    if (action && action.type === "privacy_consent_response") {
+      const consentLang = action.locale || "tr";
+      const status = action.action === "accept" ? "accepted" : "declined";
       
-      if (emailRegex.test(rawEmail)) {
-        ctx.patientEmail = rawEmail;
-        ctx.leadStage = "collecting_consent";
+      await saveConsentRecord(
+        agencyId,
+        ctx.sessionId!,
+        status,
+        privacySettings.version,
+        consentLang,
+        "agency_widget"
+      );
+      
+      if (status === "accepted") {
+        ctx.quoteConsent = true;
         return NextResponse.json({
-          reply: "Teşekkürler. Son olarak, bu bilgileri sizinle iletişime geçebilmeleri için klinik ve sağlık ekipleriyle paylaşmamı onaylıyor musunuz? (Evet / Hayır)",
+          reply: consentLang === "tr" 
+            ? "Teşekkür ederim. Şimdi size uygun klinikleri belirleyebilmek için tedavi ihtiyacınız hakkında birkaç soru soracağım."
+            : "Thank you. I’ll now ask a few questions about your treatment needs so I can help identify suitable clinics.",
           type: "text",
           sessionContext: ctx,
           showClinicCards: false
         }, { headers: CORS });
       } else {
-        const fails = (ctx.emailValidationFails || 0) + 1;
-        ctx.emailValidationFails = fails;
-        
-        if (fails >= 2) {
-          ctx.patientEmail = ""; // Clear invalid
-          ctx.leadStage = "collecting_consent";
-          return NextResponse.json({
-            reply: "E-posta adresinizi doğrulayamadık ancak devam ediyoruz.\nSon olarak, bu bilgileri sizinle iletişime geçebilmeleri için klinik ve sağlık ekipleriyle paylaşmamı onaylıyor musunuz? (Evet / Hayır)",
-            type: "text",
-            sessionContext: ctx,
-            showClinicCards: false
-          }, { headers: CORS });
-        } else {
-          return NextResponse.json({
-            reply: "Girdiğiniz e-posta adresi geçersiz görünüyor. Lütfen geçerli bir e-posta adresi yazabilir misiniz?",
-            type: "text",
-            sessionContext: ctx,
-            showClinicCards: false
-          }, { headers: CORS });
-        }
-      }
-    }
-
-    if (ctx.leadStage === "collecting_consent") {
-      const isConsent = /evet|onay|tabi|yes|ok|olur|uygun/i.test(message);
-      if (isConsent) {
-        ctx.quoteConsent = true;
-        ctx.consentVersion = "v1.0";
-        ctx.leadStage = "quote_request_created";
-        
-        const now = new Date().toISOString();
-        try {
-          const leadDoc = {
-            agencyId,
-            clinicId: ctx.selectedClinicId || null,
-            clinicIds: ctx.selectedClinicId ? [ctx.selectedClinicId] : [], 
-            attachments: [],
-            patientName: ctx.patientName || "Bilinmiyor",
-            patientEmail: ctx.patientEmail || null,
-            patientPhone: ctx.patientPhone || null,
-            patientAge: ctx.patientAge || null,
-            patientGender: ctx.patientGender || null,
-            country: ctx.patientCountry || "Unknown",
-            language: ctx.language || "tr",
-            treatmentCategory: ctx.lastTreatmentCategory || "other",
-            treatmentSubcategory: ctx.lastSubTreatment || null,
-            urgency: "medium",
-            conversationSummary: "AI Chat üzerinden lead toplandı (KVKK onaylı).",
-            aiExtractedNotes: "",
-            consentStatus: "accepted",
-            consentTimestamp: now,
-            consentVersion: ctx.consentVersion,
-            status: "new",
-            statusHistory: [{ status: "new", changedAt: now, note: "Lead created from AI chat" }],
-            source: "ai_chat",
-            createdAt: now,
-            updatedAt: now,
-          };
-          const newLeadRef = await adminDb.collection("agencies").doc(agencyId).collection("leads").add(leadDoc);
-          console.log("[matching-chat] Lead successfully created with consent.");
-
-          sendAgencyLeadNotification({ agencyId, leadId: newLeadRef.id }).catch((err) => {
-            console.error("[matching-chat] sendAgencyLeadNotification failed:", err);
-          });
-        } catch (err) {
-          console.error("[matching-chat] Error creating lead:", err);
-        }
-
+        ctx.quoteConsent = false;
         return NextResponse.json({
-          reply: "Onayınız alınmıştır. Talebiniz ilgili kliniğe iletilmek üzere kaydedildi. Klinik ekibi sizinle en kısa sürede iletişime geçecektir. Sağlıklı günler dilerim.",
-          type: "lead_created",
-          sessionContext: ctx,
-          showClinicCards: false,
-          leadStatus: ctx.leadStage,
-          shouldCreateNewLead: false,
-          shouldUpdateLead: false
-        }, { headers: CORS });
-      } else {
-        ctx.leadStage = "completed";
-        return NextResponse.json({
-          reply: "Anlıyorum. Bilgilerinizin paylaşımını onaylamadığınız için işleminize devam edemiyoruz. Farklı bir sorunuz olursa buradayım.",
+          reply: consentLang === "tr"
+            ? "Elbette. Onay vermeden de tedaviler ve genel klinik hizmetleri hakkında bilgi alabilirsiniz. Ancak kişisel bilgilerinizi kullanarak klinik önerisi veya teklif talebi oluşturamam."
+            : "Of course. You may still receive general information about treatments and clinic services, but I cannot create a personalized clinic recommendation or treatment request without your consent.",
           type: "text",
           sessionContext: ctx,
           showClinicCards: false
@@ -524,7 +473,7 @@ STANDART KURALLAR:
 8. FİYATLARI ASLA UYDURMA. Aşağıdaki verilerden çek.
 9. Türkçe mesaja Türkçe, İngilizce mesaja İngilizce yanıt ver. (Dil davranışı: ${agencyAiConfig?.languageBehavior || "user_lang"})
 10. Tıbbi teşhis koyma.
-11. KVKK ONAYI: Telefon almadan veya teklif oluşturmadan hemen önce şu onayı al: "Bilgilerinizi klinik ve ekibimizle paylaşmamı onaylıyor musunuz?" Eğer hasta evet derse quoteConsent: true yap.
+11. KVKK ONAYI: Eğer hastadan kişisel veya sağlıkla ilgili detaylı bir veri isteyeceksen VEYA hasta sana kendi inisiyatifiyle kişisel/sağlık verisi (örn. "yaşım 45", "diyabetim var", "dişim ağrıyor") veriyorsa, 'requiresConsent': true yap. Ancak genel sorulara (örn. "İmplant nedir?") requiresConsent: false yap.
 12. KAPANIŞ (COMPLETED): Eğer kullanıcı teşekkür, tamam, görüşürüz gibi kapanış mesajı verirse ve lead/quote request zaten tamamlanmışsa (leadStage === 'quote_request_created' veya 'completed'), yeni öneri veya lead toplama akışı başlatma. Sadece kibar kapanış cevabı ver ve intent olarak "conversation_completed" dön.
 
 HASTA BİLGİSİ TOPLAMA YÖNERGESİ (INTAKE INSTRUCTIONS):
@@ -561,6 +510,7 @@ JSON FORMATI:
   "travelDate": string | null,
   "quoteConsent": boolean | null,
   "missingLeadField": "patientName" | "patientPhone" | "patientCountry" | "patientAge" | "patientGender" | "travelDate" | "quoteConsent" | null,
+  "requiresConsent": boolean,
   "shouldCreateLead": boolean,
   "showClinicCards": boolean,
   "replyText": "Doğal dilde proaktif, yönlendirici AI yanıtı"
@@ -663,8 +613,40 @@ JSON FORMATI:
       }, { headers: CORS });
     }
 
-    // --- SHOULD CREATE LEAD ---
+    // --- CONSENT GATING ---
     const leadAlreadyCreated = ctx.leadStage === "quote_request_created" || ctx.leadStage === "completed";
+    
+    const isTryingToCollectData = parsed.missingLeadField && parsed.missingLeadField !== "quoteConsent" && ["patientName", "patientPhone", "patientEmail", "patientAge"].includes(parsed.missingLeadField);
+    const hasGivenHealthData = parsed.treatmentCategory || parsed.subTreatment || parsed.patientAge || parsed.patientGender;
+    
+    if (parsed.shouldCreateLead || parsed.requiresConsent || isTryingToCollectData || (hasGivenHealthData && !ctx.quoteConsent)) {
+      if (privacySettings.enabled && privacySettings.requiredBeforePersonalData) {
+        const hasConsent = await requireAcceptedAgencyConsent(agencyId, ctx.sessionId!, privacySettings.version);
+        if (!hasConsent) {
+          if (ctx.quoteConsent === false) {
+             return NextResponse.json({
+               reply: parsed.language === "tr" 
+                 ? "Daha önce onay vermediğiniz için kişiselleştirilmiş işlem yapamıyoruz. Genel konularda yardımcı olabilirim."
+                 : "Since you declined the privacy consent, I cannot process personal data. I can only assist with general information.",
+               type: "text",
+               sessionContext: ctx,
+               showClinicCards: false
+             }, { headers: CORS });
+          }
+          
+          return NextResponse.json({
+             reply: parsed.language === "tr" ? privacySettings.consentTextTr : privacySettings.consentTextEn,
+             type: "consent_request",
+             privacyNoticeUrl: parsed.language === "tr" ? privacySettings.noticeUrlTr : privacySettings.noticeUrlEn,
+             consentVersion: privacySettings.version,
+             sessionContext: ctx,
+             showClinicCards: false
+          }, { headers: CORS });
+        }
+      }
+    }
+
+    // --- SHOULD CREATE LEAD ---
     if (parsed.shouldCreateLead && !leadAlreadyCreated) {
       newCtx.leadStage = "collecting_email";
       return NextResponse.json({

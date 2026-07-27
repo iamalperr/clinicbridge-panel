@@ -33,10 +33,11 @@ interface ClinicRec {
 interface ChatMessage {
   id: string;
   role: "user" | "ai";
-  type: string;
   text: string;
+  type?: string;
   clinics?: ClinicRec[];
   showClinicCards?: boolean;
+  privacyNoticeUrl?: string;
 }
 
 interface SessionContext {
@@ -481,13 +482,21 @@ export default function AgencyDemoPage() {
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const [aiTyping, setAiTyping] = useState(false);
   const [aiCfg, setAiCfg] = useState<any>(null);
+  const [matchedCategory, setMatchedCategory] = useState<string | null>(null);
+  
+  // Initialize with a unique session ID for consent tracking
+  const [sessionCtx, setSessionCtx] = useState<any>(() => {
+    return {
+      sessionId: typeof window !== 'undefined' ? crypto.randomUUID() : "",
+      leadStage: "discovery"
+    };
+  });
 
   const [leadModal, setLeadModal] = useState(false);
   const [leadClinic, setLeadClinic] = useState("");
   const [leadSubmitted, setLeadSubmitted] = useState(false);
   const [leadSubmitting, setLeadSubmitting] = useState(false);
   const [clinics, setClinics] = useState<DemoClinic[]>(FALLBACK_CLINICS);
-  const [sessionCtx, setSessionCtx] = useState<SessionContext>({});
   const [chatHistory, setChatHistory] = useState<{ role: string; content: string }[]>([]);
 
 
@@ -582,6 +591,7 @@ export default function AgencyDemoPage() {
         type: data.type || "text",
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
+        privacyNoticeUrl: data.privacyNoticeUrl,
       };
       setAiMessages((prev) => [...prev, replyMsg]);
       if (data.sessionContext) setSessionCtx(data.sessionContext);
@@ -591,6 +601,52 @@ export default function AgencyDemoPage() {
         id: Math.random().toString(36).substring(7),
         role: "ai",
         type: "text",
+        text: lang === "tr" ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin." : "We're experiencing a technical issue. Please try again."
+      }]);
+    } finally {
+      setAiTyping(false);
+    }
+  };
+
+  const sendConsentAction = async (status: "accept" | "decline") => {
+    if (aiTyping) return;
+    setAiTyping(true);
+
+    const userChoice = status === "accept" 
+      ? (lang === "tr" ? "Kabul Ediyorum" : "I Accept")
+      : (lang === "tr" ? "Reddediyorum" : "I Decline");
+    setAiMessages((prev) => [...prev, { id: Math.random().toString(36).substring(7), role: "user", type: "text", text: userChoice }]);
+
+    try {
+      const res = await fetch(`/api/public/agency/feelinhealthy/matching-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: { type: "privacy_consent_response", action: status, locale: lang },
+          history: aiMessages.slice(-10).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text })),
+          sessionContext: sessionCtx,
+        }),
+      });
+
+      if (!res.ok) throw new Error(`API error ${res.status}`);
+      const data = await res.json();
+
+      const replyMsg: ChatMessage = {
+        id: Math.random().toString(36).substring(7),
+        role: "ai",
+        text: data.reply || "Yanıt alınamadı.",
+        type: data.type || "text",
+        clinics: data.clinics || undefined,
+        showClinicCards: data.showClinicCards,
+        privacyNoticeUrl: data.privacyNoticeUrl,
+      };
+      setAiMessages((prev) => [...prev, replyMsg]);
+      if (data.sessionContext) setSessionCtx(data.sessionContext);
+    } catch (err) {
+      console.error("[CB-DEMO] ERROR:", err);
+      setAiMessages((prev) => [...prev, {
+        id: Math.random().toString(36).substring(7),
+        role: "ai",
         text: lang === "tr" ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin." : "We're experiencing a technical issue. Please try again."
       }]);
     } finally {
@@ -991,6 +1047,25 @@ export default function AgencyDemoPage() {
                             {lang === "tr" ? "Fiyatlar tahminidir; kesin fiyat klinik değerlendirmesine göre değişebilir." : "Prices are estimates; final pricing depends on clinical evaluation."}
                           </p>
                         )}
+                      </div>
+                    )}
+
+                    {/* Consent Request UI */}
+                    {msg.type === "consent_request" && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+                        {msg.privacyNoticeUrl && (
+                          <a href={msg.privacyNoticeUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: C.teal, textDecoration: "underline", display: "inline-block", marginBottom: 4 }}>
+                            {lang === "tr" ? "Aydınlatma Metnini Okuyun" : "Read Privacy Notice"}
+                          </a>
+                        )}
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button onClick={() => sendConsentAction("accept")} disabled={aiTyping} style={{ flex: 1, padding: "10px 0", borderRadius: 8, fontSize: 13, fontWeight: 700, background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer", opacity: aiTyping ? 0.6 : 1 }}>
+                            {lang === "tr" ? "Kabul Ediyorum" : "I Accept"}
+                          </button>
+                          <button onClick={() => sendConsentAction("decline")} disabled={aiTyping} style={{ flex: 1, padding: "10px 0", borderRadius: 8, fontSize: 13, fontWeight: 700, background: C.white, color: C.navy, border: `1px solid ${C.border}`, cursor: "pointer", opacity: aiTyping ? 0.6 : 1 }}>
+                            {lang === "tr" ? "Reddediyorum" : "I Decline"}
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

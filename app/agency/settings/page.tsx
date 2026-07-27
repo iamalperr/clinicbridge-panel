@@ -27,6 +27,14 @@ export default function AgencySettingsPage() {
   const [privacyUrl, setPrivacyUrl] = useState("");
   const [languages, setLanguages] = useState<string[]>([]);
   const [categories, setCategories] = useState<TreatmentCategory[]>([]);
+  
+  // Privacy Settings
+  const [privacyMode, setPrivacyMode] = useState<"kvkk" | "gdpr" | "kvkk_and_gdpr">("kvkk");
+  const [privacyRequired, setPrivacyRequired] = useState(true);
+  const [privacyConsentTextTr, setPrivacyConsentTextTr] = useState("");
+  const [privacyConsentTextEn, setPrivacyConsentTextEn] = useState("");
+  const [privacyNoticeUrlTr, setPrivacyNoticeUrlTr] = useState("");
+  const [privacyNoticeUrlEn, setPrivacyNoticeUrlEn] = useState("");
 
   useEffect(() => {
     if (!agencyId) {
@@ -42,6 +50,13 @@ export default function AgencySettingsPage() {
         setPrivacyUrl(a.privacyUrl || "");
         setLanguages(a.supportedLanguages || []);
         setCategories(a.treatmentCategories || []);
+        
+        setPrivacyMode(a.privacySettings?.mode || "kvkk");
+        setPrivacyRequired(a.privacySettings?.requiredBeforePersonalData !== false);
+        setPrivacyConsentTextTr(a.privacySettings?.consentTextTr || "Size uygun klinikleri önerebilmemiz ve talebinizi değerlendirebilmemiz için paylaşacağınız kişisel ve sağlıkla ilgili verileri işlememize yönelik onayınıza ihtiyacımız bulunuyor. Aydınlatma metnini inceleyerek devam edebilirsiniz.");
+        setPrivacyConsentTextEn(a.privacySettings?.consentTextEn || "We need your consent to process the personal and health-related information you may share so that we can recommend suitable clinics and evaluate your request. You can review the privacy notice before continuing.");
+        setPrivacyNoticeUrlTr(a.privacySettings?.noticeUrlTr || a.privacyUrl || "");
+        setPrivacyNoticeUrlEn(a.privacySettings?.noticeUrlEn || "");
       }
       setLoading(false);
     });
@@ -60,6 +75,16 @@ export default function AgencySettingsPage() {
         privacyUrl,
         supportedLanguages: languages,
         treatmentCategories: categories,
+        privacySettings: {
+          enabled: true,
+          mode: privacyMode,
+          version: "v1.0",
+          consentTextTr: privacyConsentTextTr,
+          consentTextEn: privacyConsentTextEn,
+          noticeUrlTr: privacyNoticeUrlTr,
+          noticeUrlEn: privacyNoticeUrlEn,
+          requiredBeforePersonalData: privacyRequired
+        }
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -239,8 +264,42 @@ export default function AgencySettingsPage() {
               );
             })}
           </div>
-        </SectionCard>
-      </div>
+          </SectionCard>
+
+          <SectionCard title="KVKK / GDPR Consent" icon={<Shield size={20} />}>
+            <p style={{ fontSize: 13, color: UI_COLORS.textSecondary, marginBottom: 16 }}>Veri toplama öncesi zorunlu aydınlatma ve açık rıza metinleri ayarları.</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: UI_COLORS.textSecondary, display: "block", marginBottom: 6 }}>Mod</label>
+                  <select value={privacyMode} onChange={(e) => setPrivacyMode(e.target.value as any)} style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: `1px solid ${UI_COLORS.border}`, outline: "none", fontSize: 14 }}>
+                    <option value="kvkk">Sadece KVKK (Türkiye)</option>
+                    <option value="gdpr">Sadece GDPR (Avrupa)</option>
+                    <option value="kvkk_and_gdpr">KVKK ve GDPR Karma</option>
+                  </select>
+                </div>
+                <div style={{ display: "flex", alignItems: "center" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginTop: 24 }}>
+                    <input type="checkbox" checked={privacyRequired} onChange={(e) => setPrivacyRequired(e.target.checked)} style={{ width: 18, height: 18, accentColor: "#10b981" }} />
+                    <span style={{ fontSize: 14, fontWeight: 500, color: UI_COLORS.textPrimary }}>Veri Toplama Öncesi Zorunlu Yap</span>
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, color: UI_COLORS.textSecondary, display: "block", marginBottom: 6 }}>Consent Metni (TR)</label>
+                <textarea value={privacyConsentTextTr} onChange={(e) => setPrivacyConsentTextTr(e.target.value)} rows={3} style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: `1px solid ${UI_COLORS.border}`, outline: "none", fontSize: 14, resize: "vertical" }} />
+              </div>
+              <Input label="Aydınlatma Metni Linki (TR)" value={privacyNoticeUrlTr} onChange={(e) => setPrivacyNoticeUrlTr(e.target.value)} placeholder="https://example.com/kvkk" />
+
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, color: UI_COLORS.textSecondary, display: "block", marginBottom: 6 }}>Consent Text (EN)</label>
+                <textarea value={privacyConsentTextEn} onChange={(e) => setPrivacyConsentTextEn(e.target.value)} rows={3} style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: `1px solid ${UI_COLORS.border}`, outline: "none", fontSize: 14, resize: "vertical" }} />
+              </div>
+              <Input label="Privacy Notice Link (EN)" value={privacyNoticeUrlEn} onChange={(e) => setPrivacyNoticeUrlEn(e.target.value)} placeholder="https://example.com/privacy" />
+            </div>
+          </SectionCard>
+        </div>
     </div>
   );
 }
