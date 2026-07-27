@@ -90,6 +90,10 @@ export interface AgencyPrivacySettings {
   requiredBeforePersonalData: boolean;
 }
 
+export interface AgencySettings {
+  maxClinicsPerTreatmentRequest?: number;
+}
+
 export interface Agency {
   id: string;
   name: string;
@@ -106,6 +110,7 @@ export interface Agency {
   timezone?: string;
   allowedDomains?: string[];
   privacySettings?: AgencyPrivacySettings;
+  settings?: AgencySettings;
   createdAt: any; // Firestore Timestamp
   updatedAt: any;
 }

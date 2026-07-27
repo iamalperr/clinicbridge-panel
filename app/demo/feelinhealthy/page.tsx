@@ -19,6 +19,9 @@ interface AgencyData {
   logo?: string; branding: { primaryColor: string; accentColor?: string };
   supportedLanguages: string[]; privacyUrl?: string;
   treatmentCategories: string[]; contactEmail?: string;
+  settings?: {
+    maxClinicsPerTreatmentRequest?: number;
+  };
 }
 
 interface Treatment {
@@ -330,7 +333,7 @@ export default function FeelinHealthyLive() {
     return results;
   }, [clinics, matchingCfg]);
 
-  const sendSystemAction = async (type: string, clinicName: string, clinicId: string) => {
+  const sendSystemAction = async (payload: any) => {
     if (aiTyping) return;
     setAiTyping(true);
 
@@ -339,7 +342,7 @@ export default function FeelinHealthyLive() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: { type, clinicName, clinicId },
+          action: payload,
           history: aiMsgs.slice(-10).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text })),
           sessionContext: sessionCtx,
         }),
@@ -771,14 +774,28 @@ export default function FeelinHealthyLive() {
                             )}
                             {/* Actions */}
                             <div style={{ padding: "8px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
-                              <button onClick={() => sendSystemAction("clinic_selected", rec.clinicName, rec.clinicId || rec.id)} style={{ width: "100%", padding: "8px 0", borderRadius: 6, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}>
-                                {lang === "tr" ? "Bu Klinikle Devam Et" : "Proceed with this Clinic"}
-                              </button>
+                              {sessionCtx.clinicSelectionMode === "manual" && sessionCtx.clinicSelectionStatus !== "completed" ? (
+                                <div style={{ display: "flex", gap: 6 }}>
+                                  {sessionCtx.selectedClinicIds?.includes(rec.clinicId || rec.id) ? (
+                                    <button onClick={() => sendSystemAction({ type: "clinic_selection_update", action: "deselect", clinicId: rec.clinicId || rec.id, clinicName: rec.clinicName, locale: lang })} style={{ flex: 1, padding: "8px 0", borderRadius: 6, fontSize: 12, fontWeight: 700, background: C.white, color: C.textSec, border: `1px solid ${C.border}`, cursor: "pointer" }}>
+                                      {lang === "tr" ? "Seçimi Kaldır" : "Remove Selection"}
+                                    </button>
+                                  ) : (
+                                    <button disabled={sessionCtx.selectedClinicIds && sessionCtx.selectedClinicIds.length >= (agency?.settings?.maxClinicsPerTreatmentRequest || 3)} onClick={() => sendSystemAction({ type: "clinic_selection_update", action: "select", clinicId: rec.clinicId || rec.id, clinicName: rec.clinicName, locale: lang })} style={{ flex: 1, padding: "8px 0", borderRadius: 6, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer", opacity: sessionCtx.selectedClinicIds && sessionCtx.selectedClinicIds.length >= (agency?.settings?.maxClinicsPerTreatmentRequest || 3) ? 0.5 : 1 }}>
+                                      {lang === "tr" ? "Seç" : "Select"}
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <button onClick={() => sendSystemAction({ type: "clinic_selection_update", action: "select", clinicId: rec.clinicId || rec.id, clinicName: rec.clinicName, locale: lang })} style={{ width: "100%", padding: "8px 0", borderRadius: 6, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}>
+                                  {lang === "tr" ? "Bu Klinikle Devam Et" : "Proceed with this Clinic"}
+                                </button>
+                              )}
                               <div style={{ display: "flex", gap: 6 }}>
-                                <button onClick={() => sendSystemAction("clinic_info", rec.clinicName, rec.clinicId || rec.id)} style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, textAlign: "center", background: C.primaryBg, color: C.primary, border: `1px solid ${C.primaryBorder}`, cursor: "pointer" }}>
+                                <button onClick={() => sendSystemAction({ type: "clinic_info", clinicName: rec.clinicName, clinicId: rec.clinicId || rec.id })} style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, textAlign: "center", background: C.primaryBg, color: C.primary, border: `1px solid ${C.primaryBorder}`, cursor: "pointer" }}>
                                   {lang === "tr" ? "Daha Fazla Bilgi" : "More Info"}
                                 </button>
-                                <button onClick={() => sendSystemAction("lead_capture", rec.clinicName, rec.clinicId || rec.id)} style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, background: C.white, color: C.navy, border: `1px solid ${C.border}`, cursor: "pointer" }}>
+                                <button onClick={() => sendSystemAction({ type: "lead_capture", clinicName: rec.clinicName, clinicId: rec.clinicId || rec.id })} style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, background: C.white, color: C.navy, border: `1px solid ${C.border}`, cursor: "pointer" }}>
                                   {lang === "tr" ? "Teklif İste" : "Request Quote"}
                                 </button>
                               </div>
@@ -789,6 +806,46 @@ export default function FeelinHealthyLive() {
                           <p style={{ fontSize: 10, color: C.textMuted, textAlign: "center", fontStyle: "italic" }}>
                             {lang === "tr" ? "Fiyatlar tahminidir; kesin fiyat klinik değerlendirmesine göre değişebilir." : "Prices are estimates; final pricing depends on clinical evaluation."}
                           </p>
+                        )}
+
+                        {m.type === "clinic_recommendations" && sessionCtx.clinicSelectionStatus !== "completed" && (
+                          <div style={{ marginTop: 12, padding: "12px", background: C.primaryBg, borderRadius: 12, border: `1px solid ${C.primaryBorder}` }}>
+                            <p style={{ fontSize: 12, color: C.navy, fontWeight: 600, marginBottom: 8, textAlign: "center" }}>
+                              {lang === "tr" 
+                                ? `Nasıl ilerlemek istersiniz? (En fazla ${agency?.settings?.maxClinicsPerTreatmentRequest || 3} klinik seçebilirsiniz)` 
+                                : `How would you like to proceed? (Max ${agency?.settings?.maxClinicsPerTreatmentRequest || 3} clinics allowed)`}
+                            </p>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                              <button onClick={() => sendSystemAction({ type: "clinic_selection_mode", mode: "automatic" })} style={{ width: "100%", padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: sessionCtx.clinicSelectionMode === "automatic" ? `linear-gradient(135deg, ${C.primary}, ${C.navy})` : C.white, color: sessionCtx.clinicSelectionMode === "automatic" ? "#fff" : C.primary, border: `1px solid ${sessionCtx.clinicSelectionMode === "automatic" ? "transparent" : C.primary}`, cursor: "pointer" }}>
+                                {lang === "tr" ? "Tüm uygun kliniklerden teklif al" : "Get offers from all suitable clinics"}
+                              </button>
+                              <button onClick={() => sendSystemAction({ type: "clinic_selection_mode", mode: "manual" })} style={{ width: "100%", padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: sessionCtx.clinicSelectionMode === "manual" ? `linear-gradient(135deg, ${C.primary}, ${C.navy})` : C.white, color: sessionCtx.clinicSelectionMode === "manual" ? "#fff" : C.primary, border: `1px solid ${sessionCtx.clinicSelectionMode === "manual" ? "transparent" : C.primary}`, cursor: "pointer" }}>
+                                {lang === "tr" ? "Klinikleri tek tek seç" : "Select clinics individually"}
+                              </button>
+                            </div>
+                            
+                            {sessionCtx.clinicSelectionMode === "manual" && (
+                              <div style={{ marginTop: 12, textAlign: "center" }}>
+                                <p style={{ fontSize: 13, color: C.text, fontWeight: 600, marginBottom: 8 }}>
+                                  {lang === "tr" ? "Seçilen Klinikler: " : "Selected Clinics: "}
+                                  <span style={{ color: C.primary }}>{sessionCtx.selectedClinicIds?.length || 0} / {agency?.settings?.maxClinicsPerTreatmentRequest || 3}</span>
+                                </p>
+                                {sessionCtx.selectedClinicIds && sessionCtx.selectedClinicIds.length > 0 && (
+                                  <button onClick={() => sendSystemAction({ type: "clinic_selection_complete" })} style={{ width: "100%", padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}>
+                                    {lang === "tr" ? "Seçimi Tamamla ve Devam Et" : "Complete Selection and Continue"}
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                            {sessionCtx.clinicSelectionMode === "automatic" && (
+                              <div style={{ marginTop: 12, textAlign: "center" }}>
+                                <button onClick={() => sendSystemAction({ type: "clinic_selection_complete" })} style={{ width: "100%", padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}>
+                                  {lang === "tr" ? "Seçimi Onayla ve Devam Et" : "Confirm Selection and Continue"}
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     )}

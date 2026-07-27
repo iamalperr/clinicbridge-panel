@@ -69,6 +69,10 @@ interface SessionContext {
   lastRecommendedClinicIds?: string[];
   lastFocusedClinicId?: string;
   lastFocusedClinicName?: string;
+
+  clinicSelectionMode?: "automatic" | "manual" | null;
+  selectedClinicIds?: string[];
+  clinicSelectionStatus?: "not_started" | "in_progress" | "completed";
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -245,6 +249,28 @@ export async function POST(
 
     let finalMessage = message;
 
+    const adminDb = getAdminDb();
+    if (!adminDb) {
+      return NextResponse.json(
+        { reply: "Veritabanı bağlantısı kurulamadı.", type: "text" },
+        { status: 503, headers: CORS }
+      );
+    }
+
+    const agencySnap = await adminDb.collection("agencies")
+      .where("slug", "==", slug).where("status", "==", "active").limit(1).get();
+    if (agencySnap.empty) {
+      return NextResponse.json({ error: "Agency not found" }, { status: 404, headers: CORS });
+    }
+    const agencyId = agencySnap.docs[0].id;
+    const agencyData = agencySnap.docs[0].data();
+    const maxClinics = agencyData.settings?.maxClinicsPerTreatmentRequest || 3;
+
+    // Initialize selection arrays
+    if (!sessionContext.selectedClinicIds) {
+      sessionContext.selectedClinicIds = [];
+    }
+
     // Handle system actions
     if (action) {
       if (action.type === "clinic_selected") {
@@ -270,6 +296,45 @@ export async function POST(
             showClinicCards: false
           }, { headers: CORS });
         }
+      } else if (action.type === "clinic_selection_mode") {
+        if (action.mode === "automatic") {
+           const recommended = sessionContext.lastRecommendedClinicIds || [];
+           sessionContext.clinicSelectionMode = "automatic";
+           sessionContext.selectedClinicIds = recommended.slice(0, maxClinics);
+           sessionContext.clinicSelectionStatus = "in_progress";
+           finalMessage = `[SİSTEM AKSİYONU: Kullanıcı 'Tüm uygun kliniklerden teklif al' seçeneğini seçti. Sistem en uygun olan ${sessionContext.selectedClinicIds.length} kliniği seçti. Lütfen seçilen klinikleri kullanıcıya listeleyerek özetle ve seçimlerini değiştirebileceklerini veya bu kliniklerle devam edebileceklerini belirt. Henüz lead toplama aşamasına geçme.]`;
+        } else if (action.mode === "manual") {
+           sessionContext.clinicSelectionMode = "manual";
+           sessionContext.clinicSelectionStatus = "in_progress";
+           finalMessage = `[SİSTEM AKSİYONU: Kullanıcı 'Klinikleri tek tek seç' seçeneğini seçti. Lütfen klinik kartları üzerinden seçim yapmasını bekle. En fazla ${maxClinics} klinik seçilebileceğini hatırlat.]`;
+        }
+      } else if (action.type === "clinic_selection_update") {
+        sessionContext.clinicSelectionMode = "manual";
+        sessionContext.clinicSelectionStatus = "in_progress";
+        const currentSelected = new Set<string>(sessionContext.selectedClinicIds);
+        
+        if (action.action === "select") {
+          if (currentSelected.size >= maxClinics) {
+             return NextResponse.json({
+                reply: action.locale === "tr" 
+                  ? `Aynı talep için en fazla ${maxClinics} klinik seçebilirsiniz. Yeni bir klinik seçmek için mevcut seçimlerinizden birini kaldırabilirsiniz.`
+                  : `You can select up to ${maxClinics} clinics for the same request. Remove one of your current selections to choose another clinic.`,
+                type: "text",
+                sessionContext,
+                showClinicCards: false
+             }, { headers: CORS });
+          }
+          currentSelected.add(action.clinicId);
+          sessionContext.selectedClinicIds = Array.from(currentSelected);
+          finalMessage = `[SİSTEM AKSİYONU: Kullanıcı ${action.clinicName} kliniğini seçti. Toplam seçilen klinik sayısı: ${currentSelected.size}/${maxClinics}. Sadece 'Seçiminiz kaydedildi, başka klinik seçebilir veya devam edebilirsiniz' diyerek kısa bir yanıt ver.]`;
+        } else if (action.action === "deselect") {
+          currentSelected.delete(action.clinicId);
+          sessionContext.selectedClinicIds = Array.from(currentSelected);
+          finalMessage = `[SİSTEM AKSİYONU: Kullanıcı ${action.clinicName} kliniğinin seçimini kaldırdı. Toplam seçilen klinik sayısı: ${currentSelected.size}/${maxClinics}.]`;
+        }
+      } else if (action.type === "clinic_selection_complete") {
+        sessionContext.clinicSelectionStatus = "completed";
+        finalMessage = `[SİSTEM AKSİYONU: Kullanıcı klinik seçimini tamamladı. Seçilen toplam klinik sayısı: ${sessionContext.selectedClinicIds?.length || 0}. Artık lead toplama sürecine (Ad Soyad vb.) geçebilirsin.]`;
       }
     }
 
@@ -284,21 +349,12 @@ export async function POST(
       );
     }
 
-    const adminDb = getAdminDb();
-    if (!adminDb) {
+    if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
-        { reply: "Veritabanı bağlantısı kurulamadı.", type: "text" },
-        { status: 503, headers: CORS }
+        { reply: "AI servisi yapılandırılmamış.", type: "text" },
+        { headers: CORS }
       );
     }
-
-    /* ── 1. Load agency + clinics + pricing ── */
-    const agencySnap = await adminDb.collection("agencies")
-      .where("slug", "==", slug).where("status", "==", "active").limit(1).get();
-    if (agencySnap.empty) {
-      return NextResponse.json({ error: "Agency not found" }, { status: 404, headers: CORS });
-    }
-    const agencyId = agencySnap.docs[0].id;
 
     /* ── DETERMINISTIC INTERCEPTORS (PHASE 3) ── */
     const { requireAcceptedAgencyConsent, saveConsentRecord } = await import("@/lib/services/agencyConsentService");
@@ -446,6 +502,8 @@ export async function POST(
   * Yaş: ${ctx.patientAge || "Yok"}
   * Cinsiyet: ${ctx.patientGender || "Yok"}
   * KVKK/GDPR Onayı: ${ctx.quoteConsent ? "Evet" : "Yok"}
+- Klinik Seçimi (clinicSelectionMode): ${ctx.clinicSelectionMode || "Yok"} (Status: ${ctx.clinicSelectionStatus || "not_started"})
+- Seçili Klinik ID'leri: ${ctx.selectedClinicIds?.join(", ") || "Yok"} (Toplam ${ctx.selectedClinicIds?.length || 0} / Maks ${maxClinics})
 - İlgi Alanı: Tedavi: ${ctx.lastTreatmentCategory || "Bilinmiyor"}, Alt Tedavi: ${ctx.lastSubTreatment || "Bilinmiyor"}, Lokasyon: ${ctx.lastLocation || "Bilinmiyor"}
 `;
     if (ctx.lastFocusedClinicName) {
@@ -503,6 +561,14 @@ STANDART KURALLAR:
     - Geçersiz e-postayı kabul edilmiş gibi gösterme.
     - Kullanıcı e-posta vermek istemezse zorlama, genel bilgi ver ancak kişisel teklif sürecini tamamlatma.
     - Toplanan e-postayı sohbet özetinde açık şekilde yazma (örn. p***@example.com şeklinde maskele).
+14. KLİNİK SEÇİM KURALLARI:
+    - Klinik önerdikten sonra kullanıcıya seçim modlarını sun ("Tüm uygun kliniklerden teklif al" veya "Klinikleri tek tek seç").
+    - Kullanıcının aynı talep için en fazla ${maxClinics} klinik seçebileceğini belirt.
+    - "Tüm uygun klinikler" seçeneğini sınırsız klinik olarak yorumlama. En fazla ${maxClinics} uygun klinik seçilecektir.
+    - Sistemde olmayan clinic ID veya clinic adı uydurma. Kullanıcı seçmeden klinik seçilmiş gibi davranma.
+    - Kullanıcının seçimlerini backend sonucu olmadan onaylanmış sayma. Aynı kliniği iki kez ekleme.
+    - Limit aşıldığında kullanıcıyı nazikçe bilgilendir. Seçimlerini değiştirmesine izin ver.
+    - Klinik seçiminden sonra henüz teklif gönderilmiş gibi konuşma ("Talebiniz kliniklere iletildi" DEME). Yalnızca "seçiminiz kaydedildi" veya "talebiniz için klinikler seçildi" de.
 
 HASTA BİLGİSİ TOPLAMA YÖNERGESİ (INTAKE INSTRUCTIONS):
 ${intakeText || "Belirtilmedi."}
