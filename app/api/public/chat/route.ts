@@ -304,6 +304,7 @@ export interface AppointmentData {
   preferredTimeText?: string | null;
   timezone?: string;
   originalText: string;
+  emailValidationFails?: number;
 }
 
 /* ── Resolve relative/weekday date expressions to ISO date ──────────── */
@@ -455,7 +456,14 @@ function extractAppointmentFromHistory(history: any[]): AppointmentData | null {
 
   const patientName      = nameMatch?.[1]?.trim() ?? "";
   const patientPhone     = phoneMatch?.[1]?.replace(/\s+/g, "").trim() ?? "";
-  const patientEmail     = emailMatch?.[1]?.trim().toLowerCase() ?? "";
+  let patientEmail     = emailMatch?.[1]?.replace(/[\u200B-\u200D\uFEFF]/g, '').trim().toLowerCase() ?? "";
+
+  if (patientEmail) {
+    const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+    if (!emailRegex.test(patientEmail)) {
+      patientEmail = ""; // Clear invalid email extracted from LLM summary
+    }
+  }
   const requestedService = serviceMatch?.[1]?.trim() ?? "Genel Muayene";
 
   const requestedDate = dtMatch?.[1]?.trim() ?? "";
@@ -1529,13 +1537,15 @@ export async function POST(req: Request) {
         const summaryMsg = `Ön randevu talebinizin özeti:\n\nAd Soyad: ${appointmentDraft.patientName || "-"}\nTelefon: ${phoneResult.display}\nE-posta: ${appointmentDraft.patientEmail || "-"}\nHizmet: ${appointmentDraft.requestedService || "-"}\nTercih Edilen Tarih: ${appointmentDraft.preferredDateDisplay || appointmentDraft.requestedDate || "-"}\nTercih Edilen Saat: ${appointmentDraft.requestedTime || "Belirtilmedi"}\n\nBu bilgilerle ön randevu talebinizi kliniğimizin değerlendirmesine iletmemi onaylıyor musunuz? Evet veya Hayır şeklinde yanıtlayabilirsiniz.`;
         return NextResponse.json({ responseType: "CHAT_REPLY", reply: summaryMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
     } else if (appointmentState === "COLLECTING_EMAIL") {
-        // Validate email format
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        const potentialEmail = message.trim().toLowerCase();
+        // Remove invisible characters and trim
+        const rawEmail = message.replace(/[\u200B-\u200D\uFEFF]/g, '').trim().toLowerCase();
         
-        if (emailRegex.test(potentialEmail)) {
-             appointmentDraft.patientEmail = potentialEmail;
-             console.log(`[APPOINTMENT_EMAIL_COLLECTED] email="${potentialEmail}" convId=${convId} clinicId=${actualClinicId}`);
+        // RFC compliant-like standard email validation regex
+        const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+        
+        if (emailRegex.test(rawEmail)) {
+             appointmentDraft.patientEmail = rawEmail;
+             console.log(`[APPOINTMENT_EMAIL_COLLECTED] email="${rawEmail}" convId=${convId} clinicId=${actualClinicId}`);
              await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
              // Build display phone from normalized value
              let phoneDisplay = appointmentDraft.patientPhone || "-";
@@ -1544,7 +1554,25 @@ export async function POST(req: Request) {
              const summaryMsg = `Ön randevu talebinizin özeti:\n\nAd Soyad: ${appointmentDraft.patientName || "-"}\nTelefon: ${phoneDisplay}\nE-posta: ${appointmentDraft.patientEmail}\nHizmet: ${appointmentDraft.requestedService || "-"}\nTercih Edilen Tarih: ${appointmentDraft.preferredDateDisplay || appointmentDraft.requestedDate || "-"}\nTercih Edilen Saat: ${appointmentDraft.requestedTime || "Belirtilmedi"}\n\nBu bilgilerle ön randevu talebinizi kliniğimizin değerlendirmesine iletmemi onaylıyor musunuz? Evet veya Hayır şeklinde yanıtlayabilirsiniz.`;
              return NextResponse.json({ responseType: "CHAT_REPLY", reply: summaryMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
         } else {
-             return NextResponse.json({ responseType: "CHAT_REPLY", reply: "E-posta adresinizi kontrol edebilir misiniz? Ön randevu talebinizle ilgili bilgilendirmeleri size iletebilmemiz için geçerli bir e-posta adresi paylaşmanız gerekiyor." }, { headers: CORS });
+             const fails = (appointmentDraft.emailValidationFails || 0) + 1;
+             appointmentDraft.emailValidationFails = fails;
+             
+             if (fails >= 2) {
+                 console.log(`[APPOINTMENT_EMAIL_FAILED] Max attempts reached, skipping. convId=${convId} clinicId=${actualClinicId}`);
+                 appointmentDraft.patientEmail = ""; // Clear invalid email
+                 
+                 await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
+                 
+                 let phoneDisplay = appointmentDraft.patientPhone || "-";
+                 const phoneCheck = normalizeTurkishPhone(phoneDisplay);
+                 if (phoneCheck.valid) phoneDisplay = phoneCheck.display;
+                 
+                 const summaryMsg = `E-posta adresinizi doğrulayamadık ancak işleminize devam ediyoruz.\n\nÖn randevu talebinizin özeti:\n\nAd Soyad: ${appointmentDraft.patientName || "-"}\nTelefon: ${phoneDisplay}\nE-posta: Belirtilmedi\nHizmet: ${appointmentDraft.requestedService || "-"}\nTercih Edilen Tarih: ${appointmentDraft.preferredDateDisplay || appointmentDraft.requestedDate || "-"}\nTercih Edilen Saat: ${appointmentDraft.requestedTime || "Belirtilmedi"}\n\nBu bilgilerle ön randevu talebinizi kliniğimizin değerlendirmesine iletmemi onaylıyor musunuz? Evet veya Hayır şeklinde yanıtlayabilirsiniz.`;
+                 return NextResponse.json({ responseType: "CHAT_REPLY", reply: summaryMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
+             } else {
+                 await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
+                 return NextResponse.json({ responseType: "CHAT_REPLY", reply: "E-posta adresiniz geçerli bir formatta görünmüyor. Ön randevu talebinizle ilgili bilgilendirmeleri size iletebilmemiz için geçerli bir e-posta adresi paylaşabilir misiniz?" }, { headers: CORS });
+             }
         }
     }
 
