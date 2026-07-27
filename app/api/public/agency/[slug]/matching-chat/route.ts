@@ -45,17 +45,21 @@ interface ClinicRecommendation {
 }
 
 interface SessionContext {
-  leadStage?: string; // discovery | recommendation | clinic_selected | lead_capture | quote_request_created
+  leadStage?: string; // discovery | recommendation | clinic_selected | lead_capture | collecting_email | collecting_consent | quote_request_created | completed
   selectedClinicId?: string;
   selectedClinicName?: string;
   patientName?: string;
+  patientEmail?: string;
   patientPhone?: string;
   patientCountry?: string;
   patientAge?: number;
   patientGender?: string;
+  language?: string;
   travelDate?: string;
   quoteConsent?: boolean;
   missingLeadField?: string;
+  emailValidationFails?: number;
+  consentVersion?: string;
 
   lastTreatmentCategory?: string;
   lastSubTreatment?: string;
@@ -277,6 +281,111 @@ export async function POST(
     }
     const agencyId = agencySnap.docs[0].id;
 
+    /* ── DETERMINISTIC INTERCEPTORS (PHASE 2) ── */
+    const ctx: SessionContext = sessionContext || {};
+
+    if (ctx.leadStage === "collecting_email") {
+      const rawEmail = message.replace(/[\u200B-\u200D\uFEFF]/g, '').trim().toLowerCase();
+      const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+      
+      if (emailRegex.test(rawEmail)) {
+        ctx.patientEmail = rawEmail;
+        ctx.leadStage = "collecting_consent";
+        return NextResponse.json({
+          reply: "Teşekkürler. Son olarak, bu bilgileri sizinle iletişime geçebilmeleri için klinik ve sağlık ekipleriyle paylaşmamı onaylıyor musunuz? (Evet / Hayır)",
+          type: "text",
+          sessionContext: ctx,
+          showClinicCards: false
+        }, { headers: CORS });
+      } else {
+        const fails = (ctx.emailValidationFails || 0) + 1;
+        ctx.emailValidationFails = fails;
+        
+        if (fails >= 2) {
+          ctx.patientEmail = ""; // Clear invalid
+          ctx.leadStage = "collecting_consent";
+          return NextResponse.json({
+            reply: "E-posta adresinizi doğrulayamadık ancak devam ediyoruz.\nSon olarak, bu bilgileri sizinle iletişime geçebilmeleri için klinik ve sağlık ekipleriyle paylaşmamı onaylıyor musunuz? (Evet / Hayır)",
+            type: "text",
+            sessionContext: ctx,
+            showClinicCards: false
+          }, { headers: CORS });
+        } else {
+          return NextResponse.json({
+            reply: "Girdiğiniz e-posta adresi geçersiz görünüyor. Lütfen geçerli bir e-posta adresi yazabilir misiniz?",
+            type: "text",
+            sessionContext: ctx,
+            showClinicCards: false
+          }, { headers: CORS });
+        }
+      }
+    }
+
+    if (ctx.leadStage === "collecting_consent") {
+      const isConsent = /evet|onay|tabi|yes|ok|olur|uygun/i.test(message);
+      if (isConsent) {
+        ctx.quoteConsent = true;
+        ctx.consentVersion = "v1.0";
+        ctx.leadStage = "quote_request_created";
+        
+        const now = new Date().toISOString();
+        try {
+          const leadDoc = {
+            agencyId,
+            clinicId: ctx.selectedClinicId || null,
+            clinicIds: ctx.selectedClinicId ? [ctx.selectedClinicId] : [], 
+            attachments: [],
+            patientName: ctx.patientName || "Bilinmiyor",
+            patientEmail: ctx.patientEmail || null,
+            patientPhone: ctx.patientPhone || null,
+            patientAge: ctx.patientAge || null,
+            patientGender: ctx.patientGender || null,
+            country: ctx.patientCountry || "Unknown",
+            language: ctx.language || "tr",
+            treatmentCategory: ctx.lastTreatmentCategory || "other",
+            treatmentSubcategory: ctx.lastSubTreatment || null,
+            urgency: "medium",
+            conversationSummary: "AI Chat üzerinden lead toplandı (KVKK onaylı).",
+            aiExtractedNotes: "",
+            consentStatus: "accepted",
+            consentTimestamp: now,
+            consentVersion: ctx.consentVersion,
+            status: "new",
+            statusHistory: [{ status: "new", changedAt: now, note: "Lead created from AI chat" }],
+            source: "ai_chat",
+            createdAt: now,
+            updatedAt: now,
+          };
+          const newLeadRef = await adminDb.collection("agencies").doc(agencyId).collection("leads").add(leadDoc);
+          console.log("[matching-chat] Lead successfully created with consent.");
+
+          sendAgencyLeadNotification({ agencyId, leadId: newLeadRef.id }).catch((err) => {
+            console.error("[matching-chat] sendAgencyLeadNotification failed:", err);
+          });
+        } catch (err) {
+          console.error("[matching-chat] Error creating lead:", err);
+        }
+
+        return NextResponse.json({
+          reply: "Onayınız alınmıştır. Talebiniz ilgili kliniğe iletilmek üzere kaydedildi. Klinik ekibi sizinle en kısa sürede iletişime geçecektir. Sağlıklı günler dilerim.",
+          type: "lead_created",
+          sessionContext: ctx,
+          showClinicCards: false,
+          leadStatus: ctx.leadStage,
+          shouldCreateNewLead: false,
+          shouldUpdateLead: false
+        }, { headers: CORS });
+      } else {
+        ctx.leadStage = "completed";
+        return NextResponse.json({
+          reply: "Anlıyorum. Bilgilerinizin paylaşımını onaylamadığınız için işleminize devam edemiyoruz. Farklı bir sorunuz olursa buradayım.",
+          type: "text",
+          sessionContext: ctx,
+          showClinicCards: false
+        }, { headers: CORS });
+      }
+    }
+
     const clinicSnap = await adminDb.collection("agencies").doc(agencyId)
       .collection("clinics").orderBy("priority", "asc").get();
     const allClinics = clinicSnap.docs
@@ -359,7 +468,6 @@ export async function POST(
     const clinicContext = buildClinicContext(allClinics, allPricing, relevantKbRecords);
 
     /* ── 3. Build session context hint ── */
-    const ctx: SessionContext = sessionContext;
     let contextHint = `\nMEVCUT KONUŞMA DURUMU (SESSION CONTEXT):
 - Aşama (leadStage): ${ctx.leadStage || "discovery"}
 - Seçilen Klinik (selectedClinicName): ${ctx.selectedClinicName || "Yok"}
@@ -558,47 +666,15 @@ JSON FORMATI:
     // --- SHOULD CREATE LEAD ---
     const leadAlreadyCreated = ctx.leadStage === "quote_request_created" || ctx.leadStage === "completed";
     if (parsed.shouldCreateLead && !leadAlreadyCreated) {
-      newCtx.leadStage = "quote_request_created";
-      const now = new Date().toISOString();
-      try {
-        const leadDoc = {
-          agencyId,
-          clinicId: newCtx.selectedClinicId || null,
-          patientName: newCtx.patientName || "Bilinmiyor",
-          patientEmail: null,
-          patientPhone: newCtx.patientPhone || null,
-          patientAge: newCtx.patientAge || null,
-          patientGender: newCtx.patientGender || null,
-          country: newCtx.patientCountry || "Unknown",
-          language: parsed.language || "tr",
-          treatmentCategory: newCtx.lastTreatmentCategory || "other",
-          treatmentSubcategory: newCtx.lastSubTreatment || null,
-          urgency: "medium",
-          conversationSummary: "AI Chat üzerinden lead toplandı.",
-          aiExtractedNotes: parsed.replyText || "",
-          consentStatus: newCtx.quoteConsent ? "accepted" : "pending",
-          consentTimestamp: newCtx.quoteConsent ? now : null,
-          status: "new",
-          statusHistory: [{ status: "new", changedAt: now, note: "Lead created from AI chat" }],
-          source: "ai_chat",
-          createdAt: now,
-          updatedAt: now,
-        };
-        const newLeadRef = await adminDb.collection("agencies").doc(agencyId).collection("leads").add(leadDoc);
-        console.log("[matching-chat] Lead successfully created.");
-
-        // Async email notification
-        sendAgencyLeadNotification({ agencyId, leadId: newLeadRef.id }).catch((err) => {
-          console.error("[matching-chat] sendAgencyLeadNotification failed:", err);
-        });
-      } catch (err) {
-        console.error("[matching-chat] Error creating lead:", err);
-      }
+      newCtx.leadStage = "collecting_email";
       return NextResponse.json({
-        reply: parsed.replyText || "Teşekkürler, bilgilerinizi aldık. İlgili klinik ekibimiz en kısa sürede sizinle iletişime geçecektir.",
-        type: "lead_created",
+        reply: parsed.replyText + "\n\nSize detaylı bilgi iletebilmemiz için geçerli bir e-posta adresi paylaşabilir misiniz?",
+        type: "text",
         sessionContext: newCtx,
-        showClinicCards: parsed.showClinicCards === true,
+        showClinicCards: false,
+        leadStatus: newCtx.leadStage,
+        shouldCreateNewLead: false,
+        shouldUpdateLead: false
       }, { headers: CORS });
     }
 
