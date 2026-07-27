@@ -323,6 +323,7 @@ export interface Lead {
   id: string;
   agencyId: string;
   clinicId: string | null;
+  clinicIds?: string[];
   assignedClinicName?: string;
 
   // Patient info
@@ -347,6 +348,10 @@ export interface Lead {
   // KVKK / GDPR
   consentStatus: "accepted" | "declined" | "pending";
   consentTimestamp?: any;
+  consentVersion?: string;
+  
+  // Storage
+  attachments?: string[];
 
   // Status management
   status: LeadStatus;

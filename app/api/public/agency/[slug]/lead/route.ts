@@ -44,7 +44,9 @@ export async function POST(
 
     const lead = {
       agencyId,
-      clinicId: null,
+      clinicId: null, // Kept for backward compatibility
+      clinicIds: Array.isArray(body.clinicIds) ? body.clinicIds.slice(0, 3) : [], // Limit to max 3 clinics
+      attachments: Array.isArray(body.attachments) ? body.attachments : [],
       patientName: body.patientName || null,
       patientEmail: body.patientEmail || null,
       patientPhone: body.patientPhone || null,
@@ -60,6 +62,7 @@ export async function POST(
       aiExtractedNotes: body.aiExtractedNotes || null,
       consentStatus: body.consentStatus || "pending",
       consentTimestamp: body.consentStatus === "accepted" ? now : null,
+      consentVersion: body.consentVersion || null,
       status: "new",
       statusHistory: [
         { status: "new", changedAt: now, note: "Lead created from public demo" },
