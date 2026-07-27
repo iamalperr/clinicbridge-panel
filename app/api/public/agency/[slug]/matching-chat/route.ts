@@ -51,6 +51,7 @@ interface SessionContext {
   selectedClinicName?: string;
   patientName?: string;
   patientEmail?: string;
+  patientEmailStatus?: "missing" | "collected" | "invalid" | "verified_format";
   patientPhone?: string;
   patientCountry?: string;
   patientAge?: number;
@@ -252,6 +253,23 @@ export async function POST(
         finalMessage = `[SİSTEM AKSİYONU: Kullanıcı arayüzden 'Daha Fazla Bilgi' butonuna tıklayarak '${action.clinicName}' hakkında bilgi istedi. Lütfen klinik hakkında genel bilgi ver, öne çıkan özelliklerini veya doktorlarını sırala. En sonda bu klinikle devam etmek isteyip istemediğini sor. (Henüz lead toplamaya başlama)]`;
       } else if (action.type === "lead_capture") {
         finalMessage = `[SİSTEM AKSİYONU: Kullanıcı arayüzden 'Teklif İste' butonuna tıklayarak '${action.clinicName}' kliniği için teklif almak istediğini belirtti. Lütfen HEMEN lead toplama aşamasının İLK sorusu olan Ad Soyad bilgisini iste.]`;
+      } else if (action.type === "patient_email_submission") {
+        const { normalizeEmail, isValidEmail } = await import("@/lib/utils/emailValidation");
+        const normalized = normalizeEmail(action.email);
+        if (isValidEmail(normalized)) {
+          finalMessage = `[SİSTEM AKSİYONU: Kullanıcı e-posta formunu doldurarak geçerli bir e-posta adresi iletti: ${normalized}. Lütfen bunu onayla ve lead toplama aşamasına kaldığın yerden devam et.]`;
+          sessionContext.patientEmail = normalized;
+          sessionContext.patientEmailStatus = "verified_format";
+        } else {
+          return NextResponse.json({
+            reply: action.locale === "tr"
+              ? "Bu e-posta adresinde küçük bir yazım hatası olabilir. Kontrol ederek yeniden paylaşabilir misiniz?"
+              : "There may be a small typo in this email address. Could you check it and share it again?",
+            type: "text",
+            sessionContext,
+            showClinicCards: false
+          }, { headers: CORS });
+        }
       }
     }
 
@@ -422,6 +440,7 @@ export async function POST(
 - Seçilen Klinik (selectedClinicName): ${ctx.selectedClinicName || "Yok"}
 - Toplanan Bilgiler:
   * Ad Soyad: ${ctx.patientName || "Yok"}
+  * E-posta: ${ctx.patientEmail ? `${ctx.patientEmail.substring(0,2)}***@... (${ctx.patientEmailStatus})` : "Yok"}
   * Telefon: ${ctx.patientPhone || "Yok"}
   * Ülke: ${ctx.patientCountry || "Yok"}
   * Yaş: ${ctx.patientAge || "Yok"}
@@ -459,15 +478,16 @@ STANDART KURALLAR:
 4. LEAD TOPLAMA: Hasta bir klinik seçtiğinde veya tavsiye istediğinde yavaş yavaş "lead_capture" aşamasına geç. Bilgileri asla aynı anda sorma. Sırasıyla SADECE 1 eksik bilgiyi sor.
    Sıra KESİNLİKLE şöyle olmalı: 
    1. Ad Soyad (patientName)
-   2. Telefon / WhatsApp (patientPhone)
-   3. Ülke (patientCountry)
-   4. Yaş (patientAge)
-   5. Cinsiyet (patientGender)
-   6. Tedavi Detayı (treatmentCategory / subTreatment)
-   7. Bütçe (budgetAmount)
-   8. Seyahat Tarihi (travelDate)
-   9. KVKK/GDPR Onayı (quoteConsent)
-5. "missingLeadField" alanına sıradaki sorman gereken 1 alanı yaz.
+   2. E-posta (patientEmail)
+   3. Telefon / WhatsApp (patientPhone)
+   4. Ülke (patientCountry)
+   5. Yaş (patientAge)
+   6. Cinsiyet (patientGender)
+   7. Tedavi Detayı (treatmentCategory / subTreatment)
+   8. Bütçe (budgetAmount)
+   9. Seyahat Tarihi (travelDate)
+   10. KVKK/GDPR Onayı (quoteConsent)
+5. "missingLeadField" alanına sıradaki sorman gereken 1 alanı yaz. Eğer E-posta toplanacaksa leadStage = 'collecting_email' yap.
 6. HASTA BİLGİ VERDİKÇE JSON içinde ilgili alanı (patientName, patientPhone vb.) doldur.
 7. Tüm lead bilgileri tamamsa ve KVKK onayı alındıysa "shouldCreateLead": true dön.
 8. FİYATLARI ASLA UYDURMA. Aşağıdaki verilerden çek.
@@ -475,6 +495,14 @@ STANDART KURALLAR:
 10. Tıbbi teşhis koyma.
 11. KVKK ONAYI: Eğer hastadan kişisel veya sağlıkla ilgili detaylı bir veri isteyeceksen VEYA hasta sana kendi inisiyatifiyle kişisel/sağlık verisi (örn. "yaşım 45", "diyabetim var", "dişim ağrıyor") veriyorsa, 'requiresConsent': true yap. Ancak genel sorulara (örn. "İmplant nedir?") requiresConsent: false yap.
 12. KAPANIŞ (COMPLETED): Eğer kullanıcı teşekkür, tamam, görüşürüz gibi kapanış mesajı verirse ve lead/quote request zaten tamamlanmışsa (leadStage === 'quote_request_created' veya 'completed'), yeni öneri veya lead toplama akışı başlatma. Sadece kibar kapanış cevabı ver ve intent olarak "conversation_completed" dön.
+13. E-POSTA KURALLARI: 
+    - Accepted consent bulunmadan e-posta isteme.
+    - Kişiselleştirilmiş talep tamamlanmadan önce geçerli e-posta al.
+    - E-posta daha önce geçerli olarak alındıysa ("verified_format") tekrar isteme.
+    - E-postayı asla tahmin etme veya ad/soyad bilgilerinden üretme.
+    - Geçersiz e-postayı kabul edilmiş gibi gösterme.
+    - Kullanıcı e-posta vermek istemezse zorlama, genel bilgi ver ancak kişisel teklif sürecini tamamlatma.
+    - Toplanan e-postayı sohbet özetinde açık şekilde yazma (örn. p***@example.com şeklinde maskele).
 
 HASTA BİLGİSİ TOPLAMA YÖNERGESİ (INTAKE INSTRUCTIONS):
 ${intakeText || "Belirtilmedi."}
@@ -503,13 +531,14 @@ JSON FORMATI:
   "selectedClinicId": string | null,
   "selectedClinicName": string | null,
   "patientName": string | null,
+  "patientEmail": string | null,
   "patientPhone": string | null,
   "patientCountry": string | null,
   "patientAge": number | null,
   "patientGender": "Kadın" | "Erkek" | "Belirtmek istemiyorum" | "Diğer" | null,
   "travelDate": string | null,
   "quoteConsent": boolean | null,
-  "missingLeadField": "patientName" | "patientPhone" | "patientCountry" | "patientAge" | "patientGender" | "travelDate" | "quoteConsent" | null,
+  "missingLeadField": "patientName" | "patientEmail" | "patientPhone" | "patientCountry" | "patientAge" | "patientGender" | "travelDate" | "quoteConsent" | null,
   "requiresConsent": boolean,
   "shouldCreateLead": boolean,
   "showClinicCards": boolean,
@@ -577,7 +606,27 @@ JSON FORMATI:
     if (parsed.subTreatment) newCtx.lastSubTreatment = parsed.subTreatment;
     if (parsed.location) newCtx.lastLocation = parsed.location;
     
-    // Update lead states
+    // Validate and update patient email from LLM if any
+    if (parsed.patientEmail && parsed.patientEmail !== ctx.patientEmail) {
+      const { normalizeEmail, isValidEmail } = await import("@/lib/utils/emailValidation");
+      const normalized = normalizeEmail(parsed.patientEmail);
+      if (isValidEmail(normalized)) {
+        newCtx.patientEmail = normalized!;
+        newCtx.patientEmailStatus = "verified_format";
+      } else {
+        newCtx.patientEmail = undefined;
+        newCtx.patientEmailStatus = "invalid";
+        return NextResponse.json({
+          reply: parsed.language === "tr"
+            ? "Bu e-posta adresinde küçük bir yazım hatası olabilir. Kontrol ederek yeniden paylaşabilir misiniz?"
+            : "There may be a small typo in this email address. Could you check it and share it again?",
+          type: "text",
+          sessionContext: newCtx,
+          showClinicCards: false
+        }, { headers: CORS });
+      }
+    }
+
     if (parsed.selectedClinicId) newCtx.selectedClinicId = parsed.selectedClinicId;
     if (parsed.selectedClinicName) newCtx.selectedClinicName = parsed.selectedClinicName;
     if (parsed.patientName) newCtx.patientName = parsed.patientName;
@@ -648,14 +697,29 @@ JSON FORMATI:
 
     // --- SHOULD CREATE LEAD ---
     if (parsed.shouldCreateLead && !leadAlreadyCreated) {
-      newCtx.leadStage = "collecting_email";
+      if (newCtx.patientEmailStatus !== "verified_format") {
+         newCtx.leadStage = "collecting_email";
+         return NextResponse.json({
+           reply: parsed.language === "tr" 
+             ? "Talebinizi tamamlayabilmemiz ve süreçle ilgili sizi bilgilendirebilmemiz için geçerli bir e-posta adresine ihtiyacımız bulunuyor."
+             : "To complete your request and keep you informed about the process, we need a valid email address.",
+           type: "email_request",
+           sessionContext: newCtx,
+           showClinicCards: false,
+           leadStatus: newCtx.leadStage,
+           shouldCreateNewLead: false,
+           shouldUpdateLead: false
+         }, { headers: CORS });
+      }
+
+      newCtx.leadStage = "quote_request_created";
       return NextResponse.json({
-        reply: parsed.replyText + "\n\nSize detaylı bilgi iletebilmemiz için geçerli bir e-posta adresi paylaşabilir misiniz?",
+        reply: parsed.replyText || "Harika, talebinizi başarıyla oluşturdum.",
         type: "text",
         sessionContext: newCtx,
         showClinicCards: false,
         leadStatus: newCtx.leadStage,
-        shouldCreateNewLead: false,
+        shouldCreateNewLead: true, // Frontend will call /lead API
         shouldUpdateLead: false
       }, { headers: CORS });
     }

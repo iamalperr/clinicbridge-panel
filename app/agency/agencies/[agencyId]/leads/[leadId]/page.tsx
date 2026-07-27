@@ -18,13 +18,13 @@ import { TREATMENT_CATEGORIES, LEAD_STATUSES, LEAD_URGENCIES } from "@/lib/types
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string | number | null | undefined }) {
+function InfoRow({ icon, label, value, fallback = "—" }: { icon: React.ReactNode; label: string; value: string | number | null | undefined; fallback?: string }) {
   return (
     <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 0", borderBottom: `1px solid ${UI_COLORS.border}` }}>
       <div style={{ color: UI_COLORS.textMuted, marginTop: 2, flexShrink: 0 }}>{icon}</div>
       <div style={{ flex: 1 }}>
         <p style={{ fontSize: 11.5, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 2, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</p>
-        <p style={{ fontSize: 14, fontWeight: 500, color: value ? UI_COLORS.textPrimary : UI_COLORS.textMuted }}>{value || "—"}</p>
+        <p style={{ fontSize: 14, fontWeight: 500, color: value ? UI_COLORS.textPrimary : UI_COLORS.textMuted }}>{value || fallback}</p>
       </div>
     </div>
   );
@@ -214,7 +214,7 @@ export default function LeadDetailPage() {
         <SectionCard title="Hasta Bilgileri" icon={<User size={16} color="#10b981" />}>
           <InfoRow icon={<User size={14} />} label="Ad Soyad" value={lead.patientName} />
           <InfoRow icon={<Phone size={14} />} label="Telefon" value={lead.patientPhone} />
-          <InfoRow icon={<Mail size={14} />} label="E-posta" value={lead.patientEmail} />
+          <InfoRow icon={<Mail size={14} />} label="E-posta" value={lead.patientEmail} fallback="Belirtilmedi" />
           <InfoRow icon={<User size={14} />} label="Yaş" value={lead.patientAge} />
           <InfoRow icon={<User size={14} />} label="Cinsiyet" value={lead.patientGender} />
           <InfoRow icon={<MapPin size={14} />} label="Ülke" value={lead.country} />

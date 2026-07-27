@@ -42,13 +42,34 @@ export async function POST(
     const agencyId = agencySnap.docs[0].id;
     const now = new Date().toISOString();
 
+    const { requireAcceptedAgencyConsent } = await import("@/lib/services/agencyConsentService");
+    const { normalizeEmail, isValidEmail } = await import("@/lib/utils/emailValidation");
+
+    if (!body.conversationId) {
+      return NextResponse.json({ error: "conversationId required" }, { status: 400, headers: CORS });
+    }
+
+    const version = agencySnap.docs[0].data().privacySettings?.version || "";
+    const hasConsent = await requireAcceptedAgencyConsent(agencyId, body.conversationId, version);
+    if (!hasConsent) {
+      return NextResponse.json({ error: "CONSENT_REQUIRED" }, { status: 403, headers: CORS });
+    }
+
+    const normalizedEmail = normalizeEmail(body.patientEmail);
+    if (!normalizedEmail) {
+      return NextResponse.json({ error: "PATIENT_EMAIL_REQUIRED" }, { status: 400, headers: CORS });
+    }
+    if (!isValidEmail(normalizedEmail)) {
+      return NextResponse.json({ error: "PATIENT_EMAIL_INVALID" }, { status: 400, headers: CORS });
+    }
+
     const lead = {
       agencyId,
       clinicId: null, // Kept for backward compatibility
       clinicIds: Array.isArray(body.clinicIds) ? body.clinicIds.slice(0, 3) : [], // Limit to max 3 clinics
       attachments: Array.isArray(body.attachments) ? body.attachments : [],
       patientName: body.patientName || null,
-      patientEmail: body.patientEmail || null,
+      patientEmail: normalizedEmail,
       patientPhone: body.patientPhone || null,
       patientAge: body.patientAge || null,
       patientGender: body.patientGender || null,

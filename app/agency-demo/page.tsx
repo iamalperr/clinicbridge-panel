@@ -479,6 +479,7 @@ export default function AgencyDemoPage() {
   const [lang, setLang] = useState<Lang>("tr");
   const [mobileMenu, setMobileMenu] = useState(false);
   const [aiInput, setAiInput] = useState("");
+  const [emailInput, setEmailInput] = useState("");
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const [aiTyping, setAiTyping] = useState(false);
   const [aiCfg, setAiCfg] = useState<any>(null);
@@ -651,6 +652,50 @@ export default function AgencyDemoPage() {
       }]);
     } finally {
       setAiTyping(false);
+    }
+  };
+
+  const sendEmailAction = async (email: string) => {
+    if (!email.trim() || aiTyping) return;
+    setAiTyping(true);
+    setAiMessages((prev) => [...prev, { id: nextMsgId(), role: "user", type: "text", text: email }]);
+
+    try {
+      const res = await fetch(`/api/public/agency/feelinhealthy/matching-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: { type: "patient_email_submission", email, locale: lang },
+          history: aiMessages.slice(-10).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text })),
+          sessionContext: sessionCtx,
+        }),
+      });
+
+      if (!res.ok) throw new Error(`API error ${res.status}`);
+      const data = await res.json();
+
+      const replyMsg: ChatMessage = {
+        id: nextMsgId(),
+        role: "ai",
+        text: data.reply || "Yanıt alınamadı.",
+        type: data.type || "text",
+        clinics: data.clinics || undefined,
+        showClinicCards: data.showClinicCards,
+        privacyNoticeUrl: data.privacyNoticeUrl,
+      };
+      setAiMessages((prev) => [...prev, replyMsg]);
+      if (data.sessionContext) setSessionCtx(data.sessionContext);
+    } catch (err) {
+      console.error("[CB-DEMO] ERROR:", err);
+      setAiMessages((prev) => [...prev, {
+        id: nextMsgId(),
+        role: "ai",
+        type: "text",
+        text: lang === "tr" ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin." : "We're experiencing a technical issue. Please try again."
+      }]);
+    } finally {
+      setAiTyping(false);
+      setEmailInput("");
     }
   };
 
@@ -1064,6 +1109,25 @@ export default function AgencyDemoPage() {
                           </button>
                           <button onClick={() => sendConsentAction("decline")} disabled={aiTyping} style={{ flex: 1, padding: "10px 0", borderRadius: 8, fontSize: 13, fontWeight: 700, background: C.white, color: C.navy, border: `1px solid ${C.border}`, cursor: "pointer", opacity: aiTyping ? 0.6 : 1 }}>
                             {lang === "tr" ? "Reddediyorum" : "I Decline"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Email Request UI */}
+                    {msg.type === "email_request" && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <input 
+                            type="email" 
+                            placeholder={lang === "tr" ? "E-posta adresiniz..." : "Your email address..."} 
+                            value={emailInput} 
+                            onChange={(e) => setEmailInput(e.target.value)} 
+                            style={{ flex: 1, padding: "10px", borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 13, outline: "none" }}
+                            onKeyDown={(e) => { if (e.key === "Enter") sendEmailAction(emailInput); }}
+                          />
+                          <button onClick={() => sendEmailAction(emailInput)} disabled={aiTyping || !emailInput.trim()} style={{ padding: "0 16px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer", opacity: aiTyping || !emailInput.trim() ? 0.6 : 1 }}>
+                            <Send size={16} />
                           </button>
                         </div>
                       </div>
