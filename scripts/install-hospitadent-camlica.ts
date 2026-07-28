@@ -6,10 +6,17 @@ const isDryRun = !args.includes("--apply");
 const SOURCE_URL = "https://feelinhealthy.com/medicalcenter/hospitadent-dental-group-camlica";
 
 const CLINIC_DATA = {
+  clinicId: "hospitadent-dental-group-camlica",
   clinicName: "Hospitadent Dental Group Çamlıca",
   clinicSlug: "hospitadent-dental-group-camlica",
   internalKey: "hospitadent_dental_group_camlica",
   sourceUrl: SOURCE_URL,
+  profileUrl: SOURCE_URL,
+  clinicType: "external",
+  category: "dental",
+  treatmentCategories: ["dental"],
+  subTreatments: ["Dental Implant", "Zirconium Crowns", "Hollywood Smile", "Bone Graft", "Sinus Lift", "Veneers"],
+  priority: 92,
   status: "active",
   publicVisibility: true,
   shortSummary: "Dental Group Hospitadent Çamlıca Dental Hospital is a modern clinic on Istanbul’s Anatolian side with 13 treatment units and a fully equipped operating room.",
