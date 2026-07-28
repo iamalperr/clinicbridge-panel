@@ -148,7 +148,7 @@ Güvenlik uyarısı: Private key değerlerini doğrudan komut satırına yapış
     if (pSnap.empty) {
       console.log(`[Pricing] Will CREATE: ${t.name} (${t.price} ${t.currency})`);
       if (!isDryRun) {
-        await db.collection("agencies").doc(agencyId).collection("clinics").doc(clinicId).collection("pricing").add({
+        await db.collection("agencies").doc(agencyId).collection("clinics").doc(clinicId).collection("pricing").doc(t.name.toLowerCase().replace(/\s+/g, '-')).set({
           treatmentName: t.name,
           priceMin: t.price,
           priceMax: t.price,
@@ -158,9 +158,9 @@ Güvenlik uyarısı: Private key değerlerini doğrudan komut satırına yapış
           sourceUrl: SOURCE_URL,
           status: "active",
           updatedAt: new Date(),
-          clinicId,
-          agencyId
-        });
+          agencyClinicId: clinicId
+        }, { merge: true });
+        console.log(`  -> Applied pricing: ${t.name}`);
       }
     } else {
       console.log(`[Pricing] Found existing: ${t.name}. Skipping.`);
