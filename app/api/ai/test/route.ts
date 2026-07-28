@@ -226,9 +226,17 @@ export async function POST(req: Request) {
 
     const hasCustomPrompt = settings.systemPrompt && settings.systemPrompt.trim().length > 0;
 
+    const hybridStrategy = `
+GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
+1. EĞİTİCİ GENEL BİLGİ (Global Dental Knowledge): Hasta genel bir diş/sağlık sorusu sorarsa (Örn: "Vidasız implant nedir?", "Kanal tedavisi ne kadar sürer?"), soruyu ÖNCE genel tıbbi bilgi havuzunla eğitici bir dille açıkla. Kesinlikle teşhis koyma ve tedavi önerme.
+2. KLİNİK BİLGİSİ DOĞRULAMA (Clinic Knowledge Base): Genel bilgiyi verdikten sonra kliniğin Bilgi Havuzuna bak. Eğer klinikte bu işlem/marka varsa "Kliniğimizde bu tedavi uygulanmaktadır" gibi doğal bir şekilde onayla.
+3. BİLİNMEYEN DURUM (Safety & Natural Fallback): Eğer klinikte yapıldığına dair net bir bilgi yoksa, ASLA sadece "Bu bilgiyi doğrulayamıyorum" deyip sohbeti sonlandırma. Bunun yerine "Genel olarak bu işlem böyledir ancak kliniğimizde özel olarak bu tekniğin/markanın kullanılıp kullanılmadığını şu anki bilgilerimden kesin doğrulayamıyorum." şeklinde dürüst ve doğal bir geçiş yap.
+4. YARDIMCI DEVAM (Helpful Continuation): Bilgi eksikliği durumunda bile sohbeti çıkmaza sokma (dead-end yapma). Daima "Dilerseniz kliniğimizde uygulanan implant seçenekleri hakkında bilgi verebilirim" veya "Bu detayı sizin için klinik ekibimize iletebilirim" diyerek hastayı yönlendir.
+`;
+
     const systemInstruction = hasCustomPrompt
-      ? `${guardrailRules}${settings.systemPrompt}${contactInfo}${knowledgeBlock}${criteriaRules}\n\nIMPORTANT: If the user asks to book an appointment (e.g., "randevu almak istiyorum"), you MUST respond in valid JSON format exactly like this:\n{ "message": "Your response text here...", "quickReplies": ["Option 1", "Option 2", "Option 3"] }\nOtherwise, just respond normally in plain text.\n\nDil kuralı: Kullanıcı hangi dilde soruyorsa o dilde yanıt ver.`
-      : `${guardrailRules}Sen ${clinicName}'nin dijital hasta asistanısın. Yardımsever ve profesyonel bir üslup kullan.${contactInfo}${knowledgeBlock}${criteriaRules}`;
+      ? `${guardrailRules}${settings.systemPrompt}${contactInfo}${knowledgeBlock}${criteriaRules}\n${hybridStrategy}\nIMPORTANT: If the user asks to book an appointment (e.g., "randevu almak istiyorum"), you MUST respond in valid JSON format exactly like this:\n{ "message": "Your response text here...", "quickReplies": ["Option 1", "Option 2", "Option 3"] }\nOtherwise, just respond normally in plain text.\n\nDil kuralı: Kullanıcı hangi dilde soruyorsa o dilde yanıt ver.`
+      : `${guardrailRules}Sen ${clinicName}'nin dijital hasta asistanısın. Yardımsever ve profesyonel bir üslup kullan.${contactInfo}${knowledgeBlock}${criteriaRules}\n${hybridStrategy}`;
 
     // ── 7. Build the messages array for AI Gateway ──
     const chatHistory = messages && Array.isArray(messages) 

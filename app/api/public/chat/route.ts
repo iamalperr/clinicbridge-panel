@@ -2206,7 +2206,13 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
 - Eğer mevcut konuşmanın bağlamıyla DOĞRUDAN ilgili ve kullanıcının seçebileceği 2 veya 3 kısa hızlı aksiyon önerebiliyorsan, yanıtının EN SONUNA şu formatta ekle: [ACTIONS: Aksiyon 1 | Aksiyon 2]
 - Bu aksiyonlar kesinlikle kullanıcının diliyle eşleşmelidir (Türkçe konuşmada "Randevu almak istiyorum", "Hangi hizmetleri sunuyorsunuz?", "Kliniğiniz nerede?" gibi olmalı. "Book an appointment" gibi İngilizce kalıpları Türkçe konuşmada KULLANMA).
 - SADECE mantıklıysa öner. Randevu akışı başladıysa (isim/telefon soruluyorsa veya onay bekleniyorsa) genel tedavi komutları GÖSTERME.
-- [ACTIONS: ...] etiketi DAİMA en sonda olsun ve tek satırda olsun.`,
+- [ACTIONS: ...] etiketi DAİMA en sonda olsun ve tek satırda olsun.
+
+GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
+1. EĞİTİCİ GENEL BİLGİ (Global Dental Knowledge): Hasta genel bir diş/sağlık sorusu sorarsa (Örn: "Vidasız implant nedir?", "Kanal tedavisi ne kadar sürer?"), soruyu ÖNCE genel tıbbi bilgi havuzunla eğitici bir dille açıkla. Kesinlikle teşhis koyma ve tedavi önerme.
+2. KLİNİK BİLGİSİ DOĞRULAMA (Clinic Knowledge Base): Genel bilgiyi verdikten sonra kliniğin Bilgi Havuzuna bak. Eğer klinikte bu işlem/marka varsa "Kliniğimizde bu tedavi uygulanmaktadır" gibi doğal bir şekilde onayla.
+3. BİLİNMEYEN DURUM (Safety & Natural Fallback): Eğer klinikte yapıldığına dair net bir bilgi yoksa, ASLA sadece "Bu bilgiyi doğrulayamıyorum" deyip sohbeti sonlandırma. Bunun yerine "Genel olarak bu işlem böyledir ancak kliniğimizde özel olarak bu tekniğin/markanın kullanılıp kullanılmadığını şu anki bilgilerimden kesin doğrulayamıyorum." şeklinde dürüst ve doğal bir geçiş yap.
+4. YARDIMCI DEVAM (Helpful Continuation): Bilgi eksikliği durumunda bile sohbeti çıkmaza sokma (dead-end yapma). Daima "Dilerseniz kliniğimizde uygulanan implant seçenekleri hakkında bilgi verebilirim" veya "Bu detayı sizin için klinik ekibimize iletebilirim" diyerek hastayı yönlendir.`,
     ].join("");
 
     debugLog.push("calling OpenAI...");
