@@ -172,6 +172,7 @@
       "widget": "Widget",
       "leads": "Leads",
       "quoteRequests": "Quote Requests",
+      "aiKnowledgeBase": "AI Knowledge Base",
       "aiPromptStudio": "AI Prompt Studio",
       "settings": "Settings"
     },

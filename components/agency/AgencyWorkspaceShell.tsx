@@ -12,7 +12,7 @@ import { useI18n } from "@/lib/i18n-context";
 import type { Agency } from "@/lib/types/agency";
 import {
   LayoutDashboard, Rocket, Stethoscope, Building2, DollarSign,
-  Brain, MessageSquare, Code, Users2, FileText, Settings, Bot
+  Brain, MessageSquare, Code, Users2, FileText, Settings, Bot, Database
 } from "lucide-react";
 
 interface WorkspaceCounts {
@@ -44,6 +44,7 @@ export default function AgencyWorkspaceShell({
     { labelKey: "portal.tabs.widget",          path: "/widget",       icon: <Code size={14} /> },
     { labelKey: "portal.tabs.leads",           path: "/leads",        icon: <Users2 size={14} /> },
     { labelKey: "portal.tabs.quoteRequests",   path: "/quotes",       icon: <FileText size={14} /> },
+    { labelKey: "portal.tabs.aiKnowledgeBase", path: "/knowledge",    icon: <Database size={14} /> },
     { labelKey: "portal.tabs.aiPromptStudio",  path: "/ai-prompt",    icon: <Bot size={14} /> },
     { labelKey: "portal.tabs.settings",        path: "/settings",     icon: <Settings size={14} /> },
   ];

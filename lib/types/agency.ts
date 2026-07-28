@@ -548,3 +548,60 @@ export interface LeadDocument {
   deleteReason?: string;
   cleanupStatus?: string;
 }
+
+// ─── Owner Scope Knowledge Base (Agency-Level) ──────────────────────────────
+
+export interface AgencyLocation {
+  id?: string;
+  agencyId: string;
+  countryCode: string;
+  city: string;
+  slug: string;
+  latitude?: number;
+  longitude?: number;
+  nearestAirport?: string;
+  airportCode?: string;
+  transferNotes?: string;
+  timezone?: string;
+  active: boolean;
+  displayOrder: number;
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+export type KnowledgeOwnerType = "agency" | "clinic" | "global";
+
+export type KnowledgeType = 
+  | "about_agency"
+  | "destination"
+  | "patient_process"
+  | "medical_travel"
+  | "travel_transportation"
+  | "accommodation_support"
+  | "treatment_guide"
+  | "document_guidance"
+  | "privacy_consent"
+  | "faq"
+  | "general_policy"
+  | string;
+
+export interface KnowledgeDocument {
+  id?: string;
+  tenantId: string;
+  ownerType: KnowledgeOwnerType;
+  ownerId: string | null;
+  knowledgeType: KnowledgeType;
+  title: string;
+  locale: string;
+  sourceType: string;
+  sourceDomain?: string;
+  sourceUrl?: string;
+  status: "active" | "draft" | "archived";
+  content: string;
+  locationId?: string | null;
+  chunkCount?: number;
+  lastVerifiedAt?: any;
+  createdAt?: any;
+  updatedAt?: any;
+}
+

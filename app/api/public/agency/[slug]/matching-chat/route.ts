@@ -86,8 +86,14 @@ interface SessionContext {
    HELPERS
 ═══════════════════════════════════════════════════════════════════════════ */
 
-function buildClinicContext(clinics: any[], pricing: any[], knowledgeRecords: any[] = [], aiConfigs: any[] = []): string {
+function buildClinicContext(clinics: any[], pricing: any[], knowledgeRecords: any[] = [], aiConfigs: any[] = [], agencyKnowledge: any[] = []): string {
   const lines: string[] = [];
+  
+  if (agencyKnowledge.length > 0) {
+    const agKb = agencyKnowledge.map(k => `[${k.knowledgeType.toUpperCase()}] ${k.title}:\n${k.content}`).join("\n\n");
+    lines.push(`=== AGENCY DESTINATION & GENERAL KNOWLEDGE ===\n${agKb}\n(Note: This is general agency knowledge, NOT a specific clinic's capability. Do not assume all clinics provide these services unless stated in the clinic's section.)\n==============================================\n`);
+  }
+
   for (const c of clinics) {
     const cPrices = pricing.filter((p: any) => p.clinicId === c.id);
     const priceStr = cPrices.length > 0
@@ -481,11 +487,39 @@ export async function POST(
       console.log(`[matching-chat] Sample pricing:`, JSON.stringify(allPricing[0]));
     }
 
+    // Fetch agency-level knowledge
+    const agencyKbRecords: any[] = [];
+    const agKbSnap = await adminDb.collection("knowledge_documents")
+      .where("tenantId", "==", agencyId)
+      .where("ownerType", "==", "agency")
+      .get();
+    
+    agKbSnap.forEach(d => {
+      if (d.data().status === "active") {
+        agencyKbRecords.push({ id: d.id, ...d.data() });
+      }
+    });
+
+    // We add agency knowledge text into allKbRecords for the hybrid search,
+    // simulating embeddingChunks structure if we had vector indexing for it.
+    // For now we rely on keyword score in hybridSearch for these.
+    const allSearchableRecords = [
+      ...allKbRecords,
+      ...agencyKbRecords.map(k => ({
+        id: k.id,
+        title: k.title,
+        content: k.content,
+        embeddingChunks: k.embeddingChunks || [],
+        isAgency: true
+      }))
+    ];
+
+
     // HYBRID SEARCH FOR KNOWLEDGE BASE
     const { hybridSearch } = await import("@/lib/services/retrievalService");
     
     // Convert KB records for hybrid search
-    const docsForSearch = allKbRecords.map(kb => ({
+    const docsForSearch = allSearchableRecords.map(kb => ({
       id: kb.id,
       title: kb.title,
       content: kb.content,
@@ -498,17 +532,19 @@ export async function POST(
     // Reconstruct kb records from the top chunks to match buildClinicContext expectations
     const relevantKbRecords = topKbChunks.map(chunk => {
       const originalDoc = allKbRecords.find(k => k.id === chunk.doc_id);
+      const originalAgDoc = agencyKbRecords.find(k => k.id === chunk.doc_id);
+      
       return {
         id: chunk.doc_id,
         clinicId: originalDoc?.clinicId,
-        category: "RAG_MATCH",
+        category: originalAgDoc ? `AGENCY_${originalAgDoc.knowledgeType.toUpperCase()}` : "RAG_MATCH",
         title: chunk.title,
         content: chunk.text
       };
     });
 
     /* ── 2. Build clinic context for OpenAI ── */
-    const clinicContext = buildClinicContext(allClinics, allPricing, relevantKbRecords);
+    const clinicContext = buildClinicContext(allClinics, allPricing, relevantKbRecords, [], agencyKbRecords);
 
     /* ── 3. Build session context hint ── */
     let contextHint = `\nMEVCUT KONUŞMA DURUMU (SESSION CONTEXT):
@@ -683,6 +719,8 @@ JSON FORMATI:
         parsed.replyText && !parsed.replyText.includes("doğrulamıyorum") && !parsed.replyText.includes("erişemediğim")) {
         const { validateGroundedness } = await import("@/lib/services/retrievalService");
         const contextStr = relevantKbRecords.map((k: any) => `## ${k.title}\n${k.content}`).join("\n\n");
+        // Groundedness check
+
         const validation = await validateGroundedness(parsed.replyText, contextStr);
         if (!validation.isGrounded) {
            console.warn(`[Groundedness Failed] Reason: ${validation.reason}\nReply: ${parsed.replyText}`);
