@@ -342,6 +342,7 @@ export interface Lead {
   clinicId: string | null;
   clinicIds?: string[];
   assignedClinicName?: string;
+  clinicRequestCount?: number;
 
   // Patient info
   patientName: string | null;
@@ -380,6 +381,28 @@ export interface Lead {
 
   createdAt: any;
   updatedAt: any;
+}
+
+// ─── Clinic Request ─────────────────────────────────────────────────────────
+
+export type ClinicRequestStatus = "pending" | "submitted" | "viewed" | "under_review" | "responded" | "rejected" | "cancelled";
+
+export interface ClinicRequest {
+  id: string;
+  leadId: string;
+  agencyId: string;
+  clinicId: string;
+  status: ClinicRequestStatus;
+  source: LeadSource;
+  
+  createdAt: any;
+  updatedAt: any;
+  submittedAt?: any;
+  viewedAt?: any;
+  reviewStartedAt?: any;
+  respondedAt?: any;
+  rejectedAt?: any;
+  cancelledAt?: any;
 }
 
 // ─── Dashboard Metrics ──────────────────────────────────────────────────────

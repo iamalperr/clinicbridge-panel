@@ -60,6 +60,25 @@ export function subscribeToLead(
   );
 }
 
+export function subscribeToClinicRequests(
+  agencyId: string,
+  leadId: string,
+  onData: (requests: any[]) => void
+): () => void {
+  const q = query(
+    collection(db, "agencies", agencyId, "clinic_requests"),
+    where("leadId", "==", leadId)
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      const requests = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      onData(requests);
+    },
+    () => onData([])
+  );
+}
+
 export interface CreateLeadInput {
   agencyId: string;
   patientName?: string | null;

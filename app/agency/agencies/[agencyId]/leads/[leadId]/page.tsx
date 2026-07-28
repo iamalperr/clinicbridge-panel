@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { subscribeToLead, updateLeadStatus } from "@/lib/services/leadService";
+import { subscribeToLead, updateLeadStatus, subscribeToClinicRequests } from "@/lib/services/leadService";
 import { useI18n } from "@/lib/i18n-context";
 import { UI_COLORS } from "@/components/ui/ui-shared";
 import Badge from "@/components/ui/Badge";
@@ -70,6 +70,7 @@ export default function LeadDetailPage() {
   const leadId = params.leadId as string;
 
   const [lead, setLead] = useState<Lead | null>(null);
+  const [clinicRequests, setClinicRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -87,7 +88,13 @@ export default function LeadDetailPage() {
       setLead(data);
       setLoading(false);
     });
-    return unsub;
+    const unsubCR = subscribeToClinicRequests(agencyId, leadId, (data) => {
+      setClinicRequests(data);
+    });
+    return () => {
+      unsub();
+      unsubCR();
+    };
   }, [agencyId, leadId]);
 
   const showToast = (type: "success" | "error", message: string) => {
@@ -247,6 +254,33 @@ export default function LeadDetailPage() {
           )}
         </SectionCard>
       </div>
+
+      {/* Clinic Requests */}
+      {clinicRequests.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <SectionCard title="Klinik Talepleri" icon={<Building2 size={16} color="#10b981" />}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {clinicRequests.map((cr, i) => (
+                <div key={cr.id} style={{
+                  padding: "12px 16px", borderRadius: 10,
+                  border: `1px solid ${UI_COLORS.border}`,
+                  background: "var(--bg-card)"
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <p style={{ fontSize: 14, fontWeight: 700, color: UI_COLORS.textPrimary }}>Klinik ID: {cr.clinicId}</p>
+                      <p style={{ fontSize: 12, color: UI_COLORS.textMuted, marginTop: 4 }}>Oluşturulma: {typeof cr.createdAt === "string" ? new Date(cr.createdAt).toLocaleString(language === "tr" ? "tr-TR" : "en-US") : "—"}</p>
+                    </div>
+                    <div>
+                      <Badge label={cr.status} variant={statusVariant(cr.status)} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        </div>
+      )}
 
       {/* Status History */}
       <div style={{ marginBottom: 24 }}>

@@ -255,7 +255,13 @@ export default function LeadsPage() {
                     />
                   </td>
                   <td style={{ padding: "12px 14px", color: UI_COLORS.textSecondary, fontSize: 12.5 }}>
-                    {lead.assignedClinicName || "—"}
+                    {lead.clinicRequestCount ? (
+                      <span style={{ background: "rgba(16,185,129,0.1)", color: "#10b981", padding: "4px 8px", borderRadius: 12, fontWeight: 600 }}>
+                        {lead.clinicRequestCount} {language === "tr" ? "Klinik" : "Clinics"}
+                      </span>
+                    ) : (
+                      lead.assignedClinicName || "—"
+                    )}
                   </td>
                   <td style={{ padding: "12px 14px", color: UI_COLORS.textMuted, fontSize: 12 }}>
                     {lead.createdAt?.toDate

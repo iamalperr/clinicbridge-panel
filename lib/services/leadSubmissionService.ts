@@ -1,0 +1,151 @@
+import { getAdminDb } from "@/lib/firebase-admin";
+import { requireAcceptedAgencyConsent } from "@/lib/services/agencyConsentService";
+import { normalizeEmail, isValidEmail } from "@/lib/utils/emailValidation";
+
+export interface SubmitLeadInput {
+  agencyId: string;
+  conversationId: string;
+  clinicIds: string[];
+  patientEmail: string;
+  patientName?: string;
+  patientPhone?: string;
+  patientAge?: number;
+  patientGender?: string;
+  country?: string;
+  language?: string;
+  treatmentCategory?: string;
+  treatmentSubcategory?: string;
+  urgency?: string;
+  conversationSummary?: string;
+  aiExtractedNotes?: string;
+  source?: string;
+  sourceUrl?: string;
+}
+
+export async function submitAgencyLead(input: SubmitLeadInput) {
+  const adminDb = getAdminDb();
+  if (!adminDb) {
+    throw new Error("DB_UNAVAILABLE");
+  }
+
+  const {
+    agencyId,
+    conversationId,
+    clinicIds,
+    patientEmail,
+    patientName,
+    patientPhone,
+    patientAge,
+    patientGender,
+    country,
+    language,
+    treatmentCategory,
+    treatmentSubcategory,
+    urgency,
+    conversationSummary,
+    aiExtractedNotes,
+    source,
+    sourceUrl,
+  } = input;
+
+  if (!conversationId) throw new Error("CONVERSATION_ID_REQUIRED");
+  if (!agencyId) throw new Error("AGENCY_ID_REQUIRED");
+
+  // Validate Agency
+  const agencySnap = await adminDb.collection("agencies").doc(agencyId).get();
+  if (!agencySnap.exists || agencySnap.data()?.status !== "active") {
+    throw new Error("AGENCY_NOT_FOUND");
+  }
+  const agencyData = agencySnap.data()!;
+  const maxClinics = agencyData.settings?.maxClinicsPerTreatmentRequest || 3;
+
+  // Validate Consent
+  const version = agencyData.privacySettings?.version || "";
+  const hasConsent = await requireAcceptedAgencyConsent(agencyId, conversationId, version);
+  if (!hasConsent) {
+    throw new Error("CONSENT_REQUIRED");
+  }
+
+  // Validate Email
+  const normalizedEmail = normalizeEmail(patientEmail);
+  if (!normalizedEmail) throw new Error("PATIENT_EMAIL_REQUIRED");
+  if (!isValidEmail(normalizedEmail)) throw new Error("PATIENT_EMAIL_INVALID");
+
+  // Validate Clinics
+  const uniqueClinicIds = Array.from(new Set(clinicIds || []));
+  if (uniqueClinicIds.length === 0) throw new Error("CLINIC_SELECTION_REQUIRED");
+  if (uniqueClinicIds.length > maxClinics) throw new Error("CLINIC_SELECTION_LIMIT_EXCEEDED");
+
+  // Create Transaction
+  return await adminDb.runTransaction(async (transaction: any) => {
+    // Idempotency: Check if a lead with this conversationId already exists
+    const leadsQuery = adminDb.collection("agencies").doc(agencyId).collection("leads").where("conversationId", "==", conversationId).limit(1);
+    const existingLeadsSnap = await transaction.get(leadsQuery);
+    if (!existingLeadsSnap.empty) {
+      // Idempotent return
+      return { leadId: existingLeadsSnap.docs[0].id, agencyId, status: "already_exists" };
+    }
+
+    // Prepare Lead document
+    const leadRef = adminDb.collection("agencies").doc(agencyId).collection("leads").doc();
+    const now = new Date().toISOString();
+
+    const leadData = {
+      agencyId,
+      clinicId: null, // Legacy support
+      clinicIds: uniqueClinicIds,
+      clinicRequestCount: uniqueClinicIds.length,
+      patientName: patientName || null,
+      patientEmail: normalizedEmail,
+      patientPhone: patientPhone || null,
+      patientAge: patientAge || null,
+      patientGender: patientGender || null,
+      country: country || "Unknown",
+      language: language || "en",
+      treatmentCategory: treatmentCategory || "other",
+      treatmentSubcategory: treatmentSubcategory || null,
+      urgency: urgency || "medium",
+      conversationSummary: conversationSummary || "",
+      conversationId: conversationId,
+      aiExtractedNotes: aiExtractedNotes || null,
+      consentStatus: "accepted", // we just verified hasConsent
+      consentTimestamp: now,
+      consentVersion: version,
+      status: "new",
+      statusHistory: [
+        { status: "new", changedAt: now, note: "Lead created and submitted" },
+      ],
+      source: source || "widget",
+      sourceUrl: sourceUrl || null,
+      createdAt: now,
+      updatedAt: now,
+      submittedAt: now,
+    };
+
+    transaction.set(leadRef, leadData);
+
+    // Prepare ClinicRequests
+    for (const clinicId of uniqueClinicIds) {
+      // Validate clinic exists and belongs to agency
+      const clinicSnap = await transaction.get(adminDb.collection("clinics").doc(clinicId));
+      if (!clinicSnap.exists || clinicSnap.data()?.agencyId !== agencyId) {
+        throw new Error("INVALID_CLINIC_SELECTION");
+      }
+
+      const crRef = adminDb.collection("agencies").doc(agencyId).collection("clinic_requests").doc();
+      const crData = {
+        leadId: leadRef.id,
+        agencyId,
+        clinicId,
+        status: "pending",
+        source: source || "widget",
+        createdAt: now,
+        updatedAt: now,
+        submittedAt: now,
+      };
+      transaction.set(crRef, crData);
+    }
+
+    return { leadId: leadRef.id, agencyId, status: "created" };
+  });
+}
