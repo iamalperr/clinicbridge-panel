@@ -528,7 +528,7 @@ async function createAppointment(params: {
      throw new Error("CLINIC_CONTEXT_MISMATCH");
   }
 
-  let notificationChannelToSave = normalizeLegacyChannel(patientChannel, !!data.patientEmail) || patientChannel;
+  const notificationChannelToSave = normalizeLegacyChannel(patientChannel, !!data.patientEmail) || patientChannel;
 
   if (!data.requestedDate) {
     console.error("[VALIDATION_ERROR] requestedDate is missing.");
