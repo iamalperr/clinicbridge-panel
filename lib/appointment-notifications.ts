@@ -9,16 +9,16 @@ export const getPatientNotificationMessages = (channel: string) => {
       alternative: "Randevu talebiniz için yeni bir saat önerisi e-posta adresinize gönderildi.",
     },
     sms: {
-      submitted: "Ön randevu talebiniz kliniğimize iletildi. Sonuç SMS üzerinden bildirilecektir.",
-      approved: "Ön randevu talebiniz onaylandı. Detaylar SMS ile gönderildi.",
-      cancelled: "Randevu talebiniz şu an için onaylanamadı. Uygun alternatif saatler için klinik iletişime geçebilir.",
-      alternative: "Randevu talebiniz için yeni bir saat önerisi SMS ile iletildi.",
+      submitted: "Ön randevu talebiniz kliniğimize iletildi. Talebiniz değerlendirildikten sonra kayıtlı e-posta adresiniz üzerinden bilgilendirileceksiniz. Sürecinizi güvenli talep sayfanız üzerinden takip edebilirsiniz.",
+      approved: "Ön randevu talebiniz onaylandı. Detaylar e-posta adresinize gönderildi. Sürecinizi güvenli talep sayfanız üzerinden takip edebilirsiniz.",
+      cancelled: "Randevu talebiniz şu an için onaylanamadı. İptal detayı e-posta adresinize gönderildi.",
+      alternative: "Randevu talebiniz için yeni bir saat önerisi e-posta adresinize gönderildi. Detayları güvenli talep sayfanızdan inceleyebilirsiniz.",
     },
     whatsapp: {
-      submitted: "Ön randevu talebiniz kliniğimize iletildi. Sonuç WhatsApp üzerinden bildirilecektir.",
-      approved: "Ön randevu talebiniz onaylandı. Detaylar WhatsApp üzerinden gönderildi.",
-      cancelled: "Randevu talebiniz şu an için onaylanamadı. Uygun alternatif saatler için klinik iletişime geçebilir.",
-      alternative: "Randevu talebiniz için yeni bir saat önerisi WhatsApp üzerinden iletildi.",
+      submitted: "Ön randevu talebiniz kliniğimize iletildi. Talebiniz değerlendirildikten sonra kayıtlı e-posta adresiniz üzerinden bilgilendirileceksiniz. Sürecinizi güvenli talep sayfanız üzerinden takip edebilirsiniz.",
+      approved: "Ön randevu talebiniz onaylandı. Detaylar e-posta adresinize gönderildi. Sürecinizi güvenli talep sayfanız üzerinden takip edebilirsiniz.",
+      cancelled: "Randevu talebiniz şu an için onaylanamadı. İptal detayı e-posta adresinize gönderildi.",
+      alternative: "Randevu talebiniz için yeni bir saat önerisi e-posta adresinize gönderildi. Detayları güvenli talep sayfanızdan inceleyebilirsiniz.",
     }
   };
   return messages[channel] || messages.email;
@@ -27,7 +27,6 @@ export const getPatientNotificationMessages = (channel: string) => {
 /**
  * Appointment Notification Services
  * - sendClinicAppointmentEmail: Resend ile klinik kullanıcılarına email
- * - sendPatientSms: SMS (şimdilik mock/log mode, production'da Twilio/Netgsm bağlanır)
  */
 
 /* ── Email via Resend ────────────────────────────────────────────────────── */
@@ -445,36 +444,3 @@ export async function sendPatientAppointmentStatusEmail(
   };
 }
 
-/* ── SMS (mock / provider-ready) ───────────────────────────────────────── */
-
-export interface SmsPayload {
-  phone: string;
-  clinicName: string;
-  requestedDate: string;
-  requestedTime?: string | null;
-  requestedService: string;
-}
-
-export async function sendPatientSms(
-  payload: SmsPayload
-): Promise<{ success: boolean; error?: string }> {
-  const message =
-    `${payload.clinicName} randevu talebiniz alınmıştır. ` +
-    `Talep: ${payload.requestedDate} saat ${payload.requestedTime} (${payload.requestedService}). ` +
-    `Klinik ekibimiz uygunluğu kontrol ederek size dönüş yapacaktır.`;
-
-  // ── Twilio (uncomment when credentials available) ──────────────────────
-  // const TWILIO_SID   = process.env.TWILIO_ACCOUNT_SID;
-  // const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-  // const TWILIO_FROM  = process.env.TWILIO_FROM_NUMBER;
-  // if (TWILIO_SID && TWILIO_TOKEN && TWILIO_FROM) { ... }
-
-  // ── Netgsm (uncomment when credentials available) ──────────────────────
-  // const NETGSM_USER = process.env.NETGSM_USER;
-  // const NETGSM_PASS = process.env.NETGSM_PASS;
-  // if (NETGSM_USER && NETGSM_PASS) { ... }
-
-  // ── Mock mode ──────────────────────────────────────────────────────────
-  console.info(`[appointment-sms] SMS provider not configured, skipping patient SMS.`);
-  return { success: false, error: "SMS provider not configured" };
-}

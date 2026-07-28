@@ -7,7 +7,6 @@ import {
 } from "firebase/firestore";
 import {
   sendClinicAppointmentEmail,
-  sendPatientSms,
 } from "@/lib/appointment-notifications";
 
 const CORS = {
@@ -177,22 +176,6 @@ export async function POST(req: Request) {
 
     const channelToUse = notificationSettings.patientAppointmentChannel || "email";
 
-    // SMS to patient (only if SMS channel is specifically configured - we avoid fallback per requirements)
-    if (channelToUse === "sms") {
-      try {
-        const smsResult = await sendPatientSms({
-          phone,
-          clinicName,
-          requestedDate: date,
-          requestedTime: time,
-          requestedService: service,
-        });
-        notifResults.sms = smsResult.success;
-        console.log(`[appointment-sms] ${smsResult.success ? "OK" : "FAILED"} → ${phone}`);
-      } catch (e: any) {
-        console.error("[appointment-sms] Error:", e.message);
-      }
-    }
 
     // Email to clinic (always notify the clinic via email regardless of patient channel)
     if (clinicEmail) {
@@ -217,10 +200,9 @@ export async function POST(req: Request) {
       console.warn(`[appointment-email] No clinic email found for clinicId=${clinicId}`);
     }
 
-    // Update notification status
     try {
       const statusUpdate = {
-        "notificationStatus.smsToPatient":  notifResults.sms   ? "sent" : "failed",
+        "notificationStatus.smsToPatient":  "skipped",
         "notificationStatus.emailToClinic": notifResults.email  ? "sent" : "failed",
         notificationChannel: channelToUse
       };
@@ -236,7 +218,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json(
-      { success: true, appointmentId, smsSent: notifResults.sms, emailSent: notifResults.email },
+      { success: true, appointmentId, smsSent: false, emailSent: notifResults.email },
       { headers: CORS }
     );
 

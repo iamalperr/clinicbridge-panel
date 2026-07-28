@@ -9,10 +9,10 @@ import {
 } from "firebase/firestore";
 import {
   sendClinicAppointmentEmail,
-  sendPatientSms,
   sendPatientAppointmentEmail,
 } from "@/lib/appointment-notifications";
 import { normalizeTurkishPhone } from "@/lib/phoneUtils";
+import { normalizeLegacyChannel } from "@/lib/services/channelPolicyService";
 
 // Cache to avoid parsing working hours repeatedly
 const workingHoursCache = new Map<string, any>();
@@ -528,10 +528,7 @@ async function createAppointment(params: {
      throw new Error("CLINIC_CONTEXT_MISMATCH");
   }
 
-  let notificationChannelToSave = patientChannel;
-  if (notificationChannelToSave === "email_and_sms" || notificationChannelToSave === "email_and_whatsapp") {
-    notificationChannelToSave = "email";
-  }
+  let notificationChannelToSave = normalizeLegacyChannel(patientChannel, !!data.patientEmail) || patientChannel;
 
   if (!data.requestedDate) {
     console.error("[VALIDATION_ERROR] requestedDate is missing.");
@@ -702,23 +699,8 @@ async function createAppointment(params: {
     console.log("[appointment-create] clinicEmailEnabled is false, skipping clinic email.");
   }
 
-  /* ── SMS (mock) ───────────────────────────────────── */
-  if (notificationChannelToSave === "sms" || notificationChannelToSave === "email_and_sms") {
-    try {
-      await sendPatientSms({
-        phone:            data.patientPhone,
-        clinicName,
-        requestedDate:    data.requestedDate,
-        requestedTime:    data.requestedTime,
-        requestedService: data.requestedService,
-      });
-    } catch (e: any) {
-      console.error("[appointment-sms] Error:", e.message);
-    }
-  }
-
   /* ── Patient Email ────────────────────────────────── */
-  if ((notificationChannelToSave === "email" || notificationChannelToSave === "email_and_sms" || notificationChannelToSave === "email_and_whatsapp") && data.patientEmail) {
+  if (notificationChannelToSave === "email" && data.patientEmail) {
     try {
       await sendPatientAppointmentEmail({
         clinicId: clinicId,
@@ -783,7 +765,7 @@ async function createAppointment(params: {
           notificationStatus: {
             mapValue: {
               fields: {
-                smsToPatient:  { stringValue: "sent" },
+                smsToPatient:  { stringValue: "skipped" },
                 emailToClinic: { stringValue: emailSent ? "sent" : (clinicEmailsToUse.length > 0 ? "failed" : "skipped") },
               },
             },

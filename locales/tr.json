@@ -966,10 +966,10 @@
       "invalidPhone": "Telefon geçersiz",
       "notRequired": "SMS beklemiyor"
     },
-    "statusUpdateSmsSent": "Randevu durumu güncellendi ve hastaya SMS gönderildi.",
-    "statusUpdateSmsSkipped": "Randevu durumu güncellendi. SMS sağlayıcısı yapılandırılmadığı için SMS gönderilmedi.",
-    "statusUpdateSmsInvalidPhone": "Randevu durumu güncellendi ancak hasta telefon numarası geçersiz olduğu için SMS gönderilemedi.",
-    "statusUpdateSmsFailed": "Randevu durumu güncellendi ancak SMS gönderimi başarısız oldu."
+    "statusUpdateSmsSent": "Randevu durumu güncellendi ve hastaya e-posta gönderildi.",
+    "statusUpdateSmsSkipped": "Randevu durumu güncellendi. Hasta e-posta adresi bulunmadığından bilgilendirme gönderilmedi.",
+    "statusUpdateSmsInvalidPhone": "Randevu durumu güncellendi ancak iletişim bilgisi eksik olduğu için mesaj gönderilemedi.",
+    "statusUpdateSmsFailed": "Randevu durumu güncellendi ancak bilgilendirme mesajı gönderimi başarısız oldu."
   },
   "notifications": {
     "newAppointmentTitle": "Yeni randevu talebi",

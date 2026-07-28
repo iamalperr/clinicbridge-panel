@@ -1,6 +1,7 @@
 import { getAdminDb } from "@/lib/firebase-admin";
 import { sendClinicAppointmentEmail } from "@/lib/appointment-notifications";
 import { Appointment } from "@/lib/types";
+import { normalizeLegacyChannel } from "@/lib/services/channelPolicyService";
 
 export interface CreateAppointmentPayload {
   clinicId: string;
@@ -206,7 +207,9 @@ export async function sendPatientAppointmentAcknowledgement(appointment: Partial
   const clinicSnap = await adminDb.collection("clinics").doc(appointment.clinicId).get();
   const clinicName = clinicSnap.exists ? clinicSnap.data()?.name || "Klinik" : "Klinik";
 
-  if (appointment.notificationChannel === "email" || appointment.notificationChannel === "email_and_sms" || appointment.notificationChannel === "email_and_whatsapp") {
+  const activeChannel = normalizeLegacyChannel(appointment.notificationChannel, !!appointment.patientEmail);
+
+  if (activeChannel === "email") {
     if (appointment.patientEmail) {
       console.log(JSON.stringify({
         checkpoint: "PATIENT_EMAIL_SEND_START",
@@ -336,7 +339,7 @@ export async function createAppointmentAndNotify(draft: CreateAppointmentPayload
             await adminDb.collection("clinics").doc(record.clinicId!).collection("appointments").doc(record.id).update({
                 notificationStatus: {
                   emailToClinic: clinicNotificationStatus,
-                  smsToPatient: (record.notificationChannel === "sms" || record.notificationChannel === "email_and_sms") ? "sent" : "skipped"
+                  smsToPatient: "skipped"
                 },
                 patientNotificationStatus: patientNotificationStatus
             });

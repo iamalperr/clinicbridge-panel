@@ -966,10 +966,10 @@
       "invalidPhone": "Invalid phone number",
       "notRequired": "SMS not required"
     },
-    "statusUpdateSmsSent": "Appointment status updated and SMS sent to the patient.",
-    "statusUpdateSmsSkipped": "Appointment status updated. SMS was not sent because the SMS provider is not configured.",
-    "statusUpdateSmsInvalidPhone": "Appointment status updated but SMS could not be sent because the patient phone number is invalid.",
-    "statusUpdateSmsFailed": "Appointment status updated but SMS delivery failed."
+    "statusUpdateSmsSent": "Appointment status updated and email sent to the patient.",
+    "statusUpdateSmsSkipped": "Appointment status updated. Notification was not sent because patient email is missing.",
+    "statusUpdateSmsInvalidPhone": "Appointment status updated but notification could not be sent due to missing contact info.",
+    "statusUpdateSmsFailed": "Appointment status updated but notification delivery failed."
   },
   "notifications": {
     "newAppointmentTitle": "New appointment request",

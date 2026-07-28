@@ -252,7 +252,7 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
         </Link>
         <h2 style={{ fontSize: 20, fontWeight: 800, color: UI_COLORS.textPrimary }}>Hasta Bildirimleri</h2>
         <p style={{ color: UI_COLORS.textSecondary, fontSize: 14, marginTop: 4 }}>
-          Randevu durumu değişikliklerinde hastalara gidecek otomatik e-posta ve SMS (yakında) bildirimlerini yönetin.
+          Randevu durumu değişikliklerinde hastalara gidecek otomatik e-posta bildirimlerini yönetin.
         </p>
       </div>
 
@@ -276,9 +276,7 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
             value={notificationSettings.patient.appointmentChannel}
             onChange={(e) => setNotificationSettings(prev => ({ ...prev, patient: { ...prev.patient, appointmentChannel: e.target.value } }))}
             options={[
-              { label: "E-Posta", value: "email" },
-              { label: "SMS", value: "sms" },
-              { label: "WhatsApp", value: "whatsapp" }
+              { label: "E-Posta", value: "email" }
             ]}
           />
 
