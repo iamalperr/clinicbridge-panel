@@ -217,7 +217,32 @@ Güvenlik uyarısı: Private key değerlerini doğrudan komut satırına yapış
     }
   }
 
-  console.log("\nProcess completed successfully.");
+  // Final verification
+  if (!isDryRun) {
+    console.log(`\n--- Final Verification & Report ---`);
+    const finalSnap = await clinicRef.get();
+    if (finalSnap.exists) {
+      const data = finalSnap.data();
+      console.log(`Agency ID: ${agencyId}`);
+      console.log(`Clinic ID: ${clinicId}`);
+      console.log(`Document path: agencies/${agencyId}/clinics/${clinicId}`);
+      console.log(`Action: ${clinicSnap.empty ? "CREATE" : "UPDATE"}`);
+      console.log(`Status: ${data?.status}`);
+      console.log(`Public Visibility: ${data?.publicVisibility}`);
+      console.log(`Slug: ${data?.clinicSlug}`);
+      console.log(`Profile URL: ${data?.profileUrl}`);
+      console.log(`======================================================\n`);
+    } else {
+      console.error(`[Error] Verification failed: Document was not found in database!`);
+      process.exit(1);
+    }
+  } else {
+    console.log(`\n--- Dry-Run Completed ---`);
+    console.log(`Document path will be: agencies/${agencyId}/clinics/${clinicId}`);
+  }
 }
 
-main().catch(console.error);
+main().catch(err => {
+  console.error("Unhandled exception:", err);
+  process.exit(1);
+});
