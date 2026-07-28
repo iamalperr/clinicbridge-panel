@@ -2,6 +2,7 @@ import { getAdminDb } from "@/lib/firebase-admin";
 import { requireAcceptedAgencyConsent } from "@/lib/services/agencyConsentService";
 import { normalizeEmail, isValidEmail } from "@/lib/utils/emailValidation";
 import { scheduleAndProcessAgencyLeadNotification } from "@/lib/services/agencyNotificationService";
+import { scheduleAndProcessPatientLeadNotification } from "@/lib/services/patientNotificationService";
 
 export interface SubmitLeadInput {
   agencyId: string;
@@ -150,11 +151,14 @@ export async function submitAgencyLead(input: SubmitLeadInput) {
     return { leadId: leadRef.id, agencyId, status: "created" };
   });
 
-  // Post-commit: trigger notification async
+  // Post-commit: trigger notifications async
   if (result.status === "created") {
     // Fire and forget (don't await) so it doesn't block the frontend response
     scheduleAndProcessAgencyLeadNotification(result.agencyId, result.leadId).catch(err => {
-      console.error("[submitAgencyLead] Notification error:", err);
+      console.error("[submitAgencyLead] Agency notification error:", err);
+    });
+    scheduleAndProcessPatientLeadNotification(result.agencyId, result.leadId).catch(err => {
+      console.error("[submitAgencyLead] Patient notification error:", err);
     });
   }
 
