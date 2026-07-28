@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import type { Lead, LeadStatus, TreatmentCategory } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES, LEAD_STATUSES, LEAD_URGENCIES } from "@/lib/types/agency";
+import LeadDocumentsCard from "@/components/agency/LeadDocumentsCard";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -230,11 +231,11 @@ export default function LeadDetailPage() {
           <InfoRow icon={<User size={14} />} label="Yaş" value={lead.patientAge} />
           <InfoRow icon={<User size={14} />} label="Cinsiyet" value={lead.patientGender} />
           <InfoRow icon={<MapPin size={14} />} label="Ülke" value={lead.country} />
-          <InfoRow icon={<Globe size={14} />} label="Dil" value={lead.language?.toUpperCase()} />
+          <InfoRow icon={<Globe size={14} />} label={t("Language") || "Language"} value={lead.language?.toUpperCase()} />
         </SectionCard>
 
         {/* Tedavi Bilgileri */}
-        <SectionCard title="Tedavi Bilgileri" icon={<Stethoscope size={16} color="#10b981" />}>
+        <SectionCard title={t("Treatment") || "Treatment"} icon={<Stethoscope size={18} color={UI_COLORS.primary} />}>
           <InfoRow icon={<Stethoscope size={14} />} label="Tedavi Kategorisi" value={catLabel(lead.treatmentCategory)} />
           <InfoRow icon={<Stethoscope size={14} />} label="Alt Tedavi" value={lead.treatmentSubcategory} />
           <InfoRow icon={<Building2 size={14} />} label="Tercih Edilen Klinik" value={lead.assignedClinicName} />

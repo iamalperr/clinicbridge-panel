@@ -4,6 +4,7 @@ import { validatePatientRequestViewToken } from "@/lib/services/patientPortalTok
 import { headers } from "next/headers";
 import { XCircle, Clock, CheckCircle, AlertCircle, Building2, Calendar, Stethoscope, MapPin, Search } from "lucide-react";
 import Image from "next/image";
+import PatientDocumentUpload from "@/components/patient/PatientDocumentUpload";
 
 // Ensure this page is not cached and is dynamically rendered
 export const dynamic = "force-dynamic";
@@ -256,6 +257,14 @@ export default async function PatientRequestPortalPage({
               )}
             </div>
             
+            {/* Document Upload Section - only visible if agency enabled it */}
+            {agency?.settings?.documentUploadEnabled === true && 
+             agency?.settings?.documentUploadAllowedContexts?.includes("agency_patient_request") && (
+              <div style={{ marginTop: 24 }}>
+                <PatientDocumentUpload token={token!} isTr={isTr} />
+              </div>
+            )}
+
           </div>
           
           {/* Footer */}

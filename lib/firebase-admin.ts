@@ -14,6 +14,7 @@ import type { Auth } from "firebase-admin/auth";
 let _app: App | null = null;
 let _db: Firestore | null = null;
 let _auth: Auth | null = null;
+let _storage: any | null = null;
 let _initialized = false;
 
 function initializeAdmin(): App | null {
@@ -85,6 +86,19 @@ export function getAdminAuth(): Auth | null {
     console.error("[firebase-admin] Auth init failed:", err);
   }
   return _auth;
+}
+
+export function getAdminStorage(): any | null {
+  if (_storage) return _storage;
+  const app = initializeAdmin();
+  if (!app) return null;
+  try {
+    const { getStorage } = require("firebase-admin/storage");
+    _storage = getStorage(app);
+  } catch (err) {
+    console.error("[firebase-admin] Storage init failed:", err);
+  }
+  return _storage;
 }
 
 /**

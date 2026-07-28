@@ -92,6 +92,8 @@ export interface AgencyPrivacySettings {
 
 export interface AgencySettings {
   maxClinicsPerTreatmentRequest?: number;
+  documentUploadEnabled?: boolean;
+  documentUploadAllowedContexts?: string[];
 }
 
 export interface Agency {
@@ -466,4 +468,52 @@ export interface AgencyKnowledgeRecord {
   index_version?: string;
   createdAt?: any;
   updatedAt?: any;
+}
+
+// ─── Document Upload (Agency Patient Request) ───────────────────────────────
+
+export type DocumentCategory =
+  | "dental_xray"
+  | "medical_image"
+  | "treatment_photo"
+  | "treatment_plan"
+  | "medical_report"
+  | "lab_result"
+  | "other_medical_document";
+
+export type DocumentContextType = "agency_patient_request";
+export type DocumentUploadedByType = "patient" | "agency_user" | "system";
+export type DocumentStatus = "pending_upload" | "uploaded" | "processing" | "available" | "rejected" | "failed" | "deleted";
+export type DocumentScanStatus = "pending" | "clean" | "infected" | "failed" | "not_required";
+export type DocumentVisibility = "patient_and_agency" | "agency_only" | "clinic_authorized";
+
+export interface LeadDocument {
+  id: string;
+  agencyId: string;
+  leadId: string;
+  contextType: DocumentContextType;
+  uploadedByType: DocumentUploadedByType;
+  uploadedByUserId?: string; // Optional if patient uploaded
+  patientAccessTokenId?: string;
+  category: DocumentCategory;
+  originalFileName: string;
+  sanitizedFileName: string;
+  storageProvider: "firebase_storage";
+  storageBucket: string;
+  storageKey: string;
+  mimeType: string;
+  detectedMimeType?: string;
+  fileExtension: string;
+  sizeBytes: number;
+  checksum?: string;
+  status: DocumentStatus;
+  scanStatus: DocumentScanStatus;
+  visibility: DocumentVisibility;
+  createdAt: any; // Firestore Timestamp
+  updatedAt: any;
+  uploadedAt?: any;
+  scanCompletedAt?: any;
+  deletedAt?: any;
+  deleteReason?: string;
+  cleanupStatus?: string;
 }

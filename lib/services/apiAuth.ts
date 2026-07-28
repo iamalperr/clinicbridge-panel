@@ -92,6 +92,32 @@ export async function requireClinicAccess(
 }
 
 /**
+ * Verifies auth and ensures user has access to the specified agency.
+ * - Super Admins can access any agency.
+ * - Agency Admins/Users can only access their own agency.
+ */
+export async function requireAgencyAccess(
+  req: Request,
+  agencyId: string
+): Promise<AuthResult> {
+  const result = await verifyAuth(req);
+  const { role, agencyId: userAgencyId } = result.profile;
+
+  if (role === "superAdmin" || role === "admin") {
+    return result;
+  }
+
+  if (
+    (role === "agencyAdmin" || role === "agencyUser") &&
+    userAgencyId === agencyId
+  ) {
+    return result;
+  }
+
+  throw new AuthError("Access denied to this agency", 403);
+}
+
+/**
  * Check if the user can see cost information for a clinic.
  * - Super Admins always see costs.
  * - Clinic Admins see costs if showCostToClinicUsers is enabled.
