@@ -1,8 +1,10 @@
+console.log("[LOG] Script entry reached");
+
 import { loadEnvConfig } from "@next/env";
 const projectDir = process.cwd();
 loadEnvConfig(projectDir);
 
-import { getAdminDb } from "../lib/firebase-admin";
+console.log("[LOG] Environment loaded");
 
 const args = process.argv.slice(2);
 const isDryRun = !args.includes("--apply");
@@ -82,6 +84,10 @@ const KB_DOCS = [
 ];
 
 async function main() {
+  console.log("[LOG] Importing Firebase helper...");
+  const { getAdminDb } = await import("../lib/firebase-admin");
+  console.log("[LOG] Firebase helper imported");
+
   const db = getAdminDb();
   if (!db) {
     console.error(`
@@ -92,24 +98,28 @@ Uygulama ortamında aşağıdaki Firebase kimlik bilgilerine erişilemiyor:
  - FIREBASE_PRIVATE_KEY
 
 Lütfen geçerli bir .env.local dosyası oluşturun veya bu değişkenleri ortama (environment) ekleyip tekrar deneyin.
-Güvenlik uyarısı: Private key değerlerini doğrudan komut satırına yapıştırmayın veya Git reposuna eklemeyin.
 `);
     process.exit(1);
   }
+  console.log("[LOG] Firebase Admin initialized");
   
-  console.log("======================================================");
-  console.log(` FEELINHEALTHY CLINIC SETUP: ${CLINIC_DATA.clinicName} `);
+  // Rapor: Secret göstermeden Firebase Projesi
+  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  console.log(`[LOG] Resolved Project ID: ${projectId}`);
   console.log("======================================================");
   console.log(isDryRun ? "MODE: DRY-RUN" : "MODE: APPLY");
 
+  console.log("[LOG] Agency lookup starting");
   const agencySnap = await db.collection("agencies").where("slug", "==", CLINIC_DATA.agencySlug).limit(1).get();
   if (agencySnap.empty) {
     console.error("Agency 'feelinhealthy' not found.");
     process.exit(1);
   }
+  console.log("[LOG] Agency found");
   const agencyId = agencySnap.docs[0].id;
   console.log(`Resolved Agency ID: ${agencyId}`);
 
+  console.log("[LOG] Clinic lookup starting");
   // Duplicate check
   const clinicSnap = await db.collection("agencies").doc(agencyId).collection("clinics")
     .where("clinicSlug", "==", CLINIC_DATA.clinicSlug).get();
@@ -135,6 +145,7 @@ Güvenlik uyarısı: Private key değerlerini doğrudan komut satırına yapış
   };
 
   if (!isDryRun) {
+    console.log("[LOG] Write starting");
     await clinicRef.set(clinicPayload, { merge: true });
     console.log(`[Clinic] Applied.`);
   }
@@ -217,6 +228,10 @@ Güvenlik uyarısı: Private key değerlerini doğrudan komut satırına yapış
     }
   }
 
+  if (!isDryRun) {
+    console.log("[LOG] Write completed");
+  }
+
   // Final verification
   if (!isDryRun) {
     console.log(`\n--- Final Verification & Report ---`);
@@ -232,6 +247,10 @@ Güvenlik uyarısı: Private key değerlerini doğrudan komut satırına yapış
       console.log(`Slug: ${data?.clinicSlug}`);
       console.log(`Profile URL: ${data?.profileUrl}`);
       console.log(`======================================================\n`);
+      console.log("[LOG] Database verification completed");
+      
+      const countSnap = await db.collection("agencies").doc(agencyId).collection("clinics").get();
+      console.log(`[LOG] Final Clinics Count in Agency: ${countSnap.size}`);
     } else {
       console.error(`[Error] Verification failed: Document was not found in database!`);
       process.exit(1);
