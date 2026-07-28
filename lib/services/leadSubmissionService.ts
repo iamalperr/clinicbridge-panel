@@ -1,6 +1,7 @@
 import { getAdminDb } from "@/lib/firebase-admin";
 import { requireAcceptedAgencyConsent } from "@/lib/services/agencyConsentService";
 import { normalizeEmail, isValidEmail } from "@/lib/utils/emailValidation";
+import { scheduleAndProcessAgencyLeadNotification } from "@/lib/services/agencyNotificationService";
 
 export interface SubmitLeadInput {
   agencyId: string;
@@ -77,7 +78,7 @@ export async function submitAgencyLead(input: SubmitLeadInput) {
   if (uniqueClinicIds.length > maxClinics) throw new Error("CLINIC_SELECTION_LIMIT_EXCEEDED");
 
   // Create Transaction
-  return await adminDb.runTransaction(async (transaction: any) => {
+  const result = await adminDb.runTransaction(async (transaction: any) => {
     // Idempotency: Check if a lead with this conversationId already exists
     const leadsQuery = adminDb.collection("agencies").doc(agencyId).collection("leads").where("conversationId", "==", conversationId).limit(1);
     const existingLeadsSnap = await transaction.get(leadsQuery);
@@ -148,4 +149,14 @@ export async function submitAgencyLead(input: SubmitLeadInput) {
 
     return { leadId: leadRef.id, agencyId, status: "created" };
   });
+
+  // Post-commit: trigger notification async
+  if (result.status === "created") {
+    // Fire and forget (don't await) so it doesn't block the frontend response
+    scheduleAndProcessAgencyLeadNotification(result.agencyId, result.leadId).catch(err => {
+      console.error("[submitAgencyLead] Notification error:", err);
+    });
+  }
+
+  return result;
 }

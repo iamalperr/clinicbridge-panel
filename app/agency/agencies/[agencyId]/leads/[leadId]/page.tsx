@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { subscribeToLead, updateLeadStatus, subscribeToClinicRequests } from "@/lib/services/leadService";
+import { subscribeToLead, updateLeadStatus, subscribeToClinicRequests, subscribeToNotificationJobs } from "@/lib/services/leadService";
 import { useI18n } from "@/lib/i18n-context";
 import { UI_COLORS } from "@/components/ui/ui-shared";
 import Badge from "@/components/ui/Badge";
@@ -11,7 +11,7 @@ import Modal from "@/components/ui/Modal";
 import {
   ArrowLeft, Loader2, User, Phone, Mail, MapPin, Calendar,
   Stethoscope, Building2, DollarSign, MessageSquare, Send,
-  CheckCircle, XCircle, Clock, FileText, Globe,
+  CheckCircle, XCircle, Clock, FileText, Globe, Bell,
 } from "lucide-react";
 import type { Lead, LeadStatus, TreatmentCategory } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES, LEAD_STATUSES, LEAD_URGENCIES } from "@/lib/types/agency";
@@ -71,6 +71,7 @@ export default function LeadDetailPage() {
 
   const [lead, setLead] = useState<Lead | null>(null);
   const [clinicRequests, setClinicRequests] = useState<any[]>([]);
+  const [notificationJobs, setNotificationJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -91,9 +92,13 @@ export default function LeadDetailPage() {
     const unsubCR = subscribeToClinicRequests(agencyId, leadId, (data) => {
       setClinicRequests(data);
     });
+    const unsubJobs = subscribeToNotificationJobs(agencyId, leadId, (data) => {
+      setNotificationJobs(data);
+    });
     return () => {
       unsub();
       unsubCR();
+      unsubJobs();
     };
   }, [agencyId, leadId]);
 
@@ -273,6 +278,34 @@ export default function LeadDetailPage() {
                     </div>
                     <div>
                       <Badge label={cr.status} variant={statusVariant(cr.status)} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        </div>
+      )}
+
+      {/* Notification Jobs */}
+      {notificationJobs.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <SectionCard title="Sistem Bildirimleri (Admin)" icon={<Bell size={16} color="#3b82f6" />}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {notificationJobs.map((job) => (
+                <div key={job.id} style={{
+                  padding: "12px 16px", borderRadius: 10,
+                  border: `1px solid ${UI_COLORS.border}`,
+                  background: "var(--bg-card)"
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: UI_COLORS.textPrimary }}>Job ID: {job.id}</p>
+                      <p style={{ fontSize: 12, color: UI_COLORS.textMuted, marginTop: 4 }}>Oluşturulma: {typeof job.createdAt === "string" ? new Date(job.createdAt).toLocaleString(language === "tr" ? "tr-TR" : "en-US") : "—"}</p>
+                      {job.lastErrorCode && <p style={{ fontSize: 12, color: "#ef4444", marginTop: 4 }}>Hata: {job.lastErrorCode}</p>}
+                    </div>
+                    <div>
+                      <Badge label={job.status} variant={job.status === "sent" ? "success" : job.status === "failed" ? "danger" : "warning"} />
                     </div>
                   </div>
                 </div>
