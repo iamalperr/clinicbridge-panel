@@ -1,5 +1,6 @@
 import { getAdminDb } from "@/lib/firebase-admin";
 import { Resend } from "resend";
+import { getOrCreatePatientRequestViewToken } from "@/lib/services/patientPortalTokenService";
 
 const resend = new Resend(process.env.RESEND_API_KEY || "fallback_key");
 
@@ -157,9 +158,12 @@ export async function processPatientNotificationJob(agencyId: string, jobId: str
     const patientFirstName = lead.patientName ? lead.patientName.split(" ")[0] : (lang === "tr" ? "Değerli Hastamız" : "Dear Patient");
     const treatmentName = lead.treatmentCategory || (lang === "tr" ? "Tedavi talebi" : "Treatment request");
 
-    // Preferred Date/Time is not directly in Lead schema yet, but we can look for it or hide it
     const preferredDate = lead.preferredDate; 
     const preferredTime = lead.preferredTime;
+
+    // Generate CTA Token and URL
+    const rawToken = await getOrCreatePatientRequestViewToken(agencyId, jobData.leadId, jobId);
+    const secureUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://app.clinicbridge-ai.com"}/patient/request?token=${rawToken}`;
 
     const htmlContent = lang === "tr" ? `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.6;">
@@ -188,6 +192,12 @@ export async function processPatientNotificationJob(agencyId: string, jobId: str
         <p style="margin-top: 16px; font-weight: bold; color: #b91c1c;">
           Bu kayıt kesinleşmiş bir randevu değildir. Klinik veya ilgili ekip değerlendirmesi tamamlandıktan sonra süreçle ilgili ayrıca bilgilendirileceksiniz.
         </p>
+
+        <p>Talebinizin özetini güvenli bağlantı üzerinden görüntüleyebilirsiniz.</p>
+        
+        <div style="margin: 32px 0;">
+          <a href="${secureUrl}" style="display: inline-block; padding: 12px 24px; background-color: #0d9488; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">Talebimi Görüntüle</a>
+        </div>
         
         <p>Aynı talep için yeniden başvuru yapmanıza gerek yoktur.</p>
         
@@ -220,6 +230,12 @@ export async function processPatientNotificationJob(agencyId: string, jobId: str
         <p style="margin-top: 16px; font-weight: bold; color: #b91c1c;">
           This is not a confirmed appointment. You will be informed separately after the clinic or relevant team completes its review.
         </p>
+
+        <p>You can view your request summary through the secure link below.</p>
+
+        <div style="margin: 32px 0;">
+          <a href="${secureUrl}" style="display: inline-block; padding: 12px 24px; background-color: #0d9488; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">View My Request</a>
+        </div>
         
         <p>You do not need to submit the same request again.</p>
         
@@ -227,7 +243,7 @@ export async function processPatientNotificationJob(agencyId: string, jobId: str
       </div>
     `;
 
-    const textContent = lang === "tr" ? `Talebiniz başarıyla alındı\nMerhaba ${patientFirstName},\n${agencyName} üzerinden oluşturduğunuz tedavi talebiniz başarıyla alınmıştır.\nTalep Referansı: ${leadReference}\nTalep Özeti:\nTedavi: ${treatmentName}\nSeçilen Klinikler:\n${clinicNames.slice(0, 3).map((cn, i) => `${i+1}. ${cn}`).join("\n")}\nTalebiniz seçtiğiniz klinikler bazında değerlendirilecektir.\nBu kayıt kesinleşmiş bir randevu değildir. Klinik veya ilgili ekip değerlendirmesi tamamlandıktan sonra süreçle ilgili ayrıca bilgilendirileceksiniz.\nAynı talep için yeniden başvuru yapmanıza gerek yoktur.\nClinicBridge AI` : `Your request has been received\nHello ${patientFirstName},\nYour treatment request submitted through ${agencyName} has been received successfully.\nRequest Reference: ${leadReference}\nRequest Summary:\nTreatment: ${treatmentName}\nSelected Clinics:\n${clinicNames.slice(0, 3).map((cn, i) => `${i+1}. ${cn}`).join("\n")}\nYour request will be reviewed separately for each selected clinic.\nThis is not a confirmed appointment. You will be informed separately after the clinic or relevant team completes its review.\nYou do not need to submit the same request again.\nClinicBridge AI`;
+    const textContent = lang === "tr" ? `Talebiniz başarıyla alındı\nMerhaba ${patientFirstName},\n${agencyName} üzerinden oluşturduğunuz tedavi talebiniz başarıyla alınmıştır.\nTalep Referansı: ${leadReference}\nTalep Özeti:\nTedavi: ${treatmentName}\nSeçilen Klinikler:\n${clinicNames.slice(0, 3).map((cn, i) => `${i+1}. ${cn}`).join("\n")}\nTalebiniz seçtiğiniz klinikler bazında değerlendirilecektir.\nBu kayıt kesinleşmiş bir randevu değildir. Klinik veya ilgili ekip değerlendirmesi tamamlandıktan sonra süreçle ilgili ayrıca bilgilendirileceksiniz.\n\nTalebinizi görüntülemek için:\n${secureUrl}\n\nAynı talep için yeniden başvuru yapmanıza gerek yoktur.\nClinicBridge AI` : `Your request has been received\nHello ${patientFirstName},\nYour treatment request submitted through ${agencyName} has been received successfully.\nRequest Reference: ${leadReference}\nRequest Summary:\nTreatment: ${treatmentName}\nSelected Clinics:\n${clinicNames.slice(0, 3).map((cn, i) => `${i+1}. ${cn}`).join("\n")}\nYour request will be reviewed separately for each selected clinic.\nThis is not a confirmed appointment. You will be informed separately after the clinic or relevant team completes its review.\n\nView your request:\n${secureUrl}\n\nYou do not need to submit the same request again.\nClinicBridge AI`;
 
     if (!process.env.RESEND_API_KEY) {
        console.warn("[patientNotificationService] RESEND_API_KEY missing. Mocking success.");
