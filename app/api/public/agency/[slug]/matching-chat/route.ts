@@ -42,6 +42,13 @@ interface ClinicRecommendation {
   accommodation: boolean;
   transfer: boolean;
   shortDescription: string;
+  doctorMatch?: {
+    hasRelevantDoctors: boolean;
+    relevantDoctorCount: number;
+    displayedDoctorCount: number;
+    matchBasis: string;
+    doctors: any[];
+  };
 }
 
 interface SessionContext {
@@ -456,6 +463,19 @@ export async function POST(
       }
     }
 
+    // Load active and public Doctors for the agency
+    const allDoctors: any[] = [];
+    for (const c of allClinics) {
+      const docSnap = await adminDb.collection("agencies").doc(agencyId)
+        .collection("clinics").doc(c.id).collection("doctors").get();
+      for (const dDoc of docSnap.docs) {
+        const dData = dDoc.data();
+        if (dData.status === "active" && dData.showOnPublicProfile !== false) {
+          allDoctors.push({ id: dDoc.id, clinicId: c.id, ...dData });
+        }
+      }
+    }
+
     console.log(`[matching-chat] Agency: ${slug}, Clinics: ${allClinics.length}, Pricing: ${allPricing.length}, KB Records: ${allKbRecords.length}`);
     if (allPricing.length > 0) {
       console.log(`[matching-chat] Sample pricing:`, JSON.stringify(allPricing[0]));
@@ -607,14 +627,13 @@ JSON FORMATI:
   "missingLeadField": "patientName" | "patientEmail" | "patientPhone" | "patientCountry" | "patientAge" | "patientGender" | "travelDate" | "quoteConsent" | null,
   "requiresConsent": boolean,
   "shouldCreateLead": boolean,
+  "missingLeadField": string | null,
+  "requiresConsent": boolean,
   "showClinicCards": boolean,
-  "replyText": "Doğal dilde proaktif, yönlendirici AI yanıtı"
+  "replyText": string
 }
-
-ÖNEMLİ:
-- replyText alanı hastaya gösterilecek yanıttır. Eğer "clinic_selected" ise, o klinik hakkında 1-2 cümle kısa ve olumlu bilgi verip HEMEN missingLeadField ile ilgili soruyu sorarak lead alımına geç.
-- clinic_recommendation intent'inde replyText sadece kısa giriş olmalı.
-- showClinicCards: Sadece "clinic_recommendation" veya klinik listesi sunulması gereken durumlarda true yap. "clinic_selected", "lead_capture", "clinic_info" gibi durumlarda KESİNLİKLE false yap ki kartlar ekranda tekrar etmesin.`;
+- intent: Hasta sadece belirli bir doktordan veya o kliniğin doktorlarından bahsediyorsa "doctor_question" seç.
+- showClinicCards: Sadece "clinic_recommendation" veya kullanıcının "klinikleri tekrar göster" demesi durumunda true yap. "clinic_selected", "lead_capture", "clinic_question", "doctor_question" gibi durumlarda KESİNLİKLE false yap ki kartlar ekranda gereksiz tekrar etmesin.`;
 
     const completion = await trackableAIRequest({
       clinicId: ctx.selectedClinicId || undefined,
@@ -827,6 +846,44 @@ JSON FORMATI:
         accommodation: clinic.accommodation !== false,
         transfer: clinic.transfer !== false,
         shortDescription: clinic.shortDescription || clinic.overview || "",
+        doctorMatch: (() => {
+          // Resolve doctors for this clinic and treatment
+          const cDocs = allDoctors.filter(d => d.clinicId === clinic.id);
+          const relevantDocs = cDocs.filter(d => {
+            if (!parsed.subTreatment && !parsed.treatmentCategory) return true; // if no specific intent, show all
+            const trLower = (parsed.subTreatment || parsed.treatmentCategory || "").toLowerCase();
+            const dStr = [
+              ...(d.treatmentCategories || []),
+              ...(d.subTreatments || []),
+              ...(d.highlightedTreatments || []),
+              ...(d.expertiseAreas || []),
+              d.specialty || ""
+            ].join(" ").toLowerCase();
+            return dStr.includes(trLower);
+          });
+          
+          if (cDocs.length === 0) return { hasRelevantDoctors: false, relevantDoctorCount: 0, displayedDoctorCount: 0, matchBasis: "none", doctors: [] };
+          
+          return {
+            hasRelevantDoctors: relevantDocs.length > 0,
+            relevantDoctorCount: relevantDocs.length || cDocs.length,
+            displayedDoctorCount: Math.min(2, relevantDocs.length || cDocs.length),
+            matchBasis: relevantDocs.length > 0 ? "treatment" : "clinic_default",
+            doctors: (relevantDocs.length > 0 ? relevantDocs : cDocs).map(d => ({
+              id: d.id,
+              fullName: d.doctorName,
+              title: d.title || "",
+              specialty: d.specialty || (d.expertiseAreas && d.expertiseAreas.length > 0 ? d.expertiseAreas[0] : ""),
+              languages: d.supportedLanguages || [],
+              photoUrl: d.photoUrl || null,
+              experienceYears: d.experienceYears || null,
+              education: d.education || null,
+              shortBio: d.shortBio || null,
+              treatmentCategories: d.treatmentCategories || [],
+              subTreatments: d.subTreatments || []
+            }))
+          };
+        })()
       }));
 
       if (recommendations.length > 0) {
@@ -879,6 +936,29 @@ JSON FORMATI:
           accommodation: clinic.accommodation !== false,
           transfer: clinic.transfer !== false,
           shortDescription: clinic.shortDescription || "",
+          doctorMatch: (() => {
+            const cDocs = allDoctors.filter(d => d.clinicId === clinic.id);
+            if (cDocs.length === 0) return { hasRelevantDoctors: false, relevantDoctorCount: 0, displayedDoctorCount: 0, matchBasis: "none", doctors: [] };
+            return {
+              hasRelevantDoctors: true,
+              relevantDoctorCount: cDocs.length,
+              displayedDoctorCount: Math.min(2, cDocs.length),
+              matchBasis: "clinic_default",
+              doctors: cDocs.map(d => ({
+                id: d.id,
+                fullName: d.doctorName,
+                title: d.title || "",
+                specialty: d.specialty || (d.expertiseAreas && d.expertiseAreas.length > 0 ? d.expertiseAreas[0] : ""),
+                languages: d.supportedLanguages || [],
+                photoUrl: d.photoUrl || null,
+                experienceYears: d.experienceYears || null,
+                education: d.education || null,
+                shortBio: d.shortBio || null,
+                treatmentCategories: d.treatmentCategories || [],
+                subTreatments: d.subTreatments || []
+              }))
+            };
+          })()
         };
 
         return NextResponse.json({
@@ -886,7 +966,7 @@ JSON FORMATI:
           type: "clinic_answer",
           clinics: [miniCard],
           sessionContext: newCtx,
-          showClinicCards: parsed.showClinicCards === true,
+          showClinicCards: false, // DO NOT REPEAT CLINIC CARD ON CLINIC QUESTIONS
         }, { headers: CORS });
       }
 

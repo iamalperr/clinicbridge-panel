@@ -772,6 +772,40 @@ export default function FeelinHealthyLive() {
                                 <p style={{ fontSize: 11, color: C.textSec, fontStyle: "italic" }}>💡 {rec.reason}</p>
                               </div>
                             )}
+                            
+                            {/* Doctors Preview */}
+                            {rec.doctorMatch?.hasRelevantDoctors && (
+                              <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, background: C.bg }}>
+                                <p style={{ fontSize: 11, fontWeight: 700, color: C.navy, marginBottom: 6 }}>
+                                  {lang === "tr" ? "İlgili Hekimler" : "Relevant Doctors"}
+                                </p>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                  {rec.doctorMatch.doctors.slice(0, rec.doctorMatch.displayedDoctorCount).map((doc: any, di: number) => (
+                                    <div key={di} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                                      {doc.photoUrl ? (
+                                        <img src={doc.photoUrl} alt={doc.fullName} style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", flexShrink: 0, border: `1px solid ${C.border}` }} />
+                                      ) : (
+                                        <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.primaryBg, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 12, fontWeight: 700 }}>
+                                          {doc.fullName.charAt(0)}
+                                        </div>
+                                      )}
+                                      <div>
+                                        <p style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{doc.title ? `${doc.title} ` : ""}{doc.fullName}</p>
+                                        <p style={{ fontSize: 10, color: C.textSec }}>
+                                          {doc.specialty}
+                                          {doc.experienceYears ? (lang === "tr" ? ` • ${doc.experienceYears} yıl deneyim` : ` • ${doc.experienceYears} yrs exp`) : ""}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                                {rec.doctorMatch.relevantDoctorCount > rec.doctorMatch.displayedDoctorCount && (
+                                  <p style={{ fontSize: 10, color: C.primary, marginTop: 6, fontWeight: 600, cursor: "pointer" }}>
+                                    {lang === "tr" ? `+${rec.doctorMatch.relevantDoctorCount - rec.doctorMatch.displayedDoctorCount} hekim daha...` : `+${rec.doctorMatch.relevantDoctorCount - rec.doctorMatch.displayedDoctorCount} more doctors...`}
+                                  </p>
+                                )}
+                              </div>
+                            )}
                             {/* Actions */}
                             <div style={{ padding: "8px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
                               {sessionCtx.clinicSelectionMode === "manual" && sessionCtx.clinicSelectionStatus !== "completed" ? (
