@@ -92,12 +92,14 @@ async function main() {
   if (!db) {
     console.error(`
 [HATA] Firebase Admin yetkilendirmesi başarısız oldu.
-Uygulama ortamında aşağıdaki Firebase kimlik bilgilerine erişilemiyor:
- - FIREBASE_PROJECT_ID (veya NEXT_PUBLIC_FIREBASE_PROJECT_ID)
- - FIREBASE_CLIENT_EMAIL
- - FIREBASE_PRIVATE_KEY
+Uygulama ortamında Firebase projesi (Project ID) bulunamadı veya kimlik doğrulama sağlanamadı.
+Lütfen aşağıdaki değişkenlerden bir setin (.env.local dosyasında veya sistemde) yüklü olduğundan emin olun:
 
-Lütfen geçerli bir .env.local dosyası oluşturun veya bu değişkenleri ortama (environment) ekleyip tekrar deneyin.
+Seçenek 1 (Tam Kimlik): FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY
+Seçenek 2 (Base64 JSON): FIREBASE_SERVICE_ACCOUNT_BASE64
+Seçenek 3 (ADC): Yalnızca FIREBASE_PROJECT_ID (Gcloud application-default login ile)
+
+Lütfen geçerli bir .env.local dosyası oluşturup tekrar deneyin.
 `);
     process.exit(1);
   }

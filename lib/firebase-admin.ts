@@ -26,31 +26,31 @@ function initializeAdmin(): App | null {
     process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKeyRaw = process.env.FIREBASE_PRIVATE_KEY;
+  const certBase64 = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
 
-  if (!projectId || !clientEmail || !privateKeyRaw) {
-    const missing: string[] = [];
-    if (!projectId) missing.push("FIREBASE_PROJECT_ID");
-    if (!clientEmail) missing.push("FIREBASE_CLIENT_EMAIL");
-    if (!privateKeyRaw) missing.push("FIREBASE_PRIVATE_KEY");
-    console.warn(
-      `[firebase-admin] Credentials missing (${missing.join(", ")}). ` +
-        "Admin SDK disabled — this is expected during build."
-    );
+  if (!projectId) {
+    console.warn("[firebase-admin] Credentials missing (FIREBASE_PROJECT_ID). Admin SDK disabled.");
     return null;
   }
 
   try {
      
     const adminModule = require("firebase-admin/app");
-    const { getApps, initializeApp, cert } = adminModule;
+    const { getApps, initializeApp, cert, applicationDefault } = adminModule;
 
     if (getApps().length > 0) {
       _app = getApps()[0] as App;
-    } else {
+    } else if (clientEmail && privateKeyRaw) {
       const privateKey = privateKeyRaw
         .replace(/\\n/g, "\n")
         .replace(/^"|"$/g, "");
       _app = initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
+    } else if (certBase64) {
+      const certJson = Buffer.from(certBase64, 'base64').toString('utf8');
+      _app = initializeApp({ credential: cert(JSON.parse(certJson)) });
+    } else {
+      // Fallback to applicationDefault (relies on GOOGLE_APPLICATION_CREDENTIALS or gcloud auth)
+      _app = initializeApp({ credential: applicationDefault(), projectId });
     }
   } catch (err) {
     console.error("[firebase-admin] Initialization failed:", err);
