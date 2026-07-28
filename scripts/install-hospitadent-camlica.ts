@@ -1,3 +1,7 @@
+import { loadEnvConfig } from "@next/env";
+const projectDir = process.cwd();
+loadEnvConfig(projectDir);
+
 import { getAdminDb } from "../lib/firebase-admin";
 
 const args = process.argv.slice(2);
@@ -79,7 +83,19 @@ const KB_DOCS = [
 
 async function main() {
   const db = getAdminDb();
-  if (!db) throw new Error("Firebase Admin DB is not initialized. Check credentials.");
+  if (!db) {
+    console.error(`
+[HATA] Firebase Admin yetkilendirmesi başarısız oldu.
+Uygulama ortamında aşağıdaki Firebase kimlik bilgilerine erişilemiyor:
+ - FIREBASE_PROJECT_ID (veya NEXT_PUBLIC_FIREBASE_PROJECT_ID)
+ - FIREBASE_CLIENT_EMAIL
+ - FIREBASE_PRIVATE_KEY
+
+Lütfen geçerli bir .env.local dosyası oluşturun veya bu değişkenleri ortama (environment) ekleyip tekrar deneyin.
+Güvenlik uyarısı: Private key değerlerini doğrudan komut satırına yapıştırmayın veya Git reposuna eklemeyin.
+`);
+    process.exit(1);
+  }
   
   console.log("======================================================");
   console.log(` FEELINHEALTHY CLINIC SETUP: ${CLINIC_DATA.clinicName} `);
