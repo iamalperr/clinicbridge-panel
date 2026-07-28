@@ -110,7 +110,7 @@ export default function LeadDocumentsCard({ agencyId, leadId }: LeadDocumentsCar
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12, overflow: "hidden" }}>
                 <div style={{ flexShrink: 0, width: 36, height: 36, borderRadius: 6, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${UI_COLORS.border}` }}>
-                  <File size={16} color={UI_COLORS.primary} />
+                  <File size={16} color={UI_COLORS.brand} />
                 </div>
                 <div style={{ overflow: "hidden" }}>
                   <p style={{ fontSize: 13, fontWeight: 600, color: UI_COLORS.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -130,7 +130,7 @@ export default function LeadDocumentsCard({ agencyId, leadId }: LeadDocumentsCar
                   background: doc.status === "available" ? "#fff" : "#f1f5f9",
                   border: `1px solid ${UI_COLORS.border}`,
                   fontSize: 12, fontWeight: 600,
-                  color: doc.status === "available" ? UI_COLORS.primary : UI_COLORS.textMuted,
+                  color: doc.status === "available" ? UI_COLORS.brand : UI_COLORS.textMuted,
                   cursor: doc.status === "available" ? "pointer" : "not-allowed",
                   opacity: downloadingId === doc.id ? 0.7 : 1
                 }}

@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { validatePatientRequestViewToken } from "@/lib/services/patientPortalTokenService";
 import { completeDocumentUpload } from "@/lib/services/documentService";
 
-export async function POST(req: Request, { params }: { params: { token: string } }) {
+export async function POST(
+  req: Request,
+  props: { params: Promise<{ token: string }> }
+) {
   try {
-    const { token } = params;
+    const { token } = await props.params;
     const tokenResult = await validatePatientRequestViewToken(token);
     
     if (!tokenResult.valid) {

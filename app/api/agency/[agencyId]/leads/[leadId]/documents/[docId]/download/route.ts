@@ -4,9 +4,12 @@ import { getSignedDownloadUrl } from "@/lib/services/documentService";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request, { params }: { params: { agencyId: string; leadId: string; docId: string } }) {
+export async function GET(
+  req: Request,
+  props: { params: Promise<{ agencyId: string; leadId: string; docId: string }> }
+) {
   try {
-    const { agencyId, leadId, docId } = params;
+    const { agencyId, leadId, docId } = await props.params;
     await requireAgencyAccess(req, agencyId);
 
     const downloadUrl = await getSignedDownloadUrl(agencyId, leadId, docId);

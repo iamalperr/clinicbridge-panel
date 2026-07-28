@@ -3,11 +3,12 @@ import { validatePatientRequestViewToken } from "@/lib/services/patientPortalTok
 import { getPatientDocuments } from "@/lib/services/documentService";
 import { getAdminDb } from "@/lib/firebase-admin";
 
-export const dynamic = "force-dynamic";
-
-export async function GET(req: Request, { params }: { params: { token: string } }) {
+export async function GET(
+  req: Request,
+  props: { params: Promise<{ token: string }> }
+) {
   try {
-    const { token } = params;
+    const { token } = await props.params;
     const tokenResult = await validatePatientRequestViewToken(token);
     
     if (!tokenResult.valid) {

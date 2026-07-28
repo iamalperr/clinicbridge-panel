@@ -4,9 +4,12 @@ import { getAgencyLeadDocuments } from "@/lib/services/documentService";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request, { params }: { params: { agencyId: string; leadId: string } }) {
+export async function GET(
+  req: Request,
+  props: { params: Promise<{ agencyId: string; leadId: string }> }
+) {
   try {
-    const { agencyId, leadId } = params;
+    const { agencyId, leadId } = await props.params;
     await requireAgencyAccess(req, agencyId);
 
     const documents = await getAgencyLeadDocuments(agencyId, leadId);

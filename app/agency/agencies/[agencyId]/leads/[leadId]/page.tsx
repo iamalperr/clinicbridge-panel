@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { subscribeToLead, updateLeadStatus, subscribeToClinicRequests, subscribeToNotificationJobs } from "@/lib/services/leadService";
+import { subscribeToLead, updateLeadStatus, subscribeToClinicRequests, subscribeToNotificationJobs, subscribeToExtendedRequests } from "@/lib/services/leadService";
 import { useI18n } from "@/lib/i18n-context";
 import { UI_COLORS } from "@/components/ui/ui-shared";
 import Badge from "@/components/ui/Badge";
@@ -73,6 +73,7 @@ export default function LeadDetailPage() {
   const [lead, setLead] = useState<Lead | null>(null);
   const [clinicRequests, setClinicRequests] = useState<any[]>([]);
   const [notificationJobs, setNotificationJobs] = useState<any[]>([]);
+  const [extendedRequests, setExtendedRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -96,10 +97,14 @@ export default function LeadDetailPage() {
     const unsubJobs = subscribeToNotificationJobs(agencyId, leadId, (data) => {
       setNotificationJobs(data);
     });
+    const unsubExt = subscribeToExtendedRequests(agencyId, leadId, (data) => {
+      setExtendedRequests(data);
+    });
     return () => {
       unsub();
       unsubCR();
       unsubJobs();
+      unsubExt();
     };
   }, [agencyId, leadId]);
 
@@ -235,7 +240,7 @@ export default function LeadDetailPage() {
         </SectionCard>
 
         {/* Tedavi Bilgileri */}
-        <SectionCard title={t("Treatment") || "Treatment"} icon={<Stethoscope size={18} color={UI_COLORS.primary} />}>
+        <SectionCard title={t("Treatment") || "Treatment"} icon={<Stethoscope size={18} color={UI_COLORS.brand} />}>
           <InfoRow icon={<Stethoscope size={14} />} label="Tedavi Kategorisi" value={catLabel(lead.treatmentCategory)} />
           <InfoRow icon={<Stethoscope size={14} />} label="Alt Tedavi" value={lead.treatmentSubcategory} />
           <InfoRow icon={<Building2 size={14} />} label="Tercih Edilen Klinik" value={lead.assignedClinicName} />
@@ -245,6 +250,37 @@ export default function LeadDetailPage() {
           <InfoRow icon={<Clock size={14} />} label="Kaynak" value={lead.source} />
         </SectionCard>
       </div>
+      
+      {/* Genişletilmiş Klinik Talebi */}
+      {extendedRequests.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <SectionCard title="Genişletilmiş Klinik Talebi" icon={<Globe size={18} color="#8b5cf6" />}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {extendedRequests.map(er => (
+                <div key={er.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: UI_COLORS.textPrimary, marginBottom: 4 }}>
+                      Daha Fazla Klinik İstendi
+                    </p>
+                    <p style={{ fontSize: 12, color: UI_COLORS.textMuted }}>
+                      Talep Tarihi: {new Date(er.createdAt).toLocaleString("tr-TR")}
+                    </p>
+                  </div>
+                  <div>
+                    {er.status === "completed" ? (
+                      <Badge label="Tamamlandı" variant="success" />
+                    ) : er.status === "expired" ? (
+                      <Badge label="Süresi Doldu" variant="danger" />
+                    ) : (
+                      <Badge label="Bekliyor" variant="warning" />
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        </div>
+      )}
 
       {/* AI Konuşma Özeti */}
       <div style={{ marginBottom: 24 }}>

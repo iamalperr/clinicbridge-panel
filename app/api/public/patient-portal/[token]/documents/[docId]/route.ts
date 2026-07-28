@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { validatePatientRequestViewToken } from "@/lib/services/patientPortalTokenService";
 import { softDeleteDocument } from "@/lib/services/documentService";
 
-export async function DELETE(req: Request, { params }: { params: { token: string; docId: string } }) {
+export async function DELETE(
+  req: Request,
+  props: { params: Promise<{ token: string; docId: string }> }
+) {
   try {
-    const { token, docId } = params;
+    const { token, docId } = await props.params;
     const tokenResult = await validatePatientRequestViewToken(token);
     
     if (!tokenResult.valid) {

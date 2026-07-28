@@ -94,6 +94,12 @@ export interface AgencySettings {
   maxClinicsPerTreatmentRequest?: number;
   documentUploadEnabled?: boolean;
   documentUploadAllowedContexts?: string[];
+  
+  // Extended Clinic Request Settings
+  extendedClinicRequestEnabled?: boolean;
+  extendedClinicRequestMode?: "internal_registration" | "external_verified_url" | "disabled";
+  extendedClinicRequestUrl?: string | null;
+  extendedClinicRequestExpirationHours?: number;
 }
 
 export interface Agency {
@@ -400,11 +406,36 @@ export interface ClinicRequest {
   createdAt: any;
   updatedAt: any;
   submittedAt?: any;
-  viewedAt?: any;
-  reviewStartedAt?: any;
-  respondedAt?: any;
+  acceptedAt?: any;
   rejectedAt?: any;
+  
+  quote?: {
+    estimatedPrice?: number;
+    currency?: string;
+    description?: string;
+    offeredAt?: any;
+  };
+}
+
+export type ExtendedRequestStatus = "offered" | "started" | "completed" | "expired" | "cancelled" | "failed";
+
+export interface AgencyExtendedRequest {
+  id: string;
+  agencyId: string;
+  leadId: string;
+  conversationId: string;
+  status: ExtendedRequestStatus;
+  mode: "internal_registration" | "external_verified_url";
+  locale: string;
+  externalReference?: string;
+  tokenHash: string; // the hashed secure token
+  createdAt: any;
+  updatedAt: any;
+  startedAt?: any;
+  completedAt?: any;
+  expiresAt: any;
   cancelledAt?: any;
+  consentId?: string;
 }
 
 // ─── Dashboard Metrics ──────────────────────────────────────────────────────

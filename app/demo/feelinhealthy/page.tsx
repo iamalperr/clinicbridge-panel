@@ -241,6 +241,11 @@ export default function FeelinHealthyLive() {
   const [emailInput, setEmailInput] = useState("");
   const [aiMsgs, setAiMsgs] = useState<{ role: "user" | "ai"; text: string; type?: string; clinics?: any[]; showClinicCards?: boolean; privacyNoticeUrl?: string }[]>([]);
   const [aiTyping, setAiTyping] = useState(false);
+
+  // Extended Request UX
+  const [showMaxClinicsModal, setShowMaxClinicsModal] = useState(false);
+  const [requestMoreLoading, setRequestMoreLoading] = useState(false);
+
   const [matchedClinics, setMatchedClinics] = useState<ClinicData[]>([]);
   const [matchedCategory, setMatchedCategory] = useState<string | null>(null);
   
@@ -815,7 +820,14 @@ export default function FeelinHealthyLive() {
                                       {lang === "tr" ? "Seçimi Kaldır" : "Remove Selection"}
                                     </button>
                                   ) : (
-                                    <button disabled={sessionCtx.selectedClinicIds && sessionCtx.selectedClinicIds.length >= (agency?.settings?.maxClinicsPerTreatmentRequest || 3)} onClick={() => sendSystemAction({ type: "clinic_selection_update", action: "select", clinicId: rec.clinicId || rec.id, clinicName: rec.clinicName, locale: lang })} style={{ flex: 1, padding: "8px 0", borderRadius: 6, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer", opacity: sessionCtx.selectedClinicIds && sessionCtx.selectedClinicIds.length >= (agency?.settings?.maxClinicsPerTreatmentRequest || 3) ? 0.5 : 1 }}>
+                                    <button onClick={() => {
+                                      const max = agency?.settings?.maxClinicsPerTreatmentRequest || 3;
+                                      if (sessionCtx.selectedClinicIds && sessionCtx.selectedClinicIds.length >= max) {
+                                        setShowMaxClinicsModal(true);
+                                      } else {
+                                        sendSystemAction({ type: "clinic_selection_update", action: "select", clinicId: rec.clinicId || rec.id, clinicName: rec.clinicName, locale: lang });
+                                      }
+                                    }} style={{ flex: 1, padding: "8px 0", borderRadius: 6, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}>
                                       {lang === "tr" ? "Seç" : "Select"}
                                     </button>
                                   )}
@@ -1074,6 +1086,69 @@ export default function FeelinHealthyLive() {
           </div>
         </div>
       </section>
+
+      {/* MAX CLINICS MODAL */}
+      {showMaxClinicsModal && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 99999, padding: 20 }}>
+          <div style={{ background: "#fff", padding: "24px", borderRadius: 16, maxWidth: 400, width: "100%", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)" }}>
+            <h3 style={{ fontSize: 18, fontWeight: 800, color: C.navy, marginBottom: 12, textAlign: "center" }}>
+              {lang === "tr" ? "Limitine Ulaştınız" : "Limit Reached"}
+            </h3>
+            <p style={{ fontSize: 14, color: C.textSec, lineHeight: 1.5, textAlign: "center", marginBottom: 24 }}>
+              {lang === "tr" 
+                ? "Standart talep akışında aynı anda en fazla 3 klinik seçebilirsiniz. Daha fazla klinik seçeneğinin değerlendirilmesini isterseniz agency kayıt sayfası üzerinden genişletilmiş talep oluşturabilirsiniz." 
+                : "You can select up to 3 clinics in the standard request flow. To be considered by more clinics, you can create an extended request through the agency registration page."}
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <button 
+                onClick={async () => {
+                  setRequestMoreLoading(true);
+                  try {
+                    if (sessionCtx.clinicSelectionStatus !== "completed") {
+                      await sendSystemAction({ type: "clinic_selection_complete" });
+                    }
+                    const leadId = sessionCtx.leadId || sessionCtx.leadReference;
+                    if (!leadId) throw new Error("Lead not created yet");
+
+                    const res = await fetch("/api/public/extended-request/generate", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        agencyId: agency?.id,
+                        leadId: leadId,
+                        conversationId: sessionCtx.conversationId,
+                        locale: lang
+                      })
+                    });
+                    if (!res.ok) throw new Error("Failed to generate extended request");
+                    const data = await res.json();
+                    
+                    setShowMaxClinicsModal(false);
+                    window.open(`/public/extended-request?token=${data.token}`, "_blank");
+
+                  } catch (err) {
+                    console.error("Error generating extended request", err);
+                    alert(lang === "tr" ? "Şu an işleminizi gerçekleştiremiyoruz. Lütfen mevcut kliniklerinizle devam edin." : "We cannot process your request right now. Please continue with your current clinics.");
+                  } finally {
+                    setRequestMoreLoading(false);
+                  }
+                }}
+                disabled={requestMoreLoading}
+                style={{ width: "100%", padding: "12px", borderRadius: 8, fontSize: 14, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: requestMoreLoading ? "not-allowed" : "pointer", opacity: requestMoreLoading ? 0.7 : 1 }}
+              >
+                {requestMoreLoading ? (lang === "tr" ? "Yükleniyor..." : "Loading...") : (lang === "tr" ? "Daha Fazla Klinik Seçeneği İste" : "Request More Clinic Options")}
+              </button>
+              <button 
+                onClick={() => setShowMaxClinicsModal(false)}
+                disabled={requestMoreLoading}
+                style={{ width: "100%", padding: "12px", borderRadius: 8, fontSize: 14, fontWeight: 700, background: C.white, color: C.textSec, border: `1px solid ${C.border}`, cursor: requestMoreLoading ? "not-allowed" : "pointer" }}
+              >
+                {lang === "tr" ? "Mevcut 3 Klinikle Devam Et" : "Continue with the Current 3 Clinics"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* FOOTER */}
       <footer id="footer" style={{ background: C.navy, color: "rgba(255,255,255,.7)", padding: "60px 40px 30px" }}>
