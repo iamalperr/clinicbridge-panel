@@ -25,8 +25,18 @@ const CLINIC_DATA = {
   priority: 92,
   status: "active",
   publicVisibility: true,
-  shortSummary: "Dental Group Hospitadent Çamlıca Dental Hospital is a modern clinic on Istanbul’s Anatolian side with 13 treatment units and a fully equipped operating room.",
-  overview: "Opened in 2009, Dental Group Hospitadent Çamlıca Dental Hospital is a modern and reliable dental clinic located on Istanbul’s Anatolian side. Spanning an area of 1,250 m², the hospital features 13 high-tech treatment units and 1 fully equipped operating room, offering a full range of dental services in a safe and comfortable environment.\nAs one of the leading dental clinics in the Çamlıca region, we provide comprehensive oral and dental health services.\nTo support international patients, we offer multilingual assistance in English, German, French, Arabic, Russian, and Bulgarian.\n✨ Free panoramic X-rays and dental tomography✨ Complimentary VIP airport transfer service",
+  // Modern overview struct
+  overview: {
+    shortDescription: "Hospitadent Dental Group Çamlıca is a modern dental clinic located on Istanbul’s Asian side. It provides comprehensive oral and dental health services and assists international patients with multilingual support and VIP transfers.",
+    longDescription: "Opened in 2009, Dental Group Hospitadent Çamlıca Dental Hospital is a reliable dental clinic on Istanbul’s Asian side. Spanning 1,250 m², it features 13 high-tech treatment units and a fully equipped operating room for comprehensive dental care.\n\nThe clinic offers verified treatments including Dental Implants, Zirconium Crowns, E-Max Crowns, Full Dentures, and Hollywood Smile design. The clinical approach ensures patients receive a tailored treatment plan before arrival.\n\nFor international patients, Hospitadent Çamlıca provides multilingual assistance in English, German, French, Arabic, Russian, and Bulgarian. A complimentary VIP airport transfer service is available. Final treatment planning and pricing are determined after comprehensive clinical and radiographic evaluation.",
+    specialties: ["Implantology", "Aesthetic Dentistry", "Prosthodontics", "Oral Surgery"],
+    highlightedTreatments: ["all-on-6-dental-implants", "all-on-4-dental-implants", "hollywood-smile", "zirconia-crown"],
+    targetPatientProfile: "International patients seeking dental implant evaluations, restorative treatments, or cosmetic dentistry (like Hollywood Smile). Final suitability is determined after clinical examination.",
+    healthTourismExperience: "Offers dedicated international patient coordination, multilingual support, and complimentary VIP airport transfers.",
+    internationalPatientSupport: true,
+    transferSupport: true,
+    accommodationSupport: false
+  },
   location: {
     city: "Istanbul",
     country: "Turkey",
@@ -65,21 +75,52 @@ const DOCTORS = [
 const KB_DOCS = [
   {
     knowledgeType: "clinic_overview",
-    title: "Hospitadent Çamlıca Overview",
-    content: CLINIC_DATA.overview,
-    locale: "en"
+    title: "Hospitadent Çamlıca Overview (EN)",
+    content: "Hospitadent Dental Group Çamlıca is a modern dental clinic located on Istanbul’s Asian side, offering comprehensive dental services including implants, aesthetic dentistry, and prosthodontics. Operating since 2009, the 1,250 m² facility is equipped with 13 treatment units and a full operating room.",
+    locale: "en",
+    translationStatus: "verified_from_source"
+  },
+  {
+    knowledgeType: "clinic_overview",
+    title: "Hospitadent Çamlıca Genel Bakış (TR)",
+    content: "Hospitadent Dental Group Çamlıca, İstanbul Anadolu Yakası'nda kapsamlı ağız ve diş sağlığı hizmetleri sunan modern bir kliniktir. 2009 yılından bu yana hizmet veren 1.250 m²'lik tesis, 13 tedavi ünitesi ve tam donanımlı ameliyathanesi ile implant, estetik diş hekimliği ve protetik tedaviler sunmaktadır.",
+    locale: "tr",
+    translationStatus: "ai_assisted_requires_review"
   },
   {
     knowledgeType: "clinic_services",
-    title: "Clinic Services & Amenities",
-    content: "Free panoramic X-rays and dental tomography. Complimentary VIP airport transfer service available.",
-    locale: "en"
+    title: "Clinic Services & Amenities (EN)",
+    content: "Free panoramic X-rays, dental tomography, and complimentary VIP airport transfer service for international patients. Multilingual assistance is available in English, German, French, Arabic, Russian, and Bulgarian.",
+    locale: "en",
+    translationStatus: "verified_from_source"
+  },
+  {
+    knowledgeType: "clinic_services",
+    title: "Klinik Hizmetleri ve İmkanlar (TR)",
+    content: "Uluslararası hastalar için ücretsiz panoramik röntgen, dental tomografi ve ücretsiz VIP havalimanı transferi hizmeti sunulmaktadır. Ayrıca İngilizce, Almanca, Fransızca, Arapça, Rusça ve Bulgarca dillerinde destek sağlanmaktadır.",
+    locale: "tr",
+    translationStatus: "ai_assisted_requires_review"
+  },
+  {
+    knowledgeType: "target_profile",
+    title: "Target Patient Profile (EN)",
+    content: "International patients seeking dental implant evaluations, restorative treatments, or cosmetic dentistry like Hollywood Smile. Final suitability is determined after clinical examination.",
+    locale: "en",
+    translationStatus: "verified_from_source"
+  },
+  {
+    knowledgeType: "target_profile",
+    title: "Hedef Hasta Profili (TR)",
+    content: "Yurt dışından dental implant değerlendirmesi, restoratif tedaviler veya estetik diş hekimliği (Hollywood Smile gibi) için gelen hastalar. Kesin tedavi uygunluğu klinik muayene sonrasında belirlenir.",
+    locale: "tr",
+    translationStatus: "ai_assisted_requires_review"
   },
   {
     knowledgeType: "opening_hours",
-    title: "Opening Hours",
+    title: "Opening Hours (EN)",
     content: "Monday to Saturday: 08:00 – 19:00\nSunday: Closed",
-    locale: "en"
+    locale: "en",
+    translationStatus: "verified_from_source"
   }
 ];
 
@@ -161,7 +202,8 @@ Lütfen geçerli bir .env.local dosyası oluşturup tekrar deneyin.
     if (pSnap.empty) {
       console.log(`[Pricing] Will CREATE: ${t.name} (${t.price} ${t.currency})`);
       if (!isDryRun) {
-        await db.collection("agencies").doc(agencyId).collection("clinics").doc(clinicId).collection("pricing").doc(t.name.toLowerCase().replace(/\s+/g, '-')).set({
+        const docId = t.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+        await db.collection("agencies").doc(agencyId).collection("clinics").doc(clinicId).collection("pricing").doc(docId).set({
           treatmentName: t.name,
           priceMin: t.price,
           priceMax: t.price,
@@ -173,7 +215,7 @@ Lütfen geçerli bir .env.local dosyası oluşturup tekrar deneyin.
           updatedAt: new Date(),
           agencyClinicId: clinicId
         }, { merge: true });
-        console.log(`  -> Applied pricing: ${t.name}`);
+        console.log(`  -> Applied pricing: ${t.name} as ${docId}`);
       }
     } else {
       console.log(`[Pricing] Found existing: ${t.name}. Skipping.`);

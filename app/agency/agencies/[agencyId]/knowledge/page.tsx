@@ -34,10 +34,6 @@ export default function AgencyKnowledgePage({ params }: PageProps) {
     title: "", knowledgeType: "destination", content: "", locale: "en", locationId: ""
   });
 
-  useEffect(() => {
-    fetchData();
-  }, [agencyId]);
-
   async function fetchData() {
     setLoading(true);
     try {
@@ -50,6 +46,10 @@ export default function AgencyKnowledgePage({ params }: PageProps) {
     }
     setLoading(false);
   }
+
+  useEffect(() => {
+    fetchData();
+  }, [agencyId]);
 
   async function handleAddLocation() {
     if (!newLocation.city || !newLocation.slug) return;
