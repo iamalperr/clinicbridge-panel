@@ -77,16 +77,17 @@ interface SessionContext {
   lastFocusedClinicId?: string;
   lastFocusedClinicName?: string;
 
-  clinicSelectionMode?: "automatic" | "manual" | null;
+  clinicSelectionMode?: "automatic" | "manual" | "assisted" | null;
   selectedClinicIds?: string[];
   clinicSelectionStatus?: "not_started" | "in_progress" | "completed";
+  showProfileLinks?: boolean;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    HELPERS
 ═══════════════════════════════════════════════════════════════════════════ */
 
-function buildClinicContext(clinics: any[], pricing: any[], knowledgeRecords: any[] = [], aiConfigs: any[] = [], agencyKnowledge: any[] = []): string {
+function buildClinicContext(clinics: any[], pricing: any[], knowledgeRecords: any[] = [], aiConfigs: any[] = [], agencyKnowledge: any[] = [], showPriceRange: boolean = true): string {
   const lines: string[] = [];
   
   if (agencyKnowledge.length > 0) {
@@ -143,7 +144,7 @@ Knowledge Base (AI Bilgi Havuzu):
 ${kbStr}
 
 Pricing:
-${priceStr}`);
+${showPriceRange ? priceStr : "  (Fiyat bilgisi gizlidir veya paylaşılmamalıdır)"}`);
   }
   return lines.join("\n\n---\n\n");
 }
@@ -277,8 +278,13 @@ export async function POST(
     }
     const agencyId = agencySnap.docs[0].id;
     const agencyData = agencySnap.docs[0].data();
-    const maxClinics = agencyData.settings?.maxClinicsPerTreatmentRequest || 3;
-
+    
+    // Load Agency Matching Config
+    const matchingSnap = await adminDb.collection("agencies").doc(agencyId).collection("config").doc("matching").get();
+    const matchingConfig = matchingSnap.exists ? matchingSnap.data() : null;
+    const maxClinics = matchingConfig?.maxClinicsToShow || agencyData.settings?.maxClinicsPerTreatmentRequest || 3;
+    const showPriceRange = matchingConfig?.showPriceRange !== false;
+    const showProfileLinks = matchingConfig?.showProfileLinks !== false;
     // Initialize selection arrays
     if (!sessionContext.selectedClinicIds) {
       sessionContext.selectedClinicIds = [];
@@ -424,9 +430,20 @@ export async function POST(
 
     const clinicSnap = await adminDb.collection("agencies").doc(agencyId)
       .collection("clinics").orderBy("priority", "asc").get();
-    const allClinics = clinicSnap.docs
+    let allClinics = clinicSnap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
       .filter((c: any) => c.status === "active");
+
+    ctx.clinicSelectionMode = matchingConfig?.routingMode || "manual"; // Save routing mode for leads
+    ctx.showProfileLinks = showProfileLinks; // Instruct frontend to hide links if false
+    
+    // Apply Treatment Clinic Rules if available
+    if (matchingConfig?.treatmentClinicRules && matchingConfig.treatmentClinicRules.length > 0 && ctx.lastTreatmentCategory) {
+      const activeRule = matchingConfig.treatmentClinicRules.find((r: any) => r.treatmentCategory === ctx.lastTreatmentCategory);
+      if (activeRule && activeRule.eligibleClinicIds && activeRule.eligibleClinicIds.length > 0) {
+        allClinics = allClinics.filter((c: any) => activeRule.eligibleClinicIds.includes(c.id));
+      }
+    }
 
     // Load pricing — fetch from each clinic's subcollection: agencies/{agencyId}/clinics/{clinicId}/pricing
     const allPricing: any[] = [];
@@ -546,7 +563,7 @@ export async function POST(
     });
 
     /* ── 2. Build clinic context for OpenAI ── */
-    const clinicContext = buildClinicContext(allClinics, allPricing, relevantKbRecords, [], agencyKbRecords);
+    const clinicContext = buildClinicContext(allClinics, allPricing, relevantKbRecords, [], agencyKbRecords, showPriceRange);
 
     /* ── 3. Build session context hint ── */
     let contextHint = `\nMEVCUT KONUŞMA DURUMU (SESSION CONTEXT):
@@ -621,13 +638,14 @@ STANDART KURALLAR:
     - Toplanan e-postayı sohbet özetinde açık şekilde yazma (örn. p***@example.com şeklinde maskele).
 14. KLİNİK SEÇİM KURALLARI:
     - Klinik önerdikten sonra kullanıcıya seçim modlarını sun ("Tüm uygun kliniklerden teklif al" veya "Klinikleri tek tek seç").
-    - Kullanıcının aynı talep için en fazla ${maxClinics} klinik seçebileceğini belirt.
+    - Kullanıcının aynı talep için en fazla ${maxClinics} klinik seçebileceğini belirt. Aynı anda en fazla ${maxClinics} klinik önerebilirsin. Asla daha fazlasını listeleme.
     - "Tüm uygun klinikler" seçeneğini sınırsız klinik olarak yorumlama. En fazla ${maxClinics} uygun klinik seçilecektir.
     - Sistemde olmayan clinic ID veya clinic adı uydurma. Kullanıcı seçmeden klinik seçilmiş gibi davranma.
     - Kullanıcının seçimlerini backend sonucu olmadan onaylanmış sayma. Aynı kliniği iki kez ekleme.
     - Limit aşıldığında kullanıcıyı nazikçe bilgilendir. Seçimlerini değiştirmesine izin ver.
     - Klinik seçiminden sonra henüz teklif gönderilmiş gibi konuşma ("Talebiniz kliniklere iletildi" DEME). Yalnızca "seçiminiz kaydedildi" veya "talebiniz için klinikler seçildi" de.
-
+    ${!showPriceRange ? "- DİKKAT: Fiyat bilgisi KESİNLİKLE PAYLAŞMA. Sistemde fiyat aralığı gösterimi kapalı." : ""}
+    ${!showProfileLinks ? "- DİKKAT: Klinik profil linklerini KESİNLİKLE PAYLAŞMA." : ""}
 GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
 1. EĞİTİCİ GENEL BİLGİ (Global Dental Knowledge): Hasta genel bir diş/sağlık sorusu sorarsa (Örn: "Vidasız implant nedir?", "Kanal tedavisi ne kadar sürer?"), soruyu ÖNCE genel tıbbi bilgi havuzunla eğitici bir dille açıkla. Kesinlikle teşhis koyma ve tedavi önerme.
 2. KLİNİK BİLGİSİ DOĞRULAMA (Clinic Knowledge Base): Genel bilgiyi verdikten sonra kliniğin Bilgi Havuzuna bak. Eğer klinikte bu işlem/marka varsa "Kliniğimizde bu tedavi uygulanmaktadır" gibi doğal bir şekilde onayla.

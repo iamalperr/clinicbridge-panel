@@ -59,7 +59,12 @@ export async function submitAgencyLead(input: SubmitLeadInput) {
     throw new Error("AGENCY_NOT_FOUND");
   }
   const agencyData = agencySnap.data()!;
-  const maxClinics = agencyData.settings?.maxClinicsPerTreatmentRequest || 3;
+  
+  // Load Agency Matching Config
+  const matchingSnap = await adminDb.collection("agencies").doc(agencyId).collection("config").doc("matching").get();
+  const matchingConfig = matchingSnap.exists ? matchingSnap.data() : null;
+  const maxClinics = matchingConfig?.maxClinicsToShow || agencyData.settings?.maxClinicsPerTreatmentRequest || 3;
+  const routingMode = matchingConfig?.routingMode || "manual";
 
   // Validate Consent
   const version = agencyData.privacySettings?.version || "";
@@ -113,9 +118,10 @@ export async function submitAgencyLead(input: SubmitLeadInput) {
       consentStatus: "accepted", // we just verified hasConsent
       consentTimestamp: now,
       consentVersion: version,
-      status: "new",
+      routingMode,
+      status: routingMode === "manual" ? "waiting_for_assignment" : "new",
       statusHistory: [
-        { status: "new", changedAt: now, note: "Lead created and submitted" },
+        { status: routingMode === "manual" ? "waiting_for_assignment" : "new", changedAt: now, note: "Lead created and submitted" },
       ],
       source: source || "widget",
       sourceUrl: sourceUrl || null,
