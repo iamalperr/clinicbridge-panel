@@ -25,12 +25,6 @@ const EMPTY_FORM = {
   slug: "",
   category: "dental" as TreatmentCategory,
   description: "",
-  avgPriceMin: "",
-  avgPriceMax: "",
-  currency: "EUR",
-  priceType: "average" as TreatmentCatalogItem["priceType"],
-  duration: "",
-  recoveryTime: "",
   requiredDocuments: "",
   status: "active" as "active" | "inactive",
 };
@@ -100,12 +94,6 @@ export default function TreatmentsPage() {
       slug: t.slug,
       category: t.category,
       description: t.description || "",
-      avgPriceMin: t.avgPriceMin?.toString() || "",
-      avgPriceMax: t.avgPriceMax?.toString() || "",
-      currency: t.currency || "EUR",
-      priceType: t.priceType || "average",
-      duration: t.duration || "",
-      recoveryTime: t.recoveryTime || "",
       requiredDocuments: (t.requiredDocuments || []).join(", "),
       status: t.status,
     });
@@ -122,12 +110,6 @@ export default function TreatmentsPage() {
         slug: form.slug || form.name.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
         category: form.category,
         description: form.description,
-        avgPriceMin: form.avgPriceMin ? Number(form.avgPriceMin) : undefined,
-        avgPriceMax: form.avgPriceMax ? Number(form.avgPriceMax) : undefined,
-        currency: form.currency,
-        priceType: form.priceType,
-        duration: form.duration,
-        recoveryTime: form.recoveryTime,
         requiredDocuments: form.requiredDocuments.split(",").map(d => d.trim()).filter(Boolean),
         status: form.status,
       };
@@ -213,7 +195,7 @@ export default function TreatmentsPage() {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ borderBottom: `1px solid ${UI_COLORS.border}` }}>
-                    {[t("portal.treatments.treatment"), t("portal.treatments.priceRange"), t("portal.treatments.duration"), t("portal.treatments.recovery"), t("portal.treatments.status"), ""].map((h) => (
+                    {[t("portal.treatments.treatment"), t("portal.treatments.status"), ""].map((h) => (
                       <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: UI_COLORS.textMuted }}>{h}</th>
                     ))}
                   </tr>
@@ -227,15 +209,6 @@ export default function TreatmentsPage() {
                         <span style={{ fontWeight: 600, color: UI_COLORS.textPrimary }}>{t_item.name}</span>
                         {t_item.description && <p style={{ fontSize: 11.5, color: UI_COLORS.textMuted, marginTop: 2 }}>{t_item.description}</p>}
                       </td>
-                      <td style={{ padding: "12px 14px" }}>
-                        {t_item.avgPriceMin || t_item.avgPriceMax ? (
-                          <span style={{ fontSize: 13, fontWeight: 600, color: "#10b981" }}>
-                            {t_item.avgPriceMin}–{t_item.avgPriceMax} {t_item.currency}
-                          </span>
-                        ) : <span style={{ color: UI_COLORS.textMuted }}>—</span>}
-                      </td>
-                      <td style={{ padding: "12px 14px", color: UI_COLORS.textSecondary }}>{t_item.duration || "—"}</td>
-                      <td style={{ padding: "12px 14px", color: UI_COLORS.textSecondary }}>{t_item.recoveryTime || "—"}</td>
                       <td style={{ padding: "12px 14px" }}>
                         <Badge label={t_item.status === "active" ? t("portal.common.active") : t("portal.common.inactive")} variant={t_item.status === "active" ? "success" : "warning"} />
                       </td>
@@ -269,16 +242,6 @@ export default function TreatmentsPage() {
               options={[{ label: t("portal.common.active"), value: "active" }, { label: t("portal.common.inactive"), value: "inactive" }]} />
           </div>
           <Input label={t("portal.treatments.description")} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder={t("portal.treatments.descPlaceholder")} />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
-            <Input label={t("portal.treatments.priceMin")} value={form.avgPriceMin} onChange={(e) => setForm({ ...form, avgPriceMin: e.target.value })} placeholder="400" />
-            <Input label={t("portal.treatments.priceMax")} value={form.avgPriceMax} onChange={(e) => setForm({ ...form, avgPriceMax: e.target.value })} placeholder="900" />
-            <Select label={t("portal.treatments.currency")} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}
-              options={[{ label: "EUR", value: "EUR" }, { label: "USD", value: "USD" }, { label: "GBP", value: "GBP" }, { label: "TRY", value: "TRY" }]} />
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <Input label={t("portal.treatments.duration")} value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} placeholder={t("portal.treatments.durationPlaceholder")} />
-            <Input label={t("portal.treatments.recovery")} value={form.recoveryTime} onChange={(e) => setForm({ ...form, recoveryTime: e.target.value })} placeholder={t("portal.treatments.recoveryPlaceholder")} />
-          </div>
           <Input label={t("portal.treatments.requiredDocs")} value={form.requiredDocuments} onChange={(e) => setForm({ ...form, requiredDocuments: e.target.value })} placeholder={t("portal.treatments.requiredDocsPlaceholder")} />
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
             <Button variant="secondary" onClick={() => setShowModal(false)}>{t("portal.common.cancel")}</Button>

@@ -18,11 +18,17 @@ export interface TreatmentCatalogItem {
   name: string;
   slug: string;
   description?: string;
+  /** @deprecated Move pricing data to Clinic Treatment Pricing */
   avgPriceMin?: number;
+  /** @deprecated Move pricing data to Clinic Treatment Pricing */
   avgPriceMax?: number;
+  /** @deprecated Move pricing data to Clinic Treatment Pricing */
   currency: string;
+  /** @deprecated Move pricing data to Clinic Treatment Pricing */
   priceType: "average" | "starting_from" | "package" | "per_unit";
+  /** @deprecated Move duration data to Clinic Treatment Pricing */
   duration?: string;
+  /** @deprecated Move recovery data to Clinic Treatment Pricing */
   recoveryTime?: string;
   requiredDocuments?: string[];
   intakeQuestions?: IntakeQuestion[];

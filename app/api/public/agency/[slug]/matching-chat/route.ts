@@ -428,28 +428,30 @@ export async function POST(
       .map((d) => ({ id: d.id, ...d.data() }))
       .filter((c: any) => c.status === "active");
 
-    // Load pricing — agency-level collection: agencies/{agencyId}/pricing
-    // Each pricing doc has a clinicId field linking it to a clinic
+    // Load pricing — fetch from each clinic's subcollection: agencies/{agencyId}/clinics/{clinicId}/pricing
     const allPricing: any[] = [];
-    const pricingSnap = await adminDb.collection("agencies").doc(agencyId)
-      .collection("pricing").get();
-    for (const pDoc of pricingSnap.docs) {
-      const p = pDoc.data();
-      if (p.status === "inactive") continue;
-      allPricing.push({
-        id: pDoc.id,
-        clinicId: p.clinicId || "",
-        clinicName: p.clinicName || "",
-        treatmentName: p.treatmentName || "",
-        subTreatmentName: p.subTreatmentName || p.treatmentName || "",
-        priceGroup: p.priceGroup || null,
-        priceMin: p.priceMin || 0,
-        priceMax: p.priceMax || 0,
-        currency: p.currency || "EUR",
-        priceType: p.priceType || "average",
-        duration: p.duration || null,
+    await Promise.all(allClinics.map(async (c: any) => {
+      const pricingSnap = await adminDb.collection("agencies").doc(agencyId)
+        .collection("clinics").doc(c.id).collection("pricing").get();
+      
+      pricingSnap.docs.forEach(pDoc => {
+        const p = pDoc.data();
+        if (p.status === "inactive") return;
+        allPricing.push({
+          id: pDoc.id,
+          clinicId: c.id,
+          clinicName: c.clinicName || "",
+          treatmentName: p.treatmentName || "",
+          subTreatmentName: p.subTreatmentName || p.treatmentName || "",
+          priceGroup: p.priceGroup || null,
+          priceMin: p.priceMin || 0,
+          priceMax: p.priceMax || 0,
+          currency: p.currency || "EUR",
+          priceType: p.priceType || "average",
+          duration: p.duration || null,
+        });
       });
-    }
+    }));
 
     // Load Agency AI Config
     const aiSnap = await adminDb.collection("agencies").doc(agencyId).collection("aiConfig").doc("main").get();
