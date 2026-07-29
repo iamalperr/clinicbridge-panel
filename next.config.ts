@@ -7,6 +7,15 @@ const nextConfig: NextConfig = {
     "@firebase/app",
     "@opentelemetry/api",
   ],
+  async redirects() {
+    return [
+      {
+        source: '/agency/agencies/:agencyId/pricing',
+        destination: '/agency/agencies/:agencyId/clinics',
+        permanent: false,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

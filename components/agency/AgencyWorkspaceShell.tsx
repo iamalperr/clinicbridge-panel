@@ -39,7 +39,6 @@ export default function AgencyWorkspaceShell({
     { labelKey: "portal.tabs.setup",           path: "/setup",        icon: <Rocket size={14} /> },
     { labelKey: "portal.tabs.treatments",      path: "/treatments",   icon: <Stethoscope size={14} /> },
     { labelKey: "portal.tabs.clinics",         path: "/clinics",      icon: <Building2 size={14} /> },
-    { labelKey: "portal.tabs.pricing",         path: "/pricing",      icon: <DollarSign size={14} /> },
     { labelKey: "portal.tabs.aiMatching",      path: "/matching",     icon: <Brain size={14} /> },
     { labelKey: "portal.tabs.widget",          path: "/widget",       icon: <Code size={14} /> },
     { labelKey: "portal.tabs.leads",           path: "/leads",        icon: <Users2 size={14} /> },
