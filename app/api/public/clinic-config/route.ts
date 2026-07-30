@@ -44,6 +44,8 @@ export async function GET(req: Request) {
 
   let clinicName      = "";
   let whatsappNumber  = "";
+  let turkishContactNumber = "";
+  let internationalContactNumber = "";
   let telegramLink    = "";
   let clinicLanguage  = "tr";
   let aiSkills: Record<string, boolean> = {};
@@ -63,6 +65,8 @@ export async function GET(req: Request) {
         const d = clinicSnap.data()!;
         clinicName     = d.name             ?? "";
         whatsappNumber = d.whatsappNumber   ?? "";
+        turkishContactNumber = d.turkishContactNumber ?? "";
+        internationalContactNumber = d.internationalContactNumber ?? "";
         telegramLink   = d.telegramUsername ?? "";
         clinicLanguage = d.language         ?? "tr";
       }
@@ -78,6 +82,8 @@ export async function GET(req: Request) {
         const d = clinicSnap.data()!;
         clinicName     = d.name             ?? "";
         whatsappNumber = d.whatsappNumber   ?? "";
+        turkishContactNumber = d.turkishContactNumber ?? "";
+        internationalContactNumber = d.internationalContactNumber ?? "";
         telegramLink   = d.telegramUsername ?? "";
         clinicLanguage = d.language         ?? "tr";
       }
@@ -89,7 +95,7 @@ export async function GET(req: Request) {
   }
 
   return NextResponse.json(
-    { clinicName, whatsappNumber, telegramLink, clinicLanguage, aiSkills, quickActions },
+    { clinicName, whatsappNumber, turkishContactNumber, internationalContactNumber, telegramLink, clinicLanguage, aiSkills, quickActions },
     { headers: CORS }
   );
 }

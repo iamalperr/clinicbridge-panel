@@ -13,6 +13,7 @@ import {
 } from "@/lib/appointment-notifications";
 import { normalizeTurkishPhone } from "@/lib/phoneUtils";
 import { normalizeLegacyChannel } from "@/lib/services/channelPolicyService";
+import { resolveContactNumber } from "@/lib/utils/contact-resolver";
 
 // Cache to avoid parsing working hours repeatedly
 const workingHoursCache = new Map<string, any>();
@@ -959,7 +960,7 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { clinicId, widgetId, message, history = [], conversationId = "", pendingAppointmentData, _systemAction, traceId } = body;
+    const { clinicId, widgetId, message, language, history = [], conversationId = "", pendingAppointmentData, _systemAction, traceId } = body;
     const convId = conversationId || `session_${Date.now()}`;
     debugLog.push(`clinicId=${clinicId} msg="${message?.slice(0, 60)}"`);
 
@@ -1169,6 +1170,10 @@ export async function POST(req: Request) {
         error: "Klinik veya asistan yapılandırması bulunamadı. Lütfen clinicId değerini kontrol edin." 
       }, { status: 404, headers: CORS });
     }
+
+    // Resolve dynamic contact number based on conversation language context
+    const activeLang = language || "tr";
+    clinicWhatsapp = resolveContactNumber(clinicData, activeLang);
 
     const messageId = body.messageId || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const msgLower = message.toLowerCase().trim();
@@ -2171,8 +2176,9 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
         ? customPrompt   // Custom prompt IS the identity (e.g. "Your name is İDA...")
         : `Sen ${clinicName}'nin dijital hasta asistanısın.`,
 
-      // ── Date context (always injected) ──
+      // ── Date context & Clinic Info (always injected) ──
       `\n\nBugünün tarihi ve saati: ${today}.`,
+      clinicWhatsapp ? `\nKlinik İletişim Numarası (WhatsApp / Telefon): ${clinicWhatsapp}` : "",
 
       // ── Skill and knowledge blocks ──
       ...skillBlocks,

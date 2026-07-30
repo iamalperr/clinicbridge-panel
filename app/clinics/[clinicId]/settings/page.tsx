@@ -41,6 +41,8 @@ interface SettingsForm {
   kvkkRequired: boolean;
   enableHumanHandoff: boolean;
   whatsappNumber: string;
+  turkishContactNumber: string;
+  internationalContactNumber: string;
   telegramUsername: string;
   // Paket & Modül
   plan: Plan | "starter";
@@ -62,6 +64,8 @@ const DEFAULT_FORM: SettingsForm = {
   kvkkRequired: true,
   enableHumanHandoff: false,
   whatsappNumber: "",
+  turkishContactNumber: "",
+  internationalContactNumber: "",
   telegramUsername: "",
   plan: "trial",
   modules: { ai: true, widget: true, voice: false },
@@ -97,6 +101,8 @@ export default function ClinicSettingsPage({ params }: PageProps) {
           kvkkRequired: data.kvkkRequired ?? true,
           enableHumanHandoff: data.enableHumanHandoff ?? false,
           whatsappNumber: data.whatsappNumber ?? "",
+          turkishContactNumber: data.turkishContactNumber ?? "",
+          internationalContactNumber: data.internationalContactNumber ?? "",
           telegramUsername: data.telegramUsername ?? "",
           // Paket & Modül — fallback: trial + AI+Widget aktif
           plan: (data.plan as Plan | "starter") ?? "trial",
@@ -138,6 +144,8 @@ export default function ClinicSettingsPage({ params }: PageProps) {
         kvkkRequired: form.kvkkRequired,
         enableHumanHandoff: form.enableHumanHandoff,
         whatsappNumber: form.whatsappNumber.trim(),
+        turkishContactNumber: form.turkishContactNumber.trim(),
+        internationalContactNumber: form.internationalContactNumber.trim(),
         telegramUsername: normalizedTelegram,
         // Paket & Modül
         plan: form.plan as Plan,
@@ -520,6 +528,32 @@ export default function ClinicSettingsPage({ params }: PageProps) {
                   <span>Bağlantı: wa.me/{form.whatsappNumber.trim().replace(/[^0-9]/g, "")}</span>
                 </div>
               )}
+            </div>
+
+            {/* Turkish Contact Number */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Phone size={15} color="#E53935" />
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: UI_COLORS.textSecondary }}>Türkçe İletişim Numarası</span>
+              </div>
+              <Input
+                value={form.turkishContactNumber}
+                onChange={field("turkishContactNumber")}
+                placeholder="+90 555 123 45 67 (Sadece Türkçe iletişimde gösterilir)"
+              />
+            </div>
+
+            {/* International Contact Number */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Globe size={15} color="#1E88E5" />
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: UI_COLORS.textSecondary }}>International Contact Number</span>
+              </div>
+              <Input
+                value={form.internationalContactNumber}
+                onChange={field("internationalContactNumber")}
+                placeholder="+90 555 123 45 68 (Sadece yabancı dillerde gösterilir)"
+              />
             </div>
 
             {/* Telegram */}

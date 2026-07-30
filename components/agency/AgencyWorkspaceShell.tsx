@@ -62,23 +62,25 @@ export default function AgencyWorkspaceShell({
   }, [agencyId]);
 
   useEffect(() => {
-    async function fetchCounts() {
-      try {
-        const [clinicSnap, treatmentSnap, leadSnap] = await Promise.all([
-          getCountFromServer(collection(db, "agencies", agencyId, "clinics")),
-          getCountFromServer(collection(db, "agencies", agencyId, "treatments")),
-          getCountFromServer(collection(db, "agencies", agencyId, "leads")),
-        ]);
-        setCounts({
-          clinics: clinicSnap.data().count,
-          treatments: treatmentSnap.data().count,
-          leads: leadSnap.data().count,
-        });
-      } catch {
-        // silently fail
-      }
-    }
-    fetchCounts();
+    if (!agencyId) return;
+    
+    const unsubClinics = onSnapshot(collection(db, "agencies", agencyId, "clinics"), (snap) => {
+      setCounts(prev => ({ ...prev, clinics: snap.size }));
+    });
+    
+    const unsubTreatments = onSnapshot(collection(db, "agencies", agencyId, "treatments"), (snap) => {
+      setCounts(prev => ({ ...prev, treatments: snap.size }));
+    });
+    
+    const unsubLeads = onSnapshot(collection(db, "agencies", agencyId, "leads"), (snap) => {
+      setCounts(prev => ({ ...prev, leads: snap.size }));
+    });
+
+    return () => {
+      unsubClinics();
+      unsubTreatments();
+      unsubLeads();
+    };
   }, [agencyId]);
 
   const statusLabel = agency?.status === "active" ? t("portal.status.active")

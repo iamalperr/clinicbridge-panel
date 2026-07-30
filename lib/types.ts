@@ -92,6 +92,8 @@ export interface Clinic {
   email?: string;
   phone?: string;
   whatsappNumber?: string;
+  turkishContactNumber?: string;
+  internationalContactNumber?: string;
   telegramUsername?: string;
   enableHumanHandoff?: boolean;
   aiEnabled?: "active" | "inactive";

@@ -271,6 +271,8 @@ export interface AgencyClinic {
   profileUrl?: string;
   website?: string;
   whatsapp?: string;
+  turkishContactNumber?: string;
+  internationalContactNumber?: string;
   contactEmail?: string;
   phone?: string;
   // Legacy flat fields (kept for backward compat)

@@ -131,13 +131,27 @@ function stripUndefined(obj: Record<string, any>): Record<string, any> {
   return result;
 }
 
+function getVisibleClinicName(data: Record<string, any>): string {
+  if (data.clinicName?.trim()) return data.clinicName.trim();
+  if (data.displayNameTr?.trim()) return data.displayNameTr.trim();
+  if (data.displayNameEn?.trim()) return data.displayNameEn.trim();
+  if (data.displayName?.trim()) return data.displayName.trim();
+  if (data.name?.trim()) return data.name.trim();
+  if (data.brand && data.branch) return `${data.brand} ${data.branch}`.trim();
+  if (data.aliases && Array.isArray(data.aliases) && data.aliases.length > 0) return data.aliases[0].trim();
+  return "";
+}
+
 export async function addClinicToAgency(
   agencyId: string,
   clinicData: Omit<AgencyClinic, "id" | "addedAt" | "updatedAt">
 ): Promise<string> {
+  const visibleName = getVisibleClinicName(clinicData as Record<string, any>);
+  if (!visibleName) throw new Error("A visible clinic name is required.");
+
   const colRef = collection(db, "agencies", agencyId, "clinics");
   const docRef = doc(colRef);
-  const cleanData = stripUndefined(clinicData as Record<string, any>);
+  const cleanData = stripUndefined({ ...clinicData, clinicName: visibleName } as Record<string, any>);
   await setDoc(docRef, {
     ...cleanData,
     addedAt: serverTimestamp(),
@@ -158,7 +172,17 @@ export async function updateAgencyClinic(
   docId: string,
   data: Partial<AgencyClinic>
 ): Promise<void> {
-  const cleanData = stripUndefined(data as Record<string, any>);
+  let nameOverride: any = {};
+  const nameKeys = ['clinicName', 'displayName', 'displayNameTr', 'displayNameEn', 'name', 'brand', 'branch', 'aliases'];
+  if (nameKeys.some(k => k in data)) {
+    const visibleName = getVisibleClinicName(data as Record<string, any>);
+    if (!visibleName) {
+      throw new Error("A visible clinic name is required during update.");
+    }
+    nameOverride = { clinicName: visibleName };
+  }
+
+  const cleanData = stripUndefined({ ...data, ...nameOverride } as Record<string, any>);
   await updateDoc(doc(db, "agencies", agencyId, "clinics", docId), {
     ...cleanData,
     updatedAt: serverTimestamp(),

@@ -97,6 +97,60 @@ function ToggleSwitch({ label, checked, onChange }: { label: string; checked: bo
   );
 }
 
+// ─── Clinic Name Helper ────────────────────────────────────────────────────────
+export function resolveClinicName(clinic: any, language: string) {
+  // 1. Localized current-language display name
+  const localizedName = language === 'tr' ? clinic.displayNameTr : clinic.displayNameEn;
+  if (localizedName) return localizedName;
+
+  // 2. Canonical display name
+  if (clinic.displayName) return clinic.displayName;
+  if (clinic.name) return clinic.name;
+
+  // 3. Clinic name (Legacy/Fallback)
+  if (clinic.clinicName) return clinic.clinicName;
+
+  // 4. Brand + branch
+  if (clinic.brand && clinic.branch) return `${clinic.brand} ${clinic.branch}`;
+
+  // 5. Alias fallback
+  if (clinic.aliases && clinic.aliases.length > 0) return clinic.aliases[0];
+
+  return "Bilinmeyen Klinik";
+}
+
+// ─── External Profile Helper ──────────────────────────────────────────────────
+export function resolveClinicExternalProfile(clinic: any, language: string) {
+  if (clinic.sourceDomain === 'feelinhealthy.com' || clinic.externalLinkType === 'feelinhealthy_profile' || clinic.sourceType === 'agency_website') {
+    const url = clinic.externalProfileUrl || clinic.canonicalSourceUrl || clinic.profileUrl;
+    if (url) {
+      return {
+        url,
+        label: language === 'tr' ? 'FeelinHealthy Profili' : 'FeelinHealthy Profile',
+        isVerified: clinic.verificationStatus === 'verified'
+      };
+    }
+  }
+
+  if (clinic.profileUrl && clinic.profileUrl.includes('feelinhealthy.com')) {
+    return {
+      url: clinic.profileUrl,
+      label: language === 'tr' ? 'FeelinHealthy Profili' : 'FeelinHealthy Profile',
+      isVerified: false
+    };
+  }
+
+  if ((clinic.sourceType === 'official_brand_website' || clinic.sourceType === 'official_clinic_website') && clinic.externalSourceUrl) {
+    return {
+      url: clinic.externalSourceUrl,
+      label: language === 'tr' ? 'Resmî Klinik Profili' : 'Official Clinic Profile',
+      isVerified: true
+    };
+  }
+
+  return null;
+}
+
 // ─── Main Component ─────────────────────────────────────────────────────────
 export default function AgencyClinicsPage() {
   const { agencyId } = useAgencyWorkspace();
@@ -440,7 +494,7 @@ export default function AgencyClinicsPage() {
                   <Building2 size={20} color={clinic.status === "active" ? "#10b981" : "#94a3b8"} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 14.5, fontWeight: 700, color: UI_COLORS.textPrimary }}>{clinic.clinicName}</p>
+                  <p style={{ fontSize: 14.5, fontWeight: 700, color: UI_COLORS.textPrimary }}>{resolveClinicName(clinic, language)}</p>
                   {clinic.category && (
                     <p style={{ fontSize: 11.5, color: UI_COLORS.textMuted }}>
                       {t(`portal.clinics.clinicTypes.${clinic.category}`) !== `portal.clinics.clinicTypes.${clinic.category}` ? t(`portal.clinics.clinicTypes.${clinic.category}`) : clinic.category}
@@ -455,25 +509,35 @@ export default function AgencyClinicsPage() {
 
               {/* Card Meta */}
               <div style={{ padding: "0 20px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: UI_COLORS.textSecondary }}>
-                  <MapPin size={12} /> {clinic.location?.city}{clinic.location?.country ? `, ${clinic.location.country}` : ""}
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: UI_COLORS.textSecondary }}>
-                  <Globe size={12} /> {(clinic.supportedLanguages || []).map(l => l.toUpperCase()).join(", ") || "—"}
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: UI_COLORS.textSecondary }}>
-                  <Stethoscope size={12} /> {(clinic.treatmentCategories || []).map(catLabel).join(", ") || "—"}
-                </div>
-                {clinic.profileUrl && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#10b981" }}>
-                    <ExternalLink size={12} />
-                    <a href={clinic.profileUrl} target="_blank" rel="noopener noreferrer"
-                      style={{ color: "#10b981", textDecoration: "none" }}
-                      onClick={(e) => e.stopPropagation()}>
-                      FeelinHealthy Profile
-                    </a>
+                {(clinic.location?.city || clinic.location?.country) && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: UI_COLORS.textSecondary }}>
+                    <MapPin size={12} /> {clinic.location?.city}{clinic.location?.country ? `, ${clinic.location.country}` : ""}
                   </div>
                 )}
+                {clinic.supportedLanguages && clinic.supportedLanguages.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: UI_COLORS.textSecondary }}>
+                    <Globe size={12} /> {clinic.supportedLanguages.map(l => l.toUpperCase()).join(", ")}
+                  </div>
+                )}
+                {clinic.treatmentCategories && clinic.treatmentCategories.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: UI_COLORS.textSecondary }}>
+                    <Stethoscope size={12} /> {clinic.treatmentCategories.map(catLabel).join(", ")}
+                  </div>
+                )}
+                {(() => {
+                  const extProfile = resolveClinicExternalProfile(clinic, language);
+                  if (!extProfile) return null;
+                  return (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#10b981" }}>
+                      <ExternalLink size={12} />
+                      <a href={extProfile.url} target="_blank" rel="noopener noreferrer"
+                        style={{ color: "#10b981", textDecoration: "none" }}
+                        onClick={(e) => e.stopPropagation()}>
+                        {extProfile.label}
+                      </a>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Card Stats */}
@@ -481,15 +545,21 @@ export default function AgencyClinicsPage() {
                 padding: "10px 20px", borderTop: `1px solid ${UI_COLORS.border}`,
                 display: "flex", gap: 16, fontSize: 11.5, color: UI_COLORS.textMuted,
               }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <Star size={11} /> {clinic.priority || "—"}
-                </span>
-                <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <Clock size={11} /> {clinic.responseSLA ? `${clinic.responseSLA}h` : "—"}
-                </span>
-                <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <Users2 size={11} /> {clinic.leadCapacity ? `${clinic.leadCapacity}/d` : "—"}
-                </span>
+                {clinic.priority && (
+                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <Star size={11} /> {clinic.priority}
+                  </span>
+                )}
+                {clinic.responseSLA && (
+                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <Clock size={11} /> {clinic.responseSLA}h
+                  </span>
+                )}
+                {clinic.leadCapacity && (
+                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <Users2 size={11} /> {clinic.leadCapacity}/d
+                  </span>
+                )}
                 <span style={{ flex: 1 }} />
                 <span style={{ fontSize: 11, color: UI_COLORS.textMuted, opacity: 0.5 }}>
                   {clinic.clinicType === "clinicbridge" ? "CB" : "EXT"}
@@ -760,7 +830,7 @@ export default function AgencyClinicsPage() {
         <Modal
           isOpen={!!detailClinic}
           onClose={() => { setDetailClinic(null); setShowPricingForm(false); }}
-          title={detailClinic.clinicName}
+          title={resolveClinicName(detailClinic, language)}
         >
           <div style={{ maxHeight: 520, overflowY: "auto" }}>
             {/* General Info */}
@@ -780,16 +850,20 @@ export default function AgencyClinicsPage() {
               ))}
             </div>
 
-            {/* Profile URL */}
-            {detailClinic.profileUrl && (
-              <a href={detailClinic.profileUrl} target="_blank" rel="noopener noreferrer" style={{
-                display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10,
-                background: "rgba(16, 185, 129, 0.05)", border: "1px solid rgba(16, 185, 129, 0.15)",
-                color: "#10b981", fontSize: 13, fontWeight: 600, textDecoration: "none", marginBottom: 20,
-              }}>
-                <ExternalLink size={14} /> FeelinHealthy Profile →
-              </a>
-            )}
+            {(() => {
+              const extProfile = resolveClinicExternalProfile(detailClinic, language);
+              if (!extProfile) return null;
+              return (
+                <a href={extProfile.url} target="_blank" rel="noopener noreferrer" style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10,
+                  background: "rgba(16, 185, 129, 0.05)", border: "1px solid rgba(16, 185, 129, 0.15)",
+                  color: "#10b981", fontSize: 13, fontWeight: 600, textDecoration: "none", marginBottom: 20,
+                }}>
+                  <ExternalLink size={16} />
+                  {extProfile.label}
+                </a>
+              );
+            })()}
 
             {/* Short Description */}
             {detailClinic.shortDescription && (
@@ -801,23 +875,26 @@ export default function AgencyClinicsPage() {
 
             {/* Treatment Categories & Languages */}
             <div style={{ display: "flex", gap: 24, marginBottom: 20 }}>
-              <div>
-                <p style={{ fontSize: 11, color: UI_COLORS.textMuted, marginBottom: 6 }}>{t("portal.clinics.treatmentCategories")}</p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                  {(detailClinic.treatmentCategories || []).map((c) => (
-                    <Badge key={c} label={catLabel(c)} variant="info" />
-                  ))}
-                  {(detailClinic.treatmentCategories || []).length === 0 && <span style={{ fontSize: 12, color: UI_COLORS.textMuted }}>—</span>}
+              {detailClinic.treatmentCategories && detailClinic.treatmentCategories.length > 0 && (
+                <div>
+                  <p style={{ fontSize: 11, color: UI_COLORS.textMuted, marginBottom: 6 }}>{t("portal.clinics.treatmentCategories")}</p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {detailClinic.treatmentCategories.map((c) => (
+                      <Badge key={c} label={catLabel(c)} variant="info" />
+                    ))}
+                  </div>
                 </div>
-              </div>
-              <div>
-                <p style={{ fontSize: 11, color: UI_COLORS.textMuted, marginBottom: 6 }}>{t("portal.clinics.supportedLanguages")}</p>
-                <div style={{ display: "flex", gap: 4 }}>
-                  {(detailClinic.supportedLanguages || []).map((l) => (
-                    <Badge key={l} label={l.toUpperCase()} variant="default" />
-                  ))}
+              )}
+              {detailClinic.supportedLanguages && detailClinic.supportedLanguages.length > 0 && (
+                <div>
+                  <p style={{ fontSize: 11, color: UI_COLORS.textMuted, marginBottom: 6 }}>{t("portal.clinics.supportedLanguages")}</p>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {detailClinic.supportedLanguages.map((l) => (
+                      <Badge key={l} label={l.toUpperCase()} variant="default" />
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Sub-Treatments */}
@@ -839,14 +916,14 @@ export default function AgencyClinicsPage() {
             }}>
               {[
                 { label: t("portal.clinics.priorityScore"), value: detailClinic.priority, icon: <Star size={14} /> },
-                { label: t("portal.clinics.responseSla"), value: detailClinic.responseSLA ? `${detailClinic.responseSLA}h` : "—", icon: <Clock size={14} /> },
-                { label: t("portal.clinics.leadCapacity"), value: detailClinic.leadCapacity ? `${detailClinic.leadCapacity}/d` : "—", icon: <Users2 size={14} /> },
-              ].map(({ label, value, icon }) => (
+                { label: t("portal.clinics.responseSla"), value: detailClinic.responseSLA ? `${detailClinic.responseSLA}h` : null, icon: <Clock size={14} /> },
+                { label: t("portal.clinics.leadCapacity"), value: detailClinic.leadCapacity ? `${detailClinic.leadCapacity}/d` : null, icon: <Users2 size={14} /> },
+              ].filter(item => item.value !== null && item.value !== undefined).map(({ label, value, icon }) => (
                 <div key={label} style={{ textAlign: "center" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, color: UI_COLORS.textMuted, marginBottom: 4 }}>
                     {icon} <span style={{ fontSize: 11 }}>{label}</span>
                   </div>
-                  <p style={{ fontSize: 18, fontWeight: 800, color: UI_COLORS.textPrimary }}>{value ?? "—"}</p>
+                  <p style={{ fontSize: 18, fontWeight: 800, color: UI_COLORS.textPrimary }}>{value}</p>
                 </div>
               ))}
             </div>
