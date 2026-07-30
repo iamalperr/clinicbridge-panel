@@ -1600,6 +1600,8 @@ export async function POST(req: Request) {
     const isBeforeAfterIntent = /\b(önce.?sonra|before.?after|sonuç|result|örnek.?vaka|sample|case|foto|photo|görseller?|images?|nasıl.?gör[üu]n|how.?look|tedavi.?sonuç|outcome)\b/i.test(msgLower);
     const isDoctorIntent = isBaseDoctorIntent || requestedSpecialtyCode !== null || isTreatmentDoctorIntent;
     const isDoctorCountIntent = isDoctorIntent && /\b(kaç|sayısı|sayı|how many|number of)\b/i.test(msgLower);
+    const isServiceIntent = /\b(hizmet|hizmetler|hizmetleri|hizmetleriniz|servis|servisler|servisleri|tedavi|tedaviler|tedavileri|tedavileriniz|işlem|işlemler|işlemleri|neler yapıyorsunuz|ne yapıyorsunuz|hangi tedaviler|hangi işlemler|services|treatments|procedures|specialties|clinical departments|medical services|what do you offer|what do you do)\b/i.test(msgLower) && !requestedTreatmentCode && !requestedSpecialtyCode && !isDoctorIntent && !activePriceIntent;
+    debugLog.push(`intent_service=${isServiceIntent}`);
 
     // Classify the detected intent for logging
     let detectedDoctorSubIntent = "none";
@@ -1915,6 +1917,8 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
       searchMessage = "ilk muayene ücreti ücretsiz muayene fiyatı bedava muayene mi";
     } else if (activePriceIntent === "xray_fee") {
       searchMessage = "röntgen ücreti ücretsiz röntgen fiyatı tomografi bedeli bedava mı";
+    } else if (isServiceIntent) {
+      searchMessage = "tedaviler uzmanlık alanları hizmetler işlemler servisler treatments procedures clinical specialties medical services";
     }
 
     const topDocs = await hybridSearch(searchMessage, trainingDocs, clinicName, sliceLimit);
@@ -2136,6 +2140,10 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
       skillBlocks.push("\nKONUM BİLGİSİ: Konum veya adres sorulduğunda, bilgi havuzunda bulunan semt, ilçe, şehir, yakındaki önemli noktalar (havalimanı vb.) gibi TÜM detayları açıkça belirt. Sadece şehri söyleyip geçme. Bilgi varsa gereksiz yere 'iletişime geçin' deme, adresi tam olarak yaz.");
     }
 
+    if (isServiceIntent) {
+      skillBlocks.push(`\nGENEL HİZMET TALEBİ: Kullanıcı kliniğin sunduğu genel hizmetleri / tedavileri soruyor. Yanıtını KLİNİK BİLGİ HAVUZU'ndaki tedavileri doğal ve hasta dostu bir şekilde özetleyerek oluştur. Belgelerin başlıklarını robotik bir liste gibi alt alta sıralama; benzer tedavileri mantıklı kategorilerde birleştirerek akıcı bir paragraf veya düzenli bir özet halinde sun.`);
+    }
+
     if (activePriceIntent) {
       skillBlocks.push(`\nÖNEMLİ FİYATLANDIRMA KURALLARI:
 1. "Ücretsiz" (free), geçerli ve doğrulanmış bir fiyat türüdür. Bilgi Havuzunda (Örn: "İlk muayene ücretsizdir") geçiyorsa "doğrulanmış bilgi mevcut değil" DEME, "fiyatlar muayene sonrası belli olur" DEME.
@@ -2287,7 +2295,7 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
     // GROUNDEDNESS CHECK
     // Only check if we retrieved RAG context and the AI didn't already use the safe fallback
     const isStateActive = appointmentState !== "IDLE" || isAppointmentFlowActive;
-    if (knowledgeContext.length > 0 && !reply.includes("doğrulamıyorum") && !reply.includes("erişemediğim") && !isDoctorIntent && !isStateActive) {
+    if (knowledgeContext.length > 0 && !reply.includes("doğrulamıyorum") && !reply.includes("erişemediğim") && !isDoctorIntent && !isStateActive && !isServiceIntent) {
       const { validateGroundedness } = await import("@/lib/services/retrievalService");
       
       const fullContextForValidation = doctorContext ? `${knowledgeContext}\n\n${doctorContext}` : knowledgeContext;
