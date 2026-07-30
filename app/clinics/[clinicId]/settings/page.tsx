@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { UI_COLORS } from "@/components/ui/ui-shared";
-import { Loader2, MessageCircle, Phone, Sparkles, Layout, Mic, Bell } from "lucide-react";
+import { Loader2, MessageCircle, Phone, Sparkles, Layout, Mic, Bell, Globe } from "lucide-react";
 import type { Clinic, Plan } from "@/lib/types";
 import Link from "next/link";
 

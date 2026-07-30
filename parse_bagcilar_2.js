@@ -1,0 +1,19 @@
+const fs = require('fs');
+const cheerio = require('cheerio');
+const html = fs.readFileSync('bagcilar.html', 'utf8');
+const $ = cheerio.load(html);
+
+const text = $('body').text().replace(/\s+/g, ' ');
+const d1 = text.indexOf('Ezgi Atlı Karakuş');
+const d2 = text.indexOf('Ammar Derviş');
+const d3 = text.indexOf('Mehmet Nuri Yüksek');
+const d4 = text.indexOf('Oğuz Kara');
+
+console.log("D1:", text.substring(d1, d1 + 600));
+console.log("D2:", text.substring(d2, d2 + 600));
+console.log("D3:", text.substring(d3, d3 + 600));
+console.log("D4:", text.substring(d4, d4 + 600));
+
+console.log("\nTEXT CONTINUED:");
+const overviewStart = text.indexOf('experienced team of dental professionals');
+console.log(text.substring(overviewStart, overviewStart + 1000));

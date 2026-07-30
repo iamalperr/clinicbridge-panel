@@ -1,0 +1,118 @@
+{
+  "clinicCount": 14,
+  "clinics": [
+    {
+      "id": "1qO6dCSTLpF97sx9FBLm",
+      "name": "Hospitadent Dental Group Kocaeli",
+      "updatedAt": {
+        "_seconds": 1785356868,
+        "_nanoseconds": 941000000
+      }
+    },
+    {
+      "id": "9lYESxsLYFM1w4oebubu",
+      "name": "İstanbul Diş Akademisi",
+      "updatedAt": {
+        "_seconds": 1785334146,
+        "_nanoseconds": 747000000
+      }
+    },
+    {
+      "id": "EppMzadYXSeBXREaMAHv",
+      "name": "Hospitadent Dental Group Şerifali",
+      "updatedAt": {
+        "_seconds": 1785339713,
+        "_nanoseconds": 503000000
+      }
+    },
+    {
+      "id": "HXMlMPZ74AXkXoR4sEnH",
+      "name": "Hospitadent Dental Group Mecidiyeköy",
+      "updatedAt": {
+        "_seconds": 1785350136,
+        "_nanoseconds": 578000000
+      }
+    },
+    {
+      "id": "SUEtM1vwxLkidYvH0cLR",
+      "name": "Hospitadent Dental Group Çamlıca",
+      "updatedAt": {
+        "_seconds": 1785307377,
+        "_nanoseconds": 182000000
+      }
+    },
+    {
+      "id": "XkQc00vQN8qXkWEA9CPB",
+      "name": "Hospitadent Dental Group Alanya",
+      "updatedAt": {
+        "_seconds": 1785338210,
+        "_nanoseconds": 366000000
+      }
+    },
+    {
+      "id": "insjxdoE2Rpss5EFzP3h",
+      "name": "Hospitadent Dental Group Ankara",
+      "updatedAt": {
+        "_seconds": 1785337251,
+        "_nanoseconds": 841000000
+      }
+    },
+    {
+      "id": "jOfAk5EVmhPHzpfT0HX1",
+      "name": "Hospitadent Dental Group Antalya",
+      "updatedAt": {
+        "_seconds": 1785338863,
+        "_nanoseconds": 148000000
+      }
+    },
+    {
+      "id": "jXJTAV47HbxWgx4odYXv",
+      "name": "Hospitadent Dental Group Bağcılar",
+      "updatedAt": {
+        "_seconds": 1785350134,
+        "_nanoseconds": 440000000
+      }
+    },
+    {
+      "id": "mfXKPPAzRW5DIyRQdDEU",
+      "name": "Yeditepe University Dental Hospital",
+      "updatedAt": {
+        "_seconds": 1785318340,
+        "_nanoseconds": 254000000
+      }
+    },
+    {
+      "id": "n6Fm05IEtQqOLvBEg9qQ",
+      "name": "Hospitadent Dental Group Cevizlibağ",
+      "updatedAt": {
+        "_seconds": 1785355335,
+        "_nanoseconds": 587000000
+      }
+    },
+    {
+      "id": "stLMLwIHn7bQrJdsX222",
+      "name": "Hospitadent Dental Group Bakırköy",
+      "updatedAt": {
+        "_seconds": 1785350134,
+        "_nanoseconds": 968000000
+      }
+    },
+    {
+      "id": "tiIuRfmyrnPsRkw8YQo5",
+      "name": "Hospitadent Dental Group Göktürk",
+      "updatedAt": {
+        "_seconds": 1785354413,
+        "_nanoseconds": 954000000
+      }
+    },
+    {
+      "id": "xIG04FOuveqLaElhqmNE",
+      "name": "Hospitadent Dental Group Fatih",
+      "updatedAt": {
+        "_seconds": 1785334147,
+        "_nanoseconds": 549000000
+      }
+    }
+  ],
+  "timestamp": "2026-07-29T20:43:42.582Z"
+}

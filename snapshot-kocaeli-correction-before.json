@@ -1,0 +1,56 @@
+{
+  "clinicCount": 14,
+  "targetClinicId": "1qO6dCSTLpF97sx9FBLm",
+  "data": {
+    "agencyId": "mFrKEjO9fNwUzbueW5rc",
+    "branch": "Kocaeli",
+    "category": "dental",
+    "facilityType": "dental_hospital",
+    "priority": 80,
+    "contact": {
+      "phone": "+90 262 610 11 10"
+    },
+    "phone": "+90 262 610 11 10",
+    "treatmentCategories": [
+      "dental"
+    ],
+    "createdAt": {
+      "_seconds": 1785356725,
+      "_nanoseconds": 254000000
+    },
+    "status": "active",
+    "clinicName": "Beyazışık Kocaeli Dental Group",
+    "longDescription": "Beyazışık Kocaeli Dental Group offers top-tier dental services in Kocaeli, Türkiye. Our clinic specializes in dental implants, aesthetic dentistry such as E-Max and porcelain veneers, and Hollywood smile designs. We focus on delivering high-quality, patient-centric care with transparent average pricing and dedicated durations for optimal recovery.",
+    "profileUrl": "https://feelinhealthy.com/medicalcenter/beyazisik-kocaeli-dental-group",
+    "aliases": [
+      "Beyazışık Kocaeli",
+      "Beyazisik Kocaeli",
+      "Beyazışık Dental Group Kocaeli",
+      "Beyazisik Dental Group Kocaeli",
+      "Beyazışık Kocaeli Dental Group",
+      "Beyazisik Kocaeli Dental Group",
+      "Kocaeli dental clinic"
+    ],
+    "displayNameTr": "Beyazışık Kocaeli Dental Group",
+    "active": true,
+    "shortDescription": "Beyazışık Kocaeli Dental Group is a verified dental center in Kocaeli, Türkiye, providing a comprehensive range of treatments including implants, veneers, and smile design.",
+    "externalSourceUrl": "https://feelinhealthy.com/medicalcenter/beyazisik-kocaeli-dental-group",
+    "supportedLanguages": [],
+    "sourceType": "agency_website",
+    "displayNameEn": "Beyazışık Kocaeli Dental Group",
+    "location": {
+      "country": "Türkiye",
+      "city": "Kocaeli"
+    },
+    "stableKey": "beyazisik_kocaeli_dental_group",
+    "normalizedName": "beyazisik kocaeli dental group",
+    "sourceDomain": "feelinhealthy.com",
+    "brand": "Beyazışık Dental Group",
+    "slug": "beyazisik-kocaeli-dental-group",
+    "updatedAt": {
+      "_seconds": 1785358971,
+      "_nanoseconds": 955000000
+    }
+  },
+  "timestamp": "2026-07-29T21:03:35.695Z"
+}

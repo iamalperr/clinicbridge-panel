@@ -1173,7 +1173,7 @@ export async function POST(req: Request) {
 
     // Resolve dynamic contact number based on conversation language context
     const activeLang = language || "tr";
-    clinicWhatsapp = resolveContactNumber(clinicData, activeLang);
+    clinicWhatsapp = resolveContactNumber(clinicData, activeLang, trainingDocs);
 
     const messageId = body.messageId || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const msgLower = message.toLowerCase().trim();
@@ -2018,14 +2018,27 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
     if (userWantsLive) {
       debugLog.push("LIVE_SUPPORT_SHORT_CIRCUIT");
 
-      // Detect conversation language from the message
-      const isTurkish = /[ğüşıöçĞÜŞİÖÇ]/.test(message)
-        || /\b(istiyorum|misin|mısın|mısınız|lütfen|teşekkür|merhaba|tamam|evet|hayır|bağla|destek|görüşmek|iletişim)\b/i.test(message);
-      const lang = isTurkish ? "tr" : (clinicLanguage === "tr" ? "tr" : "en");
-
-      const handoffMsg = lang === "tr"
-        ? `Sizi canlı destek ekibimize yönlendirebilirim. Aşağıdaki kanallardan biriyle ${clinicName} ekibine ulaşabilirsiniz.`
-        : `I can direct you to our live support team. You can contact ${clinicName} through one of the channels below.`;
+      // The decision must use the conversation’s currently selected or detected language
+      const lang = activeLang;
+      const contactNumber = clinicWhatsapp || "";
+      
+      let handoffMsg = "";
+      if (lang === "tr") {
+         handoffMsg = `Sizi canlı destek ekibimize yönlendirebilirim. Aşağıdaki kanallardan biriyle ${clinicName} ekibine ulaşabilirsiniz.`;
+         if (contactNumber) {
+            handoffMsg = `Elbette. ${clinicName} ekibiyle WhatsApp üzerinden doğrudan iletişime geçebilirsiniz:\n\n${contactNumber}`;
+         }
+      } else if (lang === "de") {
+         handoffMsg = `Ich kann Sie an unser Live-Support-Team weiterleiten. Sie können das Team von ${clinicName} über einen der unten stehenden Kanäle kontaktieren.`;
+         if (contactNumber) {
+            handoffMsg = `Natürlich. Sie können das internationale Patiententeam von ${clinicName} direkt über WhatsApp kontaktieren:\n\n${contactNumber}`;
+         }
+      } else {
+         handoffMsg = `I can direct you to our live support team. You can contact ${clinicName} through one of the channels below.`;
+         if (contactNumber) {
+            handoffMsg = `Of course. You can contact ${clinicName}’s international patient team directly via WhatsApp:\n\n${contactNumber}`;
+         }
+      }
 
       const handoffPayload: any = {
         reply: handoffMsg,
@@ -2302,7 +2315,13 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       const validation = await validateGroundedness(reply, fullContextForValidation);
       if (!validation.isGrounded) {
          console.warn(`[Groundedness Failed] Reason: ${validation.reason}\nReply: ${reply}`);
-         reply = "Bu bilgiyi şu anda güvenilir şekilde doğrulayamıyorum. Yanlış yönlendirmemek için klinik ekibimizden teyit edilmesi gerekir.";
+         if (activeLang === "tr") {
+            reply = "Bu bilgiyi şu anda güvenilir şekilde doğrulayamıyorum. Yanlış yönlendirmemek için klinik ekibimizden teyit edilmesi gerekir.";
+         } else if (activeLang === "de") {
+            reply = "Ich kann diese Informationen im Moment nicht zuverlässig überprüfen. Dies muss von unserem Klinikteam bestätigt werden, um Sie nicht falsch zu informieren.";
+         } else {
+            reply = "I cannot reliably verify this information at the moment. It needs to be confirmed by our clinic team to avoid misleading you.";
+         }
       }
     }
 

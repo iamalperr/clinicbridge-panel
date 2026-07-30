@@ -43,6 +43,10 @@ async function run() {
   console.log(`=== BEYAZIŞIK SANCAKTEPE INSTALLATION [${isApply ? "APPLY" : "DRY-RUN"}] ===\n`);
 
   const db = getAdminDb();
+  if (!db) {
+    console.error("Admin DB is not initialized.");
+    process.exit(1);
+  }
   const clinicsRef = db.collection("agencies").doc(AGENCY_ID).collection("clinics");
   
   // Environment Match
@@ -276,7 +280,7 @@ async function run() {
   console.log(`[VERIFICATION] Clinic count after: ${afterSnap.size} (Expected: ${totalClinicsBefore + expectedDelta})`);
   
   const savedDoc = await clinicDocRef.get();
-  console.log(`[VERIFICATION] Visible clinic name: ${savedDoc.data().clinicName}`);
+  console.log(`[VERIFICATION] Visible clinic name: ${savedDoc.data()?.clinicName}`);
 
 }
 

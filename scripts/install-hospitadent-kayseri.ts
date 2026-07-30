@@ -140,6 +140,10 @@ async function run() {
   console.log(`\n=== HOSPITADENT KAYSERİ INSTALLATION [${isApply ? 'APPLY' : 'DRY-RUN'}] ===\n`);
   
   const db = getAdminDb();
+  if (!db) {
+    console.error("Admin DB not found.");
+    process.exit(1);
+  }
   const clinicsRef = db.collection('agencies').doc(TARGET_AGENCY_ID).collection('clinics');
   
   const allClinics = await clinicsRef.get();

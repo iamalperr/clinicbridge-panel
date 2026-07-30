@@ -1,0 +1,89 @@
+{
+  "clinicCount": 13,
+  "targetClinicId": "n6Fm05IEtQqOLvBEg9qQ",
+  "data": {
+    "agencyId": "mFrKEjO9fNwUzbueW5rc",
+    "stableKey": "hospitadent_dental_group_cevizlibag",
+    "slug": "hospitadent-dental-group-cevizlibag",
+    "brand": "Hospitadent Dental Group",
+    "branch": "Cevizlibağ",
+    "displayNameTr": "Hospitadent Dental Group Cevizlibağ",
+    "displayNameEn": "Hospitadent Dental Group Cevizlibağ",
+    "category": "dental",
+    "facilityType": "clinic",
+    "sourceDomain": "hospitadent.com",
+    "externalSourceUrl": "https://www.hospitadent.com/en/branches/cevizlibag",
+    "capacity": {
+      "indoorAreaSqm": 0,
+      "treatmentUnits": 0
+    },
+    "facilities": {
+      "panoramicXray": true,
+      "dentalTomography": true,
+      "sedation": true,
+      "generalAnesthesia": true
+    },
+    "patientSupport": {
+      "interpreter": true,
+      "airportTransfer": true,
+      "localTransfer": true,
+      "hotelCoordination": true
+    },
+    "shortOverviewTr": "Çeyrek asra yaklaşan tıbbi tecrübesiyle İstanbul Avrupa Yakası'nda Cevizlibağ'da hizmet veren modern diş kliniğidir.",
+    "shortOverviewEn": "Modern dental clinic located in Cevizlibağ on the European Side of Istanbul, offering comprehensive dental services with a quarter-century of medical experience.",
+    "fullOverviewTr": "Sağlıklı, bembeyaz ve estetik bir gülüş, hem bedensel sağlığımızın hem de sosyal hayattaki duruşumuzun en kritik parçalarından biridir. İstanbul’un kalbi sayılabilecek, ana ulaşım arterlerinin kesişim noktasında yer alan bu dinamik bölgede, ağız sağlığınızı emanet edebileceğiniz güvenilir bir sağlık üssü bulmak son derece önemlidir. Çeyrek asra yaklaşan tıbbi tecrübesi ve uluslararası kalite belgeleriyle Hospitadent, donanımlı ve modern bir Cevizlibağ diş kliniği arayanlar için uzman hekim kadrosu, yenilikçi teknolojik altyapısı ve yüksek hasta memnuniyeti ilkesiyle hizmet vermektedir.",
+    "fullOverviewEn": "A healthy, white, and aesthetic smile is one of the most critical parts of both our physical health and our stance in social life. Located at the intersection of main transportation arteries in this dynamic region, which can be considered the heart of Istanbul, Hospitadent serves with its expert physician staff, innovative technological infrastructure, and high patient satisfaction principle with its medical experience approaching a quarter of a century.",
+    "listedDoctorCount": 8,
+    "createdAt": {
+      "_seconds": 1785350827,
+      "_nanoseconds": 310000000
+    },
+    "clinicName": "Hospitadent Dental Group Cevizlibağ",
+    "priority": 80,
+    "status": "active",
+    "longDescription": "Hospitadent Cevizlibağ, İstanbul'un en yoğun noktalarından birinde, kolay ulaşılabilir lokasyonuyla hizmet veriyor. Tüm ağız ve diş sağlığı branşlarında, alanında uzman diş hekimleri ve modern teknolojik altyapısıyla hasta kabul eden kliniğimiz, koruyucu hekimlikten implantolojiye, ortodontiden estetik diş hekimliğine kadar geniş bir yelpazede çözümler sunmaktadır.",
+    "aliases": [
+      "Hospitadent Cevizlibağ",
+      "Hospitadent Cevizlibag",
+      "Hospitadent Dental Group Cevizlibağ",
+      "Hospitadent Dental Group Cevizlibag",
+      "Hospitadent Zeytinburnu",
+      "Hospitadent Cevizlibağ İstanbul",
+      "Hospitadent Cevizlibag Istanbul"
+    ],
+    "treatmentCategories": [
+      "dental",
+      "aesthetic_surgery"
+    ],
+    "supportedLanguages": [
+      "tr",
+      "en"
+    ],
+    "phone": "+90 212 582 22 11",
+    "sourceType": "official_clinic_website",
+    "contact": {
+      "phone": "+90 212 582 22 11"
+    },
+    "location": {
+      "country": "Türkiye",
+      "countryCode": "TR",
+      "city": "İstanbul",
+      "district": "Zeytinburnu",
+      "neighborhood": "Seyitnizam",
+      "area": "Cevizlibağ",
+      "region": "İstanbul European Side / Avrupa Yakası",
+      "fullAddress": "Seyitnizam Mah. Mevlana Cad. No:81, 34015 Zeytinburnu/İstanbul",
+      "postalCode": "34015",
+      "transportationNotes": "Located in Cevizlibağ, Zeytinburnu.",
+      "latitude": 41.0151,
+      "longitude": 28.9109,
+      "address": "Seyitnizam Mah. Mevlana Cad. No:81, 34015 Zeytinburnu/İstanbul"
+    },
+    "shortDescription": "İstanbul'un önemli lokasyonlarından Cevizlibağ'da hizmet veren, Hospitadent Dental Group'un modern ve donanımlı şubelerinden biridir.",
+    "updatedAt": {
+      "_seconds": 1785355255,
+      "_nanoseconds": 328000000
+    }
+  },
+  "timestamp": "2026-07-29T20:02:15.094Z"
+}
