@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import UnauthorizedScreen from "./UnauthorizedScreen";
 import { isSuperAdmin, DEFAULT_PERMISSIONS } from "@/lib/types";
@@ -11,6 +13,28 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const [clinicAgencyMap, setClinicAgencyMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (user && profile && (profile.role === "agencyAdmin" || profile.role === "agencyUser")) {
+      const clinicMatch = pathname.match(/^\/clinics\/([^/]+)(\/.*)?$/);
+      if (clinicMatch) {
+         const accessedClinicId = clinicMatch[1];
+         if (!clinicAgencyMap[accessedClinicId]) {
+           getDoc(doc(db, "clinics", accessedClinicId)).then(snap => {
+              if (snap.exists()) {
+                 setClinicAgencyMap(prev => ({ ...prev, [accessedClinicId]: snap.data().agencyId || "none" }));
+              } else {
+                 setClinicAgencyMap(prev => ({ ...prev, [accessedClinicId]: "not_found" }));
+              }
+           }).catch(err => {
+               console.error("Failed to fetch clinic agency info:", err);
+               setClinicAgencyMap(prev => ({ ...prev, [accessedClinicId]: "not_found" }));
+           });
+         }
+      }
+    }
+  }, [user, profile, pathname, clinicAgencyMap]);
 
   useEffect(() => {
     if (!loading) {
@@ -72,7 +96,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   // Authorization Logic
   const roleStr = profile?.role as string;
-  const isAdmin = roleStr === "admin" || roleStr === "platform_admin" || roleStr === "Yönetici" || roleStr === "yonetici";
+  const isAdmin = roleStr === "admin" || roleStr === "platform_admin" || roleStr === "Yönetici" || roleStr === "yonetici" || roleStr === "superAdmin";
   const isClinicUser = roleStr === "clinicUser" || roleStr === "Klinik Kullanıcısı";
   const isAgencyUser = roleStr === "agencyAdmin" || roleStr === "agencyUser";
 
@@ -119,14 +143,30 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   // Clinic Level Route Guards
-  if (user && profile && !isPublicRoute && (isClinicUser || roleStr === "viewer" || roleStr === "clinicAdmin")) {
+  if (user && profile && !isPublicRoute && (isClinicUser || roleStr === "viewer" || roleStr === "clinicAdmin" || isAgencyUser)) {
     const clinicMatch = pathname.match(/^\/clinics\/([^/]+)(\/.*)?$/);
     if (clinicMatch) {
       const accessedClinicId = clinicMatch[1];
       const subRoute = clinicMatch[2] || ""; // e.g., "/ai-settings", or empty string for overview
 
-      // Block cross-clinic access for non-super-admins
-      if (profile.clinicId && accessedClinicId !== profile.clinicId && !isAdmin) {
+      // Tenant isolation for Agency Users
+      if (isAgencyUser && !isAdmin) {
+        const clinicAgencyId = clinicAgencyMap[accessedClinicId];
+        if (!clinicAgencyId) {
+          // Wait for the useEffect to fetch the agencyId
+          return (
+            <div style={{ height: "100dvh", width: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "var(--bg-app)", gap: 16 }}>
+              <div style={{ width: 32, height: 32, borderRadius: "50%", border: "3px solid rgba(16, 185, 129, 0.2)", borderTopColor: "#10b981", animation: "spin 1s linear infinite" }} />
+              <p style={{ color: "var(--text-muted, #64748b)", fontSize: 14, fontWeight: 500 }}>Acenta yetkisi doğrulanıyor...</p>
+              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+            </div>
+          );
+        }
+        if (clinicAgencyId !== profile.agencyId) {
+          return <UnauthorizedScreen />;
+        }
+      } else if (profile.clinicId && accessedClinicId !== profile.clinicId && !isAdmin) {
+        // Block cross-clinic access for regular clinic users
         return <UnauthorizedScreen />;
       }
 
@@ -163,12 +203,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   // Route-Level Role Guards for Agency Users
   if (user && profile && !isPublicRoute && isAgencyUser) {
-    // Agency users can only access /agency/* routes
-    if (!pathname.startsWith("/agency")) {
+    // Agency users can access /agency/* and /clinics/* (tenant isolation handled above)
+    if (!pathname.startsWith("/agency") && !pathname.startsWith("/clinics/")) {
       return <UnauthorizedScreen />;
     }
-    // Block access to other agencies
-    // (agency routes don't have agencyId in URL — they read from profile.agencyId)
   }
 
   // Block clinic/admin users from accessing /agency/* routes

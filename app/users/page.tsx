@@ -571,6 +571,17 @@ export default function UsersPage() {
               />
             )}
 
+            {isAgencyRole(newUser.role) && (
+              <div style={{ padding: "12px", background: "rgba(16, 185, 129, 0.08)", border: `1px solid rgba(16, 185, 129, 0.2)`, borderRadius: 8, marginTop: 12 }}>
+                <p style={{ fontSize: 13, color: "#059669", fontWeight: 700, display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
+                  <Shield size={16} /> Agency Admin / User Yetki Özeti
+                </p>
+                <p style={{ fontSize: 12, color: UI_COLORS.textSecondary, lineHeight: 1.4 }}>
+                  Bağlı olduğu acentanın Network Portalındaki klinikler, AI eşleştirme, widget, lead, teklif, bilgi havuzu ve acenta ayarlarına tam erişim sağlar. Platform yönetimi ve diğer acentalar bu kapsama dahil değildir.
+                </p>
+              </div>
+            )}
+
             <div style={{ marginTop: 12 }}>
               <p style={{ fontSize: 13, fontWeight: 600, color: UI_COLORS.textPrimary, marginBottom: 8 }}>Erişebileceği Sekmeler</p>
               <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
@@ -581,11 +592,14 @@ export default function UsersPage() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, maxHeight: 180, overflowY: "auto", padding: 12, background: "rgba(0,0,0,0.02)", borderRadius: 8, border: `1px solid ${UI_COLORS.border}` }}>
                 {ALL_TABS.map(tab => {
                   const isChecked = newUser.permissions?.includes(tab.value);
+                  const isAgencyBundleTab = isAgencyRole(newUser.role) && ["agency_portal", "clinic_overview", "clinic_prompt", "clinic_voice", "clinic_widget", "clinic_training", "clinic_notes", "clinic_usage", "clinic_logs", "clinic_appointments", "clinic_settings"].includes(tab.value);
+                  
                   return (
-                    <label key={tab.value} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", color: UI_COLORS.textSecondary }}>
+                    <label key={tab.value} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: isAgencyBundleTab ? "not-allowed" : "pointer", color: UI_COLORS.textSecondary, opacity: isAgencyBundleTab ? 0.7 : 1 }}>
                       <input 
                         type="checkbox"
                         checked={isChecked}
+                        disabled={isAgencyBundleTab}
                         onChange={(e) => {
                           const perms = newUser.permissions || [];
                           if (e.target.checked) {
@@ -596,6 +610,7 @@ export default function UsersPage() {
                         }}
                       />
                       {tab.label}
+                      {isAgencyBundleTab && <span style={{ fontSize: 10, background: "rgba(16, 185, 129, 0.1)", color: "#059669", padding: "1px 4px", borderRadius: 4, fontWeight: 600 }}>Zorunlu</span>}
                     </label>
                   );
                 })}

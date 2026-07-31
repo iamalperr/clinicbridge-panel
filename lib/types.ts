@@ -22,11 +22,25 @@ export type PermissionTab =
   | "clinic_appointments"// Randevu Talepleri (Appointments)
   | "clinic_settings";   // Sistem Ayarları (Settings)
 
+export const AGENCY_PORTAL_BUNDLE: PermissionTab[] = [
+  "agency_portal",
+  "clinic_overview",
+  "clinic_prompt",
+  "clinic_voice",
+  "clinic_widget",
+  "clinic_training",
+  "clinic_notes",
+  "clinic_usage",
+  "clinic_logs",
+  "clinic_appointments",
+  "clinic_settings"
+];
+
 export const DEFAULT_PERMISSIONS: Record<UserRole, PermissionTab[]> = {
   superAdmin: ["dashboard", "analytics", "demo_requests", "ai_usage", "agency_portal", "users", "system_settings", "clinic_overview", "clinic_prompt", "clinic_voice", "clinic_widget", "clinic_training", "clinic_notes", "clinic_usage", "clinic_logs", "clinic_appointments", "clinic_settings"],
   admin: ["dashboard", "analytics", "demo_requests", "ai_usage", "agency_portal", "users", "system_settings", "clinic_overview", "clinic_prompt", "clinic_voice", "clinic_widget", "clinic_training", "clinic_notes", "clinic_usage", "clinic_logs", "clinic_appointments", "clinic_settings"],
-  agencyAdmin: ["agency_portal"],
-  agencyUser: ["agency_portal"],
+  agencyAdmin: [...AGENCY_PORTAL_BUNDLE],
+  agencyUser: [...AGENCY_PORTAL_BUNDLE],
   clinicAdmin: ["clinic_overview", "clinic_prompt", "clinic_voice", "clinic_widget", "clinic_training", "clinic_notes", "clinic_usage", "clinic_logs", "clinic_appointments", "clinic_settings"],
   clinicUser: ["clinic_overview", "clinic_logs", "clinic_appointments", "clinic_training"],
   viewer: ["clinic_overview", "clinic_logs", "clinic_appointments"]
