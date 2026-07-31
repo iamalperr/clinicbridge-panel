@@ -135,8 +135,8 @@ export async function submitAgencyLead(input: SubmitLeadInput) {
     // Prepare ClinicRequests
     for (const clinicId of uniqueClinicIds) {
       // Validate clinic exists and belongs to agency
-      const clinicSnap = await transaction.get(adminDb.collection("clinics").doc(clinicId));
-      if (!clinicSnap.exists || clinicSnap.data()?.agencyId !== agencyId) {
+      const clinicSnap = await transaction.get(adminDb.collection("agencies").doc(agencyId).collection("clinics").doc(clinicId));
+      if (!clinicSnap.exists || clinicSnap.data()?.status !== "active") {
         throw new Error("INVALID_CLINIC_SELECTION");
       }
 
