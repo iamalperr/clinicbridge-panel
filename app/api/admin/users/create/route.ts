@@ -117,9 +117,17 @@ export async function POST(req: Request) {
         status: "active",
         createdAt: FieldValue.serverTimestamp(),
       }, { merge: true }); // Use merge in case the document already exists to avoid overwriting everything
+
+      // 8. Set Custom Claims Atomically
+      await adminAuth.setCustomUserClaims(userRecord.uid, {
+        role,
+        clinicId: role === "clinicUser" ? clinicId : null,
+        agencyId: isAgencyRole ? agencyId : null
+      });
+      console.log(`[AdminAuth] Successfully set custom claims for user ${userRecord.uid}`);
     } catch (err: any) {
-      console.error("Firestore profile creation failed:", err);
-      return NextResponse.json({ error: `Firestore profil oluşturma işlemi başarısız: ${err.message}` }, { status: 500 });
+      console.error("Firestore profile or Custom Claims creation failed:", err);
+      return NextResponse.json({ error: `Kullanıcı profili oluşturma işlemi başarısız: ${err.message}` }, { status: 500 });
     }
 
     return NextResponse.json({

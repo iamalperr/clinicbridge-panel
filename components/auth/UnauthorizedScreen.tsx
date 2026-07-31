@@ -10,8 +10,15 @@ export default function UnauthorizedScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const { t } = useI18n();
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setIsRefreshing(true);
+    try {
+      if (auth.currentUser) {
+        await auth.currentUser.getIdToken(true);
+      }
+    } catch (e) {
+      console.error("Token refresh failed", e);
+    }
     // Simple window reload will trigger AuthGuard to re-fetch profile
     setTimeout(() => {
       window.location.reload();

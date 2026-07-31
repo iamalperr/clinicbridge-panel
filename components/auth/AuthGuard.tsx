@@ -153,6 +153,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         router.replace(`/clinics/${profile.clinicId}`);
         return null;
       }
+      if (isAgencyUser) {
+        router.replace("/agency");
+        return null;
+      }
       return <UnauthorizedScreen />;
     }
   }

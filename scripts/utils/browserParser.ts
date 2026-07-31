@@ -48,96 +48,85 @@ export async function parsePricesAndServices(url: string): Promise<ParseResult> 
     console.error("Failed to load page or timed out, continuing with whatever is loaded.", err);
   }
 
-  // Inject a small script to expand all accordions inside Prices & Services
-  const metrics = await page.evaluate(async () => {
-    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-    
+  // Inject a small script to find the Prices & Services container
+  const rootContainerSelector = await page.evaluate(function() {
     // 1. Find the section
     const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'));
     const sectionKeywords = ['Prices & Services', 'Price and Services', 'Pricing & Services', 'Treatments & Prices', 'Services & Prices', 'Ücretler ve Hizmetler', 'Ücret ve Hizmetler', 'Fiyatlar ve Hizmetler', 'Tedaviler ve Fiyatlar'];
     
     let targetHeading = headings.find(h => {
-      const t = h.textContent?.trim() || '';
+      const t = h.textContent ? h.textContent.trim() : '';
       return sectionKeywords.some(k => t.toLowerCase() === k.toLowerCase());
     });
     
     if (!targetHeading) {
-      // Look for any table header or column label? 
-      // Beyazışık Marmaris uses specific categories. Let's just try to find the container.
-      // Usually it's an accordion list.
       const texts = Array.from(document.querySelectorAll('*'))
-         .filter(el => Array.from(el.childNodes).some(child => child.nodeType === Node.TEXT_NODE && sectionKeywords.includes(child.textContent?.trim() || '')));
+         .filter(el => Array.from(el.childNodes).some(child => child.nodeType === Node.TEXT_NODE && sectionKeywords.includes(child.textContent ? child.textContent.trim() : '')));
       if (texts.length > 0) {
-          targetHeading = texts[texts.length - 1] as HTMLElement;
+          targetHeading = texts[texts.length - 1];
       }
     }
     
-    let rootContainer: HTMLElement = document.body;
+    let rootContainerSelector = 'body';
     if (targetHeading) {
-       // Traverse up to find a common container that holds the accordions
        let curr = targetHeading.parentElement;
        while (curr && curr !== document.body) {
            if (curr.querySelectorAll('button, summary, [data-state]').length > 2) {
-               rootContainer = curr;
+               curr.id = curr.id || 'temp-root-container';
+               rootContainerSelector = '#' + curr.id;
                break;
            }
            curr = curr.parentElement;
        }
     }
-
-    // 2. Expand all accordions
-    let detectedCategoryCount = 0;
-    let expandedCategoryCount = 0;
-    
-    // Detect summary/details
-    const detailsElements = Array.from(rootContainer.querySelectorAll('details'));
-    for (const details of detailsElements) {
-        detectedCategoryCount++;
-        if (!details.open) {
-            details.open = true;
-            expandedCategoryCount++;
-            await sleep(100);
-        } else {
-            expandedCategoryCount++;
-        }
-    }
-
-    // Detect buttons with aria-expanded or similar
-    const buttons = Array.from(rootContainer.querySelectorAll('button, [role="button"], [data-state="closed"]')) as HTMLElement[];
-    // Filter to those that might be accordions (they have siblings or are in lists)
-    for (const btn of buttons) {
-        // Prevent clicking anchor tags which navigate
-        if (btn.tagName.toUpperCase() === 'A') continue;
-        
-        // Simple heuristic: if it has text like a category (not 'Book Now', etc)
-        const text = btn.textContent?.trim().toLowerCase() || '';
-        if (text && !text.includes('book') && !text.includes('appointment')) {
-            const isClosed = btn.getAttribute('aria-expanded') === 'false' || btn.getAttribute('data-state') === 'closed';
-            if (isClosed) {
-                detectedCategoryCount++;
-                btn.click();
-                expandedCategoryCount++;
-                await sleep(200); // Wait for animation
-            } else if (btn.getAttribute('aria-expanded') === 'true' || btn.getAttribute('data-state') === 'open') {
-                detectedCategoryCount++;
-                expandedCategoryCount++;
-            }
-        }
-    }
-    
-    return {
-        detectedCategoryCount,
-        expandedCategoryCount,
-    };
+    return rootContainerSelector;
   });
 
-  console.log(`Detected Categories: ${metrics.detectedCategoryCount}, Expanded: ${metrics.expandedCategoryCount}`);
+  // 2. Expand all accordions safely from Node.js side
+  let detectedCategoryCount = 0;
+  let expandedCategoryCount = 0;
+  try {
+      const buttons = await page.$$(`${rootContainerSelector} button, ${rootContainerSelector} [role="button"], ${rootContainerSelector} summary, ${rootContainerSelector} [data-state="closed"]`);
+      detectedCategoryCount = buttons.length;
+      
+      for (const btn of buttons) {
+          try {
+              const tag = await btn.evaluate(el => el.tagName.toLowerCase());
+              if (tag === 'a') continue; // skip links
+              
+              const text = await btn.evaluate(el => el.textContent?.trim().toLowerCase() || '');
+              if (!text || text.includes('book') || text.includes('appointment')) continue;
+              
+              const isClosed = await btn.evaluate(el => el.getAttribute('aria-expanded') === 'false' || el.getAttribute('data-state') === 'closed' || (el.tagName.toLowerCase() === 'details' && !(el as HTMLDetailsElement).open));
+              
+              if (isClosed) {
+                  await btn.evaluate(el => {
+                      if (el.tagName.toLowerCase() === 'details') {
+                          (el as HTMLDetailsElement).open = true;
+                      } else {
+                          (el as HTMLElement).click();
+                      }
+                  });
+                  expandedCategoryCount++;
+                  await new Promise(resolve => setTimeout(resolve, 500));
+              } else {
+                  expandedCategoryCount++;
+              }
+          } catch (e) {
+              // Ignore stale element errors
+          }
+      }
+      console.log(`Detected Categories: ${detectedCategoryCount}, Expanded: ${expandedCategoryCount}`);
+  } catch (err) {
+      console.log("Error during accordion expansion:", err);
+  }
+
+  const metrics = { detectedCategoryCount, expandedCategoryCount };
   
   // Wait a bit more for all DOM mutations (React state updates)
   await new Promise(resolve => setTimeout(resolve, 1000));
 
-  // Now extract the rows
-  const extractionResult = await page.evaluate((urlStr) => {
+  const extractionResult = await page.evaluate(function(urlStr) {
     const rawRows: any[] = [];
     
     const sectionKeywords = ['Prices & Services', 'Price and Services', 'Pricing & Services', 'Treatments & Prices', 'Services & Prices', 'Ücretler ve Hizmetler', 'Ücret ve Hizmetler', 'Fiyatlar ve Hizmetler', 'Tedaviler ve Fiyatlar'];
@@ -180,7 +169,7 @@ export async function parsePricesAndServices(url: string): Promise<ParseResult> 
     if (accordionItems.length > 0) {
         accordionItems.forEach((item, catIdx) => {
             // Usually the first bold text or button text is the category name
-            let catName = item.querySelector('button, summary, .font-semibold, h3, h4, h5')?.textContent?.trim() || `Category ${catIdx}`;
+            let catName = item.querySelector('button, summary, .font-semibold, h3, h4, h5')?.textContent?.trim() || ('Category ' + catIdx);
             // Clean up cat name
             catName = catName.replace(/\n/g, '').trim();
 
@@ -189,7 +178,7 @@ export async function parsePricesAndServices(url: string): Promise<ParseResult> 
             const pEls = Array.from(item.querySelectorAll('*')).filter(el => {
                 if (el.children.length > 0) return false;
                 const text = el.textContent?.trim() || '';
-                return text.includes('EUR') || text.includes('€') || /\d+\.\d{2}/.test(text); // Basic price check
+                return text.includes('EUR') || text.includes('€') || /\\d+\\.\\d{2}/.test(text); // Basic price check
             });
             
             pEls.forEach((pEl, rowIdx) => {
@@ -214,7 +203,7 @@ export async function parsePricesAndServices(url: string): Promise<ParseResult> 
                     const childrenText = Array.from(rowParent.children).map(c => c.textContent?.trim() || '').filter(t => t);
                     if (childrenText.length >= 2) {
                         let sourceTreatmentName = childrenText[0];
-                        let sourcePriceText = childrenText.find(t => t.includes('EUR') || t.includes('€') || t.match(/\d/)) || '';
+                        let sourcePriceText = childrenText.find(t => t.includes('EUR') || t.includes('€') || t.match(/\\d/)) || '';
                         let sourceDurationText = childrenText.find(t => t.includes('Gün') || t.includes('Day')) || '';
                         
                         // Refinement if it's 3 columns

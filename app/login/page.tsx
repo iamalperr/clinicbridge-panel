@@ -36,7 +36,8 @@ export default function LoginPage() {
       console.log(`[Auth] Attempting login for email: ${cleanEmail}`);
       const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password);
       console.log(`[Auth] Firebase response success. UID:`, userCredential.user.uid);
-      router.replace("/clinics");
+      // Let AuthGuard handle the role-based redirect
+      router.replace("/");
     } catch (err: any) {
       console.error(`[Auth] Firebase login error for ${cleanEmail}:`, err.code, err.message);
       

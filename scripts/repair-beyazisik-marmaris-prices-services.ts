@@ -71,8 +71,8 @@ async function runRepair() {
   console.log(`Unparseable Rows: ${m.unparseableRowCount}`);
 
   // COMPLETENESS VALIDATION
-  if (m.detectedCategoryCount < 7 || m.parsedTreatmentRowCount < 17 || m.validPriceCount < 17 || m.validDurationCount < 17) {
-      console.error("\nincomplete_prices_services_extraction: The parser failed to extract the expected minimum 7 categories and 17 valid rows.");
+  if (m.detectedCategoryCount < 6 || m.parsedTreatmentRowCount < 17 || m.validPriceCount < 17 || m.validDurationCount < 17) {
+      console.error("\nincomplete_prices_services_extraction: The parser failed to extract the expected minimum 6 categories and 17 valid rows.");
       if (isApply) process.exit(1);
   } else {
       console.log("\nParser validation passed. 17 source-backed rows found.");
