@@ -13,7 +13,7 @@ import SectionCard from "@/components/ui/SectionCard";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { UI_COLORS } from "@/components/ui/ui-shared";
-import { Brain, Save, Loader2, CheckCircle2, AlertCircle, Link2, DollarSign, Shield, Building2 } from "lucide-react";
+import { Brain, Save, Loader2, CheckCircle2, AlertCircle, Link2, DollarSign, Shield, Building2, Info } from "lucide-react";
 import type { AIMatchingConfig, TreatmentClinicRule, TreatmentCatalogItem } from "@/lib/types/matching";
 import type { TreatmentCategory, AgencyClinic } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES } from "@/lib/types/agency";
@@ -141,9 +141,9 @@ export default function MatchingPage() {
           </p>
           <div style={{ display: "flex", gap: 10 }}>
             {([
-              { value: "manual", label: t("portal.matching.manual"), desc: t("portal.matching.manualDesc") },
-              { value: "assisted", label: t("portal.matching.assisted"), desc: t("portal.matching.assistedDesc") },
-              { value: "auto", label: t("portal.matching.auto"), desc: t("portal.matching.autoDesc") },
+              { value: "manual", label: t("portal.matching.manual"), desc: t("portal.matching.manualDesc"), tooltip: "AI yalnızca öneri üretir. Lead hiçbir zaman otomatik atanmaz." },
+              { value: "assisted", label: t("portal.matching.assisted"), desc: t("portal.matching.assistedDesc"), tooltip: "AI operasyon ekibine en uygun klinikleri önceliklendirerek önerir." },
+              { value: "auto", label: t("portal.matching.auto"), desc: t("portal.matching.autoDesc"), tooltip: "AI belirlenen kurallara göre otomatik atama gerçekleştirir." },
             ] as const).map((mode) => (
               <button key={mode.value} onClick={() => mode.value !== "auto" && setConfig({ ...config, routingMode: mode.value })}
                 style={{
@@ -151,12 +151,34 @@ export default function MatchingPage() {
                   border: `1px solid ${config.routingMode === mode.value ? "#10b981" : UI_COLORS.border}`,
                   background: config.routingMode === mode.value ? "rgba(16, 185, 129, 0.06)" : "transparent",
                   opacity: mode.value === "auto" ? 0.5 : 1, transition: "all 0.15s",
+                  position: "relative"
                 }}>
+                <div style={{ position: "absolute", top: 12, right: 12, color: UI_COLORS.textMuted }} title={mode.tooltip}>
+                  <Info size={16} />
+                </div>
                 <p style={{ fontSize: 14, fontWeight: 700, color: config.routingMode === mode.value ? "#10b981" : UI_COLORS.textPrimary }}>{mode.label}</p>
-                <p style={{ fontSize: 11.5, color: UI_COLORS.textMuted, marginTop: 4 }}>{mode.desc}</p>
+                <p style={{ fontSize: 11.5, color: UI_COLORS.textMuted, marginTop: 4, paddingRight: 16 }}>{mode.desc}</p>
                 {mode.value === "auto" && <span style={{ fontSize: 10, color: "#f59e0b", fontWeight: 700 }}>{t("portal.matching.comingSoon")}</span>}
               </button>
             ))}
+          </div>
+
+          <div style={{ marginTop: 24, padding: "16px", background: "#f8fafc", borderRadius: 8, border: `1px solid ${UI_COLORS.border}` }}>
+            <h4 style={{ fontSize: 13, fontWeight: 600, color: UI_COLORS.textPrimary, marginBottom: 12 }}>Atama Modu Karşılaştırması</h4>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+              <div style={{ fontSize: 12, color: UI_COLORS.textSecondary }}>
+                <strong style={{ color: UI_COLORS.textPrimary, display: "block", marginBottom: 4 }}>Manual</strong>
+                Hasta klinikleri görür.<br />Yönetici atama yapar.
+              </div>
+              <div style={{ fontSize: 12, color: UI_COLORS.textSecondary }}>
+                <strong style={{ color: UI_COLORS.textPrimary, display: "block", marginBottom: 4 }}>Assisted</strong>
+                Hasta klinikleri görür.<br />AI öneriyi sıralar.<br />Yönetici tek tıkla onaylar.
+              </div>
+              <div style={{ fontSize: 12, color: UI_COLORS.textSecondary }}>
+                <strong style={{ color: UI_COLORS.textPrimary, display: "block", marginBottom: 4 }}>Automatic</strong>
+                Hasta klinikleri görür.<br />AI otomatik atama yapar.
+              </div>
+            </div>
           </div>
         </SectionCard>
 
