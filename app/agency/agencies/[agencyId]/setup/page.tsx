@@ -12,6 +12,7 @@ import Link from "next/link";
 import {
   CheckCircle2, Circle, ArrowRight, Loader2, Rocket,
   Building2, Stethoscope, Brain, MessageSquare, Code, Shield, Globe,
+  AlertCircle, RefreshCw
 } from "lucide-react";
 import type { Agency, AgencyClinic } from "@/lib/types/agency";
 import type { TreatmentCatalogItem } from "@/lib/types/matching";
@@ -35,27 +36,67 @@ export default function SetupPage() {
   const [treatments, setTreatments] = useState<TreatmentCatalogItem[]>([]);
   const [hasMatching, setHasMatching] = useState(false);
   const [hasWidget, setHasWidget] = useState(false);
-  const [loading, setLoading] = useState(true);
+  
+  const [loadStatus, setLoadStatus] = useState({
+    agency: false,
+    clinics: false,
+    treatments: false,
+    matching: false,
+    widget: false
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+
+  const loading = !Object.values(loadStatus).every(Boolean) && !error;
 
   useEffect(() => {
+    let isMounted = true;
     const unsubs: (() => void)[] = [];
-    let loaded = 0;
-    const checkDone = () => { loaded++; if (loaded >= 6) setLoading(false); };
+    setError(null);
+    setLoadStatus({ agency: false, clinics: false, treatments: false, matching: false, widget: false });
+    
+    const timeoutId = setTimeout(() => {
+      if (isMounted) {
+        setLoadStatus(prev => {
+           if (!Object.values(prev).every(Boolean)) {
+             setError("Kurulum verileri yüklenirken zaman aşımına uğradı.");
+           }
+           return prev;
+        });
+      }
+    }, 10000);
 
-    unsubs.push(subscribeToAgency(agencyId, (a) => { setAgency(a); checkDone(); }));
-    unsubs.push(subscribeToAgencyClinics(agencyId, (d) => { setClinics(d); checkDone(); }));
-    unsubs.push(subscribeToTreatments(agencyId, (d) => { setTreatments(d); checkDone(); }));
-    unsubs.push(onSnapshot(doc(db, "agencies", agencyId, "config", "matching"), (snap) => {
-      setHasMatching(snap.exists() && (snap.data()?.treatmentClinicRules?.length || 0) > 0);
-      checkDone();
-    }, () => checkDone()));
-    unsubs.push(onSnapshot(doc(db, "agencies", agencyId, "config", "widget"), (snap) => {
-      setHasWidget(snap.exists());
-      checkDone();
-    }, () => checkDone()));
+    const markLoaded = (key: keyof typeof loadStatus) => {
+      if (isMounted) setLoadStatus(prev => ({ ...prev, [key]: true }));
+    };
+    
+    const markError = (err: any) => {
+      console.error("Setup fetch error:", err);
+      if (isMounted) setError("Kurulum bilgileri yüklenemedi.");
+    };
 
-    return () => unsubs.forEach((u) => u());
-  }, [agencyId]);
+    try {
+      unsubs.push(subscribeToAgency(agencyId, (a) => { setAgency(a); markLoaded("agency"); }));
+      unsubs.push(subscribeToAgencyClinics(agencyId, (d) => { setClinics(d); markLoaded("clinics"); }));
+      unsubs.push(subscribeToTreatments(agencyId, (d) => { setTreatments(d); markLoaded("treatments"); }));
+      unsubs.push(onSnapshot(doc(db, "agencies", agencyId, "config", "matching"), (snap) => {
+        setHasMatching(snap.exists() && (snap.data()?.treatmentClinicRules?.length || 0) > 0);
+        markLoaded("matching");
+      }, markError));
+      unsubs.push(onSnapshot(doc(db, "agencies", agencyId, "config", "widget"), (snap) => {
+        setHasWidget(snap.exists());
+        markLoaded("widget");
+      }, markError));
+    } catch (err) {
+      markError(err);
+    }
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+      unsubs.forEach((u) => u());
+    };
+  }, [agencyId, retryCount]);
 
   const hasAgencyProfile = !!(agency?.name && agency?.domain);
   const hasConsent = !!(agency?.privacyUrl);
@@ -77,6 +118,34 @@ export default function SetupPage() {
       <div style={{ height: "40vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <Loader2 size={32} style={{ animation: "spin 1s linear infinite" }} color="#10b981" />
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ height: "40vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
+        <div style={{ width: 48, height: 48, borderRadius: 24, background: "rgba(239, 68, 68, 0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <AlertCircle size={24} color="#ef4444" />
+        </div>
+        <div style={{ textAlign: "center" }}>
+          <p style={{ fontSize: 16, fontWeight: 600, color: UI_COLORS.textPrimary, marginBottom: 4 }}>{error}</p>
+          <p style={{ fontSize: 13, color: UI_COLORS.textMuted }}>Teknik bir sorun oluştu veya bağlantı zaman aşımına uğradı.</p>
+        </div>
+        <button
+          onClick={() => setRetryCount(c => c + 1)}
+          style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "8px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+            background: "rgba(16, 185, 129, 0.1)", color: "#10b981", border: "none",
+            cursor: "pointer", transition: "all 0.15s"
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(16, 185, 129, 0.2)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(16, 185, 129, 0.1)"; }}
+        >
+          <RefreshCw size={14} />
+          Tekrar Dene
+        </button>
       </div>
     );
   }
