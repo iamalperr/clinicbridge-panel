@@ -613,10 +613,11 @@ export default function AgencyDemoPage() {
     if (aiTyping) return;
     setAiTyping(true);
 
-    const userChoice = status === "accept" 
-      ? (lang === "tr" ? "Kabul Ediyorum" : "I Accept")
-      : (lang === "tr" ? "Reddediyorum" : "I Decline");
-    setAiMessages((prev) => [...prev, { id: Math.random().toString(36).substring(7), role: "user", type: "text", text: userChoice }]);
+    // Show consent choice as a system status message, NOT as a user chat bubble
+    const statusText = status === "accept" 
+      ? (lang === "tr" ? "✓ Veri işleme onayı verildi" : "✓ Data processing consent granted")
+      : (lang === "tr" ? "✗ Veri işleme onayı reddedildi" : "✗ Data processing consent declined");
+    setAiMessages((prev) => [...prev, { id: Math.random().toString(36).substring(7), role: "ai", type: "consent_status", text: statusText }]);
 
     try {
       const res = await fetch(`/api/public/agency/feelinhealthy/matching-chat`, {
@@ -993,9 +994,22 @@ export default function AgencyDemoPage() {
               {aiMessages.map((msg) => (
                 <div key={msg.id} style={{
                   display: "flex", gap: 12, marginBottom: 16,
-                  flexDirection: msg.role === "user" ? "row-reverse" : "row",
+                  flexDirection: msg.type === "consent_status" ? "row" : (msg.role === "user" ? "row-reverse" : "row"),
+                  justifyContent: msg.type === "consent_status" ? "center" : "flex-start",
                   animation: "slideIn 0.4s ease",
                 }}>
+                  {msg.type === "consent_status" ? (
+                    <div style={{
+                      padding: "8px 20px", borderRadius: 20,
+                      background: msg.text.includes("✓") ? "rgba(16,185,129,0.1)" : "rgba(239,68,68,0.1)",
+                      border: `1px solid ${msg.text.includes("✓") ? "rgba(16,185,129,0.3)" : "rgba(239,68,68,0.3)"}`,
+                      color: msg.text.includes("✓") ? "#10b981" : "#ef4444",
+                      fontSize: 12, fontWeight: 600, textAlign: "center" as const,
+                    }}>
+                      {msg.text}
+                    </div>
+                  ) : (
+                    <>
                   <div style={{
                     width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
                     background: msg.role === "user" ? C.navyLight : `linear-gradient(135deg, ${C.teal}, ${C.navy})`,
@@ -1187,6 +1201,8 @@ export default function AgencyDemoPage() {
                       </div>
                     )}
                   </div>
+                    </>
+                  )}
                 </div>
               ))}
 

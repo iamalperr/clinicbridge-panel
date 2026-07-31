@@ -81,6 +81,7 @@ interface SessionContext {
   selectedClinicIds?: string[];
   clinicSelectionStatus?: "not_started" | "in_progress" | "completed";
   showProfileLinks?: boolean;
+  pendingUserMessage?: string;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -354,6 +355,50 @@ export async function POST(
       } else if (action.type === "clinic_selection_complete") {
         sessionContext.clinicSelectionStatus = "completed";
         finalMessage = `[SİSTEM AKSİYONU: Kullanıcı klinik seçimini tamamladı. Seçilen toplam klinik sayısı: ${sessionContext.selectedClinicIds?.length || 0}. Artık lead toplama sürecine (Ad Soyad vb.) geçebilirsin.]`;
+      } else if (action.type === "privacy_consent_response") {
+        const { saveConsentRecord } = await import("@/lib/services/agencyConsentService");
+        const consentLang = action.locale || "tr";
+        const consentStatus = action.action === "accept" ? "accepted" : "declined";
+        const privacySettingsForConsent = agencyData.privacySettings || {
+          enabled: true, mode: "kvkk", version: "v1.0",
+          consentTextTr: "", consentTextEn: "", requiredBeforePersonalData: true
+        };
+
+        const sid = sessionContext.sessionId || `sess_${Date.now()}`;
+        sessionContext.sessionId = sid;
+
+        await saveConsentRecord(
+          agencyId,
+          sid,
+          consentStatus as any,
+          privacySettingsForConsent.version,
+          consentLang,
+          "agency_widget"
+        );
+
+        if (consentStatus === "declined") {
+          sessionContext.quoteConsent = false;
+          return NextResponse.json({
+            reply: consentLang === "tr"
+              ? "Elbette. Onay vermeden de tedaviler ve genel klinik hizmetleri hakkında bilgi alabilirsiniz. Ancak kişisel bilgilerinizi kullanarak klinik önerisi veya teklif talebi oluşturamam."
+              : "Of course. You may still receive general information about treatments and clinic services, but I cannot create a personalized clinic recommendation or treatment request without your consent.",
+            type: "consent_declined",
+            sessionContext,
+            showClinicCards: false
+          }, { headers: CORS });
+        }
+
+        // Consent accepted — set flag and re-process pending message if available
+        sessionContext.quoteConsent = true;
+        const pendingMsg = sessionContext.pendingUserMessage;
+        if (pendingMsg) {
+          finalMessage = pendingMsg;
+          delete sessionContext.pendingUserMessage;
+        } else {
+          finalMessage = consentLang === "tr"
+            ? "Onayım var, tedavi ihtiyacım hakkında bilgi vermek istiyorum."
+            : "I have given my consent, I would like to provide information about my treatment needs.";
+        }
       }
     }
 
@@ -368,19 +413,12 @@ export async function POST(
       );
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json(
-        { reply: "AI servisi yapılandırılmamış.", type: "text" },
-        { headers: CORS }
-      );
-    }
-
     /* ── DETERMINISTIC INTERCEPTORS (PHASE 3) ── */
-    const { requireAcceptedAgencyConsent, saveConsentRecord } = await import("@/lib/services/agencyConsentService");
+    const { requireAcceptedAgencyConsent } = await import("@/lib/services/agencyConsentService");
     
     const ctx: SessionContext = sessionContext || {};
     if (!ctx.sessionId) {
-      ctx.sessionId = typeof window !== 'undefined' ? crypto.randomUUID() : `sess_${Date.now()}`;
+      ctx.sessionId = `sess_${Date.now()}`;
     }
 
     const privacySettings = agencySnap.docs[0].data().privacySettings || {
@@ -392,41 +430,7 @@ export async function POST(
       requiredBeforePersonalData: true
     };
 
-    if (action && action.type === "privacy_consent_response") {
-      const consentLang = action.locale || "tr";
-      const status = action.action === "accept" ? "accepted" : "declined";
-      
-      await saveConsentRecord(
-        agencyId,
-        ctx.sessionId!,
-        status,
-        privacySettings.version,
-        consentLang,
-        "agency_widget"
-      );
-      
-      if (status === "accepted") {
-        ctx.quoteConsent = true;
-        return NextResponse.json({
-          reply: consentLang === "tr" 
-            ? "Teşekkür ederim. Şimdi size uygun klinikleri belirleyebilmek için tedavi ihtiyacınız hakkında birkaç soru soracağım."
-            : "Thank you. I’ll now ask a few questions about your treatment needs so I can help identify suitable clinics.",
-          type: "text",
-          sessionContext: ctx,
-          showClinicCards: false
-        }, { headers: CORS });
-      } else {
-        ctx.quoteConsent = false;
-        return NextResponse.json({
-          reply: consentLang === "tr"
-            ? "Elbette. Onay vermeden de tedaviler ve genel klinik hizmetleri hakkında bilgi alabilirsiniz. Ancak kişisel bilgilerinizi kullanarak klinik önerisi veya teklif talebi oluşturamam."
-            : "Of course. You may still receive general information about treatments and clinic services, but I cannot create a personalized clinic recommendation or treatment request without your consent.",
-          type: "text",
-          sessionContext: ctx,
-          showClinicCards: false
-        }, { headers: CORS });
-      }
-    }
+    // privacy_consent_response is now handled in the action block above
 
     const clinicSnap = await adminDb.collection("agencies").doc(agencyId)
       .collection("clinics").orderBy("priority", "asc").get();
@@ -832,6 +836,8 @@ JSON FORMATI:
              }, { headers: CORS });
           }
           
+          // Save the original user message so it can be re-processed after consent
+          ctx.pendingUserMessage = finalMessage;
           return NextResponse.json({
              reply: parsed.language === "tr" ? privacySettings.consentTextTr : privacySettings.consentTextEn,
              type: "consent_request",
