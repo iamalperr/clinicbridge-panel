@@ -66,43 +66,98 @@ export async function trackableAIRequest(
   let aiContent = "";
 
   try {
-    const openai = getOpenAI();
-    
-    // Make the actual API call
-    const completion = await openai.chat.completions.create({
-      model,
-      temperature,
-      messages: params.messages as any,
-      max_tokens: params.maxTokens,
-      response_format: params.responseFormat as any,
-    });
+    let attempts = 0;
+    const maxAttempts = 3;
+    let lastError: any;
 
-    aiContent = completion.choices[0]?.message?.content || "";
-    openaiRequestId = completion.id;
-    
-    // Extract token usage
-    if (completion.usage) {
-      totalTokens = completion.usage.total_tokens || 0;
-      inputTokens = completion.usage.prompt_tokens || 0;
-      outputTokens = completion.usage.completion_tokens || 0;
-      
-      // Extract cached tokens if available (requires newer OpenAI types)
-      const promptDetails = (completion.usage as any).prompt_tokens_details;
-      if (promptDetails && promptDetails.cached_tokens) {
-        cachedInputTokens = promptDetails.cached_tokens;
-        // Non-cached input tokens = total input - cached
-        // Note: OpenAI's prompt_tokens includes cached. Our pricing model separates them.
-        inputTokens = Math.max(0, inputTokens - cachedInputTokens);
+    while (attempts < maxAttempts) {
+      attempts++;
+      try {
+        const openai = getOpenAI();
+        
+        // Make the actual API call
+        const completion = await openai.chat.completions.create({
+          model,
+          temperature,
+          messages: params.messages as any,
+          max_tokens: params.maxTokens,
+          response_format: params.responseFormat as any,
+        });
+
+        aiContent = completion.choices[0]?.message?.content || "";
+        openaiRequestId = completion.id;
+        
+        // Extract token usage
+        if (completion.usage) {
+          totalTokens = completion.usage.total_tokens || 0;
+          inputTokens = completion.usage.prompt_tokens || 0;
+          outputTokens = completion.usage.completion_tokens || 0;
+          
+          // Extract cached tokens if available (requires newer OpenAI types)
+          const promptDetails = (completion.usage as any).prompt_tokens_details;
+          if (promptDetails && promptDetails.cached_tokens) {
+            cachedInputTokens = promptDetails.cached_tokens;
+            // Non-cached input tokens = total input - cached
+            // Note: OpenAI's prompt_tokens includes cached. Our pricing model separates them.
+            inputTokens = Math.max(0, inputTokens - cachedInputTokens);
+          }
+        }
+        
+        // Success
+        status = "success";
+        break;
+
+      } catch (err: any) {
+        lastError = err;
+        const eCode = err.response?.data?.error?.code || err.code || err.type || "";
+        const eType = err.response?.data?.error?.type || "";
+        const httpStatus = err.status || err.response?.status;
+
+        const isQuota = eCode === "insufficient_quota" || eType === "insufficient_quota";
+        const isRateLimit = eCode === "rate_limit_exceeded" || eType === "rate_limit_exceeded" || httpStatus === 429;
+        const isTimeout = httpStatus === 408 || httpStatus === 504 || eCode === "ETIMEDOUT";
+
+        if (isQuota) {
+          errorCode = "OPENAI_QUOTA_EXCEEDED";
+          break; // Do not retry
+        } else if (isRateLimit) {
+          errorCode = "OPENAI_RATE_LIMITED";
+        } else if (isTimeout) {
+          errorCode = "OPENAI_TIMEOUT";
+        } else if (httpStatus === 401 || httpStatus === 403) {
+          errorCode = "OPENAI_AUTH_FAILED";
+          break;
+        } else if (eCode === "model_not_found") {
+          errorCode = "OPENAI_MODEL_NOT_FOUND";
+          break;
+        } else if (eCode === "context_length_exceeded") {
+          errorCode = "OPENAI_CONTEXT_TOO_LARGE";
+          break;
+        } else {
+          errorCode = "OPENAI_ERROR_" + (eCode || httpStatus || "UNKNOWN");
+          break;
+        }
+
+        if (attempts < maxAttempts && (isRateLimit || isTimeout)) {
+          const baseMs = attempts === 1 ? 600 : 2000;
+          const jitter = Math.random() * 200;
+          const delayMs = baseMs + jitter;
+          console.warn(`[aiGateway] Attempt ${attempts} failed (${errorCode}). Retrying in ${delayMs.toFixed(0)}ms...`);
+          await new Promise(r => setTimeout(r, delayMs));
+        } else {
+          break;
+        }
       }
     }
 
+    if (!aiContent && lastError) {
+      status = "failed";
+      console.error(`[aiGateway] Request failed after ${attempts} attempts (${internalRequestId}):`, lastError.message);
+    }
   } catch (err: any) {
     status = "failed";
-    errorCode = err.response?.data?.error?.code || err.code || "unknown_error";
-    console.error(`[aiGateway] Request failed (${internalRequestId}):`, err.message);
-    
-    // If it failed before OpenAI returned usage, we can't charge, but we still log it.
-    // Rethrow at the end so the caller can handle it.
+    errorCode = "INTERNAL_GATEWAY_ERROR";
+    console.error(`[aiGateway] Fatal gateway error (${internalRequestId}):`, err.message);
   }
 
   const durationMs = Date.now() - startTime;
@@ -183,7 +238,9 @@ export async function trackableAIRequest(
 
   // If the OpenAI request failed, throw the error back to the caller
   if (status === "failed") {
-    throw new Error(`OpenAI Request Failed: ${errorCode}`);
+    const error = new Error(`OpenAI Request Failed: ${errorCode}`);
+    (error as any).code = errorCode;
+    throw error;
   }
 
   return {

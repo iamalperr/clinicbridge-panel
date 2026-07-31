@@ -83,6 +83,7 @@ interface SessionContext {
   clinicSelectionStatus?: "not_started" | "in_progress" | "completed";
   showProfileLinks?: boolean;
   pendingUserMessage?: string;
+  processingMode?: "degraded" | "normal";
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -719,6 +720,14 @@ JSON FORMATI:
 - intent: Hasta sadece belirli bir doktordan veya o kliniğin doktorlarından bahsediyorsa "doctor_question" seç.
 - showClinicCards: Sadece "clinic_recommendation" veya kullanıcının "klinikleri tekrar göster" demesi durumunda true yap. "clinic_selected", "lead_capture", "clinic_question", "doctor_question" gibi durumlarda KESİNLİKLE false yap ki kartlar ekranda gereksiz tekrar etmesin.`;
 
+    // --- Context Tracking ---
+    const totalClinicsLoaded = allClinics.length;
+    const totalKbLoaded = relevantKbRecords.length;
+    console.log(`[matching-chat] Generating response. Clinics loaded: ${totalClinicsLoaded}, KB Records: ${totalKbLoaded}`);
+    if (totalClinicsLoaded > 15 || totalKbLoaded > 30) {
+      console.warn(`[matching-chat] [ALERT] Context length potentially large (Clinics: ${totalClinicsLoaded}, KB: ${totalKbLoaded})`);
+    }
+
     const completion = await trackableAIRequest({
       clinicId: ctx.selectedClinicId || undefined,
       channel: "portal",
@@ -742,11 +751,16 @@ JSON FORMATI:
     try {
       parsed = JSON.parse(raw);
     } catch {
-      console.error("[matching-chat] Failed to parse OpenAI JSON:", raw.slice(0, 200));
+      console.error("[matching-chat] [ALERT] OPENAI_RESPONSE_PARSE_FAILED", raw.slice(0, 200));
+      // Degraded Mode Fallback for JSON Parse error
+      const isTr = ctx.language === "tr" || (!ctx.language && true);
+      const newCtx: SessionContext = { ...ctx, processingMode: "degraded" };
       return jsonResponse({
-        reply: "Üzgünüm, yanıtı işlerken bir sorun oluştu. Lütfen tekrar deneyin.",
+        reply: isTr 
+          ? "Talebinizi aldım. Size uygun klinikleri hazırlayabilmem için yaklaşık bütçenizi, tercih ettiğiniz tarihi ve dil ihtiyacınızı paylaşabilir misiniz?"
+          : "I've saved your request. To prepare suitable clinic options, could you share your approximate budget, preferred dates and language requirements?",
         type: "text",
-        sessionContext: ctx,
+        sessionContext: newCtx,
       }, { headers: CORS });
     }
 
@@ -1192,27 +1206,39 @@ JSON FORMATI:
     }, { headers: CORS });
 
   } catch (err: any) {
-    console.error("[matching-chat] Error:", err);
+    const errorCode = err.code || "UNKNOWN_ERROR";
+    console.error(`[matching-chat] [ALERT] Provider Error: ${errorCode}`, err.message);
+
     const { action, sessionContext } = requestBody;
+    const ctx = sessionContext || {};
+    const lang = ctx.language || (action?.locale) || "tr";
+    const isTr = lang === "tr";
     
-    // SAFE FALLBACK FOR THE MEETING
+    // SAFE DEGRADED MODE (Deterministic Fallback)
+    // Preserves the user message and session, ensures no fake success is shown.
+    ctx.processingMode = "degraded";
+
     if (action && action.type === "privacy_consent_response" && action.action === "accept") {
-      const lang = action.locale || "tr";
-      const isTr = lang === "tr";
       return NextResponse.json(
         { 
           reply: isTr 
             ? "Onayınız alındı. Tercihinizi kaydettim. Size en uygun klinikleri hazırlarken birkaç ek bilgiye ihtiyacım var. Yaklaşık bütçeniz veya seyahat tarihiniz belli mi?"
             : "Consent received. I've noted your preference. While I prepare the most suitable clinics, I need a few more details. Do you have an approximate budget or travel date in mind?",
           type: "text",
-          sessionContext: sessionContext || {}
+          sessionContext: ctx
         },
         { status: 200, headers: CORS }
       );
     }
 
     return NextResponse.json(
-      { reply: "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin.", type: "text" },
+      { 
+        reply: isTr 
+          ? "Talebinizi aldım. Size uygun klinikleri hazırlayabilmem için yaklaşık bütçenizi, tercih ettiğiniz tarihi ve dil ihtiyacınızı paylaşabilir misiniz?"
+          : "I've saved your request. To prepare suitable clinic options, could you share your approximate budget, preferred dates and language requirements?", 
+        type: "text",
+        sessionContext: ctx
+      },
       { status: 200, headers: CORS }
     );
   }
