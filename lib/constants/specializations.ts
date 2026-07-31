@@ -1,3 +1,5 @@
+import type { TreatmentCategory } from "../types/agency";
+
 /**
  * ClinicBridge AI — Canonical Specialization & Treatment Registry
  * 
@@ -101,6 +103,7 @@ export function getSpecializationLabel(code: string, lang: "tr" | "en" = "tr"): 
 
 export interface TreatmentEntry {
   code: string;
+  category?: TreatmentCategory;
   labelTR: string;
   labelEN: string;
   synonymsTR: string[];
@@ -110,6 +113,7 @@ export interface TreatmentEntry {
 export const TREATMENT_REGISTRY: TreatmentEntry[] = [
   {
     code: "dental_implant",
+    category: "dental",
     labelTR: "Dental İmplant",
     labelEN: "Dental Implant",
     synonymsTR: ["implant", "implant tedavisi", "implant cerrahisi", "diş implantı", "dental implant"],
@@ -117,6 +121,7 @@ export const TREATMENT_REGISTRY: TreatmentEntry[] = [
   },
   {
     code: "root_canal_treatment",
+    category: "dental",
     labelTR: "Kanal Tedavisi",
     labelEN: "Root Canal Treatment",
     synonymsTR: ["kanal tedavisi", "kök kanal", "kanal", "endodontik tedavi"],
@@ -124,6 +129,7 @@ export const TREATMENT_REGISTRY: TreatmentEntry[] = [
   },
   {
     code: "zirconium_crown",
+    category: "dental",
     labelTR: "Zirkonyum Diş Kaplama",
     labelEN: "Zirconium Crown",
     synonymsTR: ["zirkonyum", "zirkonyum kaplama", "zirkonyum diş", "zirkonyum kron"],
@@ -131,6 +137,7 @@ export const TREATMENT_REGISTRY: TreatmentEntry[] = [
   },
   {
     code: "composite_bonding",
+    category: "dental",
     labelTR: "Bonding (Kompozit Kaplama)",
     labelEN: "Composite Bonding",
     synonymsTR: ["bonding", "kompozit bonding", "bonding kaplama", "diş bonding"],
@@ -138,6 +145,7 @@ export const TREATMENT_REGISTRY: TreatmentEntry[] = [
   },
   {
     code: "smile_design",
+    category: "dental",
     labelTR: "Gülüş Tasarımı",
     labelEN: "Smile Design",
     synonymsTR: ["gülüş tasarımı", "hollywood smile", "dijital gülüş tasarımı", "gülüş estetiği"],
@@ -145,6 +153,7 @@ export const TREATMENT_REGISTRY: TreatmentEntry[] = [
   },
   {
     code: "teeth_whitening",
+    category: "dental",
     labelTR: "Diş Beyazlatma",
     labelEN: "Teeth Whitening",
     synonymsTR: ["diş beyazlatma", "beyazlatma", "bleaching"],
@@ -152,6 +161,7 @@ export const TREATMENT_REGISTRY: TreatmentEntry[] = [
   },
   {
     code: "orthodontic_treatment",
+    category: "dental",
     labelTR: "Ortodonti Tedavisi",
     labelEN: "Orthodontic Treatment",
     synonymsTR: ["ortodonti tedavisi", "tel tedavisi", "şeffaf plak", "invisalign", "diş teli"],
@@ -159,6 +169,7 @@ export const TREATMENT_REGISTRY: TreatmentEntry[] = [
   },
   {
     code: "laminate_veneer",
+    category: "dental",
     labelTR: "Laminate Veneer",
     labelEN: "Laminate Veneer",
     synonymsTR: ["laminate", "lamina", "porselen laminate", "veneer"],
@@ -166,6 +177,7 @@ export const TREATMENT_REGISTRY: TreatmentEntry[] = [
   },
   {
     code: "pediatric_treatment",
+    category: "dental",
     labelTR: "Çocuk Diş Tedavisi",
     labelEN: "Pediatric Dental Treatment",
     synonymsTR: ["çocuk diş tedavisi", "pedodonti tedavisi", "süt dişi tedavisi", "çocuk diş bakımı"],
@@ -173,6 +185,7 @@ export const TREATMENT_REGISTRY: TreatmentEntry[] = [
   },
   {
     code: "gum_treatment",
+    category: "dental",
     labelTR: "Diş Eti Tedavisi",
     labelEN: "Gum Treatment",
     synonymsTR: ["diş eti tedavisi", "periodontoloji tedavisi", "diş eti hastalığı tedavisi"],
@@ -180,6 +193,7 @@ export const TREATMENT_REGISTRY: TreatmentEntry[] = [
   },
   {
     code: "tooth_extraction",
+    category: "dental",
     labelTR: "Diş Çekimi",
     labelEN: "Tooth Extraction",
     synonymsTR: ["diş çekimi", "gömülü diş çekimi", "yirmi yaş dişi", "20'lik diş"],
@@ -187,6 +201,7 @@ export const TREATMENT_REGISTRY: TreatmentEntry[] = [
   },
   {
     code: "all_on_four",
+    category: "dental",
     labelTR: "All-on-4",
     labelEN: "All-on-4",
     synonymsTR: ["all on 4", "all-on-4", "all on four", "sabit protez implant"],
@@ -194,6 +209,7 @@ export const TREATMENT_REGISTRY: TreatmentEntry[] = [
   },
   {
     code: "all_on_six",
+    category: "dental",
     labelTR: "All-on-6",
     labelEN: "All-on-6",
     synonymsTR: ["all on 6", "all-on-6", "all on six"],
@@ -201,6 +217,7 @@ export const TREATMENT_REGISTRY: TreatmentEntry[] = [
   },
   {
     code: "dental_filling",
+    category: "dental",
     labelTR: "Dolgu",
     labelEN: "Dental Filling",
     synonymsTR: ["dolgu", "diş dolgusu", "kompozit dolgu", "amalgam dolgu"],
@@ -208,6 +225,7 @@ export const TREATMENT_REGISTRY: TreatmentEntry[] = [
   },
   {
     code: "panoramic_xray",
+    category: "dental",
     labelTR: "Panoramik Röntgen",
     labelEN: "Panoramic X-Ray",
     synonymsTR: ["panoramik röntgen", "panaromik", "röntgen", "dental tomografi"],

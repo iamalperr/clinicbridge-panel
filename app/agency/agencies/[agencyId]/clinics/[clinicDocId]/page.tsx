@@ -41,6 +41,7 @@ import type {
   AgencyKnowledgeCategory, AgencyKnowledgeLanguage, AgencyKnowledgePriority, AgencyKnowledgeRecord
 } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES } from "@/lib/types/agency";
+import { TREATMENT_REGISTRY } from "@/lib/constants/specializations";
 
 // ─── Shared Components ──────────────────────────────────────────────────────
 function ToggleSwitch({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
@@ -141,7 +142,7 @@ export default function ClinicProfilePage() {
     clinicName: "", clinicSlug: "", category: "", website: "", profileUrl: "",
     contactEmail: "", phone: "", whatsapp: "", branch: "",
     supportedLanguages: [] as string[], treatmentCategories: [] as TreatmentCategory[],
-    subTreatments: "", showInRecommendations: true, showPriceRange: true, showProfileLink: true,
+    subTreatments: [] as string[], showInRecommendations: true, showPriceRange: true, showProfileLink: true,
   });
 
   // Pricing
@@ -238,7 +239,7 @@ export default function ClinicProfilePage() {
             branch: data.branch || "",
             supportedLanguages: data.supportedLanguages || [],
             treatmentCategories: data.treatmentCategories || [],
-            subTreatments: (data.subTreatments || []).join(", "),
+            subTreatments: data.subTreatments || [],
             showInRecommendations: data.showInRecommendations ?? true,
             showPriceRange: data.showPriceRange ?? true,
             showProfileLink: data.showProfileLink ?? true,
@@ -302,7 +303,7 @@ export default function ClinicProfilePage() {
         branch: generalForm.branch || undefined,
         supportedLanguages: generalForm.supportedLanguages,
         treatmentCategories: generalForm.treatmentCategories,
-        subTreatments: generalForm.subTreatments ? generalForm.subTreatments.split(",").map(s => s.trim()).filter(Boolean) : [],
+        subTreatments: generalForm.subTreatments,
         showInRecommendations: generalForm.showInRecommendations,
         showPriceRange: generalForm.showPriceRange,
         showProfileLink: generalForm.showProfileLink,
@@ -578,6 +579,58 @@ export default function ClinicProfilePage() {
     setShowDoctorForm(true);
   };
 
+  const handleToggleCategory = (key: string) => {
+    const sel = generalForm.treatmentCategories.includes(key as TreatmentCategory);
+    
+    if (sel) {
+      // Find sub-treatments that belong to this category and are currently selected
+      const subTreatmentsToRemove = TREATMENT_REGISTRY.filter(t => t.category === key && generalForm.subTreatments.includes(t.code));
+      
+      const hasPricing = subTreatmentsToRemove.some(st => 
+        pricing.some(p => p.subTreatmentName === st.code || p.treatmentName === st.code || p.subTreatmentName === st.labelTR || p.treatmentName === st.labelTR || p.subTreatmentName === st.labelEN || p.treatmentName === st.labelEN)
+      );
+
+      if (hasPricing) {
+        showToast("error", "Bu kategoriye bağlı fiyatlandırılmış alt tedaviler bulunmaktadır. Önce fiyatlandırma kayıtlarını silmelisiniz.");
+        return;
+      }
+
+      setGeneralForm(p => ({
+        ...p,
+        treatmentCategories: p.treatmentCategories.filter(c => c !== key),
+        subTreatments: p.subTreatments.filter(stCode => !subTreatmentsToRemove.some(st => st.code === stCode))
+      }));
+    } else {
+      setGeneralForm(p => ({
+        ...p,
+        treatmentCategories: [...p.treatmentCategories, key as TreatmentCategory],
+      }));
+    }
+  };
+
+  const handleToggleSubTreatment = (code: string) => {
+    const sel = generalForm.subTreatments.includes(code);
+    if (sel) {
+      const st = TREATMENT_REGISTRY.find(t => t.code === code);
+      if (st) {
+        const hasPricing = pricing.some(p => p.subTreatmentName === st.code || p.treatmentName === st.code || p.subTreatmentName === st.labelTR || p.treatmentName === st.labelTR || p.subTreatmentName === st.labelEN || p.treatmentName === st.labelEN);
+        if (hasPricing) {
+          showToast("error", "Bu alt tedaviye bağlı fiyatlandırma kayıtları bulunmaktadır. Önce fiyatlandırma kayıtlarını silmelisiniz.");
+          return;
+        }
+      }
+      setGeneralForm(p => ({
+        ...p,
+        subTreatments: p.subTreatments.filter(c => c !== code)
+      }));
+    } else {
+      setGeneralForm(p => ({
+        ...p,
+        subTreatments: [...p.subTreatments, code]
+      }));
+    }
+  };
+
   const catLabel = (cat: string) => TREATMENT_CATEGORIES[cat as TreatmentCategory]?.[language === "tr" ? "tr" : "en"] || cat;
 
   // ─── Loading ──────────────────────────────────────────────────────────
@@ -675,12 +728,7 @@ export default function ClinicProfilePage() {
                 {Object.entries(TREATMENT_CATEGORIES).map(([key, val]) => {
                   const sel = generalForm.treatmentCategories.includes(key as TreatmentCategory);
                   return (
-                    <button key={key} type="button" onClick={() => setGeneralForm(p => ({
-                      ...p,
-                      treatmentCategories: sel
-                        ? p.treatmentCategories.filter(c => c !== key)
-                        : [...p.treatmentCategories, key as TreatmentCategory],
-                    }))} style={{
+                    <button key={key} type="button" onClick={() => handleToggleCategory(key)} style={{
                       padding: "5px 12px", borderRadius: 20, border: `1px solid ${sel ? "#10b981" : UI_COLORS.border}`,
                       background: sel ? "rgba(16,185,129,0.1)" : "transparent",
                       color: sel ? "#10b981" : UI_COLORS.textSecondary, fontSize: 12, fontWeight: 600, cursor: "pointer",
@@ -689,6 +737,29 @@ export default function ClinicProfilePage() {
                 })}
               </div>
             </div>
+
+            {generalForm.treatmentCategories.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 8 }}>Alt Tedaviler (Sub-treatments)</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {TREATMENT_REGISTRY.filter(t => t.category && generalForm.treatmentCategories.includes(t.category as TreatmentCategory)).map((st) => {
+                    const sel = generalForm.subTreatments.includes(st.code);
+                    return (
+                      <button key={st.code} type="button" onClick={() => handleToggleSubTreatment(st.code)} style={{
+                        padding: "5px 12px", borderRadius: 20, border: `1px solid ${sel ? "#10b981" : UI_COLORS.border}`,
+                        background: sel ? "rgba(16,185,129,0.1)" : "transparent",
+                        color: sel ? "#10b981" : UI_COLORS.textSecondary, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                      }}>
+                        {language === "tr" ? st.labelTR : st.labelEN}
+                      </button>
+                    );
+                  })}
+                  {TREATMENT_REGISTRY.filter(t => t.category && generalForm.treatmentCategories.includes(t.category as TreatmentCategory)).length === 0 && (
+                    <span style={{ fontSize: 12, color: UI_COLORS.textMuted }}>Seçili kategorilere ait alt tedavi bulunamadı.</span>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div style={{ marginTop: 16 }}>
               <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 8 }}>{t("portal.clinics.supportedLanguages")}</p>
