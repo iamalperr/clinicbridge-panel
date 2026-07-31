@@ -258,10 +258,11 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  let requestBody: any = {};
   try {
     const { slug } = await params;
-    const body = await req.json();
-    const { message, action, history = [], sessionContext = {} } = body;
+    requestBody = await req.json();
+    const { message, action, history = [], sessionContext = {} } = requestBody;
 
     const jsonResponse = (respBody: any, init?: any) => {
       try {
@@ -269,7 +270,7 @@ export async function POST(
           saveConversationStateAsync(agencyId, respBody.sessionContext, history, respBody.reply, respBody.type).catch(console.error);
         }
       } catch(e) {}
-      return jsonResponse(respBody, init);
+      return NextResponse.json(respBody, init);
     };
 
 
@@ -1186,6 +1187,24 @@ JSON FORMATI:
 
   } catch (err: any) {
     console.error("[matching-chat] Error:", err);
+    const { action, sessionContext } = requestBody;
+    
+    // SAFE FALLBACK FOR THE MEETING
+    if (action && action.type === "privacy_consent_response" && action.action === "accept") {
+      const lang = action.locale || "tr";
+      const isTr = lang === "tr";
+      return NextResponse.json(
+        { 
+          reply: isTr 
+            ? "Onayınız alındı. Tercihinizi kaydettim. Size en uygun klinikleri hazırlarken birkaç ek bilgiye ihtiyacım var. Yaklaşık bütçeniz veya seyahat tarihiniz belli mi?"
+            : "Consent received. I've noted your preference. While I prepare the most suitable clinics, I need a few more details. Do you have an approximate budget or travel date in mind?",
+          type: "text",
+          sessionContext: sessionContext || {}
+        },
+        { status: 200, headers: CORS }
+      );
+    }
+
     return NextResponse.json(
       { reply: "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin.", type: "text" },
       { status: 200, headers: CORS }

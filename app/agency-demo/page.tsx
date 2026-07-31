@@ -613,6 +613,9 @@ export default function AgencyDemoPage() {
     if (aiTyping) return;
     setAiTyping(true);
 
+    // Disable all existing consent buttons instantly to prevent double-clicks
+    setAiMessages((prev) => prev.map((m) => m.type === "consent_request" ? { ...m, type: "consent_request_resolved" } : m));
+
     // Show consent choice as a system status message, NOT as a user chat bubble
     const statusText = status === "accept" 
       ? (lang === "tr" ? "✓ Veri işleme onayı verildi" : "✓ Data processing consent granted")
@@ -1164,21 +1167,23 @@ export default function AgencyDemoPage() {
                     )}
 
                     {/* Consent Request UI */}
-                    {msg.type === "consent_request" && (
+                    {(msg.type === "consent_request" || msg.type === "consent_request_resolved") && (
                       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
                         {msg.privacyNoticeUrl && (
                           <a href={msg.privacyNoticeUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: C.teal, textDecoration: "underline", display: "inline-block", marginBottom: 4 }}>
                             {lang === "tr" ? "Aydınlatma Metnini Okuyun" : "Read Privacy Notice"}
                           </a>
                         )}
-                        <div style={{ display: "flex", gap: 8 }}>
-                          <button onClick={() => sendConsentAction("accept")} disabled={aiTyping} style={{ flex: 1, padding: "10px 0", borderRadius: 8, fontSize: 13, fontWeight: 700, background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer", opacity: aiTyping ? 0.6 : 1 }}>
-                            {lang === "tr" ? "Kabul Ediyorum" : "I Accept"}
-                          </button>
-                          <button onClick={() => sendConsentAction("decline")} disabled={aiTyping} style={{ flex: 1, padding: "10px 0", borderRadius: 8, fontSize: 13, fontWeight: 700, background: C.white, color: C.navy, border: `1px solid ${C.border}`, cursor: "pointer", opacity: aiTyping ? 0.6 : 1 }}>
-                            {lang === "tr" ? "Reddediyorum" : "I Decline"}
-                          </button>
-                        </div>
+                        {msg.type === "consent_request" && (
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <button onClick={() => sendConsentAction("accept")} disabled={aiTyping} style={{ flex: 1, padding: "10px 0", borderRadius: 8, fontSize: 13, fontWeight: 700, background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer", opacity: aiTyping ? 0.6 : 1 }}>
+                              {lang === "tr" ? "Kabul Ediyorum" : "I Accept"}
+                            </button>
+                            <button onClick={() => sendConsentAction("decline")} disabled={aiTyping} style={{ flex: 1, padding: "10px 0", borderRadius: 8, fontSize: 13, fontWeight: 700, background: C.white, color: C.navy, border: `1px solid ${C.border}`, cursor: "pointer", opacity: aiTyping ? 0.6 : 1 }}>
+                              {lang === "tr" ? "Reddediyorum" : "I Decline"}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
 
