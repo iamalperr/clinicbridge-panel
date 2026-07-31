@@ -10,6 +10,9 @@ import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 import { AgencyWorkspaceProvider } from "./AgencyWorkspaceContext";
 import { useI18n } from "@/lib/i18n-context";
 import type { Agency } from "@/lib/types/agency";
+import { useAuth } from "@/lib/auth-context";
+import { isSuperAdmin, DEFAULT_PERMISSIONS } from "@/lib/types";
+import type { PermissionTab } from "@/lib/types";
 import {
   LayoutDashboard, Rocket, Stethoscope, Building2, DollarSign,
   Brain, MessageSquare, Code, Users2, FileText, Settings, Bot, Database
@@ -30,23 +33,33 @@ export default function AgencyWorkspaceShell({
 }) {
   const pathname = usePathname();
   const { t } = useI18n();
+  const { profile } = useAuth();
   const [agency, setAgency] = useState<Agency | null>(null);
   const [counts, setCounts] = useState<WorkspaceCounts>({ clinics: 0, treatments: 0, leads: 0 });
   const base = `/agency/agencies/${agencyId}`;
 
+  const hasPermission = (tab: PermissionTab) => {
+    if (!profile) return false;
+    if (isSuperAdmin(profile.role)) return true;
+    if (profile.permissions && profile.permissions.length > 0) {
+      return profile.permissions.includes(tab);
+    }
+    return DEFAULT_PERMISSIONS[profile.role]?.includes(tab);
+  };
+
   const TABS = [
-    { labelKey: "portal.tabs.overview",        path: "",              icon: <LayoutDashboard size={14} /> },
-    { labelKey: "portal.tabs.setup",           path: "/setup",        icon: <Rocket size={14} /> },
-    { labelKey: "portal.tabs.treatments",      path: "/treatments",   icon: <Stethoscope size={14} /> },
-    { labelKey: "portal.tabs.clinics",         path: "/clinics",      icon: <Building2 size={14} /> },
-    { labelKey: "portal.tabs.aiMatching",      path: "/matching",     icon: <Brain size={14} /> },
-    { labelKey: "portal.tabs.widget",          path: "/widget",       icon: <Code size={14} /> },
-    { labelKey: "portal.tabs.leads",           path: "/leads",        icon: <Users2 size={14} /> },
-    { labelKey: "portal.tabs.quoteRequests",   path: "/quotes",       icon: <FileText size={14} /> },
-    { labelKey: "portal.tabs.aiKnowledgeBase", path: "/knowledge",    icon: <Database size={14} /> },
-    { labelKey: "portal.tabs.aiPromptStudio",  path: "/ai-prompt",    icon: <Bot size={14} /> },
-    { labelKey: "portal.tabs.settings",        path: "/settings",     icon: <Settings size={14} /> },
-  ];
+    { labelKey: "portal.tabs.overview",        path: "",              icon: <LayoutDashboard size={14} />, perm: "agency_portal" },
+    { labelKey: "portal.tabs.setup",           path: "/setup",        icon: <Rocket size={14} />, perm: "agency_portal" },
+    { labelKey: "portal.tabs.treatments",      path: "/treatments",   icon: <Stethoscope size={14} />, perm: "clinic_overview" },
+    { labelKey: "portal.tabs.clinics",         path: "/clinics",      icon: <Building2 size={14} />, perm: "clinic_overview" },
+    { labelKey: "portal.tabs.aiMatching",      path: "/matching",     icon: <Brain size={14} />, perm: "clinic_prompt" },
+    { labelKey: "portal.tabs.widget",          path: "/widget",       icon: <Code size={14} />, perm: "clinic_widget" },
+    { labelKey: "portal.tabs.leads",           path: "/leads",        icon: <Users2 size={14} />, perm: "clinic_overview" },
+    { labelKey: "portal.tabs.quoteRequests",   path: "/quotes",       icon: <FileText size={14} />, perm: "clinic_overview" },
+    { labelKey: "portal.tabs.aiKnowledgeBase", path: "/knowledge",    icon: <Database size={14} />, perm: "clinic_training" },
+    { labelKey: "portal.tabs.aiPromptStudio",  path: "/ai-prompt",    icon: <Bot size={14} />, perm: "clinic_prompt" },
+    { labelKey: "portal.tabs.settings",        path: "/settings",     icon: <Settings size={14} />, perm: "clinic_settings" },
+  ].filter(tab => hasPermission(tab.perm as PermissionTab));
 
   useEffect(() => {
     const unsub = onSnapshot(

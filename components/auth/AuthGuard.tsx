@@ -48,7 +48,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         const isClinicUser = profile.role === "clinicUser" || profile.role === "clinicAdmin" || profile.role === "viewer";
         
         if (isAgencyRole) {
-          router.replace("/agency");
+          if (profile.agencyId) {
+            router.replace(`/agency/agencies/${profile.agencyId}`);
+          } else {
+            router.replace("/agency");
+          }
         } else if (isClinicUser && profile.clinicId) {
           router.replace(`/clinics/${profile.clinicId}`);
         } else {
@@ -194,7 +198,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         return null;
       }
       if (isAgencyUser) {
-        router.replace("/agency");
+        if (profile.agencyId) {
+          router.replace(`/agency/agencies/${profile.agencyId}`);
+        } else {
+          router.replace("/agency");
+        }
         return null;
       }
       return <UnauthorizedScreen />;
@@ -206,6 +214,48 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     // Agency users can access /agency/* and /clinics/* (tenant isolation handled above)
     if (!pathname.startsWith("/agency") && !pathname.startsWith("/clinics/")) {
       return <UnauthorizedScreen />;
+    }
+    
+    // Redirect /agency to their workspace
+    if (pathname === "/agency" && profile.agencyId) {
+       router.replace(`/agency/agencies/${profile.agencyId}`);
+       return null;
+    }
+    
+    // Redirect /agency/settings to their workspace settings
+    if (pathname === "/agency/settings" && profile.agencyId) {
+       router.replace(`/agency/agencies/${profile.agencyId}/settings`);
+       return null;
+    }
+    
+    // Tenant isolation and Subroute permissions for /agency/agencies/[id]
+    const agencyWorkspaceMatch = pathname.match(/^\/agency\/agencies\/([^/]+)(\/.*)?$/);
+    if (agencyWorkspaceMatch) {
+      const accessedAgencyId = agencyWorkspaceMatch[1];
+      const subRoute = agencyWorkspaceMatch[2] || "";
+
+      if (!isAdmin && accessedAgencyId !== profile.agencyId) {
+        return <UnauthorizedScreen />;
+      }
+      
+      const routePermissionMap: Record<string, PermissionTab> = {
+        "": "agency_portal",
+        "/setup": "agency_portal",
+        "/treatments": "clinic_overview",
+        "/clinics": "clinic_overview",
+        "/matching": "clinic_prompt",
+        "/widget": "clinic_widget",
+        "/leads": "clinic_overview",
+        "/quotes": "clinic_overview",
+        "/knowledge": "clinic_training",
+        "/ai-prompt": "clinic_prompt",
+        "/settings": "clinic_settings"
+      };
+
+      const requiredPermission = routePermissionMap[subRoute];
+      if (requiredPermission && !hasPermission(requiredPermission)) {
+        return <UnauthorizedScreen />;
+      }
     }
   }
 
