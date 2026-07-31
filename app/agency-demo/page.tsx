@@ -596,6 +596,36 @@ export default function AgencyDemoPage() {
       };
       setAiMessages((prev) => [...prev, replyMsg]);
       if (data.sessionContext) setSessionCtx(data.sessionContext);
+
+      if (data.shouldCreateNewLead) {
+        const hist = aiMessages.slice(-10).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text }));
+        try {
+          const ctx = data.sessionContext || sessionCtx;
+          fetch("/api/public/agency/feelinhealthy/lead", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              patientName: ctx.patientName,
+              patientEmail: ctx.patientEmail,
+              patientPhone: ctx.patientPhone,
+              patientAge: ctx.patientAge,
+              patientGender: ctx.patientGender,
+              country: ctx.patientCountry,
+              language: lang,
+              treatmentCategory: ctx.lastTreatmentCategory || "other",
+              treatmentSubcategory: ctx.lastSubTreatment || "",
+              clinicIds: ctx.selectedClinicIds || [],
+              conversationId: ctx.sessionId,
+              conversationSummary: hist.map((m: any) => `${m.role}: ${m.content}`).join("\n"),
+              source: "widget",
+              sourceUrl: window.location.href,
+            }),
+          }).catch(e => console.error("[CB-DEMO] ERROR creating lead:", e));
+        } catch (e) {
+          console.error("[CB-DEMO] ERROR creating lead:", e);
+        }
+      }
+
     } catch (err) {
       console.error("[CB-DEMO] ERROR:", err);
       setAiMessages((prev) => [...prev, {
@@ -745,6 +775,34 @@ export default function AgencyDemoPage() {
       setChatHistory([...newHistory, { role: "assistant", content: data.reply }]);
 
       if (data.sessionContext) setSessionCtx(data.sessionContext);
+
+      if (data.shouldCreateNewLead) {
+        try {
+          const ctx = data.sessionContext || sessionCtx;
+          fetch("/api/public/agency/feelinhealthy/lead", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              patientName: ctx.patientName,
+              patientEmail: ctx.patientEmail,
+              patientPhone: ctx.patientPhone,
+              patientAge: ctx.patientAge,
+              patientGender: ctx.patientGender,
+              country: ctx.patientCountry,
+              language: lang,
+              treatmentCategory: ctx.lastTreatmentCategory || "other",
+              treatmentSubcategory: ctx.lastSubTreatment || "",
+              clinicIds: ctx.selectedClinicIds || [],
+              conversationId: ctx.sessionId,
+              conversationSummary: newHistory.map((m: any) => `${m.role}: ${m.content}`).join("\n"),
+              source: "widget",
+              sourceUrl: window.location.href,
+            }),
+          }).catch(e => console.error("[CB-DEMO] ERROR creating lead:", e));
+        } catch (e) {
+          console.error("[CB-DEMO] ERROR creating lead:", e);
+        }
+      }
 
     } catch (err) {
       setAiMessages((prev) => [...prev, {

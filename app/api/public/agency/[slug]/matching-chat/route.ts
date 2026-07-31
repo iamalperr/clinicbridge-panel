@@ -310,6 +310,9 @@ export async function POST(
       } else if (action.type === "clinic_info") {
         finalMessage = `[SİSTEM AKSİYONU: Kullanıcı arayüzden 'Daha Fazla Bilgi' butonuna tıklayarak '${action.clinicName}' hakkında bilgi istedi. Lütfen klinik hakkında genel bilgi ver, öne çıkan özelliklerini veya doktorlarını sırala. En sonda bu klinikle devam etmek isteyip istemediğini sor. (Henüz lead toplamaya başlama)]`;
       } else if (action.type === "lead_capture") {
+        const currentSelected = new Set<string>(sessionContext.selectedClinicIds || []);
+        currentSelected.add(action.clinicId);
+        sessionContext.selectedClinicIds = Array.from(currentSelected);
         finalMessage = `[SİSTEM AKSİYONU: Kullanıcı arayüzden 'Teklif İste' butonuna tıklayarak '${action.clinicName}' kliniği için teklif almak istediğini belirtti. Lütfen HEMEN lead toplama aşamasının İLK sorusu olan Ad Soyad bilgisini iste.]`;
       } else if (action.type === "patient_email_submission") {
         const { normalizeEmail, isValidEmail } = await import("@/lib/utils/emailValidation");
@@ -562,21 +565,24 @@ export async function POST(
     }));
     
     // We want a slightly broader search since it's an agency with multiple clinics
-    const topKbChunks = await hybridSearch(message, docsForSearch, "", 15);
-    
-    // Reconstruct kb records from the top chunks to match buildClinicContext expectations
-    const relevantKbRecords = topKbChunks.map(chunk => {
-      const originalDoc = allKbRecords.find(k => k.id === chunk.doc_id);
-      const originalAgDoc = agencyKbRecords.find(k => k.id === chunk.doc_id);
+    let relevantKbRecords: any[] = [];
+    if (message && message.trim().length > 0) {
+      const topKbChunks = await hybridSearch(message, docsForSearch, "", 15);
       
-      return {
-        id: chunk.doc_id,
-        clinicId: originalDoc?.clinicId,
-        category: originalAgDoc ? `AGENCY_${originalAgDoc.knowledgeType.toUpperCase()}` : "RAG_MATCH",
-        title: chunk.title,
-        content: chunk.text
-      };
-    });
+      // Reconstruct kb records from the top chunks to match buildClinicContext expectations
+      relevantKbRecords = topKbChunks.map(chunk => {
+        const originalDoc = allKbRecords.find(k => k.id === chunk.doc_id);
+        const originalAgDoc = agencyKbRecords.find(k => k.id === chunk.doc_id);
+        
+        return {
+          id: chunk.doc_id,
+          clinicId: originalDoc?.clinicId,
+          category: originalAgDoc ? `AGENCY_${originalAgDoc.knowledgeType.toUpperCase()}` : "RAG_MATCH",
+          title: chunk.title,
+          content: chunk.text
+        };
+      });
+    }
 
     /* ── 2. Build clinic context for OpenAI ── */
     const clinicContext = buildClinicContext(allClinics, allPricing, relevantKbRecords, [], agencyKbRecords, showPriceRange);
