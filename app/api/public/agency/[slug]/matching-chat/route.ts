@@ -1,3 +1,4 @@
+import { saveConversationStateAsync } from "@/lib/services/conversationHelper";
 import { NextResponse } from "next/server";
 import { trackableAIRequest } from "@/lib/services/aiGateway";
 import { getAdminDb } from "@/lib/firebase-admin";
@@ -262,11 +263,21 @@ export async function POST(
     const body = await req.json();
     const { message, action, history = [], sessionContext = {} } = body;
 
+    const jsonResponse = (respBody: any, init?: any) => {
+      try {
+        if (respBody && respBody.sessionContext && typeof agencyId !== "undefined") {
+          saveConversationStateAsync(agencyId, respBody.sessionContext, history, respBody.reply, respBody.type).catch(console.error);
+        }
+      } catch(e) {}
+      return jsonResponse(respBody, init);
+    };
+
+
     let finalMessage = message;
 
     const adminDb = getAdminDb();
     if (!adminDb) {
-      return NextResponse.json(
+      return jsonResponse(
         { reply: "Veritabanı bağlantısı kurulamadı.", type: "text" },
         { status: 503, headers: CORS }
       );
@@ -275,7 +286,7 @@ export async function POST(
     const agencySnap = await adminDb.collection("agencies")
       .where("slug", "==", slug).where("status", "==", "active").limit(1).get();
     if (agencySnap.empty) {
-      return NextResponse.json({ error: "Agency not found" }, { status: 404, headers: CORS });
+      return jsonResponse({ error: "Agency not found" }, { status: 404, headers: CORS });
     }
     const agencyId = agencySnap.docs[0].id;
     const agencyData = agencySnap.docs[0].data();
@@ -307,7 +318,7 @@ export async function POST(
           sessionContext.patientEmail = normalized;
           sessionContext.patientEmailStatus = "verified_format";
         } else {
-          return NextResponse.json({
+          return jsonResponse({
             reply: action.locale === "tr"
               ? "Bu e-posta adresinde küçük bir yazım hatası olabilir. Kontrol ederek yeniden paylaşabilir misiniz?"
               : "There may be a small typo in this email address. Could you check it and share it again?",
@@ -335,7 +346,7 @@ export async function POST(
         
         if (action.action === "select") {
           if (currentSelected.size >= maxClinics) {
-             return NextResponse.json({
+             return jsonResponse({
                 reply: action.locale === "tr" 
                   ? `Aynı talep için en fazla ${maxClinics} klinik seçebilirsiniz. Yeni bir klinik seçmek için mevcut seçimlerinizden birini kaldırabilirsiniz.`
                   : `You can select up to ${maxClinics} clinics for the same request. Remove one of your current selections to choose another clinic.`,
@@ -378,7 +389,7 @@ export async function POST(
 
         if (consentStatus === "declined") {
           sessionContext.quoteConsent = false;
-          return NextResponse.json({
+          return jsonResponse({
             reply: consentLang === "tr"
               ? "Elbette. Onay vermeden de tedaviler ve genel klinik hizmetleri hakkında bilgi alabilirsiniz. Ancak kişisel bilgilerinizi kullanarak klinik önerisi veya teklif talebi oluşturamam."
               : "Of course. You may still receive general information about treatments and clinic services, but I cannot create a personalized clinic recommendation or treatment request without your consent.",
@@ -403,11 +414,11 @@ export async function POST(
     }
 
     if (!finalMessage) {
-      return NextResponse.json({ error: "message or action is required" }, { status: 400, headers: CORS });
+      return jsonResponse({ error: "message or action is required" }, { status: 400, headers: CORS });
     }
 
     if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json(
+      return jsonResponse(
         { reply: "AI servisi yapılandırılmamış.", type: "text" },
         { headers: CORS }
       );
@@ -725,7 +736,7 @@ JSON FORMATI:
       parsed = JSON.parse(raw);
     } catch {
       console.error("[matching-chat] Failed to parse OpenAI JSON:", raw.slice(0, 200));
-      return NextResponse.json({
+      return jsonResponse({
         reply: "Üzgünüm, yanıtı işlerken bir sorun oluştu. Lütfen tekrar deneyin.",
         type: "text",
         sessionContext: ctx,
@@ -769,7 +780,7 @@ JSON FORMATI:
       } else {
         newCtx.patientEmail = undefined;
         newCtx.patientEmailStatus = "invalid";
-        return NextResponse.json({
+        return jsonResponse({
           reply: parsed.language === "tr"
             ? "Bu e-posta adresinde küçük bir yazım hatası olabilir. Kontrol ederek yeniden paylaşabilir misiniz?"
             : "There may be a small typo in this email address. Could you check it and share it again?",
@@ -804,7 +815,7 @@ JSON FORMATI:
 
     // --- CONVERSATION COMPLETED ---
     if (parsed.intent === "conversation_completed") {
-      return NextResponse.json({
+      return jsonResponse({
         reply: parsed.replyText || "Rica ederim. Talebiniz ilgili kliniğe iletilmek üzere kaydedildi. Klinik ekibi sizinle en kısa sürede iletişime geçecektir. Sağlıklı günler dilerim.",
         type: "text",
         sessionContext: newCtx,
@@ -826,7 +837,7 @@ JSON FORMATI:
         const hasConsent = await requireAcceptedAgencyConsent(agencyId, ctx.sessionId!, privacySettings.version);
         if (!hasConsent) {
           if (ctx.quoteConsent === false) {
-             return NextResponse.json({
+             return jsonResponse({
                reply: parsed.language === "tr" 
                  ? "Daha önce onay vermediğiniz için kişiselleştirilmiş işlem yapamıyoruz. Genel konularda yardımcı olabilirim."
                  : "Since you declined the privacy consent, I cannot process personal data. I can only assist with general information.",
@@ -838,7 +849,7 @@ JSON FORMATI:
           
           // Save the original user message so it can be re-processed after consent
           ctx.pendingUserMessage = finalMessage;
-          return NextResponse.json({
+          return jsonResponse({
              reply: parsed.language === "tr" ? privacySettings.consentTextTr : privacySettings.consentTextEn,
              type: "consent_request",
              privacyNoticeUrl: parsed.language === "tr" ? privacySettings.noticeUrlTr : privacySettings.noticeUrlEn,
@@ -854,7 +865,7 @@ JSON FORMATI:
     if (parsed.shouldCreateLead && !leadAlreadyCreated) {
       if (newCtx.patientEmailStatus !== "verified_format") {
          newCtx.leadStage = "collecting_email";
-         return NextResponse.json({
+         return jsonResponse({
            reply: parsed.language === "tr" 
              ? "Talebinizi tamamlayabilmemiz ve süreçle ilgili sizi bilgilendirebilmemiz için geçerli bir e-posta adresine ihtiyacımız bulunuyor."
              : "To complete your request and keep you informed about the process, we need a valid email address.",
@@ -868,7 +879,7 @@ JSON FORMATI:
       }
 
       newCtx.leadStage = "quote_request_created";
-      return NextResponse.json({
+      return jsonResponse({
         reply: parsed.replyText || "Harika, talebinizi başarıyla oluşturdum.",
         type: "text",
         sessionContext: newCtx,
@@ -881,7 +892,7 @@ JSON FORMATI:
 
     // --- FOLLOW-UP OR LEAD CAPTURE ---
     if (parsed.intent === "followup" || parsed.needsFollowUp || parsed.intent === "lead_capture") {
-      return NextResponse.json({
+      return jsonResponse({
         reply: parsed.replyText || "Lütfen gerekli bilgileri paylaşır mısınız?",
         type: "text",
         sessionContext: newCtx,
@@ -962,7 +973,7 @@ JSON FORMATI:
         newCtx.lastFocusedClinicName = recommendations[0].clinicName;
       }
 
-      return NextResponse.json({
+      return jsonResponse({
         reply: parsed.replyText || (parsed.language === "tr"
           ? `${parsed.subTreatment || "Tedaviniz"} için ${recommendations.length} uygun klinik buldum.`
           : `I found ${recommendations.length} suitable clinic(s) for ${parsed.subTreatment || "your treatment"}.`),
@@ -1031,7 +1042,7 @@ JSON FORMATI:
           })()
         };
 
-        return NextResponse.json({
+        return jsonResponse({
           reply: parsed.replyText || `${clinic.clinicName} hakkında bilgi.`,
           type: "clinic_answer",
           clinics: [miniCard],
@@ -1040,7 +1051,7 @@ JSON FORMATI:
         }, { headers: CORS });
       }
 
-      return NextResponse.json({
+      return jsonResponse({
         reply: parsed.replyText || (parsed.language === "tr"
           ? "Belirttiğiniz klinik sistemde bulunamadı."
           : "The specified clinic was not found."),
@@ -1094,7 +1105,7 @@ JSON FORMATI:
         newCtx.lastFocusedClinicName = clinic.clinicName;
       }
 
-      return NextResponse.json({
+      return jsonResponse({
         reply: parsed.replyText || "Fiyat bilgisi.",
         type: "pricing_answer",
         clinics: miniCard,
@@ -1135,7 +1146,7 @@ JSON FORMATI:
               ? `${clinic.clinicName} doktor kadrosu:\n\n${docLines}`
               : `${clinic.clinicName} medical team:\n\n${docLines}`);
 
-            return NextResponse.json({
+            return jsonResponse({
               reply: replyText,
               type: "doctor_answer",
               sessionContext: newCtx,
@@ -1145,7 +1156,7 @@ JSON FORMATI:
           console.error("[matching-chat] Doctor fetch error:", e);
         }
 
-        return NextResponse.json({
+        return jsonResponse({
           reply: parsed.replyText || (parsed.language === "tr"
             ? `${clinic.clinicName} için sistemde doktor bilgisi henüz tanımlı değil.`
             : `No doctor information is available for ${clinic.clinicName} yet.`),
@@ -1154,7 +1165,7 @@ JSON FORMATI:
         }, { headers: CORS });
       }
 
-      return NextResponse.json({
+      return jsonResponse({
         reply: parsed.replyText || (parsed.language === "tr"
           ? "Hangi kliniğin doktorlarını öğrenmek istediğinizi belirtir misiniz?"
           : "Could you specify which clinic's doctors you'd like to learn about?"),
@@ -1164,7 +1175,7 @@ JSON FORMATI:
     }
 
     // --- GENERAL / FALLBACK ---
-    return NextResponse.json({
+    return jsonResponse({
       reply: parsed.replyText || (parsed.language === "tr"
         ? "Size nasıl yardımcı olabilirim? Hangi tedaviyi aradığınızı, lokasyonunuzu veya bütçenizi paylaşabilirsiniz."
         : "How can I help you? Share the treatment you're looking for, your preferred location, or budget."),

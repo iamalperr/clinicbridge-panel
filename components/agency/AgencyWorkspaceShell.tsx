@@ -55,6 +55,7 @@ export default function AgencyWorkspaceShell({
     { labelKey: "portal.tabs.aiMatching",      path: "/matching",     icon: <Brain size={14} />, perm: "clinic_prompt" },
     { labelKey: "portal.tabs.widget",          path: "/widget",       icon: <Code size={14} />, perm: "clinic_widget" },
     { labelKey: "portal.tabs.leads",           path: "/leads",        icon: <Users2 size={14} />, perm: "clinic_overview" },
+    { labelKey: "portal.tabs.conversations",   path: "/conversations",icon: <MessageSquare size={14} />, perm: "clinic_overview" },
     { labelKey: "portal.tabs.quoteRequests",   path: "/quotes",       icon: <FileText size={14} />, perm: "clinic_overview" },
     { labelKey: "portal.tabs.aiKnowledgeBase", path: "/knowledge",    icon: <Database size={14} />, perm: "clinic_training" },
     { labelKey: "portal.tabs.aiPromptStudio",  path: "/ai-prompt",    icon: <Bot size={14} />, perm: "clinic_prompt" },
