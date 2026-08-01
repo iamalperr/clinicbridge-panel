@@ -20,6 +20,7 @@ import {
   ConversationStateEngine,
   ConversationFeatureFlags,
   ConversationLogger,
+  PendingActionManager,
   formatMultilingualSummary,
   formatMultilingualPrompt,
   formatPricingFallback,
@@ -1136,6 +1137,10 @@ export async function POST(req: Request) {
 
     let loadedState = "IDLE";
     let loadedDraft: any = {};
+    let loadedPendingAction: any = null;
+    let loadedAppointmentId: string | null = null;
+    let loadedIsAppointmentCreated: boolean = false;
+
     if (adminDb && convId) {
         try {
             const statePath = `clinics/${actualClinicId}/conversationLogs/${convId}`;
@@ -1148,6 +1153,9 @@ export async function POST(req: Request) {
                 const lData = contextSnap.data();
                 if (lData?.appointmentState) loadedState = lData.appointmentState;
                 if (lData?.appointmentDraft) loadedDraft = lData.appointmentDraft;
+                if (lData?.pendingAction) loadedPendingAction = lData.pendingAction;
+                if (lData?.appointmentId) loadedAppointmentId = lData.appointmentId;
+                if (lData?.isAppointmentCreated) loadedIsAppointmentCreated = lData.isAppointmentCreated;
             }
         } catch (e: any) {
             console.error("[chat API] Error loading strict context:", e.message);
@@ -1158,9 +1166,16 @@ export async function POST(req: Request) {
     console.log(JSON.stringify({ checkpoint: "APPT_02_STATE_LOADED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, appointmentState: loadedState, timestamp: new Date().toISOString() }));
     console.log(JSON.stringify({ checkpoint: "APPT_03_DRAFT_LOADED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, draftFields: Object.keys(loadedDraft), timestamp: new Date().toISOString() }));
 
-    // ── AŞAMA 4: CONFIRMATION HANDLER GARANTİSİ (EFFECTIVE STATE) ──
-    const effectiveAppointmentState = loadedState; // Since this handler is at the top of the file before any new state is generated.
-    const isAwaitingConfirmation = effectiveAppointmentState === "AWAITING_CONFIRMATION";
+    // ── AŞAMA 4: CONFIRMATION HANDLER GARANTİSİ (EFFECTIVE STATE & ACTION OWNERSHIP) ──
+    const effectiveAppointmentState = loadedState;
+    const apptPermitted = PendingActionManager.isAppointmentSubmissionPermitted({
+      appointmentState: loadedState,
+      appointmentSubmitted: loadedIsAppointmentCreated || loadedState === "APPOINTMENT_SUBMITTED" || loadedState === "COMPLETED",
+      appointmentId: loadedAppointmentId || undefined,
+      pendingAction: loadedPendingAction
+    });
+
+    const isAwaitingConfirmation = effectiveAppointmentState === "AWAITING_CONFIRMATION" && apptPermitted.allowed;
 
     console.log(JSON.stringify({
       checkpoint: "APPT_CONFIRMATION_RECEIVED",
@@ -1168,6 +1183,8 @@ export async function POST(req: Request) {
       conversationId: convId,
       loadedState,
       effectiveState: effectiveAppointmentState,
+      apptPermitted: apptPermitted.allowed,
+      guardReason: apptPermitted.reason,
       positiveConfirmationDetected,
       negativeConfirmationDetected,
       handlerWillRun: isAwaitingConfirmation && positiveConfirmationDetected && !negativeConfirmationDetected
@@ -1249,7 +1266,11 @@ export async function POST(req: Request) {
 
              // 3. Require a real appointmentId
              if (result.success && result.appointmentId) {
-                 await saveAppointmentState(adminDb, actualClinicId, convId, 0, "APPOINTMENT_SUBMITTED", loadedDraft, {});
+                 await saveAppointmentState(adminDb, actualClinicId, convId, 0, "APPOINTMENT_SUBMITTED", {}, {
+                   isAppointmentCreated: true,
+                   appointmentId: result.appointmentId,
+                   pendingAction: null
+                 });
 
                  const successReply = `Teşekkür ederim. Ön randevu talebiniz ${clinicName}'e iletildi. Klinik ekibi talebinizi değerlendirdikten sonra kayıtlı iletişim bilgileriniz üzerinden size bilgi verecektir.`;
 
@@ -1361,8 +1382,10 @@ export async function POST(req: Request) {
     const conversationIntent = IntentRouter.classifyConversationIntent({
       message,
       conversationHistory: history,
-      currentState: appointmentState === "IDLE" ? "INITIAL" : "APPOINTMENT_COLLECTION",
+      currentState: appointmentState === "IDLE" ? "INITIAL" : (appointmentState === "AWAITING_CONFIRMATION" ? "APPOINTMENT_REVIEW" : (appointmentState === "APPOINTMENT_SUBMITTED" ? "APPOINTMENT_SUBMITTED" : "APPOINTMENT_COLLECTION")),
       expectedSlot: currentExpectedSlot,
+      pendingAction: loadedPendingAction,
+      appointmentSubmitted: loadedIsAppointmentCreated || loadedState === "APPOINTMENT_SUBMITTED" || loadedState === "COMPLETED" || appointmentState === "APPOINTMENT_SUBMITTED",
       collectedSlots: {
         preferredDate: appointmentDraft.requestedDate || undefined,
         preferredTime: appointmentDraft.requestedTime || undefined,
@@ -2534,8 +2557,11 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       const phoneDisplay = pending.patientPhone || "-";
       const summaryMsg = `Ön randevu talebinizin özeti:\n\nAd Soyad: ${pending.patientName}\nTelefon: ${phoneDisplay}\nE-posta: ${pending.patientEmail || "-"}\nHizmet: ${pending.requestedService}\nTercih Edilen Tarih: ${dateValidation.resolvedDate || "-"} ${dateValidation.resolvedWeekday || ""}\nTercih Edilen Saat: ${dateValidation.resolvedTime || "Belirtilmedi"}\n\nBu bilgilerle ön randevu talebinizi kliniğin değerlendirmesine iletmemi onaylıyor musunuz?`;
       
+      const pendingAction = PendingActionManager.createPendingAction("submit_appointment", pending, undefined, "Randevu onay özeti");
+
       responsePayload.reply = summaryMsg;
       responsePayload.pendingAppointmentData = pending;
+      responsePayload.pendingAction = pendingAction;
       responsePayload.responseType = "appointment_confirmation_required";
       
       const previousState = appointmentState;
@@ -2556,6 +2582,19 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       responsePayload.responseType = "appointment_information_required";
     }
 
+    // Detect and establish pendingAction for any assistant follow-up questions/offers
+    if (!responsePayload.pendingAction && responsePayload.reply) {
+      const offeredAction = PendingActionManager.detectOfferedAction(responsePayload.reply);
+      if (offeredAction) {
+        responsePayload.pendingAction = PendingActionManager.createPendingAction(
+          offeredAction,
+          {},
+          undefined,
+          `Assistant offer: ${offeredAction}`
+        );
+      }
+    }
+
     await logConversation({
       clinicId: actualClinicId,
       convId,
@@ -2574,9 +2613,12 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       appointmentState,
     });
 
-    if (adminDb && actualClinicId && convId && appointmentState !== "IDLE") {
+    if (adminDb && actualClinicId && convId && (appointmentState !== "IDLE" || responsePayload.pendingAction)) {
         try {
-            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, appointmentState, appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
+            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, appointmentState, appointmentDraft, {
+              processedMessageIds: [...processedMessageIds, messageId],
+              pendingAction: responsePayload.pendingAction || null
+            });
         } catch (e: any) {
             console.error("[chat API] Error saving deterministic state at end of flow:", e.message);
         }

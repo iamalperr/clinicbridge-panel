@@ -14,10 +14,12 @@ import {
   ConversationIntent,
   ConversationSlots,
   ConversationState,
-  IntentClassificationResult
+  IntentClassificationResult,
+  PendingAction
 } from "./types";
 import { SlotExtractor } from "./slotExtractor";
 import { ContextResolver } from "./contextResolver";
+import { PendingActionManager } from "./PendingActionManager";
 
 export class IntentRouter {
   /**
@@ -33,6 +35,8 @@ export class IntentRouter {
     activeTopic?: string;
     activeClinic?: string;
     lastIntent?: ConversationIntent;
+    pendingAction?: PendingAction | null;
+    appointmentSubmitted?: boolean;
     clinicContext?: {
       clinicId?: string;
       clinicName?: string;
@@ -154,27 +158,109 @@ export class IntentRouter {
       };
     }
 
-    // Step 8: Explicit Confirmation / Rejection in Review State or Flow
-    if (currentState === "APPOINTMENT_REVIEW" || expectedSlot === "confirmation") {
-      if (this.isConfirmation(lower)) {
-        return {
-          intent: "appointment_confirmation",
-          confidence: 1.0,
-          entities: extracted,
-          requiresKnowledgeBase: false,
-          shouldContinueActiveFlow: true,
-          explanation: "Appointment review confirmed"
-        };
-      }
-      if (this.isRejection(lower)) {
+    // Step 8: Explicit Confirmation / Rejection and Pending Action Resolution
+    const isConf = PendingActionManager.isConfirmation(raw);
+    const isRej = PendingActionManager.isRejection(raw);
+
+    if (isConf || isRej) {
+      const latestAssistantMsg = params.conversationHistory?.filter(m => m.role === "assistant").pop()?.content;
+      const resolution = PendingActionManager.resolvePendingConfirmation({
+        message: raw,
+        pendingAction: params.pendingAction,
+        latestAssistantMessage: latestAssistantMsg,
+        conversationState: currentState,
+        appointmentSubmitted: params.appointmentSubmitted
+      });
+
+      if (resolution.isRejection) {
         return {
           intent: "rejection",
           confidence: 1.0,
           entities: extracted,
           requiresKnowledgeBase: false,
           shouldContinueActiveFlow: false,
-          explanation: "Appointment review rejected or cancelled"
+          explanation: `User rejected action (${resolution.reason})`
         };
+      }
+
+      if (resolution.shouldExecute) {
+        if (resolution.actionType === "show_doctor_information") {
+          return {
+            intent: "doctor_information",
+            confidence: 0.96,
+            entities: extracted,
+            requiresKnowledgeBase: true,
+            shouldContinueActiveFlow: false,
+            pendingAction: params.pendingAction,
+            explanation: "Doctor information offer confirmed"
+          };
+        }
+
+        if (resolution.actionType === "submit_appointment") {
+          return {
+            intent: "appointment_confirmation",
+            confidence: 1.0,
+            entities: extracted,
+            requiresKnowledgeBase: false,
+            shouldContinueActiveFlow: true,
+            pendingAction: params.pendingAction,
+            explanation: "Appointment review confirmed"
+          };
+        }
+
+        if (resolution.actionType === "request_quote") {
+          return {
+            intent: "quote_request",
+            confidence: 0.95,
+            entities: {
+              ...extracted,
+              treatment: extracted.treatment || params.activeTreatment,
+              informationType: "price"
+            },
+            requiresKnowledgeBase: true,
+            requiresPricingData: true,
+            shouldContinueActiveFlow: false,
+            pendingAction: params.pendingAction,
+            explanation: "Quote request offer confirmed"
+          };
+        }
+
+        if (resolution.actionType === "create_live_support_request") {
+          return {
+            intent: "live_support_request",
+            confidence: 0.95,
+            entities: extracted,
+            requiresKnowledgeBase: false,
+            shouldContinueActiveFlow: false,
+            pendingAction: params.pendingAction,
+            explanation: "Live support offer confirmed"
+          };
+        }
+      }
+
+      // If appointment was already submitted and user sent a generic confirmation without pending action
+      if (params.appointmentSubmitted === true || currentState === "APPOINTMENT_SUBMITTED" || currentState === "COMPLETED") {
+        return {
+          intent: "casual_conversation",
+          confidence: 0.9,
+          entities: extracted,
+          requiresKnowledgeBase: false,
+          shouldContinueActiveFlow: false,
+          explanation: "Generic confirmation in post-submitted state"
+        };
+      }
+
+      if (currentState === "APPOINTMENT_REVIEW" || expectedSlot === "confirmation") {
+        if (isConf) {
+          return {
+            intent: "appointment_confirmation",
+            confidence: 1.0,
+            entities: extracted,
+            requiresKnowledgeBase: false,
+            shouldContinueActiveFlow: true,
+            explanation: "Appointment review confirmed"
+          };
+        }
       }
     }
 
@@ -437,16 +523,11 @@ export class IntentRouter {
   }
 
   public static isConfirmation(lower: string): boolean {
-    const cleaned = lower.replace(/[,.!\-_]/g, " ").replace(/\s+/g, " ").trim();
-    return /^(evet|onaylıyorum|onayliyorum|tamam|uygun|olur|doğrudur|dogrudur|randevuyu oluştur|randevuyu olustur|yes|sure|okay|ok|confirm|i accept|evet onaylıyorum|evet onayliyorum|evet lütfen|evet lutfen|yes confirm|yes please|yes i confirm|yes sure)$/i.test(
-      cleaned
-    ) || /^(evet|yes|onaylıyorum|onayliyorum)\b/i.test(cleaned);
+    return PendingActionManager.isConfirmation(lower);
   }
 
   public static isRejection(lower: string): boolean {
-    return /^(hayır|hayir|istemiyorum|vazgeçtim|vazgectim|iptal|iptal et|no|cancel|nevermind|don't want)$/i.test(
-      lower.trim()
-    );
+    return PendingActionManager.isRejection(lower);
   }
 
   public static isAppointmentStart(lower: string): boolean {

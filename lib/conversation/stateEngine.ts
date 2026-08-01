@@ -143,7 +143,11 @@ export class ConversationStateEngine {
         break;
 
       case "APPOINTMENT_SUBMITTED":
-        nextState = "COMPLETED";
+        if (intentResult.intent === "appointment_start") {
+          nextState = "APPOINTMENT_COLLECTION";
+        } else {
+          nextState = "GENERAL_CONVERSATION";
+        }
         break;
 
       case "LIVE_SUPPORT_REQUIRED":
@@ -168,10 +172,25 @@ export class ConversationStateEngine {
     const missingAfter = this.getMissingSlots(currentSlots, required);
     const isComplete = nextState === "APPOINTMENT_REVIEW" || nextState === "APPOINTMENT_SUBMITTED" || nextState === "COMPLETED";
 
+    let pendingAction: any = context.pendingAction || null;
+
     if (nextState === "APPOINTMENT_COLLECTION") {
       expectedSlot = missingAfter.length > 0 ? (missingAfter[0] as string) : undefined;
+      pendingAction = null;
     } else if (nextState === "APPOINTMENT_REVIEW") {
       expectedSlot = "confirmation";
+      if (!pendingAction || pendingAction.type !== "submit_appointment" || pendingAction.status !== "pending") {
+        pendingAction = {
+          id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          type: "submit_appointment",
+          createdAt: new Date().toISOString(),
+          status: "pending",
+          description: "Appointment confirmation pending"
+        };
+      }
+    } else if (nextState === "APPOINTMENT_SUBMITTED" || nextState === "COMPLETED") {
+      expectedSlot = undefined;
+      pendingAction = null;
     } else {
       expectedSlot = undefined;
     }
@@ -182,6 +201,7 @@ export class ConversationStateEngine {
       updatedSlots: currentSlots,
       missingRequiredSlots: missingAfter as string[],
       expectedSlot,
+      pendingAction,
       isComplete
     };
   }

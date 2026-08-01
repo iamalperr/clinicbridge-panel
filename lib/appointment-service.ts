@@ -32,7 +32,7 @@ export function validateAppointmentPayload(payload: CreateAppointmentPayload): C
   return payload;
 }
 
-export async function createAppointmentRecord(payload: CreateAppointmentPayload): Promise<{ record: Partial<Appointment> | null, step_failed?: string, reason?: string, stack?: string }> {
+export async function createAppointmentRecord(payload: CreateAppointmentPayload): Promise<{ record: Partial<Appointment> | null, isDuplicate?: boolean, step_failed?: string, reason?: string, stack?: string }> {
   const adminDb = getAdminDb();
   if (!adminDb) {
     return { record: null, step_failed: "STEP 5", reason: "Admin DB not initialized", stack: new Error().stack };
@@ -41,8 +41,38 @@ export async function createAppointmentRecord(payload: CreateAppointmentPayload)
   console.log(`[STEP 5] attempting database insert for clinicId: ${payload.clinicId}`);
   
   try {
+    const appointmentsCol = adminDb.collection("clinics").doc(payload.clinicId).collection("appointments");
+
+    // ── Idempotency Check: By idempotencyKey ──
+    if (payload.idempotencyKey) {
+      const idempSnap = await appointmentsCol.where("idempotencyKey", "==", payload.idempotencyKey).limit(1).get();
+      if (!idempSnap.empty) {
+        const existingData = idempSnap.docs[0].data() as Appointment;
+        console.log(`[IDEMPOTENCY_HIT] Existing appointment found by idempotencyKey=${payload.idempotencyKey} id=${existingData.id}`);
+        return { record: existingData, isDuplicate: true };
+      }
+    }
+
+    // ── Idempotency Check: By conversationId + matching core attributes ──
+    if (payload.conversationId) {
+      const convSnap = await appointmentsCol.where("conversationId", "==", payload.conversationId).limit(5).get();
+      if (!convSnap.empty) {
+        for (const doc of convSnap.docs) {
+          const docData = doc.data() as Appointment;
+          if (
+            docData.patientPhone === payload.patientPhone &&
+            docData.requestedDate === payload.requestedDate &&
+            docData.requestedService === payload.requestedService
+          ) {
+            console.log(`[IDEMPOTENCY_HIT] Existing appointment found by conversationId=${payload.conversationId} id=${docData.id}`);
+            return { record: docData, isDuplicate: true };
+          }
+        }
+      }
+    }
+
     const now = new Date().toISOString();
-    const appointmentRef = adminDb.collection("clinics").doc(payload.clinicId).collection("appointments").doc();
+    const appointmentRef = appointmentsCol.doc();
     const appointmentId = appointmentRef.id;
 
     const newAppointment: Partial<Appointment> = {
@@ -97,11 +127,12 @@ export async function createAppointmentRecord(payload: CreateAppointmentPayload)
       });
     } catch (e: any) { }
     
-    return { record: newAppointment };
+    return { record: newAppointment, isDuplicate: false };
   } catch (err: any) {
     return { record: null, step_failed: "STEP 5", reason: err.message, stack: err.stack };
   }
 }
+
 
 export async function sendClinicNewAppointmentNotification(appointment: Partial<Appointment>): Promise<{ status: string, providerResponse?: any }> {
   const adminDb = getAdminDb();
@@ -294,10 +325,29 @@ export async function createAppointmentAndNotify(draft: CreateAppointmentPayload
     // ── INSTRUMENTATION LOG 6 ──
     console.log(JSON.stringify({ checkpoint: "APPT_06_DATABASE_INSERT_STARTED", clinicId: validatedPayload.clinicId, timestamp: new Date().toISOString() }));
     
-    const { record, step_failed, reason, stack } = await createAppointmentRecord(validatedPayload);
+    const { record, isDuplicate, step_failed, reason, stack } = await createAppointmentRecord(validatedPayload);
     
     if (!record || !record.id) { 
         return { success: false, step_failed: step_failed || "STEP 5", reason: reason || "APPOINTMENT_INSERT_FAILED", stack }; 
+    }
+
+    if (isDuplicate) {
+      console.log(JSON.stringify({
+        checkpoint: "APPT_DUPLICATE_SUBMISSION_PREVENTED",
+        clinicId: validatedPayload.clinicId,
+        appointmentId: record.id,
+        idempotencyKey: validatedPayload.idempotencyKey,
+        conversationId: validatedPayload.conversationId,
+        timestamp: new Date().toISOString()
+      }));
+
+      return {
+        success: true,
+        appointmentId: record.id,
+        status: (record.status as string) || "pending",
+        clinicNotificationStatus: "SKIPPED_DUPLICATE",
+        patientNotificationStatus: "SKIPPED_DUPLICATE"
+      };
     }
     
     // ── INSTRUMENTATION LOG 7 & 8 ──

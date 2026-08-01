@@ -635,6 +635,7 @@
     var lastHash     = '';
     var chatHistory  = [];
     var pendingApptData = null;
+    var currentPendingAction = null;
 
     /* Create host element (Shadow DOM container) */
     var hostEl = d.createElement('div');
@@ -800,6 +801,7 @@
           conversationId:        sessionId,
           language:              lang,
           pendingAppointmentData: pendingApptData || undefined,
+          pendingAction:         currentPendingAction || undefined,
           traceId:               traceId,
           clientMessageId:       clientMessageId
         }),
@@ -838,6 +840,7 @@
            if (data.success === true && typeof data.appointmentId === "string" && data.appointmentId.length > 0) {
               reply = data.reply;
               pendingApptData = null;
+              currentPendingAction = null;
            } else {
               reply = "Randevu onayı başarısız oldu (Kimlik eksik).";
            }
@@ -847,7 +850,11 @@
            reply = data.reply;
         } else {
            reply = (data && data.reply) ? data.reply : sys.noReply;
-           if (data && data.pendingAppointmentData) pendingApptData = data.pendingAppointmentData;
+           if (data && data.pendingAppointmentData !== undefined) pendingApptData = data.pendingAppointmentData;
+        }
+
+        if (data && data.pendingAction !== undefined) {
+           currentPendingAction = data.pendingAction;
         }
 
         chatHistory.push({ role: 'assistant', content: reply });

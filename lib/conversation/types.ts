@@ -83,6 +83,28 @@ export type ExpectedSlot =
   | "all_info_provided"
   | string;
 
+export type PendingActionType =
+  | "submit_appointment"
+  | "show_doctor_information"
+  | "request_quote"
+  | "create_live_support_request"
+  | "continue_clinic_selection"
+  | "general_confirmation"
+  | string;
+
+export type PendingActionStatus = "pending" | "consumed" | "cancelled" | "expired";
+
+export interface PendingAction {
+  id: string;
+  type: PendingActionType;
+  createdAt: string; // ISO
+  sourceAssistantMessageId?: string;
+  payloadReference?: string;
+  payload?: any;
+  status: PendingActionStatus;
+  description?: string;
+}
+
 export interface ConversationSlots {
   // Treatment & Clinical
   treatment?: string; // Canonical treatment identifier (e.g. "composite_filling", "implant", "zirconium", "root_canal")
@@ -148,6 +170,7 @@ export interface IntentClassificationResult {
   suggestedNextState?: ConversationState;
   validationError?: "invalid_email" | "invalid_phone" | "invalid_date" | "invalid_time" | string;
   allInfoProvidedIntent?: boolean;
+  pendingAction?: PendingAction | null;
 }
 
 export interface ConversationContext {
@@ -163,6 +186,11 @@ export interface ConversationContext {
   currentFlow?: "appointment" | "lead" | "quote" | "general";
   expectedSlot?: ExpectedSlot;
   slots: Partial<ConversationSlots>;
+
+  // Pending Action Ownership
+  pendingAction?: PendingAction | null;
+  appointmentSubmitted?: boolean;
+  submittedAppointmentId?: string;
 
   // Multi-Turn Context Memory
   activeTopic?: string;
@@ -185,6 +213,7 @@ export interface StateTransitionResult {
   updatedSlots: Partial<ConversationSlots>;
   missingRequiredSlots: (keyof ConversationSlots)[] | string[];
   expectedSlot?: ExpectedSlot;
+  pendingAction?: PendingAction | null;
   nextPromptNeeded?: string;
   validationError?: string;
   isComplete: boolean;
@@ -197,6 +226,7 @@ export interface EngineExecutionOutput {
   nextState: ConversationState;
   slots: Partial<ConversationSlots>;
   expectedSlot?: ExpectedSlot;
+  pendingAction?: PendingAction | null;
   requiresKnowledgeBase: boolean;
   requiresPricingData?: boolean;
   fallbackBlockedReason?: string;
@@ -207,3 +237,4 @@ export interface EngineExecutionOutput {
   quickReplies?: string[];
   debugTrace?: Record<string, any>;
 }
+
