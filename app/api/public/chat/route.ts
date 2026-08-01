@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { trackableAIRequest } from "@/lib/services/aiGateway";
 import { getAdminDb } from "@/lib/firebase-admin";
-import { AppointmentDateValidator } from "@/lib/skills/AppointmentDateValidator";
+import { AppointmentDateValidator, ClinicWorkingHoursResolver } from "@/lib/skills";
 import { initializeApp, getApps } from "firebase/app";
 import {
   getFirestore, collection, query, where, getDocs,
@@ -25,94 +25,6 @@ import {
   formatPricingFallback,
   formatContactResponse
 } from "@/lib/conversation";
-
-// Cache to avoid parsing working hours repeatedly
-const workingHoursCache = new Map<string, any>();
-
-async function parseWorkingHours(clinicId: string, workingHoursText: string): Promise<any> {
-  if (workingHoursCache.has(clinicId)) {
-    return workingHoursCache.get(clinicId);
-  }
-  
-  const prompt = `Aşağıdaki klinik çalışma saatleri metnini tam olarak aşağıdaki JSON formatına dönüştür. YALNIZCA JSON döndür. Kapalı günleri null yap. Saatleri "HH:mm" formatında (24 saat) yaz.
-{
-  "monday": ["10:00", "19:00"] | null,
-  "tuesday": ["10:00", "19:00"] | null,
-  "wednesday": ["10:00", "19:00"] | null,
-  "thursday": ["10:00", "19:00"] | null,
-  "friday": ["10:00", "19:00"] | null,
-  "saturday": ["10:00", "17:00"] | null,
-  "sunday": ["10:00", "17:00"] | null
-}
-
-Çalışma Saatleri Metni:
-${workingHoursText}`;
-
-  try {
-    const res = await trackableAIRequest({
-      messages: [{ role: "system", content: "Sen bir JSON parser'sın. SADECE geçerli bir JSON objesi dön." }, { role: "user", content: prompt }],
-      clinicId,
-      model: "gpt-4o-mini",
-      channel: "web_widget",
-      requestType: "system",
-      temperature: 0.1
-    });
-    
-    const match = res.content.match(/\{[\s\S]*\}/);
-    if (match) {
-       const json = JSON.parse(match[0]);
-       workingHoursCache.set(clinicId, json);
-       return json;
-    }
-  } catch (e) {
-    console.error("[route] Error parsing working hours", e);
-  }
-  return null;
-}
-
-async function extractRequestedTime(message: string, clinicId: string): Promise<{ day: string, time: string } | null> {
-   const today = new Date();
-   const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-   const todayName = days[today.getDay()];
-   const tomorrowName = days[(today.getDay() + 1) % 7];
-   
-   const prompt = `Hasta mesajında belirtilen randevu gününü ve saatini çıkar.
-Şu anki gün: ${todayName} (Eğer "yarın" diyorsa ${tomorrowName} gününü al).
-SADECE şu formatta JSON dön: {"day": "monday", "time": "14:00"}
-Eğer gün belirtilmemişse veya spesifik bir SAAT belirtilmemişse (örn "Yarın akşam" belirsizdir, "Yarın akşam 8" nettir) null dön. 
-Mesaj: "${message}"`;
-
-   try {
-     const res = await trackableAIRequest({
-       messages: [{ role: "system", content: "SADECE JSON VEYA null DÖN." }, { role: "user", content: prompt }],
-       clinicId,
-       model: "gpt-4o-mini",
-       channel: "web_widget",
-       requestType: "system",
-       temperature: 0.1
-     });
-     if (res.content.includes("null")) return null;
-     const match = res.content.match(/\{[\s\S]*\}/);
-     if (match) {
-        return JSON.parse(match[0]);
-     }
-   } catch(e) {
-      console.error("[route] Error extracting time", e);
-   }
-   return null;
-}
-
-function checkTimeWithinWorkingHours(requested: {day: string, time: string}, workingHours: any): {valid: boolean, reason?: string} {
-  if (!workingHours) return {valid: true}; 
-  const dayHours = workingHours[requested.day.toLowerCase()];
-  if (!dayHours) return {valid: false, reason: "closed"};
-  
-  const [open, close] = dayHours;
-  if (requested.time < open || requested.time > close) {
-     return {valid: false, reason: "outside_hours"};
-  }
-  return {valid: true};
-}
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -1997,6 +1909,74 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
       console.log(`[BEFORE_AFTER] treatment=${requestedTreatmentCode} found_url=${!!treatmentContext} clinic=${clinicId}`);
     }
 
+    /* ── PRE-FLIGHT: Deterministic Appointment Working Hours Validation ── */
+    if (isAppointmentIntent && !isConfirmation(message)) {
+      const hoursResolution = ClinicWorkingHoursResolver.resolveClinicWorkingHours({
+        clinicId: actualClinicId || clinicId,
+        clinicData,
+        trainingDocs
+      });
+
+      console.log(JSON.stringify({
+        event: "CLINIC_WORKING_HOURS_RESOLVED",
+        traceId: activeTraceId,
+        clinicId: actualClinicId || clinicId,
+        source: hoursResolution.source,
+        confidence: hoursResolution.confidence,
+        is24_7: !!hoursResolution.is24_7
+      }));
+
+      // Extract requested date/time either from conversationIntent entities, appointmentDraft, or message
+      const requestedDate = conversationIntent?.entities?.preferredDate || appointmentDraft?.requestedDate || null;
+      const requestedTime = conversationIntent?.entities?.preferredTime || appointmentDraft?.requestedTime || null;
+      const requestedWeekday = conversationIntent?.entities?.preferredWeekday || (appointmentDraft as any)?.requestedWeekday || null;
+      const requestedWeekdayIndex = (conversationIntent?.entities as any)?.preferredWeekdayIndex ?? null;
+
+      if (requestedDate || requestedTime || requestedWeekday || requestedWeekdayIndex !== null) {
+        const validation = ClinicWorkingHoursResolver.validateRequestedTime({
+          requestedDate,
+          requestedTime,
+          weekdayIndex: requestedWeekdayIndex,
+          weekdayName: requestedWeekday,
+          schedule: hoursResolution.schedule,
+          is24_7: hoursResolution.is24_7,
+          clinicLanguage
+        });
+
+        console.log(JSON.stringify({
+          event: "WORKING_HOURS_VALIDATION_CHECK",
+          traceId: activeTraceId,
+          clinicId: actualClinicId || clinicId,
+          requestedDay: validation.requestedDay,
+          requestedTime: validation.requestedTime,
+          isValid: validation.isValid,
+          reason: validation.reason
+        }));
+
+        debugLog.push(`appt_valid=${validation.isValid}`);
+
+        if (!validation.isValid) {
+          const fallbackMsg = validation.message || (
+            validation.reason === "closed"
+              ? `Belirttiğiniz gün kliniğimiz kapalıdır. Kliniğimizin çalışma saatleri: ${validation.scheduleSummary || ""}. Uygun olduğunuz başka bir gün ve saat paylaşabilir misiniz?`
+              : `Belirttiğiniz ${validation.requestedTime || ""} saati kliniğimizin çalışma saatleri dışında kalmaktadır. Kliniğimizin çalışma saatleri: ${validation.scheduleSummary || ""}. Bu saatler içerisinden size uygun başka bir saat paylaşabilir misiniz?`
+          );
+
+          await logConversation({
+            clinicId: actualClinicId,
+            convId,
+            userMessage: message,
+            aiReply: fallbackMsg,
+            historyLength: history.length,
+            appointmentState,
+          });
+
+          console.log("[widget-chat] Rejected appointment time:", { requestedDay: validation.requestedDay, requestedTime: validation.requestedTime });
+          return NextResponse.json({ responseType: "CHAT_REPLY", reply: fallbackMsg, conversationId: convId, pendingAppointmentData: appointmentDraft }, { headers: CORS });
+        }
+      }
+    }
+
     // HYBRID SEARCH & QUERY REWRITING
     const sliceLimit = isDoctorIntent ? 15 : 10;
     
@@ -2028,58 +2008,13 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
 
     // Log detailed RAG matching data for debug
     if (topDocs.length > 0) {
+      // Working hours validation is handled deterministically via ClinicWorkingHoursResolver before RAG search
       console.log(`[RAG-DEBUG] widget_clinic_id: ${clinicId}`);
       console.log(`[RAG-DEBUG] query_text: "${message}"`);
       topDocs.slice(0, 3).forEach((d, i) => {
         console.log(`[RAG-DEBUG] match_${i + 1} - title: "${d.title}", score: ${d.score.toFixed(3)}, vec: ${d.vectorScore.toFixed(3)}, kw: ${d.keywordScore.toFixed(3)}, content_preview: "${d.text.slice(0, 100).replace(/\n/g, ' ')}..."`);
       });
       console.log(`[RAG-DEBUG] final_context_sent_to_llm_length: ${knowledgeContext.length} chars`);
-    }
-
-
-    /* ── PRE-FLIGHT: Deterministic Appointment Working Hours Validation ── */
-    if (isAppointmentIntent && !isConfirmation(message)) {
-       const workingHoursDoc = topDocs.find(d => /\b(çalışma|saat|mesai|opening|business|working|gün)\b/.test((d.title + d.text).toLowerCase()));
-       if (workingHoursDoc) {
-          const [parsedHours, requestedTime] = await Promise.all([
-             parseWorkingHours(clinicId, workingHoursDoc.text),
-             extractRequestedTime(message, clinicId)
-          ]);
-
-          if (parsedHours && requestedTime) {
-             const checkResult = checkTimeWithinWorkingHours(requestedTime, parsedHours);
-             
-             console.log(`[appt-validator] requested: ${JSON.stringify(requestedTime)}, result: ${checkResult.valid}`);
-             debugLog.push(`appt_valid=${checkResult.valid}`);
-
-             if (!checkResult.valid) {
-                let fallbackMsg = "";
-                // Generate a readable hours string from JSON for the response
-                const hoursText = Object.entries(parsedHours).map(([day, hours]) => {
-                   const trDays: Record<string, string> = { monday: "Pazartesi", tuesday: "Salı", wednesday: "Çarşamba", thursday: "Perşembe", friday: "Cuma", saturday: "Cumartesi", sunday: "Pazar" };
-                   const h = hours as string[] | null;
-                   return `${trDays[day] || day}: ${h ? `${h[0]}-${h[1]}` : 'Kapalı'}`;
-                }).join(", ");
-
-                if (checkResult.reason === "closed") {
-                   fallbackMsg = `Belirttiğiniz gün kliniğimiz kapalıdır. Kliniğimizin çalışma saatleri şöyledir: ${hoursText}. Uygun olduğunuz başka bir gün ve saat paylaşabilir misiniz?`;
-                } else {
-                   fallbackMsg = `Belirttiğiniz ${requestedTime.time} saati kliniğimizin çalışma saatleri dışında kalıyor. Kliniğimizin çalışma saatleri şöyledir: ${hoursText}. Bu saatler içerisinden size uygun başka bir saat paylaşabilir misiniz?`;
-                }
-                
-                await logConversation({
-                  clinicId: actualClinicId,
-                  convId,
-                  userMessage: message,
-                  aiReply: fallbackMsg,
-                  historyLength: history.length,
-                });
-
-                console.log("[widget-chat] Rejected appointment time:", requestedTime);
-                return NextResponse.json({ responseType: "CHAT_REPLY", reply: fallbackMsg, conversationId: convId }, { headers: CORS });
-             }
-          }
-       }
     }
 
     /* ── PRE-FLIGHT: detect live support intent BEFORE calling OpenAI ────── */
