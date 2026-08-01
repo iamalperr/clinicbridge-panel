@@ -14,6 +14,7 @@ import {
   ConversationIntent,
   ConversationSlots,
   ConversationState,
+  InformationType,
   IntentClassificationResult,
   PendingAction
 } from "./types";
@@ -78,6 +79,57 @@ export class IntentRouter {
       params.currentFlow === "appointment" ||
       Boolean(expectedSlot);
 
+    // Step 1: Language Switch Detection (Highest Priority)
+    const langSwitch = this.detectLanguageSwitch(raw);
+    if (langSwitch.isSwitch && langSwitch.targetLocale) {
+      return {
+        intent: "language_switch",
+        confidence: 1.0,
+        entities: extracted,
+        targetLocale: langSwitch.targetLocale,
+        requiresKnowledgeBase: false,
+        shouldContinueActiveFlow: isInAppointmentFlow,
+        explanation: `Explicit language switch to ${langSwitch.targetLocale}`
+      };
+    }
+
+    // Step 1.1: Cancel / Reset Detection
+    if (this.isCancel(lower)) {
+      return {
+        intent: "cancel",
+        confidence: 1.0,
+        entities: {},
+        requiresKnowledgeBase: false,
+        shouldContinueActiveFlow: false,
+        explanation: "Appointment cancellation or reset requested"
+      };
+    }
+
+    // Step 1.2: Multi-Intent Compound Message Detection (e.g. "Yes. Which doctor will perform my implant?")
+    const multiIntent = this.detectMultiIntent(raw, lower, {
+      currentState,
+      isInAppointmentFlow,
+      expectedSlot,
+      pendingAction: params.pendingAction,
+      appointmentSubmitted: params.appointmentSubmitted
+    });
+
+    if (multiIntent.isMulti && multiIntent.primaryIntent) {
+      return {
+        intent: multiIntent.primaryIntent,
+        confidence: 0.98,
+        entities: extracted,
+        requiresKnowledgeBase: multiIntent.requiresKnowledgeBase || false,
+        shouldContinueActiveFlow: true,
+        multiIntentDetected: true,
+        secondaryIntent: multiIntent.secondaryIntent,
+        secondaryQuery: multiIntent.secondaryQuery,
+        secondaryRequiresKnowledgeBase: multiIntent.secondaryRequiresKnowledgeBase,
+        pendingAction: params.pendingAction,
+        explanation: `Multi-intent detected: ${multiIntent.primaryIntent} + ${multiIntent.secondaryIntent}`
+      };
+    }
+
     // Step 2: High priority safety / emergency intent
     if (this.isEmergency(lower)) {
       return {
@@ -120,7 +172,41 @@ export class IntentRouter {
       };
     }
 
-    // Step 5: "Provided all information now" check in active flow
+    // Step 5: Appointment Start / Booking Intent (Highest precedence over generic info/treatment words)
+    if (this.isAppointmentStart(lower)) {
+      return {
+        intent: "appointment_start",
+        confidence: 0.95,
+        entities: extracted,
+        requiresKnowledgeBase: false,
+        shouldContinueActiveFlow: true,
+        suggestedNextState: "APPOINTMENT_COLLECTION",
+        explanation: "Appointment creation initiated"
+      };
+    }
+
+    // Step 6: Informational Questions during active appointment flow (Interruption Handling)
+    // CRITICAL: Questions must NEVER be fed into slot validators (Phone, Date, Email, Name)
+    const isQuestionInFlow = this.isInformationalQuestion(lower);
+    if (isQuestionInFlow.isQuestion && isQuestionInFlow.intent) {
+      return {
+        intent: isQuestionInFlow.intent,
+        confidence: 0.95,
+        entities: {
+          ...extracted,
+          treatment: extracted.treatment || params.activeTreatment,
+          informationType: isQuestionInFlow.informationType || extracted.informationType || "general"
+        },
+        requiresKnowledgeBase: true,
+        requiresPricingData: isQuestionInFlow.intent === "pricing_request" || isQuestionInFlow.intent === "quote_request",
+        shouldContinueActiveFlow: isInAppointmentFlow,
+        isInterruption: isInAppointmentFlow,
+        interruptionReason: isQuestionInFlow.intent,
+        explanation: `Informational question (${isQuestionInFlow.intent}) during conversation`
+      };
+    }
+
+    // Step 6: "Provided all information now" check in active flow
     if (allInfoProvidedIntent) {
       return {
         intent: "appointment_continuation",
@@ -133,12 +219,13 @@ export class IntentRouter {
       };
     }
 
-    // Step 6: Invalid email attempt in active flow / expectedSlot === "email"
+    // Step 7: Invalid email attempt in active flow / expectedSlot === "email"
     if (invalidEmailAttempt) {
       return {
         intent: "appointment_continuation",
         confidence: 1.0,
         entities: extracted,
+        targetSlot: "email",
         requiresKnowledgeBase: false,
         shouldContinueActiveFlow: true,
         validationError: "invalid_email",
@@ -146,7 +233,7 @@ export class IntentRouter {
       };
     }
 
-    // Step 7: Slot Correction (e.g. "1 Ağustos değil 3 Ağustos olsun", "Use sadia.new@hotmail.com instead")
+    // Step 8: Slot Correction (e.g. "1 Ağustos değil 3 Ağustos olsun", "Use sadia.new@hotmail.com instead")
     if (isCorrection) {
       return {
         intent: "appointment_correction",
@@ -158,7 +245,7 @@ export class IntentRouter {
       };
     }
 
-    // Step 8: Explicit Confirmation / Rejection and Pending Action Resolution
+    // Step 9: Explicit Confirmation / Rejection and Pending Action Resolution
     const isConf = PendingActionManager.isConfirmation(raw);
     const isRej = PendingActionManager.isRejection(raw);
 
@@ -264,25 +351,31 @@ export class IntentRouter {
       }
     }
 
-    // Step 9: Active Appointment Flow continuation when valid slot is provided
+    // Step 10: Active Appointment Flow continuation when valid slot is provided
     if (isInAppointmentFlow) {
-      const hasSlot =
+      let targetSlot: string | undefined = undefined;
+      if (extracted.preferredDate || extracted.preferredTime) targetSlot = "date";
+      else if (extracted.phone) targetSlot = "phone";
+      else if (extracted.email) targetSlot = "email";
+      else if (extracted.fullName || extracted.firstName) targetSlot = "fullName";
+      else if (expectedSlot) targetSlot = expectedSlot;
+
+      const hasValidSlot = Boolean(
         extracted.preferredDate ||
         extracted.preferredTime ||
         extracted.email ||
         extracted.phone ||
         extracted.fullName ||
         extracted.firstName ||
-        (expectedSlot && raw.length < 80);
+        (expectedSlot && raw.length < 80)
+      );
 
-      // Check if user is asking an interrupting question instead of providing a slot
-      const isQuestion = this.isPricingQuery(lower) || this.isLocationQuery(lower) || this.isWorkingHoursQuery(lower) || this.isDoctorQuery(lower);
-
-      if (hasSlot && !isQuestion) {
+      if (hasValidSlot) {
         return {
           intent: "appointment_continuation",
           confidence: 0.95,
           entities: extracted,
+          targetSlot,
           requiresKnowledgeBase: false,
           shouldContinueActiveFlow: true,
           explanation: "Slot provided in active appointment collection"
@@ -290,7 +383,7 @@ export class IntentRouter {
       }
     }
 
-    // Step 10: Contextual Ellipsis Resolution for short queries ("When?", "How much?", "Where?", "Recovery?")
+    // Step 11: Contextual Ellipsis Resolution for short queries ("When?", "How much?", "Where?", "Recovery?")
     if (ContextResolver.isEllipticalQuery(raw, lower)) {
       const resolvedContext = ContextResolver.resolve(raw, lower, {
         currentState,
@@ -319,24 +412,6 @@ export class IntentRouter {
       }
     }
 
-    // Step 11: Pricing Request (e.g. "How much is composite filling?", "Cost?", "And the price?", "Implant price?")
-    if (this.isPricingQuery(lower)) {
-      return {
-        intent: "pricing_request",
-        confidence: 0.95,
-        entities: {
-          ...extracted,
-          treatment: extracted.treatment || params.activeTreatment || "general",
-          informationType: "price"
-        },
-        requiresKnowledgeBase: true,
-        requiresPricingData: true,
-        shouldContinueActiveFlow: isInAppointmentFlow,
-        isInterruption: isInAppointmentFlow,
-        explanation: "Pricing or cost inquiry"
-      };
-    }
-
     // Step 12: Appointment Start / Booking Intent
     if (this.isAppointmentStart(lower)) {
       return {
@@ -350,86 +425,7 @@ export class IntentRouter {
       };
     }
 
-    // Step 13: Quote / Price Proposal Request
-    if (this.isQuoteRequest(lower)) {
-      return {
-        intent: "quote_request",
-        confidence: 0.92,
-        entities: {
-          ...extracted,
-          treatment: extracted.treatment || params.activeTreatment,
-          informationType: "price"
-        },
-        requiresKnowledgeBase: true,
-        requiresPricingData: true,
-        shouldContinueActiveFlow: true,
-        explanation: "Quote or price proposal requested"
-      };
-    }
-
-    // Step 14: Doctor / Specialist Inquiry
-    if (this.isDoctorQuery(lower)) {
-      return {
-        intent: "doctor_information",
-        confidence: 0.90,
-        entities: extracted,
-        requiresKnowledgeBase: true,
-        shouldContinueActiveFlow: isInAppointmentFlow,
-        isInterruption: isInAppointmentFlow,
-        explanation: "Doctor / specialist query"
-      };
-    }
-
-    // Step 15: Location / Directions Inquiry
-    if (this.isLocationQuery(lower)) {
-      return {
-        intent: "location_request",
-        confidence: 0.92,
-        entities: {
-          ...extracted,
-          informationType: "location"
-        },
-        requiresKnowledgeBase: true,
-        shouldContinueActiveFlow: isInAppointmentFlow,
-        isInterruption: isInAppointmentFlow,
-        explanation: "Clinic location or address inquiry"
-      };
-    }
-
-    // Step 16: Working Hours / Opening Schedule Inquiry
-    if (this.isWorkingHoursQuery(lower)) {
-      return {
-        intent: "working_hours_request",
-        confidence: 0.92,
-        entities: {
-          ...extracted,
-          informationType: "opening_hours"
-        },
-        requiresKnowledgeBase: true,
-        shouldContinueActiveFlow: isInAppointmentFlow,
-        isInterruption: isInAppointmentFlow,
-        explanation: "Working hours or schedule query"
-      };
-    }
-
-    // Step 17: General Treatment / Procedure Inquiry
-    if (extracted.treatment || this.isTreatmentQuery(lower)) {
-      return {
-        intent: "treatment_information",
-        confidence: 0.88,
-        entities: {
-          ...extracted,
-          treatment: extracted.treatment || params.activeTreatment,
-          informationType: extracted.informationType || "general"
-        },
-        requiresKnowledgeBase: true,
-        shouldContinueActiveFlow: isInAppointmentFlow,
-        isInterruption: isInAppointmentFlow,
-        explanation: "Treatment or clinical service query"
-      };
-    }
-
-    // Step 18: Agency Recommendation / Comparison
+    // Step 13: Agency Recommendation / Comparison
     if (params.agencyContext?.agencyId && this.isAgencyMatchingQuery(lower)) {
       return {
         intent: "clinic_recommendation",
@@ -442,7 +438,7 @@ export class IntentRouter {
       };
     }
 
-    // Step 19: Greeting
+    // Step 14: Greeting
     if (this.isGreeting(lower)) {
       return {
         intent: "greeting",
@@ -454,7 +450,7 @@ export class IntentRouter {
       };
     }
 
-    // Step 20: Casual Conversation / Thanks
+    // Step 15: Casual Conversation / Thanks
     if (this.isCasual(lower)) {
       return {
         intent: "casual_conversation",
@@ -466,7 +462,7 @@ export class IntentRouter {
       };
     }
 
-    // Step 21: In active flow with unclassified short text (e.g. user answered something specific)
+    // Step 16: In active flow with unclassified short text (e.g. user answered something specific)
     if (isInAppointmentFlow && raw.length < 80) {
       return {
         intent: "appointment_continuation",
@@ -531,8 +527,17 @@ export class IntentRouter {
   }
 
   public static isAppointmentStart(lower: string): boolean {
-    return /\b(randevu|randevu almak|randevu oluştur|randevu olustur|muayene olmak|rezervasyon|görüşme talep|book appointment|make an appointment|schedule appointment|book a visit|schedule a visit)\b/i.test(
-      lower
+    return (
+      // Turkish
+      /(?:randevu|randevu\s+almak|randevu\s+oluştur|randevu\s+olustur|muayene\s+olmak|rezervasyon|görüşme\s+talep)/i.test(lower) ||
+      // English
+      /(?:book\s+(?:an\s+)?appointment|make\s+(?:an\s+)?appointment|schedule\s+(?:an\s+)?appointment|book\s+a\s+visit|schedule\s+a\s+visit|appointment)/i.test(lower) ||
+      // German
+      /(?:termin\s+vereinbaren|termin\s+buchen|termin\s+ausmachen|einen\s+termin|termin)/i.test(lower) ||
+      // French
+      /(?:prendre\s+(?:un\s+)?rendez-vous|prendre\s+rdv|réservation|reserver\s+un\s+rdv|rendez-vous)/i.test(lower) ||
+      // Arabic
+      /(?:حجز\s+موعد|احجز\s+موعد|موعد)/i.test(lower)
     );
   }
 
@@ -551,31 +556,31 @@ export class IntentRouter {
   }
 
   public static isDoctorQuery(lower: string): boolean {
-    return /\b(doktor|doktorlar|hekim|hekimler|uzman|uzmanlar|hangi doktor|dt\.|dr\.|doctor|doctors|dentist|dentists|physician|specialist)\b/i.test(
+    return /(?:doktor|doktorlar|hekim|hekimler|uzman|uzmanlar|hangi doktor|dt\.|dr\.|doctor|doctors|dentist|dentists|physician|specialist|ärzte|arzt|zahnarzt)/i.test(
       lower
     );
   }
 
   public static isLocationQuery(lower: string): boolean {
-    return /\b(nerede|neredesiniz|neredesiniz acaba|nerede bulunuyorsunuz|hangi semtte|adres|adresiniz|konum|konumunuz|harita|ulaşım|ulasim|nasıl gelirim|nasil gelirim|where are you|location|address|how to get there|map|where is the clinic)\b/i.test(
+    return /(?:nerede|neredesiniz|nerede bulunuyorsunuz|hangi semtte|adres|adresiniz|konum|konumunuz|harita|ulaşım|ulasim|nasıl gelirim|nasil gelirim|where are you|location|address|how to get there|map|where is the clinic|wo sind sie|standort)/i.test(
       lower
     );
   }
 
   public static isWorkingHoursQuery(lower: string): boolean {
-    return /\b(çalışma saatleri|calisma saatleri|kaçta açılıyor|kacta aciliyor|kaçta kapanıyor|kacta kapaniyor|hafta sonu açık mı|hafta sonu acik mi|pazar açık mı|pazar acik mi|mesai|opening hours|working hours|open on sunday|open on weekend)\b/i.test(
+    return /(?:çalışma saatleri|calisma saatleri|kaçta açılıyor|kacta aciliyor|kaçta kapanıyor|kacta kapaniyor|hafta sonu açık|hafta sonu acik|pazar açık|pazar acik|mesai|opening hours|working hours|open on sunday|open on weekend|wann geöffnet|öffnungszeiten)/i.test(
       lower
     );
   }
 
   public static isTreatmentQuery(lower: string): boolean {
-    return /\b(hizmet|hizmetler|hizmetleriniz|tedavi|tedaviler|tedavileriniz|neler yapıyorsunuz|ne yapıyorsunuz|hangi tedaviler|hangi işlemler|services|treatments|what do you do|procedures|what services)\b/i.test(
+    return /(?:hizmet|hizmetler|hizmetleriniz|tedavi|tedaviler|tedavileriniz|neler yapıyorsunuz|ne yapıyorsunuz|hangi tedaviler|hangi işlemler|services|treatments|what do you do|procedures|what services|behandlungen|leistungen)/i.test(
       lower
     );
   }
 
   public static isAgencyMatchingQuery(lower: string): boolean {
-    return /\b(klinik öner|klinik oner|hangi klinik|istanbul'da klinik|istanbuldaki klinikler|en iyi klinik|uygun klinik|tavsiye|recommend|best clinic|which clinic|clinics in)\b/i.test(
+    return /(?:klinik öner|klinik oner|hangi klinik|istanbul'da klinik|istanbuldaki klinikler|en iyi klinik|uygun klinik|tavsiye|recommend|best clinic|which clinic|clinics in)/i.test(
       lower
     );
   }
@@ -590,5 +595,146 @@ export class IntentRouter {
     return /\b(teşekkür|tesekkur|teşekkürler|tesekkurler|sağol|sagol|sağolun|sagolun|rica ederim|kolay gelsin|görüşürüz|gorusuruz|thanks|thank you|have a nice day|goodbye|bye)\b/i.test(
       lower
     );
+  }
+
+  public static detectLanguageSwitch(raw: string): { isSwitch: boolean; targetLocale?: string } {
+    const lower = raw.trim().toLowerCase();
+
+    // English switch
+    if (
+      /^(?:english(?:\s+please)?|speak(?:\s+in)?\s+english|can\s+we\s+(?:speak|talk|continue|chat)\s+(?:in\s+)?english|please\s+(?:switch\s+to|speak)\s+english|in\s+english\s+please|let'?s\s+(?:speak|continue\s+in)\s+english|switch\s+to\s+english)$/i.test(lower) ||
+      /(?:can\s+we\s+continue\s+in\s+english|speak\s+in\s+english|switch\s+to\s+english|english\s+please)/i.test(lower) ||
+      /\b(english\s+please|speak\s+english|can\s+we\s+speak\s+english|can\s+we\s+continue\s+in\s+english|switch\s+to\s+english)\b/i.test(lower)
+    ) {
+      return { isSwitch: true, targetLocale: "en" };
+    }
+
+    // Turkish switch
+    if (
+      /^(?:türkçe(?:\s+lütfen)?|turkce(?:\s+lutfen)?|türkçe\s+konuşalım|turkce\s+konusalim|türkçe\s+devam\s+edelim|turkce\s+devam\s+edelim|türkçeye\s+geçelim|turkceye\s+gecelim)$/i.test(lower) ||
+      /(?:türkçe|turkce).*(?:devam|konuş|konus|gec|geç|lütfen|lutfen)/i.test(lower) ||
+      /\b(türkçe\s+lütfen|turkce\s+lutfen|türkçe\s+konuşalım|turkce\s+konusalim|türkçe\s+devam\s+edelim|turkce\s+devam\s+edelim|türkçeye\s+geç|turkceye\s+gec)\b/i.test(lower)
+    ) {
+      return { isSwitch: true, targetLocale: "tr" };
+    }
+
+    // German switch
+    if (
+      /^(?:auf\s+deutsch(?:\s+bitte)?|deutsch\s+bitte|deutsch\s+sprechen|können\s+wir\s+auf\s+deutsch\s+sprechen|bitte\s+auf\s+deutsch)$/i.test(lower) ||
+      /\b(auf\s+deutsch\s+bitte|deutsch\s+sprechen|können\s+wir\s+auf\s+deutsch\s+sprechen)\b/i.test(lower)
+    ) {
+      return { isSwitch: true, targetLocale: "de" };
+    }
+
+    // French switch
+    if (
+      /^(?:en\s+français(?:\s+s'il\s+vous\s+plaît)?|en\s+francais(?:\s+svp)?|parlez\s+français|parlez\s+francais)$/i.test(lower) ||
+      /\b(en\s+français\s+s'il\s+vous\s+plaît|parlez\s+français|en\s+francais\s+svp)\b/i.test(lower)
+    ) {
+      return { isSwitch: true, targetLocale: "fr" };
+    }
+
+    // Arabic switch
+    if (
+      /^(?:بالعربية(?:\s+من\s+فضلك)?|تحدث\s+بالعربية|عربي)$/i.test(lower) ||
+      /\b(بالعربية\s+من\s+فضلك|تحدث\s+بالعربية)\b/i.test(lower)
+    ) {
+      return { isSwitch: true, targetLocale: "ar" };
+    }
+
+    return { isSwitch: false };
+  }
+
+  public static isCancel(lower: string): boolean {
+    const trimmed = lower.trim();
+    return (
+      /^(?:hayır|hayir|iptal|iptal\s+et|vazgeçtim|vazgectim|istemiyorum|no|cancel|stop|abort|stornieren|annuler|nein|non)$/i.test(trimmed) ||
+      /\b(randevuyu\s+iptal\s+et|randevu\s+almaktan\s+vazgeçtim|vazgectim|cancel\s+the\s+appointment|cancel\s+appointment)\b/i.test(trimmed)
+    );
+  }
+
+  public static detectMultiIntent(
+    raw: string,
+    lower: string,
+    context?: {
+      currentState?: ConversationState;
+      isInAppointmentFlow?: boolean;
+      expectedSlot?: string;
+      pendingAction?: PendingAction | null;
+      appointmentSubmitted?: boolean;
+    }
+  ): {
+    isMulti: boolean;
+    primaryIntent?: ConversationIntent;
+    secondaryIntent?: ConversationIntent;
+    secondaryQuery?: string;
+    requiresKnowledgeBase?: boolean;
+    secondaryRequiresKnowledgeBase?: boolean;
+  } {
+    // Match confirmation prefix followed by secondary text (e.g. "Yes. Which doctor will perform my implant?", "Evet. İmplantı hangi hekim yapacak?")
+    const confMatch = raw.match(/^(?:evet|yes|onaylıyorum|onayliyorum|tamam|olur|kabul\s+ediyorum|i\s+confirm|confirmed|proceed|sure|ok)[!.,;:\s]+(.+)$/i);
+    if (confMatch) {
+      const remainder = confMatch[1].trim();
+      const remainderLower = remainder.toLowerCase();
+
+      // Check if remainder is a question
+      const questionCheck = this.isInformationalQuestion(remainderLower);
+      if (questionCheck.isQuestion) {
+        return {
+          isMulti: true,
+          primaryIntent: (context?.currentState === "APPOINTMENT_REVIEW" || context?.expectedSlot === "confirmation" || context?.pendingAction?.type === "submit_appointment")
+            ? "appointment_confirmation"
+            : "confirmation",
+          secondaryIntent: questionCheck.intent,
+          secondaryQuery: remainder,
+          requiresKnowledgeBase: true,
+          secondaryRequiresKnowledgeBase: true
+        };
+      }
+    }
+
+    return { isMulti: false };
+  }
+
+  public static isInformationalQuestion(lower: string): {
+    isQuestion: boolean;
+    intent?: ConversationIntent;
+    informationType?: InformationType;
+  } {
+    if (this.isDoctorQuery(lower)) {
+      return { isQuestion: true, intent: "doctor_information", informationType: "doctor" };
+    }
+    if (this.isPricingQuery(lower)) {
+      return { isQuestion: true, intent: "pricing_request", informationType: "price" };
+    }
+    if (this.isQuoteRequest(lower)) {
+      return { isQuestion: true, intent: "quote_request", informationType: "price" };
+    }
+    if (this.isLocationQuery(lower)) {
+      return { isQuestion: true, intent: "location_request", informationType: "location" };
+    }
+    if (this.isWorkingHoursQuery(lower)) {
+      return { isQuestion: true, intent: "working_hours_request", informationType: "opening_hours" };
+    }
+    if (this.isWarrantyOrMaterialQuery(lower)) {
+      return { isQuestion: true, intent: "treatment_information", informationType: "warranty" };
+    }
+    if (this.isParkingQuery(lower)) {
+      return { isQuestion: true, intent: "clinic_information", informationType: "facility" };
+    }
+    if (this.isTreatmentQuery(lower)) {
+      return { isQuestion: true, intent: "treatment_information", informationType: "general" };
+    }
+    return { isQuestion: false };
+  }
+
+  public static isWarrantyOrMaterialQuery(lower: string): boolean {
+    return /\b(garanti|garantisi|garantili\s+mi|materyal|malzeme|straumann|marka|markalar|ömür\s+boyu|omur\s+boyu|warranty|guarantee|lifetime|material|brand|brands)\b/i.test(
+      lower
+    );
+  }
+
+  public static isParkingQuery(lower: string): boolean {
+    return /\b(otopark|park\s+yeri|vale|parking|car\s+park)\b/i.test(lower);
   }
 }

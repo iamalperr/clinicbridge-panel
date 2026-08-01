@@ -1186,11 +1186,9 @@ export async function POST(req: Request) {
       clinicId: actualClinicId,
       requestLanguage: language,
       persistedLocale: loadedConversationLocale,
-      resolvedLocale: conversationLocale,
+    resolvedLocale: conversationLocale,
       clinicDefaultLocale: clinicLanguage,
-      timestamp: new Date().toISOString()
     }));
-
     // ── INSTRUMENTATION LOG 2 & 3 ──
     console.log(JSON.stringify({ checkpoint: "APPT_02_STATE_LOADED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, appointmentState: loadedState, conversationLocale, timestamp: new Date().toISOString() }));
     console.log(JSON.stringify({ checkpoint: "APPT_03_DRAFT_LOADED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, draftFields: Object.keys(loadedDraft), timestamp: new Date().toISOString() }));
@@ -1224,26 +1222,46 @@ export async function POST(req: Request) {
          // ── INSTRUMENTATION LOG 4 ──
          console.log(JSON.stringify({ checkpoint: "APPT_04_CONFIRMATION_HANDLER_ENTERED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, conversationLocale, timestamp: new Date().toISOString() }));
          
-         // 1. Validate persisted draft
-         if (!loadedDraft.patientName) {
-             console.error(`[CONFIRMATION_FAILED] Missing patientName in persisted draft for convId=${convId}`);
-             await saveAppointmentState(adminDb, actualClinicId, convId, 0, "COLLECTING_NAME", loadedDraft, { conversationLocale });
-             return NextResponse.json({ 
-               success: true, 
-               responseType: "appointment_information_required", 
-               appointmentCreated: false, 
-               reply: formatMultilingualPrompt("ASK_NAME", conversationLocale) 
-             }, { headers: CORS });
-         }
-         if (!loadedDraft.patientPhone) {
-             console.error(`[CONFIRMATION_FAILED] Missing patientPhone in persisted draft for convId=${convId}`);
-             await saveAppointmentState(adminDb, actualClinicId, convId, 0, "COLLECTING_PHONE", loadedDraft, { conversationLocale });
-             return NextResponse.json({ 
-               success: true, 
-               responseType: "appointment_information_required", 
-               appointmentCreated: false, 
-               reply: formatMultilingualPrompt("ASK_PHONE", conversationLocale, loadedDraft.patientName) 
-             }, { headers: CORS });
+         // 1. Validate all 6 required fields in persisted draft
+         const missingDraftSlots = ConversationStateEngine.getMissingSlots({
+           treatment: loadedDraft.requestedService,
+           preferredDate: loadedDraft.requestedDate,
+           preferredTime: loadedDraft.requestedTime,
+           fullName: loadedDraft.patientName,
+           phone: loadedDraft.patientPhone,
+           email: loadedDraft.patientEmail
+         });
+
+         if (missingDraftSlots.length > 0) {
+           const earliestMissing = missingDraftSlots[0];
+           let nextSubState: AppointmentState = "COLLECTING_INFO";
+           if (earliestMissing === "treatment") nextSubState = "COLLECTING_TREATMENT";
+           else if (earliestMissing === "preferredDate") nextSubState = "COLLECTING_DATE";
+           else if (earliestMissing === "preferredTime") nextSubState = "COLLECTING_TIME";
+           else if (earliestMissing === "fullName") nextSubState = "COLLECTING_NAME";
+           else if (earliestMissing === "phone") nextSubState = "COLLECTING_PHONE";
+           else if (earliestMissing === "email") nextSubState = "COLLECTING_EMAIL";
+
+           console.error(`[CONFIRMATION_BLOCKED] Missing ${earliestMissing} in persisted draft for convId=${convId}`);
+           await saveAppointmentState(adminDb, actualClinicId, convId, 0, nextSubState, loadedDraft, { conversationLocale });
+           const missingPrompt = ConversationStateEngine.generateNextSlotPrompt(
+             {
+               treatment: loadedDraft.requestedService,
+               preferredDate: loadedDraft.requestedDate,
+               preferredTime: loadedDraft.requestedTime,
+               fullName: loadedDraft.patientName,
+               phone: loadedDraft.patientPhone,
+               email: loadedDraft.patientEmail
+             },
+             missingDraftSlots,
+             conversationLocale
+           );
+           return NextResponse.json({ 
+             success: true, 
+             responseType: "appointment_information_required", 
+             appointmentCreated: false, 
+             reply: missingPrompt 
+           }, { headers: CORS });
          }
          
          // 1.5 Final Strict Date & Time Hard Block
@@ -1427,16 +1445,13 @@ export async function POST(req: Request) {
 
 
     /* ── DETERMINISTIC STATE MACHINE INTERCEPTOR ───────────────────────── */
-    const isCancel = /^(hayır|h|onaylamıyorum|iptal|vazgeçtim|hayir|no|cancel|stornieren|annuler|nein|non|لا)$/i.test(msgLower);
-    if (isCancel && (appointmentState !== "IDLE" || pendingAppointmentData)) {
-        await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "IDLE", {}, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
-        return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("CANCELLED", conversationLocale) }, { headers: CORS });
-    }
-
     const currentExpectedSlot =
       appointmentState === "COLLECTING_EMAIL" ? "email" :
       appointmentState === "COLLECTING_PHONE" ? "phone" :
       appointmentState === "COLLECTING_NAME" ? "fullName" :
+      appointmentState === "COLLECTING_TIME" ? "preferredTime" :
+      appointmentState === "COLLECTING_DATE" ? "preferredDate" :
+      appointmentState === "COLLECTING_TREATMENT" ? "treatment" :
       appointmentState === "AWAITING_CONFIRMATION" ? "confirmation" :
       undefined;
 
@@ -1465,32 +1480,89 @@ export async function POST(req: Request) {
       locale: conversationLocale
     });
 
-    // Handle Slot Extractions and Corrections (e.g. email, phone, name, date)
-    if (conversationIntent.entities) {
-      if (conversationIntent.entities.preferredDate) {
-        appointmentDraft.requestedDate = conversationIntent.entities.preferredDate;
-        appointmentDraft.preferredDateDisplay = conversationIntent.entities.preferredDate;
-        (appointmentDraft as any).requestedWeekday = conversationIntent.entities.preferredWeekday;
+    // 1. Language Switch handling
+    if (conversationIntent.intent === "language_switch" && conversationIntent.targetLocale) {
+      const newLocale = conversationIntent.targetLocale;
+      const isEn = newLocale.startsWith("en");
+      const isDe = newLocale.startsWith("de");
+      const isFr = newLocale.startsWith("fr");
+      const isAr = newLocale.startsWith("ar");
+
+      const isFlowActive = appointmentState !== "IDLE" && appointmentState !== "APPOINTMENT_SUBMITTED";
+      let switchReply = "";
+
+      if (isFlowActive) {
+        const missingSlots = ConversationStateEngine.getMissingSlots({
+          treatment: appointmentDraft.requestedService || undefined,
+          preferredDate: appointmentDraft.requestedDate || undefined,
+          preferredTime: appointmentDraft.requestedTime || undefined,
+          fullName: appointmentDraft.patientName || undefined,
+          phone: appointmentDraft.patientPhone || undefined,
+          email: appointmentDraft.patientEmail || undefined
+        });
+        const slotPrompt = ConversationStateEngine.generateNextSlotPrompt(
+          {
+            treatment: appointmentDraft.requestedService || undefined,
+            preferredDate: appointmentDraft.requestedDate || undefined,
+            preferredTime: appointmentDraft.requestedTime || undefined,
+            fullName: appointmentDraft.patientName || undefined,
+            phone: appointmentDraft.patientPhone || undefined,
+            email: appointmentDraft.patientEmail || undefined
+          },
+          missingSlots,
+          newLocale
+        );
+        const ack = isEn ? "Sure, we can continue in English!" : isDe ? "Gerne, wir können auf Deutsch fortfahren!" : isFr ? "Bien sûr, nous pouvons continuer en français !" : isAr ? "بالتأكيد، يمكننا المتابعة باللغة العربية!" : "Tabii ki, Türkçe olarak devam edebiliriz!";
+        switchReply = `${ack} ${slotPrompt}`;
+      } else {
+        switchReply = isEn
+          ? "Sure, we can continue in English! How can I help you today?"
+          : isDe
+          ? "Gerne, wir können auf Deutsch fortfahren! Wie kann ich Ihnen helfen?"
+          : isFr
+          ? "Bien sûr, nous pouvons continuer en français ! Comment puis-je vous aider aujourd'hui ?"
+          : isAr
+          ? "بالتأكيد، يمكننا المتابعة باللغة العربية! كيف يمكنني مساعدتك اليوم؟"
+          : "Tabii ki, Türkçe olarak devam edebiliriz! Size nasıl yardımcı olabilirim?";
       }
-      if (conversationIntent.entities.preferredTime) {
-        appointmentDraft.requestedTime = conversationIntent.entities.preferredTime;
-      }
-      if (conversationIntent.entities.fullName) {
-        appointmentDraft.patientName = conversationIntent.entities.fullName;
-      }
-      if (conversationIntent.entities.phone) {
-        appointmentDraft.patientPhone = conversationIntent.entities.phone;
-      }
-      if (conversationIntent.entities.email) {
-        appointmentDraft.patientEmail = conversationIntent.entities.email;
-      }
-      if (conversationIntent.entities.treatment) {
-        appointmentDraft.requestedService = conversationIntent.entities.treatment;
-      }
-      console.log(`[INTENT_ROUTER] Appointment slots updated:`, conversationIntent.entities);
+
+      await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, appointmentState, appointmentDraft, {
+        conversationLocale: newLocale,
+        processedMessageIds: [...processedMessageIds, messageId]
+      });
+
+      return NextResponse.json({
+        responseType: "CHAT_REPLY",
+        reply: switchReply,
+        detectedLanguage: newLocale,
+        pendingAppointmentData: appointmentDraft
+      }, { headers: CORS });
     }
 
-    // Handle Contextual Clarification Needed (e.g. When? disambiguation)
+    // 2. Cancellation Intent
+    const isCancel = conversationIntent.intent === "cancel" || /^(hayır|h|onaylamıyorum|iptal|vazgeçtim|hayir|no|cancel|stornieren|annuler|nein|non|لا)$/i.test(msgLower);
+    if (isCancel && (appointmentState !== "IDLE" || pendingAppointmentData)) {
+      await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "IDLE", {}, {
+        processedMessageIds: [...processedMessageIds, messageId],
+        conversationLocale
+      });
+      const cancelReply = conversationLocale.startsWith("en")
+        ? "I have cancelled your appointment request. How else can I assist you?"
+        : conversationLocale.startsWith("de")
+        ? "Ich habe Ihre Terminanfrage storniert. Wie kann ich Ihnen sonst noch helfen?"
+        : conversationLocale.startsWith("fr")
+        ? "J'ai annulé votre demande de rendez-vous. Comment puis-je vous aider d'autre ?"
+        : conversationLocale.startsWith("ar")
+        ? "لقد قمت بإلغاء طلب الموعد الخاص بك. كيف يمكنني مساعدتك أكثر؟"
+        : "Randevu talebinizi iptal ettim. Size başka nasıl yardımcı olabilirim?";
+      return NextResponse.json({
+        responseType: "CHAT_REPLY",
+        reply: cancelReply,
+        pendingAppointmentData: null
+      }, { headers: CORS });
+    }
+
+    // 3. Handle Contextual Clarification Needed (e.g. When? disambiguation)
     if (conversationIntent.clarificationNeeded && conversationIntent.clarificationPrompt) {
       return NextResponse.json({
         responseType: "CHAT_REPLY",
@@ -1500,7 +1572,7 @@ export async function POST(req: Request) {
       }, { headers: CORS });
     }
 
-    // Handle Contact / Live Support Request (Preserves active appointment flow state)
+    // 4. Handle Contact / Live Support Request (Preserves active appointment flow state)
     if (conversationIntent.intent === "contact_request" || conversationIntent.intent === "live_support_request") {
       const effectiveContactNumber = clinicWhatsapp || clinicData?.turkishContactNumber || clinicData?.internationalContactNumber || clinicData?.phone;
       const contactMsg = formatContactResponse(effectiveContactNumber, conversationIntent.entities?.contactTarget, conversationLocale);
@@ -1511,153 +1583,180 @@ export async function POST(req: Request) {
       }, { headers: CORS });
     }
 
-    // 2. Handle specific collection phases
-    if (appointmentState === "AWAITING_DATE_CLARIFICATION") {
-        // Let's check if they just typed "1" or "2"
+    let isMidFlowInterruption = false;
+    const isAppointmentFlowActive = appointmentState !== "IDLE" && appointmentState !== "APPOINTMENT_SUBMITTED";
+    const isStartingAppointment = conversationIntent.intent === "appointment_start" || conversationIntent.intent === "appointment_continuation";
+    const hasApptEntities = Boolean(
+      conversationIntent.entities?.treatment ||
+      conversationIntent.entities?.preferredDate ||
+      conversationIntent.entities?.preferredTime ||
+      conversationIntent.entities?.fullName ||
+      conversationIntent.entities?.phone ||
+      conversationIntent.entities?.email
+    );
+
+    // 5. Interruption Handling during active Appointment Collection / Review
+    if (conversationIntent.isInterruption && isAppointmentFlowActive) {
+      isMidFlowInterruption = true;
+      console.log(`[INTENT_ROUTER] Mid-flow interruption detected: ${conversationIntent.intent}. Answering question while preserving appointment state: ${appointmentState}`);
+    } else if (isAppointmentFlowActive || isStartingAppointment || hasApptEntities) {
+      // 6. Handle Slot Extractions and Corrections (e.g. email, phone, name, date, time, treatment)
+      if (conversationIntent.entities) {
+        if (conversationIntent.entities.preferredDate) {
+          appointmentDraft.requestedDate = conversationIntent.entities.preferredDate;
+          appointmentDraft.preferredDateDisplay = conversationIntent.entities.preferredDate;
+          (appointmentDraft as any).requestedWeekday = conversationIntent.entities.preferredWeekday;
+        }
+        if (conversationIntent.entities.preferredTime) {
+          appointmentDraft.requestedTime = conversationIntent.entities.preferredTime;
+        }
+        if (conversationIntent.entities.fullName) {
+          appointmentDraft.patientName = conversationIntent.entities.fullName;
+        }
+        if (conversationIntent.entities.phone) {
+          appointmentDraft.patientPhone = conversationIntent.entities.phone;
+        }
+        if (conversationIntent.entities.email) {
+          appointmentDraft.patientEmail = conversationIntent.entities.email;
+        }
+        if (conversationIntent.entities.treatment) {
+          appointmentDraft.requestedService = conversationIntent.entities.treatment;
+        }
+        console.log(`[INTENT_ROUTER] Appointment slots updated:`, conversationIntent.entities);
+      }
+
+      // Handle specific sub-state parsing fallbacks
+      if (appointmentState === "AWAITING_DATE_CLARIFICATION") {
         let chosenAlt: { date: string; weekday: string } | null = null;
         if (message.trim() === "1" && stateData.dateAlternatives && stateData.dateAlternatives[0]) {
-           chosenAlt = stateData.dateAlternatives[0];
+          chosenAlt = stateData.dateAlternatives[0];
         } else if (message.trim() === "2" && stateData.dateAlternatives && stateData.dateAlternatives[1]) {
-           chosenAlt = stateData.dateAlternatives[1];
+          chosenAlt = stateData.dateAlternatives[1];
         }
 
         if (chosenAlt) {
-           appointmentDraft.requestedDate = chosenAlt.date;
-           (appointmentDraft as any).requestedWeekday = chosenAlt.weekday;
+          appointmentDraft.requestedDate = chosenAlt.date;
+          (appointmentDraft as any).requestedWeekday = chosenAlt.weekday;
         } else {
-           // Evaluate the user's input to resolve the date using V2
-           const validationResult = AppointmentDateValidator.validateAppointmentDateConsistency({
-             rawDateText: message,
-             rawTimeText: appointmentDraft.requestedTime || null,
-             inferredDate: null,
-             inferredTime: appointmentDraft.requestedTime || null,
-             currentClinicDateTime: new Date(),
-             timeZone: "Europe/Istanbul"
-           });
-           
-           if (validationResult.isValid && !validationResult.hasConflict) {
-              appointmentDraft.requestedDate = validationResult.resolvedDate || appointmentDraft.requestedDate;
-              (appointmentDraft as any).requestedWeekday = conversationLocale.startsWith("en") ? (validationResult.resolvedWeekdayEn || validationResult.resolvedWeekday) : validationResult.resolvedWeekday;
-           } else {
-              // Still invalid or conflict
-              const clarificationFail = conversationLocale.startsWith("en")
-                ? "The date could not be understood. Please specify again."
-                : "Tarih anlaşılamadı. Lütfen tekrar belirtin.";
-              return NextResponse.json({ 
-                responseType: "CHAT_REPLY", 
-                reply: validationResult.clarificationMessage || clarificationFail, 
-                pendingAppointmentData: appointmentDraft 
-              }, { headers: CORS });
-           }
+          const validationResult = AppointmentDateValidator.validateAppointmentDateConsistency({
+            rawDateText: message,
+            rawTimeText: appointmentDraft.requestedTime || null,
+            inferredDate: null,
+            inferredTime: appointmentDraft.requestedTime || null,
+            currentClinicDateTime: new Date(),
+            timeZone: "Europe/Istanbul"
+          });
+          
+          if (validationResult.isValid && !validationResult.hasConflict) {
+            appointmentDraft.requestedDate = validationResult.resolvedDate || appointmentDraft.requestedDate;
+            (appointmentDraft as any).requestedWeekday = conversationLocale.startsWith("en") ? (validationResult.resolvedWeekdayEn || validationResult.resolvedWeekday) : validationResult.resolvedWeekday;
+          } else {
+            const clarificationFail = conversationLocale.startsWith("en")
+              ? "The date could not be understood. Please specify again."
+              : "Tarih anlaşılamadı. Lütfen tekrar belirtin.";
+            return NextResponse.json({ 
+              responseType: "CHAT_REPLY", 
+              reply: validationResult.clarificationMessage || clarificationFail, 
+              pendingAppointmentData: appointmentDraft 
+            }, { headers: CORS });
+          }
         }
-
-        // Successfully resolved. Now clear alternatives and decide next state.
-        const newStateData = { ...stateData, dateAlternatives: null };
-        
-        // Progress to next missing field, or AWAITING_CONFIRMATION
-        if (!appointmentDraft.patientName) {
-            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_NAME", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_NAME", conversationLocale) }, { headers: CORS });
-        } else if (!appointmentDraft.patientPhone) {
-            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_PHONE", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_PHONE", conversationLocale, appointmentDraft.patientName) }, { headers: CORS });
-        } else if (!appointmentDraft.patientEmail) {
-            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_EMAIL", conversationLocale) }, { headers: CORS });
-        } else {
-            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
-            const reviewMsg = buildAppointmentReviewMessage({ locale: conversationLocale, appointmentData: appointmentDraft, clinicName });
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: reviewMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
-        }
-    } else if (appointmentState === "COLLECTING_NAME") {
-        const nameVal = conversationIntent.entities?.fullName || (message.trim().length >= 2 ? message.trim() : "");
-        if (!nameVal) {
-            return NextResponse.json({ success: true, appointmentCreated: false, responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_NAME", conversationLocale) }, { headers: CORS });
-        }
-        appointmentDraft.patientName = nameVal;
-        console.log(`[APPOINTMENT_STATE] COLLECTING_NAME completed: name="${appointmentDraft.patientName}" convId=${convId}`);
-
-        if (!appointmentDraft.patientPhone) {
-            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_PHONE", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_PHONE", conversationLocale, appointmentDraft.patientName), pendingAppointmentData: appointmentDraft }, { headers: CORS });
-        }
-        if (!appointmentDraft.patientEmail) {
-            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_EMAIL", conversationLocale), pendingAppointmentData: appointmentDraft }, { headers: CORS });
-        }
-        await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
-        const reviewMsg = buildAppointmentReviewMessage({ locale: conversationLocale, appointmentData: appointmentDraft, clinicName });
-        return NextResponse.json({ responseType: "CHAT_REPLY", reply: reviewMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
-    } else if (appointmentState === "COLLECTING_PHONE") {
-        const extractedPhone = conversationIntent.entities?.phone || SlotExtractor.parsePhone(message.trim());
+      } else if (appointmentState === "COLLECTING_PHONE" && !appointmentDraft.patientPhone) {
+        const extractedPhone = SlotExtractor.parsePhone(message.trim());
         let finalPhone = extractedPhone;
         if (!finalPhone) {
-            const phoneResult = normalizeTurkishPhone(message.trim());
-            if (phoneResult.valid) {
-                finalPhone = phoneResult.normalized;
-            }
+          const phoneResult = normalizeTurkishPhone(message.trim());
+          if (phoneResult.valid) finalPhone = phoneResult.normalized;
         }
-
-        if (!finalPhone) {
-            console.log(`[APPOINTMENT_STATE] COLLECTING_PHONE invalid: raw="${message.trim()}" convId=${convId}`);
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("INVALID_PHONE", conversationLocale) }, { headers: CORS });
-        }
-        appointmentDraft.patientPhone = finalPhone;
-        console.log(`[APPOINTMENT_PHONE_COLLECTED] phone="${finalPhone}" convId=${convId} clinicId=${actualClinicId}`);
-
-        if (!appointmentDraft.patientEmail) {
-            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_EMAIL", conversationLocale), pendingAppointmentData: appointmentDraft }, { headers: CORS });
-        }
-        await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
-        const reviewMsg = buildAppointmentReviewMessage({ locale: conversationLocale, appointmentData: appointmentDraft, clinicName });
-        return NextResponse.json({ responseType: "CHAT_REPLY", reply: reviewMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
-    } else if (appointmentState === "COLLECTING_EMAIL") {
-        const extractedEmail = conversationIntent.entities?.email || SlotExtractor.parseEmail(message.trim());
-        
-        if (extractedEmail) {
-             appointmentDraft.patientEmail = extractedEmail;
-             console.log(`[APPOINTMENT_EMAIL_COLLECTED] email="${extractedEmail}" convId=${convId} clinicId=${actualClinicId}`);
-             await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
-             const reviewMsg = buildAppointmentReviewMessage({ locale: conversationLocale, appointmentData: appointmentDraft, clinicName });
-             return NextResponse.json({ responseType: "CHAT_REPLY", reply: reviewMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
+        if (finalPhone) {
+          appointmentDraft.patientPhone = finalPhone;
         } else {
-             const fails = (appointmentDraft.emailValidationFails || 0) + 1;
-             appointmentDraft.emailValidationFails = fails;
-             
-             if (fails >= 2) {
-                 console.log(`[APPOINTMENT_EMAIL_FAILED] Max attempts reached, skipping. convId=${convId} clinicId=${actualClinicId}`);
-                 appointmentDraft.patientEmail = ""; // Clear invalid email
-                 
-                 await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
-                 const reviewMsg = buildAppointmentReviewMessage({ locale: conversationLocale, appointmentData: appointmentDraft, clinicName });
-                 return NextResponse.json({ responseType: "CHAT_REPLY", reply: reviewMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
-             } else {
-                 await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
-                 return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("INVALID_EMAIL", conversationLocale) }, { headers: CORS });
-             }
+          return NextResponse.json({
+            responseType: "CHAT_REPLY",
+            reply: ConversationStateEngine.generateNextSlotPrompt(appointmentDraft, ["phone"], conversationLocale),
+            pendingAppointmentData: appointmentDraft
+          }, { headers: CORS });
         }
-    }
-
-    // Opportunistic slot capture: if draft already has date or phone or email and user sends missing slot, stay in deterministic flow
-    if ((appointmentState === "IDLE" || appointmentState === "COLLECTING_INFO") && (appointmentDraft.requestedDate || appointmentDraft.patientName || appointmentDraft.patientPhone)) {
-        if (conversationIntent.entities?.email || conversationIntent.entities?.phone || conversationIntent.entities?.fullName) {
-            const hasName = Boolean(appointmentDraft.patientName);
-            const hasPhone = Boolean(appointmentDraft.patientPhone);
-            const hasEmail = Boolean(appointmentDraft.patientEmail);
-
-            if (hasName && hasPhone && hasEmail) {
-                await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
-                const reviewMsg = buildAppointmentReviewMessage({ locale: conversationLocale, appointmentData: appointmentDraft, clinicName });
-                return NextResponse.json({ responseType: "CHAT_REPLY", reply: reviewMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
-            } else if (hasName && hasPhone && !hasEmail) {
-                await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
-                return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_EMAIL", conversationLocale), pendingAppointmentData: appointmentDraft }, { headers: CORS });
-            } else if (hasName && !hasPhone) {
-                await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_PHONE", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
-                return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_PHONE", conversationLocale, appointmentDraft.patientName), pendingAppointmentData: appointmentDraft }, { headers: CORS });
-            }
+      } else if (appointmentState === "COLLECTING_EMAIL" && !appointmentDraft.patientEmail) {
+        const extractedEmail = SlotExtractor.parseEmail(message.trim());
+        if (extractedEmail) {
+          appointmentDraft.patientEmail = extractedEmail;
+        } else {
+          return NextResponse.json({
+            responseType: "CHAT_REPLY",
+            reply: ConversationStateEngine.generateNextSlotPrompt(appointmentDraft, ["email"], conversationLocale, undefined, "invalid_email"),
+            pendingAppointmentData: appointmentDraft
+          }, { headers: CORS });
         }
+      } else if (appointmentState === "COLLECTING_NAME" && !appointmentDraft.patientName) {
+        const parsedName = SlotExtractor.parseName(message.trim());
+        if (parsedName) {
+          appointmentDraft.patientName = parsedName.fullName;
+        }
+      }
+
+      // Compute missing slots across all 6 fields
+      const missingSlots = ConversationStateEngine.getMissingSlots({
+        treatment: appointmentDraft.requestedService || undefined,
+        preferredDate: appointmentDraft.requestedDate || undefined,
+        preferredTime: appointmentDraft.requestedTime || undefined,
+        fullName: appointmentDraft.patientName || undefined,
+        phone: appointmentDraft.patientPhone || undefined,
+        email: appointmentDraft.patientEmail || undefined
+      });
+
+      if (missingSlots.length === 0) {
+        await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, {
+          processedMessageIds: [...processedMessageIds, messageId],
+          conversationLocale
+        });
+        const reviewMsg = buildAppointmentReviewMessage({
+          locale: conversationLocale,
+          appointmentData: appointmentDraft,
+          clinicName
+        });
+        return NextResponse.json({
+          responseType: "CHAT_REPLY",
+          reply: reviewMsg,
+          pendingAppointmentData: appointmentDraft
+        }, { headers: CORS });
+      }
+
+      const earliestMissing = missingSlots[0];
+      let nextSubState: AppointmentState = "COLLECTING_INFO";
+      if (earliestMissing === "treatment") nextSubState = "COLLECTING_TREATMENT";
+      else if (earliestMissing === "preferredDate") nextSubState = "COLLECTING_DATE";
+      else if (earliestMissing === "preferredTime") nextSubState = "COLLECTING_TIME";
+      else if (earliestMissing === "fullName") nextSubState = "COLLECTING_NAME";
+      else if (earliestMissing === "phone") nextSubState = "COLLECTING_PHONE";
+      else if (earliestMissing === "email") nextSubState = "COLLECTING_EMAIL";
+
+      await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, nextSubState, appointmentDraft, {
+        processedMessageIds: [...processedMessageIds, messageId],
+        conversationLocale
+      });
+
+      const nextSlotPrompt = ConversationStateEngine.generateNextSlotPrompt(
+        {
+          treatment: appointmentDraft.requestedService || undefined,
+          preferredDate: appointmentDraft.requestedDate || undefined,
+          preferredTime: appointmentDraft.requestedTime || undefined,
+          fullName: appointmentDraft.patientName || undefined,
+          phone: appointmentDraft.patientPhone || undefined,
+          email: appointmentDraft.patientEmail || undefined
+        },
+        missingSlots,
+        conversationLocale,
+        undefined,
+        conversationIntent.validationError,
+        conversationIntent.allInfoProvidedIntent
+      );
+
+      return NextResponse.json({
+        responseType: "CHAT_REPLY",
+        reply: nextSlotPrompt,
+        pendingAppointmentData: appointmentDraft
+      }, { headers: CORS });
     }
 
 
@@ -2417,9 +2516,9 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       // We removed the unconditional override so that the AI can successfully pull doctors from the Knowledge Base.
     }
 
-    let isAppointmentFlowActive = false;
+    let isAiResponseFlowActive = false;
     if (reply.includes("[FLOW_ACTIVE]")) {
-      isAppointmentFlowActive = true;
+      isAiResponseFlowActive = true;
       reply = reply.replace("[FLOW_ACTIVE]", "").trim();
       if (appointmentState === "IDLE") {
         appointmentState = "COLLECTING_INFO";
@@ -2428,7 +2527,7 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
 
     // GROUNDEDNESS CHECK
     // Only check if we retrieved RAG context and the AI didn't already use the safe fallback
-    const hasApptEntities = Boolean(
+    const hasApptEntitiesPresent = Boolean(
       conversationIntent.entities?.email ||
       conversationIntent.entities?.phone ||
       conversationIntent.entities?.fullName ||
@@ -2439,12 +2538,12 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
     );
     const isStateActive =
       appointmentState !== "IDLE" ||
-      isAppointmentFlowActive ||
+      isAiResponseFlowActive ||
       conversationIntent.intent === "appointment_start" ||
       conversationIntent.intent === "appointment_continuation" ||
       conversationIntent.intent === "appointment_confirmation" ||
       conversationIntent.intent === "appointment_correction" ||
-      hasApptEntities;
+      hasApptEntitiesPresent;
 
     const isPricingOrInfoIntent =
       conversationIntent.intent === "pricing_request" ||
@@ -2459,13 +2558,37 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       if (!validation.isGrounded) {
          console.warn(`[Groundedness Failed] Reason: ${validation.reason}\nReply: ${reply}`);
          if (activeLang === "tr") {
-            reply = "Bu bilgiyi şu anda güvenilir şekilde doğrulayamıyorum. Yanlış yönlendirmemek için klinik ekibimizden teyit edilmesi gerekir.";
+            reply = "Bu bilgiyi şu online güvenilir şekilde doğrulayamıyorum. Yanlış yönlendirmemek için klinik ekibimizden teyit edilmesi gerekir.";
          } else if (activeLang === "de") {
             reply = "Ich kann diese Informationen im Moment nicht zuverlässig überprüfen. Dies muss von unserem Klinikteam bestätigt werden, um Sie nicht falsch zu informieren.";
          } else {
             reply = "I cannot reliably verify this information at the moment. It needs to be confirmed by our clinic team to avoid misleading you.";
          }
       }
+    }
+
+    if (isMidFlowInterruption) {
+      const missingSlots = ConversationStateEngine.getMissingSlots({
+        treatment: appointmentDraft.requestedService || undefined,
+        preferredDate: appointmentDraft.requestedDate || undefined,
+        preferredTime: appointmentDraft.requestedTime || undefined,
+        fullName: appointmentDraft.patientName || undefined,
+        phone: appointmentDraft.patientPhone || undefined,
+        email: appointmentDraft.patientEmail || undefined
+      });
+      const resumePrompt = ConversationStateEngine.generateNextSlotPrompt(
+        {
+          treatment: appointmentDraft.requestedService || undefined,
+          preferredDate: appointmentDraft.requestedDate || undefined,
+          preferredTime: appointmentDraft.requestedTime || undefined,
+          fullName: appointmentDraft.patientName || undefined,
+          phone: appointmentDraft.patientPhone || undefined,
+          email: appointmentDraft.patientEmail || undefined
+        },
+        missingSlots,
+        conversationLocale
+      );
+      reply = `${reply}\n\n${resumePrompt}`;
     }
 
     debugLog.push(`OK reply="${reply.slice(0, 60)}" ms=${Date.now() - startTime}`);
@@ -2476,8 +2599,9 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       reply, 
       conversationId: convId,
       success: true,
-      responseType: "chat_message",
-      appointmentCreated: false
+      responseType: isMidFlowInterruption ? "appointment_information_required" : "chat_message",
+      appointmentCreated: false,
+      pendingAppointmentData: isMidFlowInterruption ? appointmentDraft : undefined
     };
 
     if (suggestedActions.length > 0) {
@@ -2542,14 +2666,15 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       normalizedReply.includes("confirm");
 
     const appointmentAlreadyCreated = loadedState === "CREATED" || loadedState === "COMPLETED";
-    const isAppointmentIntentDetected = isAppointmentFlowActive || appointmentState !== "IDLE" || /\b(randevu|appointment)\b/i.test(reply);
+    const isAppointmentIntentDetected = !isMidFlowInterruption && (isAppointmentFlowActive || appointmentState !== "IDLE" || /\b(randevu|appointment)\b/i.test(reply));
 
     const shouldAwaitConfirmation = 
+      !isMidFlowInterruption &&
       isAppointmentIntentDetected &&
       appointmentDataComplete &&
       !appointmentAlreadyCreated;
 
-    const isConfirmSummary = shouldAwaitConfirmation || containsConfirmationQuestion;
+    const isConfirmSummary = !isMidFlowInterruption && (shouldAwaitConfirmation || containsConfirmationQuestion);
 
     if (isConfirmSummary && pending.patientName && (pending.patientPhone || pending.patientEmail)) {
       

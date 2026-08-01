@@ -33,7 +33,8 @@ export const CANONICAL_TREATMENTS: CanonicalTreatment[] = [
     displayName: { tr: "Kompozit Dolgu", en: "Composite Filling" },
     keywords: [
       "composite filling", "kompozit dolgu", "composite", "kompozit", "filling", "dolgu",
-      "estetik dolgu", "beyaz dolgu", "amalgam dolgu", "tooth filling", "dental filling"
+      "estetik dolgu", "beyaz dolgu", "amalgam dolgu", "tooth filling", "dental filling",
+      "zahnfüllung", "plombage", "obturation", "حشوة الأسنان", "حشوة اسنان"
     ]
   },
   {
@@ -41,63 +42,78 @@ export const CANONICAL_TREATMENTS: CanonicalTreatment[] = [
     displayName: { tr: "Diş İmplantı", en: "Dental Implant" },
     keywords: [
       "implant", "dental implant", "diş implantı", "dis implanti", "implant tedavisi", "vidalı diş",
-      "vidali dis", "all on 4", "all on 6", "all-on-4", "all-on-6", "straumann", "nobel"
+      "vidali dis", "all on 4", "all on 6", "all-on-4", "all-on-6", "straumann", "nobel",
+      "zahnimplantat", "zahnimplantate", "implantat", "implantate",
+      "implant dentaire", "implants dentaires",
+      "زراعة الأسنان", "زراعة اسنان", "زرع الأسنان", "زرع اسنان", "غرسات الأسنان",
+      "зубной имплант", "имплантация"
     ]
   },
   {
     id: "zirconium",
     displayName: { tr: "Zirkonyum Kaplama", en: "Zirconium Crown" },
     keywords: [
-      "zirkonyum", "zirconium", "zirconia", "zirkon kaplama", "zirconia crown", "zirkon"
+      "zirkonyum", "zirconium", "zirconia", "zirkon kaplama", "zirconia crown", "zirkon",
+      "zirkonkrone", "couronne zircone", "زركونيا", "تيجان الزركونيا", "زركون"
     ]
   },
   {
     id: "teeth_whitening",
     displayName: { tr: "Diş Beyazlatma", en: "Teeth Whitening" },
     keywords: [
-      "diş beyazlatma", "dis beyazlatma", "teeth whitening", "whitening", "bleaching", "lazerle beyazlatma", "office bleaching"
+      "diş beyazlatma", "dis beyazlatma", "teeth whitening", "tooth whitening", "whitening", "bleaching", "lazerle beyazlatma", "office bleaching",
+      "zahnaufhellung", "blanchiment dentaire", "blanchiment des dents", "تبييض الأسنان", "تبييض اسنان", "отбеливание зубов"
     ]
   },
   {
     id: "root_canal",
     displayName: { tr: "Kanal Tedavisi", en: "Root Canal" },
     keywords: [
-      "kanal tedavisi", "root canal", "endodonti", "endodontics", "kanal"
+      "kanal tedavisi", "root canal", "endodonti", "endodontics", "kanal",
+      "wurzelbehandlung", "wurzelkanalbehandlung", "traitement de canal", "endodontie",
+      "علاج العصب", "سحب عصب", "علاج جذور الأسنان"
     ]
   },
   {
     id: "veneer",
     displayName: { tr: "Lamine Kaplama", en: "Veneer" },
     keywords: [
-      "lamine", "laminate", "veneer", "veneers", "yaprak porselen", "porcelain veneer", "lamina", "e-max", "emax"
+      "lamine", "laminate", "veneer", "veneers", "yaprak porselen", "porcelain veneer", "lamina", "e-max", "emax",
+      "furnier", "verblendschalen", "facette dentaire", "facettes dentaires", "facette",
+      "فينير", "عدسات الأسنان", "لومينير"
     ]
   },
   {
     id: "smile_design",
     displayName: { tr: "Gülüş Tasarımı", en: "Smile Design" },
     keywords: [
-      "gülüş tasarımı", "gulus tasarimi", "smile design", "hollywood smile", "estetik gülüş"
+      "gülüş tasarımı", "gulus tasarimi", "smile design", "hollywood smile", "estetik gülüş",
+      "lächeln-design", "conception du sourire", "sourire hollywoodien", "ابتسامة هوليود", "تصميم الابتسامة"
     ]
   },
   {
     id: "orthodontics",
     displayName: { tr: "Ortodonti / Şeffaf Plak", en: "Orthodontics / Aligners" },
     keywords: [
-      "ortodonti", "orthodontics", "şeffaf plak", "seffaf plak", "invisalign", "aligners", "diş teli", "braces"
+      "ortodonti", "orthodontics", "şeffaf plak", "seffaf plak", "invisalign", "aligners", "diş teli", "braces",
+      "kieferorthopädie", "zahnspange", "appareil dentaire", "تقويم الأسنان", "تقويم اسنان"
     ]
   },
   {
     id: "crown",
     displayName: { tr: "Porselen Kaplama / Kron", en: "Crown" },
     keywords: [
-      "kaplama", "crown", "kron", "porselen kaplama", "porselen diş"
+      "kaplama", "crown", "dental crown", "kron", "porselen kaplama", "porselen diş",
+      "zahnkrone", "krone", "couronne dentaire", "couronne", "تاج الأسنان", "تلبيس الأسنان", "تلبيسة"
     ]
   },
   {
     id: "tooth_extraction",
     displayName: { tr: "Diş Çekimi", en: "Tooth Extraction" },
     keywords: [
-      "diş çekimi", "dis cekimi", "tooth extraction", "20lik diş", "20'lik diş", "yirmilik diş", "wisdom tooth"
+      "diş çekimi", "dis cekimi", "tooth extraction", "20lik diş", "20'lik diş", "yirmilik diş", "wisdom tooth",
+      "zahnextraktion", "zahn ziehen", "weisheitszahn", "extraction dentaire", "dent de sagesse",
+      "خلع الأسنان", "قلع الضرس", "ضرس العقل"
     ]
   },
   {
@@ -359,12 +375,27 @@ export class SlotExtractor {
    * Parse canonical treatment entity from text
    */
   public static parseCanonicalTreatment(lower: string): { id: string; matchedRaw: string } | null {
-    // Check specific/longer keywords first to avoid prefix shadowing (e.g. "composite filling" before "filling")
+    // Check specific/longer keywords first to avoid prefix shadowing
     for (const t of CANONICAL_TREATMENTS) {
       for (const kw of t.keywords) {
-        const regex = new RegExp(`\\b${kw.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")}\\b`, "i");
-        if (regex.test(lower)) {
-          return { id: t.id, matchedRaw: kw };
+        const kwLower = kw.toLowerCase();
+        const isArabic = /[\u0600-\u06FF]/.test(kwLower);
+
+        if (isArabic) {
+          if (lower.includes(kwLower)) {
+            return { id: t.id, matchedRaw: kw };
+          }
+        } else {
+          const idx = lower.indexOf(kwLower);
+          if (idx !== -1) {
+            // Check boundaries: character before and after must not be letters or numbers
+            const charBefore = idx > 0 ? lower[idx - 1] : " ";
+            const charAfter = idx + kwLower.length < lower.length ? lower[idx + kwLower.length] : " ";
+            const isWordChar = (c: string) => /[\p{L}\p{N}]/u.test(c);
+            if (!isWordChar(charBefore) && !isWordChar(charAfter)) {
+              return { id: t.id, matchedRaw: kw };
+            }
+          }
         }
       }
     }
@@ -560,12 +591,15 @@ export class SlotExtractor {
     raw: string,
     lower: string
   ): { time: string; rawText: string; timePreference?: string } | null {
-    // Exact clock time: "14:00", "14.30", "09:15", "9:00", "14:00'te"
-    const exactMatch = raw.match(/\b([01]?\d|2[0-3])[:.]([0-5]\d)\b/);
+    // Exact clock time: "14:00", "14.30", "09:15", "9:00", "2:00 PM", "14:00'te"
+    const exactMatch = raw.match(/\b([01]?\d|2[0-3])[:.]([0-5]\d)(?:\s*(am|pm))?\b/i);
     if (exactMatch) {
-      const h = String(parseInt(exactMatch[1], 10)).padStart(2, "0");
+      let h = parseInt(exactMatch[1], 10);
       const m = exactMatch[2];
-      return { time: `${h}:${m}`, rawText: exactMatch[0], timePreference: "specific" };
+      const ampm = exactMatch[3]?.toLowerCase();
+      if (ampm === "pm" && h < 12) h += 12;
+      if (ampm === "am" && h === 12) h = 0;
+      return { time: `${String(h).padStart(2, "0")}:${m}`, rawText: exactMatch[0], timePreference: "specific" };
     }
 
     // Exact hour: "saat 14", "saat 2'de", "at 2 PM", "at 14:00"
@@ -675,7 +709,7 @@ export class SlotExtractor {
    */
   public static parseName(
     raw: string,
-    lower: string,
+    lower: string = raw.toLowerCase(),
     existingSlots: Partial<ConversationSlots> = {},
     expectedSlot?: string
   ): { fullName: string; firstName: string; lastName: string } | null {
@@ -696,8 +730,12 @@ export class SlotExtractor {
       const clean = raw.trim();
       const parts = clean.split(/\s+/);
       if (parts.length >= 2 && parts.length <= 4 && /^[A-Za-zÇĞİÖŞÜçğıöşü\s]+$/.test(clean) && clean.length <= 40) {
-        // Exclude system words
-        const badWords = ["randevu", "fiyat", "tarih", "saat", "doktor", "klinik", "bilgi", "evet", "hayır", "tamam", "yes", "no", "okay"];
+        // Exclude system, language, and question words
+        const badWords = [
+          "randevu", "fiyat", "tarih", "saat", "doktor", "klinik", "bilgi", "evet", "hayır", "hayir",
+          "tamam", "yes", "no", "okay", "english", "turkish", "türkçe", "turkce", "deutsch", "french",
+          "please", "speak", "switch", "what", "who", "which", "where", "when", "how", "hangi", "nerede", "nasıl", "kim"
+        ];
         const hasBad = parts.some(p => badWords.includes(p.toLowerCase()));
         if (!hasBad) {
           return {

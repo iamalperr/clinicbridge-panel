@@ -10,17 +10,15 @@ import {
   IntentClassificationResult,
   StateTransitionResult
 } from "./types";
+import { buildAppointmentReviewMessage } from "./formatters";
 
 export class ConversationStateEngine {
   /**
    * Determine required appointment slots based on flow
+   * Strict 6-field requirement: Treatment, Preferred Date, Preferred Time, Full Name, Phone, Email.
    */
   public static getRequiredAppointmentSlots(slots?: Partial<ConversationSlots>): Array<keyof ConversationSlots> {
-    // If email is already present or expected, include it
-    if (slots?.email !== undefined || slots?.expectedSlot === "email") {
-      return ["preferredDate", "preferredTime", "fullName", "phone", "email"];
-    }
-    return ["preferredDate", "preferredTime", "fullName", "phone"];
+    return ["treatment", "preferredDate", "preferredTime", "fullName", "phone", "email"];
   }
 
   /**
@@ -36,7 +34,7 @@ export class ConversationStateEngine {
       if (key === "fullName") {
         return !slots.fullName && !slots.firstName;
       }
-      return !val;
+      return !val || (typeof val === "string" && val.trim() === "");
     });
   }
 
@@ -63,7 +61,20 @@ export class ConversationStateEngine {
     let expectedSlot = context.expectedSlot;
     const required = this.getRequiredAppointmentSlots(currentSlots);
 
-    // 2. Handle validation error (e.g. invalid_email)
+    // 2. Handle cancel / reset
+    if (intentResult.intent === "cancel") {
+      return {
+        previousState: prevState,
+        nextState: "GENERAL_CONVERSATION",
+        updatedSlots: {},
+        missingRequiredSlots: [],
+        expectedSlot: undefined,
+        pendingAction: null,
+        isComplete: false
+      };
+    }
+
+    // 3. Handle validation error (e.g. invalid_email)
     if (intentResult.validationError === "invalid_email") {
       return {
         previousState: prevState,
@@ -76,7 +87,7 @@ export class ConversationStateEngine {
       };
     }
 
-    // 3. State transition rules
+    // 4. State transition rules
     switch (prevState) {
       case "INITIAL":
       case "GENERAL_CONVERSATION":
@@ -240,61 +251,66 @@ export class ConversationStateEngine {
       return `Neredeyse tamamladık! Bilgilerinizi aldım, randevu kaydınızı tamamlamak için yalnızca ${this.getSlotDisplayName(nextMissing, "tr")} bilginize ihtiyacım var.`;
     }
 
-    // 3. If no missing slots, prompt for review confirmation
+    // 3. If no missing slots, prompt for review confirmation using centralized formatters
     if (missingSlots.length === 0) {
-      const dateStr = slots.preferredDate || slots.rawDateText || "";
-      const timeStr = slots.preferredTime || "";
-      const nameStr = slots.fullName || slots.firstName || "";
-      const phoneStr = slots.phone || "";
-      const emailStr = slots.email ? `\n✉️ Email: ${slots.email}` : "";
-      const emailStrTr = slots.email ? `\n✉️ E-posta: ${slots.email}` : "";
-      const treatmentStr = slots.treatment ? ` (${slots.treatment})` : "";
-
-      if (isEn) {
-        return `Thank you! I have gathered your appointment request details${treatmentStr}:\n\n` +
-          `📅 Date: ${dateStr}\n` +
-          `⏰ Time Preference: ${timeStr}\n` +
-          `👤 Name: ${nameStr}\n` +
-          `📞 Phone: ${phoneStr}${emailStr}\n\n` +
-          `Please confirm if you would like me to create this appointment request. By confirming, you agree to our KVKK Information Text (https://feelinhealthy.com/kvkk).`;
-      }
-
-      return `Harika, randevu talebi bilgilerinizi aldım${treatmentStr}:\n\n` +
-        `📅 Tarih: ${dateStr}\n` +
-        `⏰ Saat Tercihi: ${timeStr}\n` +
-        `👤 Ad Soyad: ${nameStr}\n` +
-        `📞 Telefon: ${phoneStr}${emailStrTr}\n\n` +
-        `Randevu kaydınızı oluşturmamı onaylıyor musunuz? (Onayınızla birlikte https://feelinhealthy.com/kvkk Aydınlatma Metnini kabul etmiş olursunuz.)`;
+      return buildAppointmentReviewMessage(
+        {
+          patientName: slots.fullName || slots.firstName || "",
+          patientPhone: slots.phone || "",
+          patientEmail: slots.email || "",
+          requestedService: slots.treatment || "",
+          requestedDate: slots.preferredDate || slots.rawDateText || "",
+          requestedTime: slots.preferredTime || ""
+        },
+        locale
+      );
     }
 
     const nextMissing = missingSlots[0];
     const ackPrefix = acknowledgedSlotText ? `${acknowledgedSlotText} ` : "";
 
     switch (nextMissing) {
+      case "treatment":
+        if (isEn) return `${ackPrefix}Which treatment or dental procedure would you like to make an appointment for? (e.g. Implant, Teeth Whitening, Examination)`;
+        if (isDe) return `${ackPrefix}Für welche Behandlung möchten Sie einen Termin vereinbaren? (z.B. Implantat, Zahnreinigung, Untersuchung)`;
+        if (isFr) return `${ackPrefix}Pour quel traitement souhaitez-vous prendre rendez-vous ? (ex. Implant, Blanchiment, Consultation)`;
+        if (isAr) return `${ackPrefix}ما هو العلاج أو الإجراء الذي ترغب في حجز موعد له؟ (مثل: زراعة الأسنان، تبييض الأسنان، الفحص)`;
+        return `${ackPrefix}Hangi tedavi veya işlem için randevu almak istersiniz? (Örn: İmplant, Diş Beyazlatma, Genel Muayene)`;
+
       case "preferredDate":
-        return isEn
-          ? `${ackPrefix}Which date would you prefer for your appointment? (e.g. August 3rd)`
-          : `${ackPrefix}Randevunuz için hangi tarih sizin için uygundur? (Örn: 1 Ağustos 2026)`;
+        if (isEn) return `${ackPrefix}Which date would you prefer for your appointment? (e.g. August 5th or Tomorrow)`;
+        if (isDe) return `${ackPrefix}Welches Datum bevorzugen Sie für Ihren Termin? (z.B. 5. August oder Morgen)`;
+        if (isFr) return `${ackPrefix}Quelle date préférez-vous pour votre rendez-vous ? (ex. 5 août ou Demain)`;
+        if (isAr) return `${ackPrefix}ما هو التاريخ الذي تفضله لموعدك؟ (مثل: 5 أغسطس أو غداً)`;
+        return `${ackPrefix}Randevunuz için hangi tarih sizin için uygundur? (Örn: 5 Ağustos 2026 veya Yarın)`;
 
       case "preferredTime":
-        return isEn
-          ? `${ackPrefix}What time of day or specific hour works best for you? (e.g. Morning, Afternoon, or 14:00)`
-          : `${ackPrefix}Günün hangi saati veya zaman aralığı sizin için uygundur? (Örn: Sabah, Öğleden sonra veya 14:00)`;
+        if (isEn) return `${ackPrefix}What time or time period works best for you? (e.g. 2:00 PM, Morning, or Afternoon)`;
+        if (isDe) return `${ackPrefix}Welche Uhrzeit oder Tageszeit passt Ihnen am besten? (z.B. 14:00 Uhr, Vormittag oder Nachmittag)`;
+        if (isFr) return `${ackPrefix}Quelle heure ou période de la journée vous convient le mieux ? (ex. 14h00, Matin ou Après-midi)`;
+        if (isAr) return `${ackPrefix}ما هو الوقت أو الفترة الزمنية الأنسب لك؟ (مثل: 2:00 ظهراً، الصباح، أو بعد الظهر)`;
+        return `${ackPrefix}Randevu talebinizi kliniğe doğru şekilde iletebilmem için tercih ettiğiniz saat veya saat aralığını da paylaşabilir misiniz? (Örn: 14:00, Sabah veya Öğleden sonra)`;
 
       case "fullName":
-        return isEn
-          ? `${ackPrefix}Could you please share your full name so we can record your appointment?`
-          : `${ackPrefix}Randevu kaydını tamamlamak için adınızı ve soyadınızı paylaşabilir misiniz?`;
+        if (isEn) return `${ackPrefix}Could you please share your full name so we can record your appointment?`;
+        if (isDe) return `${ackPrefix}Könnten Sie bitte Ihren vollständigen Namen angeben?`;
+        if (isFr) return `${ackPrefix}Pourriez-vous indiquer votre nom complet pour la réservation ?`;
+        if (isAr) return `${ackPrefix}هل يمكنك مشاركة اسمك الكامل حتى نتمكن من تسجيل موعدك؟`;
+        return `${ackPrefix}Randevu kaydını oluşturabilmem için adınızı ve soyadınızı paylaşabilir misiniz?`;
 
       case "phone":
-        return isEn
-          ? `${ackPrefix}Could you please provide your phone number so the clinic team can confirm your appointment?`
-          : `${ackPrefix}Klinik ekibimizin teyit için size ulaşabilmesi adına telefon numaranızı paylaşabilir misiniz?`;
+        if (isEn) return `${ackPrefix}Could you please provide your phone number so the clinic team can contact you?`;
+        if (isDe) return `${ackPrefix}Könnten Sie bitte Ihre Telefonnummer angeben, damit die Klinik Sie kontaktieren kann?`;
+        if (isFr) return `${ackPrefix}Pourriez-vous fournir votre numéro de téléphone pour que la clinique puisse vous contacter ?`;
+        if (isAr) return `${ackPrefix}هل يمكنك تزويدنا برقم هاتفك حتى يتمكن فريق العيادة من التواصل معك؟`;
+        return `${ackPrefix}Kliniğimizin randevu talebinizle ilgili sizinle iletişime geçebilmesi için telefon numaranızı paylaşabilir misiniz?`;
 
       case "email":
-        return isEn
-          ? `${ackPrefix}Could you please provide your email address so we can finalize your appointment request?`
-          : `${ackPrefix}Randevu detaylarınızı iletebilmemiz için e-posta adresinizi paylaşabilir misiniz?`;
+        if (isEn) return `${ackPrefix}Could you please provide your email address so we can send you the confirmation details?`;
+        if (isDe) return `${ackPrefix}Könnten Sie bitte Ihre E-Mail-Adresse angeben?`;
+        if (isFr) return `${ackPrefix}Pourriez-vous fournir votre adresse e-mail pour recevoir les détails ?`;
+        if (isAr) return `${ackPrefix}هل يمكنك تزويدنا بعنوان بريدك الإلكتروني لإرسال تفاصيل الموعد؟`;
+        return `${ackPrefix}Randevu sonucunu ve detaylarını iletebilmemiz için e-posta adresinizi paylaşabilir misiniz?`;
 
       default:
         return isEn

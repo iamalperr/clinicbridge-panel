@@ -181,7 +181,8 @@ describe("PendingActionManager & Duplicate Appointment Prevention", () => {
           fullName: "Kemal Demir",
           preferredDate: "2026-08-10",
           preferredTime: "14:00",
-          treatment: "İmplant Muayenesi"
+          treatment: "İmplant Muayenesi",
+          email: "kemal@example.com"
         },
         history: []
       };

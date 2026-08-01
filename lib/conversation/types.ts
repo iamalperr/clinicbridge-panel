@@ -30,6 +30,11 @@ export type ConversationIntent =
   | "complaint"
   | "confirmation"
   | "rejection"
+  | "language_switch"
+  | "cancel"
+  | "restart"
+  | "help"
+  | "small_talk"
   | "emergency"
   | "off_topic"
   | "unknown";
@@ -171,6 +176,16 @@ export interface IntentClassificationResult {
   validationError?: "invalid_email" | "invalid_phone" | "invalid_date" | "invalid_time" | string;
   allInfoProvidedIntent?: boolean;
   pendingAction?: PendingAction | null;
+
+  // Explicit Slot & Locale Routing
+  targetSlot?: ExpectedSlot;
+  targetLocale?: string;
+
+  // Multi-Intent Support (e.g. Confirmation + Question, Slot + Question)
+  multiIntentDetected?: boolean;
+  secondaryIntent?: ConversationIntent;
+  secondaryQuery?: string;
+  secondaryRequiresKnowledgeBase?: boolean;
 }
 
 export interface ConversationContext {

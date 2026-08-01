@@ -456,19 +456,39 @@ export function formatLocalizedTreatment(
  * Builds the canonical patient-facing appointment review / summary message strictly in the given locale.
  * Zero mixed languages.
  */
-export function buildAppointmentReviewMessage(params: {
-  locale?: string;
-  appointmentData: AppointmentSummaryInput;
-  clinicName?: string;
-  timeZone?: string;
-}): string {
-  const locale = (params.locale || "tr").toLowerCase().trim();
+export function buildAppointmentReviewMessage(
+  paramsOrData:
+    | {
+        locale?: string;
+        appointmentData: AppointmentSummaryInput;
+        clinicName?: string;
+        timeZone?: string;
+      }
+    | AppointmentSummaryInput,
+  maybeLocale?: string,
+  maybeClinicName?: string
+): string {
+  let locale = "tr";
+  let draft: AppointmentSummaryInput;
+  let clinicName: string | undefined;
+  let timeZone = "Europe/Istanbul";
+
+  if ("appointmentData" in paramsOrData && (paramsOrData as any).appointmentData) {
+    draft = (paramsOrData as any).appointmentData;
+    locale = ((paramsOrData as any).locale || "tr").toLowerCase().trim();
+    clinicName = (paramsOrData as any).clinicName;
+    timeZone = (paramsOrData as any).timeZone || "Europe/Istanbul";
+  } else {
+    draft = paramsOrData as AppointmentSummaryInput;
+    locale = (maybeLocale || "tr").toLowerCase().trim();
+    clinicName = maybeClinicName;
+  }
+
   const isEn = locale.startsWith("en");
   const isDe = locale.startsWith("de");
   const isFr = locale.startsWith("fr");
   const isAr = locale.startsWith("ar");
 
-  const draft = params.appointmentData;
   const name = draft.patientName || "-";
 
   let phone = draft.patientPhone || "-";
@@ -481,7 +501,7 @@ export function buildAppointmentReviewMessage(params: {
   const treatment = formatLocalizedTreatment(draft.requestedService, locale);
   
   const rawDate = draft.preferredDateDisplay || draft.requestedDate || "-";
-  const localizedDate = formatLocalizedDate(rawDate, locale, params.timeZone || "Europe/Istanbul");
+  const localizedDate = formatLocalizedDate(rawDate, locale, timeZone);
 
   const rawTime = draft.preferredTimeDisplay || draft.requestedTime || "-";
   const localizedTime = formatLocalizedTime(rawTime, locale);
