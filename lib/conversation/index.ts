@@ -4,6 +4,7 @@
 
 export * from "./types";
 export * from "./slotExtractor";
+export * from "./contextResolver";
 export * from "./intentRouter";
 export * from "./stateEngine";
 export * from "./featureFlags";

@@ -9,7 +9,9 @@ import {
   ConversationFeatureFlags,
   ConversationLogger,
   ConversationState,
-  ConversationSlots
+  ConversationSlots,
+  formatPricingFallback,
+  formatContactResponse
 } from "@/lib/conversation";
 
 // Cache to avoid parsing working hours repeatedly
@@ -175,14 +177,19 @@ export async function POST(req: Request) {
     const lastUserMessage = chatHistory.filter(m => m.role === "user").pop()?.content || userMessage || "";
     const msgLower = lastUserMessage.toLowerCase();
 
-    // Accumulate slots across conversation history turns
+    // Accumulate slots and track multi-turn context
     const accumulatedSlots: Partial<ConversationSlots> = {};
     let inferredState: ConversationState = "INITIAL";
+    let activeTreatment: string | undefined;
+    let activeTopic: string | undefined;
 
     for (const item of chatHistory) {
       if (item.role === "user") {
         const ext = SlotExtractor.extractSlots(item.content, accumulatedSlots, clinicLanguage);
         Object.assign(accumulatedSlots, ext.extracted);
+        if (ext.extracted.treatment) {
+          activeTreatment = ext.extracted.treatment;
+        }
         if (/\b(randevu|appointment|book|schedule)\b/i.test(item.content)) {
           inferredState = "APPOINTMENT_COLLECTION";
         }
@@ -195,6 +202,8 @@ export async function POST(req: Request) {
       conversationHistory: chatHistory,
       currentState: inferredState,
       collectedSlots: accumulatedSlots,
+      activeTreatment,
+      activeTopic,
       clinicContext: {
         clinicId,
         clinicName,
@@ -235,7 +244,15 @@ export async function POST(req: Request) {
       processingDurationMs: Date.now() - startTime
     });
 
-    // ── 6. Handle Direct Safety / Live Support / Complaint Intents ──
+    // ── 6. Handle Contextual Disambiguation / Clarification Options ──
+    if (intentResult.clarificationNeeded && intentResult.clarificationPrompt) {
+      return NextResponse.json({
+        message: intentResult.clarificationPrompt,
+        quickReplies: intentResult.suggestedOptions || []
+      });
+    }
+
+    // ── 7. Handle Direct Safety / Live Support / Contact / Complaint Intents ──
     if (intentResult.intent === "emergency") {
       const emMsg = isEn
         ? `⚠️ If you are experiencing a medical emergency, severe pain, or bleeding, please immediately contact the nearest emergency room or call emergency services (112). You can also contact our clinic directly at ${effectivePhone || "our phone line"}.`
@@ -243,7 +260,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: emMsg });
     }
 
-    if (intentResult.intent === "complaint" || intentResult.intent === "live_support_request") {
+    if (intentResult.intent === "complaint") {
       const phoneStr = effectivePhone ? ` (${effectivePhone})` : "";
       const complaintMsg = isEn
         ? `We apologize for any inconvenience you may have experienced. Your satisfaction is very important to us. Our clinic team is available to assist you directly${phoneStr}. Would you like us to have a representative contact you?`
@@ -254,7 +271,15 @@ export async function POST(req: Request) {
       });
     }
 
-    // ── 7. Handle Active Appointment Progression (Pure Slot Step - Zero Hallucination) ──
+    if (intentResult.intent === "contact_request" || intentResult.intent === "live_support_request") {
+      const contactMsg = formatContactResponse(effectivePhone, intentResult.entities.contactTarget, clinicLanguage);
+      return NextResponse.json({
+        message: contactMsg,
+        quickReplies: isEn ? ["Call Clinic", "Book Appointment"] : ["Kliniği Ara", "Randevu Al"]
+      });
+    }
+
+    // ── 8. Handle Active Appointment Progression (Pure Slot Step - Zero Hallucination) ──
     if (
       (intentResult.intent === "appointment_continuation" ||
         intentResult.intent === "appointment_start" ||
@@ -284,14 +309,14 @@ export async function POST(req: Request) {
       });
     }
 
-    // ── 8. Build Knowledge Context for RAG if required ──
+    // ── 9. Build Knowledge Context for RAG if required ──
     let knowledgeContext = "";
     let topDocs: any[] = [];
     const msgWords = msgLower.split(/\s+/).filter((w: string) => w.length > 2);
 
     if (trainingDocs.length > 0 && msgWords.length > 0) {
-      const isLocationIntent = intentResult.intent === "clinic_location";
-      const isWorkingHoursIntent = intentResult.intent === "clinic_working_hours";
+      const isLocationIntent = intentResult.intent === "location_request" || intentResult.intent === "clinic_location";
+      const isWorkingHoursIntent = intentResult.intent === "working_hours_request" || intentResult.intent === "clinic_working_hours";
       const isPricingIntent = intentResult.intent === "pricing_request";
       const isDoctorIntent = intentResult.intent === "doctor_information";
 
@@ -322,7 +347,16 @@ export async function POST(req: Request) {
       }
     }
 
-    // ── 9. Deterministic Working Hours Validation for Appointment Intent ──
+    // ── 10. Pricing Fallback if no specific price in knowledge ──
+    if (intentResult.intent === "pricing_request" && (!knowledgeContext || topDocs.length === 0)) {
+      const priceFallbackMsg = formatPricingFallback(intentResult.entities.treatment, clinicLanguage);
+      return NextResponse.json({
+        message: priceFallbackMsg,
+        quickReplies: isEn ? ["Get a Quote", "Book Appointment"] : ["Fiyat Teklifi Al", "Randevu Al"]
+      });
+    }
+
+    // ── 11. Deterministic Working Hours Validation for Appointment Intent ──
     if (intentResult.intent === "appointment_start" || intentResult.intent === "appointment_continuation") {
       const workingHoursDoc = topDocs.find(d => /\b(çalışma|saat|mesai|opening|business|working|gün)\b/.test((d.title + d.content).toLowerCase()));
       if (workingHoursDoc) {
@@ -361,7 +395,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // ── 10. Construct Guardrails & Quality Criteria ──
+    // ── 12. Construct Guardrails & Quality Criteria ──
     const activeGuardrails: string[] = [];
     if (settings.guardrails) {
       Object.values(settings.guardrails).forEach((guardrail: any) => {
@@ -405,7 +439,7 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       ? `${guardrailRules}${settings.systemPrompt}${contactInfo}${knowledgeBlock}${criteriaRules}\n${hybridStrategy}\nDil kuralı: Kullanıcı hangi dilde soruyorsa (${clinicLanguage}) o dilde yanıt ver.`
       : `${guardrailRules}Sen ${clinicName}'nin dijital hasta asistanısın. Yardımsever ve profesyonel bir üslup kullan.${contactInfo}${knowledgeBlock}${criteriaRules}\n${hybridStrategy}\nDil kuralı: Kullanıcı hangi dilde soruyorsa (${clinicLanguage}) o dilde yanıt ver.`;
 
-    // ── 11. Call AI Gateway ──
+    // ── 13. Call AI Gateway ──
     const completion = await trackableAIRequest({
       clinicId,
       channel: "admin",
@@ -424,7 +458,7 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       throw new Error("Empty response from AI Gateway");
     }
 
-    // ── 12. Format Response ──
+    // ── 14. Format Response ──
     let responsePayload: any = { message: aiMessage.replace(/\*\*|\*|#/g, "") };
     try {
       const parsed = JSON.parse(aiMessage);

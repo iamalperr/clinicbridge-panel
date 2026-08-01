@@ -1,10 +1,12 @@
 /**
  * Deterministic, locale-aware entity and slot extractor.
- * High-performance extractor for dates, times, visit types, names, contact info, and corrections.
+ * High-performance extractor for dates, times, visit types, names, contact info,
+ * canonical treatments, information types, contact targets, and corrections.
  */
 
-import { ConversationSlots, VisitType } from "./types";
+import { ConversationSlots, VisitType, InformationType, ContactTarget } from "./types";
 import { AppointmentDateValidator } from "../skills/AppointmentDateValidator";
+import { normalizeTurkishPhone } from "../phoneUtils";
 
 const MONTHS_TR: Record<string, number> = {
   ocak: 1, şubat: 2, subat: 2, mart: 3, nisan: 4, mayıs: 5, mayis: 5, haziran: 6,
@@ -16,18 +18,128 @@ const MONTHS_EN: Record<string, number> = {
   july: 7, aug: 8, august: 8, sept: 9, september: 9, oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12
 };
 
-const COMMON_TREATMENTS = [
-  "implant", "zirkonyum", "zirconium", "diş beyazlatma", "teeth whitening", "whitening",
-  "gülüş tasarımı", "smile design", "hollywood smile", "ortodonti", "orthodontics", "şeffaf plak", "invisalign",
-  "kanal tedavisi", "root canal", "endodonti", "diş çekimi", "tooth extraction", "20lik diş",
-  "dolgu", "filling", "kompozit", "lamine", "laminate veneer", "veneer", "kaplama", "crown",
-  "protez", "denture", "periodontoloji", "diş eti", "pedodonti", "çocuk diş", "estetik diş",
-  "saç ekimi", "hair transplant", "burun estetiği", "rhinoplasty", "göz kapağı", "blepharoplasty"
+export interface CanonicalTreatment {
+  id: string;
+  displayName: {
+    tr: string;
+    en: string;
+  };
+  keywords: string[];
+}
+
+export const CANONICAL_TREATMENTS: CanonicalTreatment[] = [
+  {
+    id: "composite_filling",
+    displayName: { tr: "Kompozit Dolgu", en: "Composite Filling" },
+    keywords: [
+      "composite filling", "kompozit dolgu", "composite", "kompozit", "filling", "dolgu",
+      "estetik dolgu", "beyaz dolgu", "amalgam dolgu", "tooth filling", "dental filling"
+    ]
+  },
+  {
+    id: "implant",
+    displayName: { tr: "Diş İmplantı", en: "Dental Implant" },
+    keywords: [
+      "implant", "dental implant", "diş implantı", "dis implanti", "implant tedavisi", "vidalı diş",
+      "vidali dis", "all on 4", "all on 6", "all-on-4", "all-on-6", "straumann", "nobel"
+    ]
+  },
+  {
+    id: "zirconium",
+    displayName: { tr: "Zirkonyum Kaplama", en: "Zirconium Crown" },
+    keywords: [
+      "zirkonyum", "zirconium", "zirconia", "zirkon kaplama", "zirconia crown", "zirkon"
+    ]
+  },
+  {
+    id: "teeth_whitening",
+    displayName: { tr: "Diş Beyazlatma", en: "Teeth Whitening" },
+    keywords: [
+      "diş beyazlatma", "dis beyazlatma", "teeth whitening", "whitening", "bleaching", "lazerle beyazlatma", "office bleaching"
+    ]
+  },
+  {
+    id: "root_canal",
+    displayName: { tr: "Kanal Tedavisi", en: "Root Canal" },
+    keywords: [
+      "kanal tedavisi", "root canal", "endodonti", "endodontics", "kanal"
+    ]
+  },
+  {
+    id: "veneer",
+    displayName: { tr: "Lamine Kaplama", en: "Veneer" },
+    keywords: [
+      "lamine", "laminate", "veneer", "veneers", "yaprak porselen", "porcelain veneer", "lamina", "e-max", "emax"
+    ]
+  },
+  {
+    id: "smile_design",
+    displayName: { tr: "Gülüş Tasarımı", en: "Smile Design" },
+    keywords: [
+      "gülüş tasarımı", "gulus tasarimi", "smile design", "hollywood smile", "estetik gülüş"
+    ]
+  },
+  {
+    id: "orthodontics",
+    displayName: { tr: "Ortodonti / Şeffaf Plak", en: "Orthodontics / Aligners" },
+    keywords: [
+      "ortodonti", "orthodontics", "şeffaf plak", "seffaf plak", "invisalign", "aligners", "diş teli", "braces"
+    ]
+  },
+  {
+    id: "crown",
+    displayName: { tr: "Porselen Kaplama / Kron", en: "Crown" },
+    keywords: [
+      "kaplama", "crown", "kron", "porselen kaplama", "porselen diş"
+    ]
+  },
+  {
+    id: "tooth_extraction",
+    displayName: { tr: "Diş Çekimi", en: "Tooth Extraction" },
+    keywords: [
+      "diş çekimi", "dis cekimi", "tooth extraction", "20lik diş", "20'lik diş", "yirmilik diş", "wisdom tooth"
+    ]
+  },
+  {
+    id: "denture",
+    displayName: { tr: "Diş Protezi", en: "Denture" },
+    keywords: [
+      "protez", "denture", "damak", "total protez", "hareketli protez"
+    ]
+  },
+  {
+    id: "hair_transplant",
+    displayName: { tr: "Saç Ekimi", en: "Hair Transplant" },
+    keywords: [
+      "saç ekimi", "sac ekimi", "hair transplant", "fue", "dhi"
+    ]
+  },
+  {
+    id: "rhinoplasty",
+    displayName: { tr: "Burun Estetiği", en: "Rhinoplasty" },
+    keywords: [
+      "burun estetiği", "burun estetigi", "rhinoplasty", "rinoplasti"
+    ]
+  },
+  {
+    id: "blepharoplasty",
+    displayName: { tr: "Göz Kapağı Estetiği", en: "Blepharoplasty" },
+    keywords: [
+      "göz kapağı", "goz kapagi", "blepharoplasty", "blefaroplasti"
+    ]
+  },
+  {
+    id: "consultation",
+    displayName: { tr: "Muayene / Danışma", en: "Consultation / Checkup" },
+    keywords: [
+      "muayene", "consultation", "checkup", "check-up", "kontrol", "danışma"
+    ]
+  }
 ];
 
 export class SlotExtractor {
   /**
-   * Extract all identifiable slots from a message, optionally in context of previous slots and expectedSlot
+   * Extract all identifiable slots and entities from a message, optionally in context of previous slots and expectedSlot
    */
   public static extractSlots(
     message: string,
@@ -77,7 +189,7 @@ export class SlotExtractor {
       (raw.includes("@") && !raw.includes(" ")) ||
       /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\b/.test(raw)
     ) {
-      // User sent an incomplete or malformed email (e.g. sadiahammad1@hotmail without .com or invalid domain)
+      // User sent an incomplete or malformed email
       invalidEmailAttempt = true;
     }
 
@@ -86,17 +198,20 @@ export class SlotExtractor {
       const dateRes = this.parseDate(raw, lower, timeZone);
       if (dateRes) {
         extracted.preferredDate = dateRes.isoDate;
+        extracted.date = dateRes.isoDate;
         extracted.rawDateText = dateRes.rawText;
         extracted.preferredWeekday = dateRes.weekday;
       }
     }
 
-    // 4. Time / Time-Preference Extraction
+    // 4. Time Extraction
     if (!extracted.preferredTime) {
       const timeRes = this.parseTime(raw, lower);
       if (timeRes) {
-        extracted.preferredTime = timeRes.value;
+        extracted.preferredTime = timeRes.time;
+        extracted.time = timeRes.time;
         extracted.rawTimeText = timeRes.rawText;
+        extracted.timePreference = timeRes.timePreference;
       }
     }
 
@@ -108,21 +223,41 @@ export class SlotExtractor {
       }
     }
 
-    // 6. Treatment Extraction
+    // 6. Treatment Entity Extraction (Canonicalized)
     if (!extracted.treatment) {
-      const treatmentRes = this.parseTreatment(lower);
+      const treatmentRes = this.parseCanonicalTreatment(lower);
       if (treatmentRes) {
-        extracted.treatment = treatmentRes;
+        extracted.treatment = treatmentRes.id;
+        extracted.rawTreatmentText = treatmentRes.matchedRaw;
       }
     }
 
-    // 7. Phone Extraction
+    // 7. Information Type Extraction (price, duration, recovery, etc.)
+    const infoType = this.parseInformationType(lower);
+    if (infoType) {
+      extracted.informationType = infoType;
+    }
+
+    // 8. Contact Target Extraction (clinic_team, doctor, whatsapp, phone)
+    const contactTarget = this.parseContactTarget(lower);
+    if (contactTarget) {
+      extracted.contactTarget = contactTarget;
+    }
+
+    // 9. Currency Extraction
+    const currency = this.parseCurrency(raw, lower);
+    if (currency) {
+      extracted.priceCurrency = currency;
+      extracted.currency = currency;
+    }
+
+    // 10. Phone Extraction
     const phoneRes = this.parsePhone(raw);
     if (phoneRes) {
       extracted.phone = phoneRes;
     }
 
-    // 8. Name Extraction (when explicitly phrased, matching name pattern, or expectedSlot is fullName/name)
+    // 11. Name Extraction
     if (!extracted.fullName && !extracted.firstName) {
       const nameRes = this.parseName(raw, lower, existingSlots, expectedSlot);
       if (nameRes) {
@@ -132,7 +267,7 @@ export class SlotExtractor {
       }
     }
 
-    // 9. KVKK Consent
+    // 12. KVKK Consent
     if (this.isKvkkConsent(lower)) {
       extracted.kvkkConsent = true;
     }
@@ -161,69 +296,59 @@ export class SlotExtractor {
   public static parseCorrection(
     raw: string,
     lower: string,
-    locale: string,
-    timeZone: string
+    locale: string = "tr",
+    timeZone: string = "Europe/Istanbul"
   ): { isCorrection: boolean; slotKey?: keyof ConversationSlots; slots: Partial<ConversationSlots> } {
-    // 1. Email correction pattern: "Use sadia.new@hotmail.com instead", "e-posta sadia.new@hotmail.com olsun"
-    const emailDirectMatch = raw.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-    if (
-      emailDirectMatch &&
-      /\b(use|instead|actually|aslında|yerine|değil|degil|olsun|lütfen|please)\b/i.test(lower)
-    ) {
-      return {
-        isCorrection: true,
-        slotKey: "email",
-        slots: { email: emailDirectMatch[0].toLowerCase() }
-      };
+    const slots: Partial<ConversationSlots> = {};
+
+    // Pattern A: "X değil Y olsun" / "X değil Y" (Date / Time / Name / Phone)
+    const degilMatch = lower.match(/(.+?)\s+değil[,\s]+(.+?)(?:\s+olsun|\s+lütfen|\.|$)/i) ||
+      lower.match(/(.+?)\s+degil[,\s]+(.+?)(?:\s+olsun|\s+lutfen|\.|$)/i);
+
+    if (degilMatch) {
+      const targetPhrase = degilMatch[2].trim();
+      const dateRes = this.parseDate(targetPhrase, targetPhrase.toLowerCase(), timeZone);
+      if (dateRes) {
+        slots.preferredDate = dateRes.isoDate;
+        slots.date = dateRes.isoDate;
+        slots.rawDateText = dateRes.rawText;
+        slots.preferredWeekday = dateRes.weekday;
+        return { isCorrection: true, slotKey: "preferredDate", slots };
+      }
+
+      const timeRes = this.parseTime(targetPhrase, targetPhrase.toLowerCase());
+      if (timeRes) {
+        slots.preferredTime = timeRes.time;
+        slots.time = timeRes.time;
+        slots.rawTimeText = timeRes.rawText;
+        return { isCorrection: true, slotKey: "preferredTime", slots };
+      }
     }
 
-    // 2. Turkish correction pattern: "... değil ... olsun" / "... yerine ..."
-    const trDeğilMatch = raw.match(/(?:aslında\s+)?(.+?)\s+değil(?:dir)?(?:,\s*|\s+)(.+?)(?:\s+olsun|\s+lütfen|\.?$)/i);
-    const trYerineMatch = raw.match(/(.+?)\s+yerine\s+(.+?)(?:\s+olsun|\s+lütfen|\.?$)/i);
-    const enInsteadMatch = raw.match(/(?:actually\s+)?(?:use\s+)?(.+?)\s+instead(?:\s+of\s+(.+?))?(?:\s+please|\.?$)/i);
-    const enNotMatch = raw.match(/(?:actually\s+)?not\s+(.+?)(?:,\s*|\s+)but\s+(.+?)(?:\s+please|\.?$)/i);
+    // Pattern B: English "Use X instead", "Change date to X", "Actually X", "Make it X"
+    const enChangeMatch = lower.match(/(?:use|change date to|change time to|change to|actually|make it)\s+(.+?)(?:instead|\.|$)/i);
+    if (enChangeMatch) {
+      const targetPhrase = enChangeMatch[1].trim();
 
-    const targetChunk = trDeğilMatch?.[2] || trYerineMatch?.[2] || enInsteadMatch?.[1] || enNotMatch?.[2];
+      const emailMatch = this.parseEmail(targetPhrase);
+      if (emailMatch) {
+        slots.email = emailMatch;
+        return { isCorrection: true, slotKey: "email", slots };
+      }
 
-    if (targetChunk) {
-      const trimmedTarget = targetChunk.trim();
-      const targetLower = trimmedTarget.toLowerCase();
+      const phoneMatch = this.parsePhone(targetPhrase);
+      if (phoneMatch) {
+        slots.phone = phoneMatch;
+        return { isCorrection: true, slotKey: "phone", slots };
+      }
 
-      // Check if target is a date
-      const dateRes = this.parseDate(trimmedTarget, targetLower, timeZone);
+      const dateRes = this.parseDate(targetPhrase, targetPhrase.toLowerCase(), timeZone);
       if (dateRes) {
-        return {
-          isCorrection: true,
-          slotKey: "preferredDate",
-          slots: {
-            preferredDate: dateRes.isoDate,
-            rawDateText: dateRes.rawText,
-            preferredWeekday: dateRes.weekday
-          }
-        };
-      }
-
-      // Check if target is a time
-      const timeRes = this.parseTime(trimmedTarget, targetLower);
-      if (timeRes) {
-        return {
-          isCorrection: true,
-          slotKey: "preferredTime",
-          slots: {
-            preferredTime: timeRes.value,
-            rawTimeText: timeRes.rawText
-          }
-        };
-      }
-
-      // Check if target is an email
-      const emailTarget = this.parseEmail(trimmedTarget);
-      if (emailTarget) {
-        return {
-          isCorrection: true,
-          slotKey: "email",
-          slots: { email: emailTarget }
-        };
+        slots.preferredDate = dateRes.isoDate;
+        slots.date = dateRes.isoDate;
+        slots.rawDateText = dateRes.rawText;
+        slots.preferredWeekday = dateRes.weekday;
+        return { isCorrection: true, slotKey: "preferredDate", slots };
       }
     }
 
@@ -231,7 +356,103 @@ export class SlotExtractor {
   }
 
   /**
-   * Parse date text into ISO YYYY-MM-DD
+   * Parse canonical treatment entity from text
+   */
+  public static parseCanonicalTreatment(lower: string): { id: string; matchedRaw: string } | null {
+    // Check specific/longer keywords first to avoid prefix shadowing (e.g. "composite filling" before "filling")
+    for (const t of CANONICAL_TREATMENTS) {
+      for (const kw of t.keywords) {
+        const regex = new RegExp(`\\b${kw.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")}\\b`, "i");
+        if (regex.test(lower)) {
+          return { id: t.id, matchedRaw: kw };
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Parse Information Type (price, duration, recovery, suitability, process, etc.)
+   */
+  public static parseInformationType(lower: string): InformationType | undefined {
+    // 1. Price
+    if (/\b(fiyat|fiyati|fiyatı|fiyatlar|ücret|ucret|ücreti|kaç tl|kac tl|kaç para|kac para|kaç euro|ne kadar|fiyat bilgisi|ücretli mi|ucretli mi|price|pricing|cost|how much|fee|charge|expensive|quote|teklif)\b/i.test(lower)) {
+      return "price";
+    }
+    // 2. Duration
+    if (/\b(kaç gün|kac gun|kaç saat|kac saat|ne kadar sürer|ne kadar surer|kaç seans|kac seans|how long|how many days|duration|time take|how much time)\b/i.test(lower)) {
+      return "duration";
+    }
+    // 3. Recovery
+    if (/\b(iyileşme|iyilesme|iyileşme süreci|ağrı olur mu|agri olur mu|şişlik|sislik|morluk|after surgery|recovery|healing|side effects|pain after|downtime)\b/i.test(lower)) {
+      return "recovery";
+    }
+    // 4. Suitability / Candidacy
+    if (/\b(uygun muyum|kimlere yapılır|kimlere yapilir|kimler yaptırabilir|yaş sınırı|yas siniri|am i suitable|who is suitable|candidacy|contraindications|can i have|can i get)\b/i.test(lower)) {
+      return "suitability";
+    }
+    // 5. Process / Procedure steps
+    if (/\b(nasıl yapılır|nasil yapilir|aşamaları|asamalari|işlem sırası|islem sirasi|prosedür|prosedur|how is it done|process|procedure|steps|what happens)\b/i.test(lower)) {
+      return "process";
+    }
+    // 6. Material / Brand
+    if (/\b(hangi malzeme|hangi marka|marka|markalar|malzeme|kalite|material|brand|quality|is it safe)\b/i.test(lower)) {
+      return "material";
+    }
+    // 7. Warranty / Guarantee
+    if (/\b(garanti|garantisi|ömür|omur|kaç yıl garanti|kac yil garanti|warranty|guarantee|lifetime|how long lasts)\b/i.test(lower)) {
+      return "warranty";
+    }
+    // 8. Availability
+    if (/\b(ne zaman gelebilirim|müsait|musait|hangi günler|hangi gunler|açık mı|acik mi|available|when can i come|open on)\b/i.test(lower)) {
+      return "availability";
+    }
+    // 9. Location
+    if (/\b(nerede|neredesiniz|adres|konum|harita|ulaşım|ulasim|where|location|address|how to get)\b/i.test(lower)) {
+      return "location";
+    }
+    // 10. Opening hours
+    if (/\b(çalışma saatleri|calisma saatleri|kaçta açılıyor|kaçta kapanıyor|mesai|opening hours|working hours)\b/i.test(lower)) {
+      return "opening_hours";
+    }
+    return undefined;
+  }
+
+  /**
+   * Parse Contact Target
+   */
+  public static parseContactTarget(lower: string): ContactTarget | undefined {
+    if (/\b(whatsapp|wp|whats app)\b/i.test(lower)) {
+      return "whatsapp";
+    }
+    if (/\b(telefon|numara|arama|arayın|arayin|call me|phone number|call you|phone)\b/i.test(lower)) {
+      return "phone";
+    }
+    if (/\b(doktor|doktorla|hekim|hekimle|doctor|dentist|physician)\b/i.test(lower)) {
+      return "doctor";
+    }
+    if (/\b(canlı destek|canli destek|müşteri temsilcisi|yetkili|temsilci|human agent|live support|representative|talk to human|real person)\b/i.test(lower)) {
+      return "human_agent";
+    }
+    if (/\b(ekip|ekiple|klinik ekibi|talk to your team|speak to someone|speak to your team|contact the clinic|reach you|reach the clinic|talk to a representative)\b/i.test(lower)) {
+      return "clinic_team";
+    }
+    return undefined;
+  }
+
+  /**
+   * Parse Currency
+   */
+  public static parseCurrency(raw: string, lower: string): string | undefined {
+    if (/\b(eur|euro|€)\b/i.test(lower) || raw.includes("€")) return "EUR";
+    if (/\b(usd|dollar|dolar|\$)\b/i.test(lower) || raw.includes("$")) return "USD";
+    if (/\b(gbp|pound|sterlin|£)\b/i.test(lower) || raw.includes("£")) return "GBP";
+    if (/\b(try|tl|lira|₺)\b/i.test(lower) || raw.includes("₺")) return "TRY";
+    return undefined;
+  }
+
+  /**
+   * Parse date in multiple formats (numeric, relative, full text Turkish/English)
    */
   public static parseDate(
     raw: string,
@@ -306,26 +527,26 @@ export class SlotExtractor {
       }
     }
 
-    // 4. English text dates: "August 3rd", "August 3", "3rd August 2026"
+    // 4. English text dates: "August 3rd", "August 3", "3rd of August", "3 August 2026"
     for (const [mName, mNum] of Object.entries(MONTHS_EN)) {
-      const regex1 = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${mName}(?:\\s+(\\d{4}))?\\b`, "i");
-      const match1 = lower.match(regex1);
-      if (match1) {
-        const day = parseInt(match1[1], 10);
-        const year = match1[2] ? parseInt(match1[2], 10) : currentYear;
+      const regexEn1 = new RegExp(`\\b${mName}\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:\\s+(\\d{4}))?\\b`, "i");
+      const matchEn1 = lower.match(regexEn1);
+      if (matchEn1) {
+        const day = parseInt(matchEn1[1], 10);
+        const year = matchEn1[2] ? parseInt(matchEn1[2], 10) : currentYear;
         const iso = `${year}-${String(mNum).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
         const weekdayInfo = AppointmentDateValidator.getCanonicalWeekday({ isoDate: iso, timeZone });
-        return { isoDate: iso, rawText: match1[0], weekday: weekdayInfo.weekdayEn };
+        return { isoDate: iso, rawText: matchEn1[0], weekday: weekdayInfo.weekdayTr };
       }
 
-      const regex2 = new RegExp(`\\b${mName}\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:\\s+(\\d{4}))?\\b`, "i");
-      const match2 = lower.match(regex2);
-      if (match2) {
-        const day = parseInt(match2[1], 10);
-        const year = match2[2] ? parseInt(match2[2], 10) : currentYear;
+      const regexEn2 = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?${mName}(?:\\s+(\\d{4}))?\\b`, "i");
+      const matchEn2 = lower.match(regexEn2);
+      if (matchEn2) {
+        const day = parseInt(matchEn2[1], 10);
+        const year = matchEn2[2] ? parseInt(matchEn2[2], 10) : currentYear;
         const iso = `${year}-${String(mNum).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
         const weekdayInfo = AppointmentDateValidator.getCanonicalWeekday({ isoDate: iso, timeZone });
-        return { isoDate: iso, rawText: match2[0], weekday: weekdayInfo.weekdayEn };
+        return { isoDate: iso, rawText: matchEn2[0], weekday: weekdayInfo.weekdayTr };
       }
     }
 
@@ -333,68 +554,54 @@ export class SlotExtractor {
   }
 
   /**
-   * Parse clock time or general time preference (sabah, öğleden sonra, 14:00)
+   * Parse time preference (exact 24h clock, e.g. 14:00, or fuzzy: sabah, öğleden sonra, morning, afternoon)
    */
   public static parseTime(
     raw: string,
     lower: string
-  ): { value: string; rawText: string } | null {
-    // 1. Clock time e.g. "14:00", "14.30", "saat 14", "saat 2"
-    const clockMatch = raw.match(/\b(?:saat\s*)?(\d{1,2})[:\.](\d{2})\b/i);
-    if (clockMatch) {
-      const h = parseInt(clockMatch[1], 10);
-      const m = parseInt(clockMatch[2], 10);
-      if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
-        const val = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-        return { value: val, rawText: clockMatch[0] };
+  ): { time: string; rawText: string; timePreference?: string } | null {
+    // Exact clock time: "14:00", "14.30", "09:15", "9:00", "14:00'te"
+    const exactMatch = raw.match(/\b([01]?\d|2[0-3])[:.]([0-5]\d)\b/);
+    if (exactMatch) {
+      const h = String(parseInt(exactMatch[1], 10)).padStart(2, "0");
+      const m = exactMatch[2];
+      return { time: `${h}:${m}`, rawText: exactMatch[0], timePreference: "specific" };
+    }
+
+    // Exact hour: "saat 14", "saat 2'de", "at 2 PM", "at 14:00"
+    const hourMatch = lower.match(/\bsaat\s*([01]?\d|2[0-3])(?:\s*(?:de|da|te|ta|civarı))?\b/i) ||
+      lower.match(/\bat\s*([01]?\d|2[0-3])\s*(am|pm)?\b/i);
+    if (hourMatch) {
+      let h = parseInt(hourMatch[1], 10);
+      if (hourMatch[2] && hourMatch[2].toLowerCase() === "pm" && h < 12) {
+        h += 12;
       }
+      return { time: `${String(h).padStart(2, "0")}:00`, rawText: hourMatch[0], timePreference: "specific" };
     }
 
-    const saatSingleMatch = raw.match(/\bsaat\s*(\d{1,2})\b/i);
-    if (saatSingleMatch) {
-      let h = parseInt(saatSingleMatch[1], 10);
-      if (h >= 1 && h <= 23) {
-        // if user says "saat 2" or "saat 3", in daytime context treat as 14:00 or 15:00 if h <= 7
-        if (h <= 7) h += 12;
-        const val = `${String(h).padStart(2, "0")}:00`;
-        return { value: val, rawText: saatSingleMatch[0] };
-      }
+    // Fuzzy Time: Turkish
+    if (/\b(sabah|sabahları|öğleden önce|ogleden once|morning)\b/i.test(lower)) {
+      return { time: "10:00", rawText: "sabah", timePreference: "morning" };
     }
-
-    // 2. Turkish general time preference
-    if (/(?:^|[^\wığüşöçİĞÜŞÖÇ])(sabah|sabahları|sabahleyin|öğleden önce|ogleden once)(?:$|[^\wığüşöçİĞÜŞÖÇ])/iu.test(lower)) {
-      return { value: "sabah", rawText: "sabah" };
+    if (/\b(öğle|ogle|öğlen|oglen|noon|midday)\b/i.test(lower)) {
+      return { time: "12:00", rawText: "öğlen", timePreference: "afternoon" };
     }
-    if (/(?:^|[^\wığüşöçİĞÜŞÖÇ])(öğlen|oglen|öğle|ogle)(?:$|[^\wığüşöçİĞÜŞÖÇ])/iu.test(lower)) {
-      return { value: "öğle", rawText: "öğle" };
+    if (/\b(öğleden sonra|ogleden sonra|afternoon)\b/i.test(lower)) {
+      return { time: "14:00", rawText: "öğleden sonra", timePreference: "afternoon" };
     }
-    if (/(?:^|[^\wığüşöçİĞÜŞÖÇ])(öğleden sonra|ogleden sonra|ikindi|öğleden-sonra)(?:$|[^\wığüşöçİĞÜŞÖÇ])/iu.test(lower)) {
-      return { value: "öğleden_sonra", rawText: "öğleden sonra" };
-    }
-    if (/(?:^|[^\wığüşöçİĞÜŞÖÇ])(akşam|aksam|akşamüstü|aksamustu|akşamleyin)(?:$|[^\wığüşöçİĞÜŞÖÇ])/iu.test(lower)) {
-      return { value: "akşam", rawText: "akşam" };
-    }
-
-    // 3. English general time preference
-    if (/\b(morning|in the morning|am)\b/i.test(lower)) {
-      return { value: "morning", rawText: "morning" };
-    }
-    if (/\b(afternoon|in the afternoon|pm)\b/i.test(lower)) {
-      return { value: "afternoon", rawText: "afternoon" };
-    }
-    if (/\b(evening|in the evening)\b/i.test(lower)) {
-      return { value: "evening", rawText: "evening" };
+    if (/\b(akşam|aksam|akşamüstü|aksamustu|evening)\b/i.test(lower)) {
+      return { time: "17:00", rawText: "akşam", timePreference: "evening" };
     }
 
     return null;
   }
 
   /**
-   * Parse Visit Type (first visit, control)
+   * Parse Visit Type (first_visit vs control / follow-up)
    */
   public static parseVisitType(lower: string): VisitType | null {
     if (
-      /\b(ilk geliş|ilk gelis|ilk gelişimiz|ilk gelisimiz|ilk defa|ilk kez|ilk muayene|yeni hasta|first visit|first time|new patient)\b/i.test(
+      /\b(ilk gelişimiz|ilk gelisimiz|ilk defa geliyorum|ilk kez geliyorum|yeni hastayım|yeni hastayim|ilk muayene|first visit|first time|new patient)\b/i.test(
         lower
       )
     ) {
@@ -413,24 +620,13 @@ export class SlotExtractor {
   }
 
   /**
-   * Parse recognized treatment name
-   */
-  public static parseTreatment(lower: string): string | null {
-    for (const t of COMMON_TREATMENTS) {
-      if (lower.includes(t)) {
-        return t;
-      }
-    }
-    return null;
-  }
-
-  /**
    * Parse email address with sanitization
    */
   public static parseEmail(raw: string): string | null {
     if (!raw) return null;
     const sanitized = raw.replace(/^[\s,.;:<>]+|[\s,.;:<>]+$/g, "").trim();
-    const emailMatch = sanitized.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+    const despaced = sanitized.replace(/\s*@\s*/g, "@").replace(/\s*\.\s*/g, ".");
+    const emailMatch = despaced.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
     return emailMatch ? emailMatch[0].toLowerCase() : null;
   }
 
@@ -439,6 +635,11 @@ export class SlotExtractor {
    */
   public static parsePhone(raw: string): string | null {
     if (!raw) return null;
+    const norm = normalizeTurkishPhone(raw);
+    if (norm.valid) {
+      return norm.display;
+    }
+
     // 1. Match international format with country code (e.g. +44 7911 123456, +49 151 23456789, +90 532 123 45 67)
     const intlMatch = raw.match(/\+\d{1,4}(?:[\s.-]?\(?\d{1,4}\)?)*(?:[\s.-]?\d{1,4}){2,5}/);
     if (intlMatch) {
@@ -475,55 +676,36 @@ export class SlotExtractor {
   public static parseName(
     raw: string,
     lower: string,
-    existingSlots: Partial<ConversationSlots>,
+    existingSlots: Partial<ConversationSlots> = {},
     expectedSlot?: string
   ): { fullName: string; firstName: string; lastName: string } | null {
-    // 1. Phrased patterns: "Adım Ahmet Yılmaz", "İsmim Mehmet", "My name is John Doe", "I am Sadia Hammad"
-    const nameMatch = raw.match(/\b(?:adım|ismim|ben|my name is|i am|name is|it is)\s+([A-ZÇĞİÖŞÜa-zçğıöşü]{2,}(?:\s+[A-ZÇĞİÖŞÜa-zçğıöşü]{2,}){0,3})/i);
-    if (nameMatch) {
-      const full = nameMatch[1].trim();
+    // Pattern 1: "Adım Ahmet Yılmaz", "İsmim Ahmet Yılmaz", "My name is John Doe"
+    const explicitNameMatch = raw.match(/(?:adım|adim|ismim|my name is|i am|i'm)\s+([A-Za-zÇĞİÖŞÜçğıöşü]{2,}\s+[A-Za-zÇĞİÖŞÜçğıöşü]{2,})/i);
+    if (explicitNameMatch) {
+      const full = explicitNameMatch[1].trim();
       const parts = full.split(/\s+/);
-      const first = parts.slice(0, -1).join(" ") || parts[0];
-      const last = parts.length > 1 ? parts[parts.length - 1] : "";
-      return { fullName: full, firstName: first, lastName: last };
+      return {
+        fullName: full,
+        firstName: parts[0],
+        lastName: parts.slice(1).join(" ")
+      };
     }
 
-    // 2. Expected slot is fullName or name
+    // Pattern 2: When expectedSlot is fullName / name, or in APPOINTMENT_COLLECTION without a name
     if (expectedSlot === "fullName" || expectedSlot === "name") {
-      const trimmed = raw.trim();
-      const words = trimmed.split(/\s+/);
-      if (
-        words.length >= 1 &&
-        words.length <= 4 &&
-        !/\d/.test(trimmed) &&
-        !trimmed.includes("@") &&
-        !/(randevu|istiyorum|fiyat|nerede|saat|gün|implant|diş|doktor|evet|hayır|yes|no|help|price|cost)/i.test(lower)
-      ) {
-        const allWordsLetter = words.every(w => /^[A-ZÇĞİÖŞÜa-zçğıöşü\.\-]+$/.test(w));
-        if (allWordsLetter) {
-          const full = words.join(" ");
-          const first = words.slice(0, -1).join(" ") || words[0];
-          const last = words.length > 1 ? words[words.length - 1] : "";
-          return { fullName: full, firstName: first, lastName: last };
+      const clean = raw.trim();
+      const parts = clean.split(/\s+/);
+      if (parts.length >= 2 && parts.length <= 4 && /^[A-Za-zÇĞİÖŞÜçğıöşü\s]+$/.test(clean) && clean.length <= 40) {
+        // Exclude system words
+        const badWords = ["randevu", "fiyat", "tarih", "saat", "doktor", "klinik", "bilgi", "evet", "hayır", "tamam", "yes", "no", "okay"];
+        const hasBad = parts.some(p => badWords.includes(p.toLowerCase()));
+        if (!hasBad) {
+          return {
+            fullName: clean,
+            firstName: parts[0],
+            lastName: parts.slice(1).join(" ")
+          };
         }
-      }
-    }
-
-    // 3. If in appointment collection and only a 2-3 word string with no numbers is provided
-    const words = raw.trim().split(/\s+/);
-    if (
-      words.length >= 2 &&
-      words.length <= 4 &&
-      !/\d/.test(raw) &&
-      !raw.includes("@") &&
-      !/(randevu|istiyorum|fiyat|nerede|saat|gün|implant|diş|doktor|evet|hayır|yes|no|help|price|cost)/i.test(lower)
-    ) {
-      const allWordValid = words.every(w => /^[A-ZÇĞİÖŞÜa-zçğıöşü\.]+$/.test(w));
-      if (allWordValid) {
-        const full = words.join(" ");
-        const first = words.slice(0, -1).join(" ");
-        const last = words[words.length - 1];
-        return { fullName: full, firstName: first, lastName: last };
       }
     }
 
@@ -531,13 +713,11 @@ export class SlotExtractor {
   }
 
   /**
-   * Check KVKK consent approval
+   * Parse KVKK / Privacy consent acceptance
    */
   public static isKvkkConsent(lower: string): boolean {
-    return (
-      /\b(kvkk|aydınlatma metni|onaylıyorum|kabul ediyorum|okudum|onay veriyorum|i accept|i agree)\b/i.test(
-        lower
-      )
+    return /\b(kvkk|aydınlatma metnini okudum|onaylıyorum|kabul ediyorum|açık rıza|acik riza|i accept the privacy|accept terms|consent given)\b/i.test(
+      lower
     );
   }
 }

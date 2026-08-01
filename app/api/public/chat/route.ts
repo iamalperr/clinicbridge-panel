@@ -21,7 +21,9 @@ import {
   ConversationFeatureFlags,
   ConversationLogger,
   formatMultilingualSummary,
-  formatMultilingualPrompt
+  formatMultilingualPrompt,
+  formatPricingFallback,
+  formatContactResponse
 } from "@/lib/conversation";
 
 // Cache to avoid parsing working hours repeatedly
@@ -827,7 +829,7 @@ async function logConversation(params: {
     const snap = await logRef.get();
     const existing = snap.exists ? snap.data() : null;
 
-    let status = existing?.status || "answered";
+    let status = existing?.status || "open";
     let needsTraining = existing?.needsTraining || false;
     let trainingTopic = existing?.trainingTopic || "";
     
@@ -845,6 +847,8 @@ async function logConversation(params: {
       if (!trainingTopic) trainingTopic = params.userMessage.slice(0, 60);
     } else if (replyLower.includes("canlı destek") || replyLower.includes("temsilci") || replyLower.includes("klinik ekibi") || replyLower.includes("iletişime geç") || replyLower.includes("doğrudan arayın") || replyLower.includes("whatsapp")) {
       status = "liveSupport";
+    } else {
+      status = "answered";
     }
 
     const nowStr = new Date().toISOString();
@@ -1487,6 +1491,27 @@ export async function POST(req: Request) {
         appointmentDraft.requestedService = conversationIntent.entities.treatment;
       }
       console.log(`[INTENT_ROUTER] Appointment slots updated:`, conversationIntent.entities);
+    }
+
+    // Handle Contextual Clarification Needed (e.g. When? disambiguation)
+    if (conversationIntent.clarificationNeeded && conversationIntent.clarificationPrompt) {
+      return NextResponse.json({
+        responseType: "CHAT_REPLY",
+        reply: conversationIntent.clarificationPrompt,
+        quickReplies: conversationIntent.suggestedOptions || [],
+        pendingAppointmentData: appointmentDraft
+      }, { headers: CORS });
+    }
+
+    // Handle Contact / Live Support Request (Preserves active appointment flow state)
+    if (conversationIntent.intent === "contact_request" || conversationIntent.intent === "live_support_request") {
+      const effectiveContactNumber = clinicWhatsapp || clinicData?.turkishContactNumber || clinicData?.internationalContactNumber || clinicData?.phone;
+      const contactMsg = formatContactResponse(effectiveContactNumber, conversationIntent.entities?.contactTarget, clinicLanguage);
+      return NextResponse.json({
+        responseType: "CHAT_REPLY",
+        reply: contactMsg,
+        pendingAppointmentData: appointmentDraft
+      }, { headers: CORS });
     }
 
     // 2. Handle specific collection phases
@@ -2392,7 +2417,12 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       conversationIntent.intent === "appointment_correction" ||
       hasApptEntities;
 
-    if (knowledgeContext.length > 0 && !reply.includes("doğrulamıyorum") && !reply.includes("erişemediğim") && !isDoctorIntent && !isStateActive && !isServiceIntent) {
+    const isPricingOrInfoIntent =
+      conversationIntent.intent === "pricing_request" ||
+      conversationIntent.intent === "treatment_information" ||
+      conversationIntent.intent === "quote_request";
+
+    if (knowledgeContext.length > 0 && !reply.includes("doğrulamıyorum") && !reply.includes("erişemediğim") && !isDoctorIntent && !isStateActive && !isServiceIntent && !isPricingOrInfoIntent) {
       const { validateGroundedness } = await import("@/lib/services/retrievalService");
       
       const fullContextForValidation = doctorContext ? `${knowledgeContext}\n\n${doctorContext}` : knowledgeContext;

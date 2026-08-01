@@ -1,5 +1,6 @@
 /**
- * Multilingual formatters for appointment flow summaries and sequential prompts
+ * Multilingual formatters for appointment flow summaries, sequential prompts,
+ * safe pricing fallbacks, and contact responses across TR, EN, DE, FR, AR.
  */
 import { normalizeTurkishPhone } from "../phoneUtils";
 
@@ -140,4 +141,57 @@ export function formatMultilingualPrompt(
       if (isAr) return "تم إلغاء طلب الموعد الخاص بك. كيف يمكنني مساعدتك أكثر؟";
       return "Randevu talebiniz iptal edildi. Size başka nasıl yardımcı olabilirim?";
   }
+}
+
+/**
+ * Standardized, safe pricing fallback when structured pricing data is not specifically registered for a treatment.
+ * Never uses generic groundedness failure prompts.
+ */
+export function formatPricingFallback(treatmentName?: string, locale: string = "tr"): string {
+  const isEn = locale.toLowerCase().startsWith("en");
+  const isDe = locale.toLowerCase().startsWith("de");
+  const isFr = locale.toLowerCase().startsWith("fr");
+  const isAr = locale.toLowerCase().startsWith("ar");
+
+  if (isEn) {
+    return "The final price for this treatment is confirmed after the clinic's evaluation. I can help you request a quote or arrange an appointment.";
+  }
+  if (isDe) {
+    return "Der endgültige Preis für diese Behandlung wird nach der Untersuchung durch die Klinik festgelegt. Gerne erstelle ich ein Preisangebot für Sie oder helfe bei der Terminvereinbarung.";
+  }
+  if (isFr) {
+    return "Le prix final pour ce traitement est confirmé après l'évaluation par la clinique. Je peux vous aider à demander un devis ou à planifier un rendez-vous.";
+  }
+  if (isAr) {
+    return "يتم تحديد السعر النهائي لهذا العلاج بعد تقييم العيادة والفحص. يمكنني مساعدتك في طلب عرض أسعار أو ترتيب موعد.";
+  }
+
+  return "Bu tedavi için net fiyat, kliniğin muayene ve değerlendirmesi sonrasında belirlenmektedir. Dilerseniz fiyat teklifi talebi oluşturabilir veya randevu planlamanıza yardımcı olabilirim.";
+}
+
+/**
+ * Standardized, polite contact response providing localized phone number and representative assistance.
+ */
+export function formatContactResponse(phone?: string, contactTarget?: string, locale: string = "tr"): string {
+  const isEn = locale.toLowerCase().startsWith("en");
+  const isDe = locale.toLowerCase().startsWith("de");
+  const isFr = locale.toLowerCase().startsWith("fr");
+  const isAr = locale.toLowerCase().startsWith("ar");
+
+  const phoneStr = phone ? ` (${phone})` : "";
+
+  if (isEn) {
+    return `Our clinic team is available to assist you directly${phoneStr}. Would you like us to have a representative contact you, or would you like help with booking an appointment?`;
+  }
+  if (isDe) {
+    return `Unser Klinikteam steht Ihnen gerne direkt zur Verfügung${phoneStr}. Möchten Sie, dass sich ein Mitarbeiter bei Ihnen meldet, oder kann ich Ihnen bei der Terminvereinbarung helfen?`;
+  }
+  if (isFr) {
+    return `Notre équipe clinique est à votre disposition pour vous aider directement${phoneStr}. Souhaitez-vous qu'un représentant vous contacte ou puis-je vous aider à prendre rendez-vous ?`;
+  }
+  if (isAr) {
+    return `فريق العيادة متاح لمساعدتك مباشرة${phoneStr}. هل ترغب في أن يتواصل معك ممثلنا، أم يمكنني مساعدتك في حجز موعد؟`;
+  }
+
+  return `Klinik ekibimize doğrudan${phoneStr} numarasından ulaşabilirsiniz. Dilerseniz yetkili bir temsilcimizin size ulaşmasını sağlayabilir veya randevu talebinizi hemen oluşturabilirim.`;
 }

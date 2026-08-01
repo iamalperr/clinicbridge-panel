@@ -1,6 +1,9 @@
 /**
  * Unified Conversation Schemas & Types for ClinicBridge AI Engine
  * Shared across Clinic Portal, Agency Portal, Public Widget, and Embedded Widget.
+ *
+ * Implements a generalized, scalable taxonomy:
+ * Intent + Entity + InformationType + Multi-Turn Context
  */
 
 export type ConversationIntent =
@@ -10,21 +13,49 @@ export type ConversationIntent =
   | "pricing_request"
   | "doctor_information"
   | "clinic_information"
-  | "clinic_location"
-  | "clinic_working_hours"
+  | "location_request"
+  | "clinic_location" // backwards-compatible alias for location_request
+  | "working_hours_request"
+  | "clinic_working_hours" // backwards-compatible alias for working_hours_request
+  | "availability_request"
   | "clinic_recommendation"
   | "clinic_comparison"
   | "appointment_start"
   | "appointment_continuation"
   | "appointment_correction"
   | "appointment_confirmation"
-  | "confirmation"
-  | "rejection"
-  | "complaint"
+  | "quote_request"
   | "contact_request"
   | "live_support_request"
+  | "complaint"
+  | "confirmation"
+  | "rejection"
   | "emergency"
+  | "off_topic"
   | "unknown";
+
+export type InformationType =
+  | "price"
+  | "duration"
+  | "suitability"
+  | "recovery"
+  | "process"
+  | "material"
+  | "warranty"
+  | "availability"
+  | "location"
+  | "opening_hours"
+  | "general"
+  | string;
+
+export type ContactTarget =
+  | "clinic_team"
+  | "doctor"
+  | "human_agent"
+  | "whatsapp"
+  | "phone"
+  | "email"
+  | string;
 
 export type ConversationState =
   | "INITIAL"
@@ -53,36 +84,65 @@ export type ExpectedSlot =
   | string;
 
 export interface ConversationSlots {
-  treatment?: string;
+  // Treatment & Clinical
+  treatment?: string; // Canonical treatment identifier (e.g. "composite_filling", "implant", "zirconium", "root_canal")
+  rawTreatmentText?: string;
+  doctor?: string;
+  clinic?: string;
+  selectedClinicId?: string;
+  selectedClinicName?: string;
+
+  // Geographic
+  city?: string;
+  district?: string;
+  country?: string;
+
+  // Language & Financial
+  language?: string;
+  priceCurrency?: string; // e.g. "EUR", "USD", "TRY", "GBP"
+
+  // Date & Time
+  date?: string; // ISO YYYY-MM-DD
   preferredDate?: string; // ISO YYYY-MM-DD
   rawDateText?: string;
   preferredWeekday?: string;
-  preferredTime?: string; // e.g. "14:00", "10:00-12:00", "sabah", "öğleden_sonra", "morning"
+  time?: string; // e.g. "14:00"
+  preferredTime?: string; // e.g. "14:00", "sabah", "öğleden sonra", "morning"
   rawTimeText?: string;
+  timePreference?: "morning" | "afternoon" | "evening" | "specific" | string;
+
+  // Patient & Contact
+  fullName?: string;
   firstName?: string;
   lastName?: string;
-  fullName?: string;
   email?: string;
   phone?: string;
+  contactTarget?: ContactTarget;
   visitType?: VisitType;
-  language?: string;
-  country?: string;
-  notes?: string;
-  selectedClinicId?: string;
-  selectedClinicName?: string;
+  informationType?: InformationType;
+
+  // Consents & Flow
   kvkkConsent?: boolean;
   expectedSlot?: ExpectedSlot;
+  notes?: string;
+
   [key: string]: any;
 }
+
+export type ConversationEntities = ConversationSlots;
 
 export interface IntentClassificationResult {
   intent: ConversationIntent;
   confidence: number; // 0.0 - 1.0
   entities: Partial<ConversationSlots>;
   requiresKnowledgeBase: boolean;
+  requiresPricingData?: boolean;
   shouldContinueActiveFlow: boolean;
   isInterruption?: boolean;
   interruptionReason?: string;
+  clarificationNeeded?: boolean;
+  clarificationPrompt?: string;
+  suggestedOptions?: string[];
   matchedKeywords?: string[];
   explanation?: string;
   suggestedNextState?: ConversationState;
@@ -94,14 +154,25 @@ export interface ConversationContext {
   clinicId?: string;
   clinicName?: string;
   agencyId?: string;
+  agencySlug?: string;
   conversationId: string;
   sessionId?: string;
   channel: "admin" | "web_widget" | "agency_widget" | "embedded" | "whatsapp" | "other";
   locale: string;
   currentState: ConversationState;
-  currentFlow?: "appointment" | "lead" | "general";
+  currentFlow?: "appointment" | "lead" | "quote" | "general";
   expectedSlot?: ExpectedSlot;
   slots: Partial<ConversationSlots>;
+
+  // Multi-Turn Context Memory
+  activeTopic?: string;
+  activeTreatment?: string;
+  activeClinic?: string;
+  lastIntent?: ConversationIntent;
+  lastInformationType?: InformationType;
+  offeredActions?: string[];
+  pendingQuestion?: string;
+
   history?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
   turkishContactNumber?: string;
   internationalContactNumber?: string;
@@ -112,7 +183,7 @@ export interface StateTransitionResult {
   previousState: ConversationState;
   nextState: ConversationState;
   updatedSlots: Partial<ConversationSlots>;
-  missingRequiredSlots: string[];
+  missingRequiredSlots: (keyof ConversationSlots)[] | string[];
   expectedSlot?: ExpectedSlot;
   nextPromptNeeded?: string;
   validationError?: string;
@@ -127,6 +198,7 @@ export interface EngineExecutionOutput {
   slots: Partial<ConversationSlots>;
   expectedSlot?: ExpectedSlot;
   requiresKnowledgeBase: boolean;
+  requiresPricingData?: boolean;
   fallbackBlockedReason?: string;
   liveSupportRequired?: boolean;
   appointmentReadyForReview?: boolean;

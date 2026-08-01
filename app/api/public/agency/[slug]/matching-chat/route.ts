@@ -498,6 +498,47 @@ export async function POST(
       agencyData.defaultLanguage || "tr"
     );
 
+    const agencyIntentResult = IntentRouter.classifyConversationIntent({
+      message: finalMessage || message || "",
+      collectedSlots: {
+        fullName: ctx.patientName,
+        phone: ctx.patientPhone,
+        email: ctx.patientEmail,
+        treatment: ctx.lastTreatmentCategory
+      },
+      activeTreatment: ctx.lastTreatmentCategory,
+      activeClinic: ctx.selectedClinicName || ctx.lastFocusedClinicName,
+      agencyContext: {
+        agencyId,
+        agencySlug: slug
+      },
+      locale: agencyData.defaultLanguage || "tr"
+    });
+
+    if (agencyIntentResult.intent === "emergency") {
+      const isEn = (agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en");
+      const emMsg = isEn
+        ? "⚠️ If you are experiencing a medical emergency, severe pain, or bleeding, please immediately contact emergency services (112) or the nearest emergency medical clinic."
+        : "⚠️ Acil bir sağlık durumu, şiddetli ağrı veya kanama yaşıyorsanız lütfen derhal en yakın acil servise başvurun veya 112 Acil Yardım hattını arayın.";
+      return NextResponse.json({
+        responseType: "chat_message",
+        reply: emMsg,
+        sessionContext: ctx
+      }, { headers: CORS });
+    }
+
+    if (agencyIntentResult.clarificationNeeded && agencyIntentResult.clarificationPrompt) {
+      return NextResponse.json({
+        responseType: "chat_message",
+        reply: agencyIntentResult.clarificationPrompt,
+        quickReplies: agencyIntentResult.suggestedOptions || [],
+        sessionContext: ctx
+      }, { headers: CORS });
+    }
+
+    if (agencySlotsExtracted.extracted.treatment && !ctx.lastTreatmentCategory) {
+      ctx.lastTreatmentCategory = agencySlotsExtracted.extracted.treatment;
+    }
     if (agencySlotsExtracted.extracted.fullName && !ctx.patientName) {
       ctx.patientName = agencySlotsExtracted.extracted.fullName;
     }
