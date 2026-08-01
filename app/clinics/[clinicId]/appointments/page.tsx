@@ -5,9 +5,11 @@ import { collection, query, where, orderBy, onSnapshot, doc, updateDoc } from "f
 import { db, auth } from "@/lib/firebase";
 import { useI18n } from "@/lib/i18n-context";
 import { UI_COLORS } from "@/components/ui/ui-shared";
-import { Loader2, Calendar, Clock, User, Stethoscope, ChevronRight, Inbox, Phone, Mail, CheckCircle, XCircle, MessageSquare, Plus, RefreshCw } from "lucide-react";
+import { Loader2, Calendar, Clock, User, Stethoscope, ChevronRight, Inbox, Phone, Mail, CheckCircle, XCircle, MessageSquare, Plus, RefreshCw, CalendarCheck } from "lucide-react";
 import Badge from "@/components/ui/Badge";
 import type { Appointment } from "@/lib/types";
+import AppointmentConfirmModal from "@/components/clinic/appointments/AppointmentConfirmModal";
+import { resolveAppointmentDisplaySchedule } from "@/lib/services/appointments/AppointmentScheduleResolver";
 
 // Client-side helper
 const mapToCanonicalStatus = (status: string | undefined | null) => {
@@ -35,6 +37,9 @@ export default function AppointmentsPage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  // Reschedule / Confirm Modal State
+  const [confirmModalAppt, setConfirmModalAppt] = useState<Appointment | null>(null);
 
   // Manual Appointment Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -190,6 +195,14 @@ export default function AppointmentsPage({ params }: PageProps) {
     }
   };
 
+  const handleStatusSelect = (apt: Appointment, newStatus: string) => {
+    if (newStatus === "confirmed") {
+      setConfirmModalAppt(apt);
+    } else {
+      updateStatus(apt.id!, newStatus, apt.conversationId);
+    }
+  };
+
   if (loading) {
     return (
       <div style={{ padding: 100, textAlign: "center", color: UI_COLORS.textMuted }}>
@@ -314,24 +327,8 @@ export default function AppointmentsPage({ params }: PageProps) {
                   {appointments.map((apt) => {
                     const displayPhone = apt.patientPhone ? apt.patientPhone.replace(/-+$/, "") : "";
                     const displayService = apt.treatmentType || apt.requestedService || apt.service || apt.reason || "Belirtilmedi";
-                    const aptAny = apt as any;
-                    
-                    let timeStr = "";
-                    if (aptAny.preferredTimeText && aptAny.preferredTimeText.toLowerCase() !== "belirtilmedi" && aptAny.preferredTimeText.toLowerCase() !== "belirtilmemiş") {
-                      timeStr = aptAny.preferredTimeText;
-                    } else if (aptAny.preferredTimePeriod) {
-                      const periodMap: Record<string, string> = {
-                        morning: "Sabah",
-                        afternoon: "Öğleden sonra",
-                        evening: "Akşam",
-                        earliest_available: "En erken uygun saat"
-                      };
-                      timeStr = periodMap[aptAny.preferredTimePeriod] || aptAny.preferredTimePeriod;
-                    } else if (aptAny.preferredTimeStart && aptAny.preferredTimeEnd) {
-                      timeStr = `${aptAny.preferredTimeStart} - ${aptAny.preferredTimeEnd}`;
-                    } else {
-                      timeStr = apt.preferredTime || apt.requestedTime || apt.appointmentDateTime || aptAny.appointmentTime || (aptAny.scheduledAt ? new Date(aptAny.scheduledAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : null) || aptAny.startTime || "";
-                    }
+                    const schedule = resolveAppointmentDisplaySchedule(apt);
+                    const isConfirmed = apt.status === "confirmed";
                     
                     return (
                       <tr key={apt.id} style={{ borderBottom: `1px solid ${UI_COLORS.border}`, transition: "background 0.2s" }} onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-page)"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
@@ -441,28 +438,64 @@ export default function AppointmentsPage({ params }: PageProps) {
                           </div>
                         </td>
                         <td style={{ padding: "16px 24px" }}>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.5, color: UI_COLORS.textPrimary, fontWeight: 500 }}>
-                              <Calendar size={14} color={UI_COLORS.textMuted} />
-                              {apt.requestedDate || apt.preferredDate}
-                            </div>
-                            {timeStr ? (
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: UI_COLORS.textSecondary }}>
+                          {isConfirmed ? (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.5, color: "#10b981", fontWeight: 700 }}>
+                                <CalendarCheck size={15} color="#10b981" />
+                                <span>{schedule.confirmedDate || schedule.displayDate}</span>
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#10b981", fontWeight: 600 }}>
                                 <Clock size={14} />
-                                {timeStr}
+                                <span>{schedule.confirmedTime || schedule.displayTime}</span>
+                                <span style={{ fontSize: 10, background: "rgba(16, 185, 129, 0.15)", color: "#10b981", padding: "1px 6px", borderRadius: 4, fontWeight: 700 }}>KESİNLEŞTİ</span>
                               </div>
-                            ) : (
-                              <div style={{ display: "inline-flex", alignItems: "center", padding: "2px 6px", background: "rgba(100, 116, 139, 0.1)", borderRadius: 4, color: "#475569", fontSize: 11, fontWeight: 600, marginTop: 2 }}>
-                                Saat belirtilmedi
+                              {schedule.hasDifferentConfirmedSchedule && (
+                                <div style={{ fontSize: 11, color: UI_COLORS.textMuted, marginTop: 2 }}>
+                                  Talep: {schedule.requestedDate} &bull; {schedule.requestedTime}
+                                </div>
+                              )}
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setConfirmModalAppt(apt); }}
+                                style={{
+                                  alignSelf: "flex-start",
+                                  background: "transparent",
+                                  border: "none",
+                                  color: "#818cf8",
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                  padding: "2px 0",
+                                  textDecoration: "underline",
+                                  marginTop: 2
+                                }}
+                              >
+                                Yeniden Planla
+                              </button>
+                            </div>
+                          ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.5, color: UI_COLORS.textPrimary, fontWeight: 500 }}>
+                                <Calendar size={14} color={UI_COLORS.textMuted} />
+                                {schedule.requestedDate}
                               </div>
-                            )}
-                          </div>
+                              {schedule.requestedTime && schedule.requestedTime !== "Saat belirtilmedi" ? (
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: UI_COLORS.textSecondary }}>
+                                  <Clock size={14} />
+                                  {schedule.requestedTime}
+                                </div>
+                              ) : (
+                                <div style={{ display: "inline-flex", alignItems: "center", padding: "2px 6px", background: "rgba(100, 116, 139, 0.1)", borderRadius: 4, color: "#475569", fontSize: 11, fontWeight: 600, marginTop: 2 }}>
+                                  Saat belirtilmedi
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: "16px 24px" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <select 
                               value={mapToCanonicalStatus(apt.status)}
-                              onChange={(e) => updateStatus(apt.id!, e.target.value, apt.conversationId)}
+                              onChange={(e) => handleStatusSelect(apt, e.target.value)}
                               disabled={updatingId === apt.id}
                               style={{
                                 padding: "6px 12px",
@@ -565,6 +598,18 @@ export default function AppointmentsPage({ params }: PageProps) {
           </div>
         </div>
       )}
+
+      {/* Appointment Confirmation & Reschedule Modal */}
+      <AppointmentConfirmModal
+        isOpen={!!confirmModalAppt}
+        onClose={() => setConfirmModalAppt(null)}
+        appointment={confirmModalAppt}
+        clinicId={clinicId}
+        onSuccess={() => {
+          setToastMsg("Randevu kesinleştirildi ve hastaya bilgilendirme gönderildi.");
+          setTimeout(() => setToastMsg(null), 4000);
+        }}
+      />
 
       <style>{`
         .animate-spin { animation: spin 1s linear infinite; }

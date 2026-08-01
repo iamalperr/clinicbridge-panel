@@ -44,21 +44,41 @@ export const APPOINTMENT_STATUS_LABELS: Record<CanonicalAppointmentStatus, { tr:
 };
 
 export const APPOINTMENT_STATUS_TRANSITIONS: Record<CanonicalAppointmentStatus, CanonicalAppointmentStatus[]> = {
-  pending: ["under_review", "approved", "rejected", "cancelled"],
-  under_review: ["approved", "rejected", "cancelled"],
+  pending: ["under_review", "approved", "confirmed", "rejected", "cancelled"],
+  under_review: ["approved", "confirmed", "rejected", "cancelled"],
   approved: ["confirmed", "cancelled", "reschedule_requested"],
-  confirmed: ["cancelled", "completed"],
-  reschedule_requested: ["approved", "rejected", "cancelled"],
-  rejected: ["pending", "approved"], // Admin might reconsider
-  cancelled: ["pending", "approved"], // Admin might reconsider
-  completed: []
+  confirmed: ["confirmed", "cancelled", "completed", "reschedule_requested"],
+  reschedule_requested: ["approved", "confirmed", "rejected", "cancelled"],
+  rejected: ["pending", "approved", "confirmed"], // Admin might reconsider
+  cancelled: ["pending", "approved", "confirmed"], // Admin might reconsider
+  completed: ["confirmed"]
 };
 
+export interface AppointmentAuditLog {
+  id?: string;
+  appointmentId: string;
+  clinicId: string;
+  tenantId?: string;
+  oldStatus: CanonicalAppointmentStatus;
+  newStatus: CanonicalAppointmentStatus;
+  previousConfirmedDate?: string | null;
+  previousConfirmedTime?: string | null;
+  newConfirmedDate?: string | null;
+  newConfirmedTime?: string | null;
+  changeReason?: string | null;
+  changedByUserId: string;
+  changedAt: string;
+  notificationAttempted: boolean;
+  notificationSucceeded?: boolean;
+}
+
 export function isValidTransition(oldStatus: CanonicalAppointmentStatus, newStatus: CanonicalAppointmentStatus): boolean {
-  // If staying the same, it's valid (idempotency)
+  // If staying the same, it's valid (idempotency or reschedule)
   if (oldStatus === newStatus) return true;
   return APPOINTMENT_STATUS_TRANSITIONS[oldStatus]?.includes(newStatus) ?? false;
 }
+
+export const isValidStatusTransition = isValidTransition;
 
 // Function to map legacy uppercase/mixed statuses to canonical status
 export function mapToCanonicalStatus(rawStatus: string | undefined | null): CanonicalAppointmentStatus {

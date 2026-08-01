@@ -10,6 +10,9 @@ export interface EmailTemplateParams {
   treatment: string;
   requestedDate: string;
   requestedTime: string;
+  confirmedDate?: string | null;
+  confirmedTime?: string | null;
+  changeReason?: string | null;
 }
 
 export interface ResolvedEmailTemplate {
@@ -25,6 +28,9 @@ export function getAppointmentStatusEmailTemplate(params: EmailTemplateParams): 
   const safeTreatment = params.treatment || (locale === "en" ? "Requested Service" : "Talep edilen hizmet");
   const safeRequestedDate = params.requestedDate || (locale === "en" ? "TBD" : "Bildirilecek");
   const safeRequestedTime = params.requestedTime || (locale === "en" ? "TBD" : "Bildirilecek");
+
+  const effectiveDate = params.confirmedDate || safeRequestedDate;
+  const effectiveTime = params.confirmedTime || safeRequestedTime;
 
   let subject = "";
   let bodyContent = "";
@@ -59,15 +65,17 @@ export function getAppointmentStatusEmailTemplate(params: EmailTemplateParams): 
       <p>Hello ${safePatientName},</p>
       <p>Your appointment at <strong>${safeClinicName}</strong> is fully confirmed.</p>
       <p>Service: ${safeTreatment}<br/>
-      Date: ${safeRequestedDate}<br/>
-      Time: ${safeRequestedTime}</p>
+      Date: <strong>${effectiveDate}</strong><br/>
+      Time: <strong>${effectiveTime}</strong></p>
+      ${params.changeReason ? `<p style="font-size:13px;color:#64748b;">Note: ${params.changeReason}</p>` : ''}
       <p>Please aim to arrive slightly before your scheduled time.</p>
     ` : `
       <p>Merhaba ${safePatientName},</p>
       <p><strong>${safeClinicName}</strong> randevunuz kesinleştirilmiştir.</p>
       <p>Hizmet: ${safeTreatment}<br/>
-      Randevu tarihi: ${safeRequestedDate}<br/>
-      Randevu saati: ${safeRequestedTime}</p>
+      Randevu tarihi: <strong>${effectiveDate}</strong><br/>
+      Randevu saati: <strong>${effectiveTime}</strong></p>
+      ${params.changeReason ? `<p style="font-size:13px;color:#64748b;">Not: ${params.changeReason}</p>` : ''}
       <p>Randevu saatinden kısa bir süre önce klinikte olmanızı rica ederiz.</p>
     `;
   } 

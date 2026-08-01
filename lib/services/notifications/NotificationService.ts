@@ -10,6 +10,8 @@ import {
 import { NotificationProvider, NotificationPayload } from './providers/NotificationProvider';
 import { ResendEmailProvider } from './providers/ResendEmailProvider';
 
+import { resolveAppointmentDisplaySchedule } from '../appointments/AppointmentScheduleResolver';
+
 export class NotificationService {
   private providers: Map<NotificationChannel, NotificationProvider>;
 
@@ -271,9 +273,9 @@ export class NotificationService {
       await this.updateEventStatus(eventDocRef, 'permanently_failed', { failure_reason: errorMsg });
       return { 
         success: false, 
-        attempted: false,
-        accepted: false,
-        status: "NOT_CONFIGURED",
+        attempted: false, 
+        accepted: false, 
+        status: "NOT_CONFIGURED", 
         errorCode: "missing_provider",
         errorMessage: errorMsg,
         error: errorMsg, 
@@ -399,6 +401,10 @@ export class NotificationService {
     oldStatus: CanonicalAppointmentStatus;
     newStatus: CanonicalAppointmentStatus;
     actorUserId: string;
+    confirmedDate?: string | null;
+    confirmedTime?: string | null;
+    confirmedTimeRange?: string | null;
+    changeReason?: string | null;
   }): Promise<{
     success: boolean;
     appointmentUpdated: boolean;
@@ -407,6 +413,8 @@ export class NotificationService {
     appointmentId: string;
     oldStatus: string;
     newStatus: string;
+    confirmedDate?: string | null;
+    confirmedTime?: string | null;
     notificationId?: string;
     provider?: string;
     providerMessageId?: string;
@@ -438,6 +446,9 @@ export class NotificationService {
     let treatment = "";
     let requestedDate = "";
     let requestedTime = "";
+    let finalConfirmedDate: string | null = null;
+    let finalConfirmedTime: string | null = null;
+    let auditLogId = "";
 
     try {
       await adminDb.runTransaction(async (t) => {
@@ -457,35 +468,75 @@ export class NotificationService {
         locale = apptData.language === "en" ? "en" : "tr";
         patientName = apptData.patientName || "";
         treatment = apptData.treatmentType || apptData.requestedService || apptData.service || apptData.reason || "";
-        requestedDate = apptData.preferredDate || apptData.requestedDate || apptData.proposedDate || "";
         
-        // Time resolution logic
-        if (apptData.preferredTimeText && apptData.preferredTimeText.toLowerCase() !== "belirtilmedi" && apptData.preferredTimeText.toLowerCase() !== "belirtilmemiş") {
-          requestedTime = apptData.preferredTimeText;
-        } else if (apptData.preferredTimePeriod) {
-          const periodMap: Record<string, string> = { morning: "Sabah", afternoon: "Öğleden sonra", evening: "Akşam", earliest_available: "En erken uygun saat" };
-          requestedTime = periodMap[apptData.preferredTimePeriod] || apptData.preferredTimePeriod;
-        } else if (apptData.preferredTimeStart && apptData.preferredTimeEnd) {
-          requestedTime = `${apptData.preferredTimeStart} - ${apptData.preferredTimeEnd}`;
+        const schedule = resolveAppointmentDisplaySchedule(apptData);
+        requestedDate = schedule.requestedDate;
+        requestedTime = schedule.requestedTime;
+
+        if (params.newStatus === "confirmed") {
+          finalConfirmedDate = params.confirmedDate ?? apptData.confirmedDate ?? (requestedDate !== "Bildirilecek" ? requestedDate : null);
+          finalConfirmedTime = params.confirmedTime ?? apptData.confirmedTime ?? (requestedTime !== "Saat belirtilmedi" ? requestedTime : null);
         } else {
-          requestedTime = apptData.preferredTime || apptData.requestedTime || apptData.appointmentTime || apptData.startTime || "";
+          finalConfirmedDate = apptData.confirmedDate || null;
+          finalConfirmedTime = apptData.confirmedTime || null;
         }
 
         patientEmailToUse = (apptData.patientEmail || apptData.email || apptData.contactEmail || "")?.trim().toLowerCase();
 
-        // Perform the update
         const now = new Date().toISOString();
-        t.update(apptRef, {
+        const isReschedule = (params.oldStatus === "confirmed" && params.newStatus === "confirmed") ||
+          (!!apptData.confirmedDate && !!params.confirmedDate && params.confirmedDate !== apptData.confirmedDate) ||
+          (!!apptData.confirmedTime && !!params.confirmedTime && params.confirmedTime !== apptData.confirmedTime);
+
+        const updatePayload: Record<string, any> = {
           status: params.newStatus,
           updatedAt: now,
           statusUpdatedAt: now,
           statusUpdatedBy: params.actorUserId
-        });
+        };
+
+        if (params.newStatus === "confirmed") {
+          if (finalConfirmedDate) updatePayload.confirmedDate = finalConfirmedDate;
+          if (finalConfirmedTime) updatePayload.confirmedTime = finalConfirmedTime;
+          if (params.confirmedTimeRange) updatePayload.confirmedTimeRange = params.confirmedTimeRange;
+          if (params.changeReason) updatePayload.rescheduleReason = params.changeReason;
+
+          if (isReschedule) {
+            updatePayload.previousConfirmedDate = apptData.confirmedDate || requestedDate;
+            updatePayload.previousConfirmedTime = apptData.confirmedTime || requestedTime;
+            updatePayload.rescheduledAt = now;
+            updatePayload.rescheduledBy = params.actorUserId;
+            updatePayload.rescheduleCount = (apptData.rescheduleCount || 0) + 1;
+          }
+        }
+
+        t.update(apptRef, updatePayload);
         
         if (apptData.conversationId) {
           const logRef = clinicRef.collection("conversationLogs").doc(apptData.conversationId);
           t.update(logRef, { appointmentStatus: params.newStatus, updatedAt: now });
         }
+
+        // Write Audit Log
+        const auditRef = adminDb.collection("appointment_audit_logs").doc();
+        auditLogId = auditRef.id;
+        t.set(auditRef, {
+          id: auditLogId,
+          appointmentId: params.appointmentId,
+          clinicId: params.clinicId,
+          tenantId: params.tenantId,
+          oldStatus: params.oldStatus,
+          newStatus: params.newStatus,
+          previousConfirmedDate: apptData.confirmedDate || null,
+          previousConfirmedTime: apptData.confirmedTime || null,
+          newConfirmedDate: finalConfirmedDate,
+          newConfirmedTime: finalConfirmedTime,
+          changeReason: params.changeReason || null,
+          changedByUserId: params.actorUserId,
+          changedAt: now,
+          notificationAttempted: false,
+          notificationSucceeded: false
+        });
       });
     } catch (e: any) {
       if (e.message === "NOT_FOUND") {
@@ -506,6 +557,7 @@ export class NotificationService {
       return {
         success: true, appointmentUpdated: true, emailSent: false, emailSkipped: true,
         appointmentId: params.appointmentId, oldStatus: params.oldStatus, newStatus: params.newStatus,
+        confirmedDate: finalConfirmedDate, confirmedTime: finalConfirmedTime,
         skipReason: "PATIENT_EMAIL_MISSING"
       };
     }
@@ -520,13 +572,17 @@ export class NotificationService {
       clinicName,
       treatment,
       requestedDate,
-      requestedTime
+      requestedTime,
+      confirmedDate: finalConfirmedDate,
+      confirmedTime: finalConfirmedTime,
+      changeReason: params.changeReason || null
     });
 
     if (!template) {
       return {
         success: true, appointmentUpdated: true, emailSent: false, emailSkipped: true,
         appointmentId: params.appointmentId, oldStatus: params.oldStatus, newStatus: params.newStatus,
+        confirmedDate: finalConfirmedDate, confirmedTime: finalConfirmedTime,
         skipReason: "TEMPLATE_NOT_FOUND"
       };
     }
@@ -562,15 +618,24 @@ export class NotificationService {
           notificationChannel: "email"
         });
 
+        if (auditLogId) {
+          await adminDb.collection("appointment_audit_logs").doc(auditLogId).update({
+            notificationAttempted: true,
+            notificationSucceeded: true
+          }).catch(() => {});
+        }
+
         return {
           success: true, appointmentUpdated: true, emailSent: true, emailSkipped: false,
           appointmentId: params.appointmentId, oldStatus: params.oldStatus, newStatus: params.newStatus,
+          confirmedDate: finalConfirmedDate, confirmedTime: finalConfirmedTime,
           provider: "resend", providerMessageId: result.providerMessageId
         };
       } else if (result.emailSkipped) {
          return {
           success: true, appointmentUpdated: true, emailSent: false, emailSkipped: true,
           appointmentId: params.appointmentId, oldStatus: params.oldStatus, newStatus: params.newStatus,
+          confirmedDate: finalConfirmedDate, confirmedTime: finalConfirmedTime,
           skipReason: result.skipReason
         };
       } else {
@@ -581,9 +646,17 @@ export class NotificationService {
           patientNotificationErrorMessage: result.message || null,
         });
 
+        if (auditLogId) {
+          await adminDb.collection("appointment_audit_logs").doc(auditLogId).update({
+            notificationAttempted: true,
+            notificationSucceeded: false
+          }).catch(() => {});
+        }
+
         return {
           success: false, appointmentUpdated: true, emailSent: false, emailSkipped: false,
           appointmentId: params.appointmentId, oldStatus: params.oldStatus, newStatus: params.newStatus,
+          confirmedDate: finalConfirmedDate, confirmedTime: finalConfirmedTime,
           errorCode: result.errorCode || "EMAIL_SEND_FAILED",
           message: result.message || "Appointment status was updated, but the patient email could not be sent."
         };
@@ -592,6 +665,7 @@ export class NotificationService {
       return {
         success: false, appointmentUpdated: true, emailSent: false, emailSkipped: false,
         appointmentId: params.appointmentId, oldStatus: params.oldStatus, newStatus: params.newStatus,
+        confirmedDate: finalConfirmedDate, confirmedTime: finalConfirmedTime,
         errorCode: "EMAIL_SEND_EXCEPTION",
         message: err.message || "Exception during email send."
       };

@@ -409,6 +409,17 @@ export interface Appointment {
   notificationError?: string;
   createdBy?: string;
   language?: string;
+  confirmedDate?: string | null;
+  confirmedTime?: string | null;
+  confirmedTimeRange?: string | null;
+  rescheduledAt?: string | null;
+  rescheduledBy?: string | null;
+  rescheduleCount?: number;
+  rescheduleReason?: string | null;
+  previousConfirmedDate?: string | null;
+  previousConfirmedTime?: string | null;
+  statusUpdatedAt?: string | null;
+  statusUpdatedBy?: string | null;
   createdAt: any;
   updatedAt?: any;
 }

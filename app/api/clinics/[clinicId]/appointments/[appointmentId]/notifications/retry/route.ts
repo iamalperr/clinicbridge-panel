@@ -79,23 +79,13 @@ export async function POST(req: Request, { params }: RouteParams) {
     // Import EmailTemplateResolver dynamically so it works in edge/node
     const { getAppointmentStatusEmailTemplate } = await import("@/lib/services/notifications/EmailTemplateResolver");
     const { mapToCanonicalStatus } = await import("@/lib/types/appointment");
+    const { resolveAppointmentDisplaySchedule } = await import("@/lib/services/appointments/AppointmentScheduleResolver");
     
     const canonicalStatus = mapToCanonicalStatus(apptData.status);
     const locale = apptData.language === "en" ? "en" : "tr";
     const treatment = apptData.treatmentType || apptData.requestedService || apptData.service || apptData.reason || "";
-    const requestedDate = apptData.preferredDate || apptData.requestedDate || apptData.proposedDate || "";
     
-    let requestedTime = "";
-    if (apptData.preferredTimeText && apptData.preferredTimeText.toLowerCase() !== "belirtilmedi" && apptData.preferredTimeText.toLowerCase() !== "belirtilmemiş") {
-      requestedTime = apptData.preferredTimeText;
-    } else if (apptData.preferredTimePeriod) {
-      const periodMap: Record<string, string> = { morning: "Sabah", afternoon: "Öğleden sonra", evening: "Akşam", earliest_available: "En erken uygun saat" };
-      requestedTime = periodMap[apptData.preferredTimePeriod] || apptData.preferredTimePeriod;
-    } else if (apptData.preferredTimeStart && apptData.preferredTimeEnd) {
-      requestedTime = `${apptData.preferredTimeStart} - ${apptData.preferredTimeEnd}`;
-    } else {
-      requestedTime = apptData.preferredTime || apptData.requestedTime || apptData.appointmentTime || apptData.startTime || "";
-    }
+    const schedule = resolveAppointmentDisplaySchedule(apptData);
 
     const template = getAppointmentStatusEmailTemplate({
       tenantId: logData.tenant_id,
@@ -105,8 +95,11 @@ export async function POST(req: Request, { params }: RouteParams) {
       patientName: apptData.patientName || "",
       clinicName: clinicData.name || "Klinik",
       treatment,
-      requestedDate,
-      requestedTime
+      requestedDate: schedule.requestedDate,
+      requestedTime: schedule.requestedTime,
+      confirmedDate: schedule.confirmedDate,
+      confirmedTime: schedule.confirmedTime,
+      changeReason: apptData.rescheduleReason || null
     });
 
     if (!template) {

@@ -73,8 +73,16 @@ async function handleStatusUpdate(req: Request, paramsPromise: Promise<{ clinicI
     const apptData = apptSnap.data()!;
     const oldStatus = mapToCanonicalStatus(apptData.status);
 
-    // 4. Idempotency Check
-    if (oldStatus === newStatus) {
+    const confirmedDate = body.confirmedDate !== undefined ? (body.confirmedDate ? String(body.confirmedDate).trim() : null) : undefined;
+    const confirmedTime = body.confirmedTime !== undefined ? (body.confirmedTime ? String(body.confirmedTime).trim() : null) : undefined;
+    const confirmedTimeRange = body.confirmedTimeRange !== undefined ? (body.confirmedTimeRange ? String(body.confirmedTimeRange).trim() : null) : undefined;
+    const changeReason = body.changeReason ? String(body.changeReason).trim() : undefined;
+
+    // 4. Idempotency vs Reschedule Check
+    const isDateChanged = (confirmedDate !== undefined && confirmedDate !== (apptData.confirmedDate || null)) ||
+                          (confirmedTime !== undefined && confirmedTime !== (apptData.confirmedTime || null));
+
+    if (oldStatus === newStatus && !isDateChanged) {
       return NextResponse.json({ 
         success: true, 
         appointmentUpdated: false,
@@ -95,7 +103,11 @@ async function handleStatusUpdate(req: Request, paramsPromise: Promise<{ clinicI
       appointmentId,
       oldStatus,
       newStatus,
-      actorUserId: decodedToken.uid
+      actorUserId: decodedToken.uid,
+      confirmedDate,
+      confirmedTime,
+      confirmedTimeRange,
+      changeReason
     });
 
     if (!result.success && !result.appointmentUpdated) {
