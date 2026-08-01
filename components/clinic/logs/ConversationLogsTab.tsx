@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { MessageSquare, Search, Filter, AlertCircle, Calendar, PhoneCall, CalendarCheck } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
+import { useAuth } from "@/lib/auth-context";
 import StatCard from "@/components/ui/StatCard";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -10,8 +11,9 @@ import Badge from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 
-import { ConversationLog, LogStatus } from "./types";
+import { ConversationLog, LogStatus, CustomLabel } from "./types";
 import ConversationLogDetailModal from "./ConversationLogDetailModal";
+import ConversationStatusDropdown from "./ConversationStatusDropdown";
 
 interface Props {
   clinicId: string;
@@ -19,6 +21,7 @@ interface Props {
 
 export default function ConversationLogsTab({ clinicId }: Props) {
   const { t, language } = useI18n();
+  const { profile, getToken } = useAuth();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [langFilter, setLangFilter] = useState<string>("all");
@@ -27,7 +30,40 @@ export default function ConversationLogsTab({ clinicId }: Props) {
   const [selectedLog, setSelectedLog] = useState<ConversationLog | null>(null);
   const [logs, setLogs] = useState<ConversationLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [customLabels, setCustomLabels] = useState<CustomLabel[]>([]);
 
+  // Determine if current user can edit labels
+  const canEditLabel = useMemo(() => {
+    if (!profile) return false;
+    return ["superAdmin", "admin", "clinicAdmin"].includes(profile.role);
+  }, [profile]);
+
+  // Fetch custom labels once on mount
+  React.useEffect(() => {
+    if (!clinicId) return;
+    
+    const fetchLabels = async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        
+        const res = await fetch(`/api/clinics/${clinicId}/custom-labels`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          setCustomLabels(data.labels || []);
+        }
+      } catch (err) {
+        console.error("[ConversationLogsTab] Failed to fetch custom labels:", err);
+      }
+    };
+    
+    fetchLabels();
+  }, [clinicId, getToken]);
+
+  // Fetch conversation logs via Firestore realtime listener
   React.useEffect(() => {
     if (!clinicId) return;
     
@@ -49,9 +85,43 @@ export default function ConversationLogsTab({ clinicId }: Props) {
     });
   }, [clinicId]);
 
+  // Optimistic label update handler — updates local state immediately
+  const handleLabelUpdated = useCallback(
+    (logId: string, labelId: string | null, labelName: string | null) => {
+      setLogs((prev) =>
+        prev.map((l) =>
+          l.id === logId
+            ? { ...l, customLabelId: labelId, customLabelName: labelName }
+            : l
+        )
+      );
+      // Also update selectedLog if open
+      setSelectedLog((prev) =>
+        prev && prev.id === logId
+          ? { ...prev, customLabelId: labelId, customLabelName: labelName }
+          : prev
+      );
+    },
+    []
+  );
+
   const filteredLogs = useMemo(() => {
     return logs.filter((log) => {
-      if (statusFilter !== "all" && log.status !== statusFilter) return false;
+      // Status filter: supports both system status and custom label filter
+      if (statusFilter !== "all") {
+        if (statusFilter === "custom_labeled") {
+          // Show only conversations with any custom label
+          if (!log.customLabelId) return false;
+        } else if (statusFilter.startsWith("label:")) {
+          // Filter by specific custom label
+          const labelId = statusFilter.replace("label:", "");
+          if (log.customLabelId !== labelId) return false;
+        } else {
+          // System status filter
+          if (log.status !== statusFilter) return false;
+        }
+      }
+      
       if (langFilter !== "all" && log.language !== langFilter) return false;
       
       if (dateFilter !== "all") {
@@ -68,8 +138,8 @@ export default function ConversationLogsTab({ clinicId }: Props) {
         const query = search.toLowerCase();
         const patientName = log.patientName?.toLowerCase() || "";
         const preview = log.lastMessagePreview.toLowerCase();
-        // Since we are not fetching all messages upfront, we only search patientName and preview
-        if (!patientName.includes(query) && !preview.includes(query)) {
+        const customLabel = log.customLabelName?.toLowerCase() || "";
+        if (!patientName.includes(query) && !preview.includes(query) && !customLabel.includes(query)) {
           return false;
         }
       }
@@ -82,7 +152,7 @@ export default function ConversationLogsTab({ clinicId }: Props) {
       total: logs.length,
       unanswered: logs.filter(l => l.status === "unanswered").length,
       needsLiveSupport: logs.filter(l => l.status === "liveSupport").length,
-      appointments: logs.filter(l => l.status === "appointment").length,
+      appointments: logs.filter(l => l.status === "appointment" || l.customLabelId === "appointment_converted").length,
     };
   }, [logs]);
 
@@ -93,29 +163,38 @@ export default function ConversationLogsTab({ clinicId }: Props) {
       case "unanswered": return t("logs.status.unanswered") || "Yanıtlanamadı";
       case "appointment": return t("logs.status.appointment") || "Randevuya Dönüştü";
       case "collecting": return t("logs.status.collecting") || "Randevu Bilgisi Toplanıyor";
+      case "open": return t("logs.status.open") || "Açık";
       default: return status;
     }
   };
 
-  const getStatusVariant = (status: LogStatus): any => {
-    switch (status) {
-      case "answered": return "resolved";
-      case "appointment": return "pro";
-      case "liveSupport": return "open";
-      case "unanswered": return "failed";
-      case "collecting": return "warning";
-      default: return "inactive";
-    }
-  };
+  // Build filter options — include custom labels
+  const statusOptions = useMemo(() => {
+    const opts = [
+      { value: "all", label: t("common.all") || "Tümü" },
+      { value: "answered", label: getStatusLabel("answered") },
+      { value: "appointment", label: getStatusLabel("appointment") },
+      { value: "collecting", label: getStatusLabel("collecting") },
+      { value: "liveSupport", label: getStatusLabel("liveSupport") },
+      { value: "unanswered", label: getStatusLabel("unanswered") },
+    ];
 
-  const statusOptions = [
-    { value: "all", label: t("common.all") || "Tümü" },
-    { value: "answered", label: getStatusLabel("answered") },
-    { value: "appointment", label: getStatusLabel("appointment") },
-    { value: "collecting", label: getStatusLabel("collecting") },
-    { value: "liveSupport", label: getStatusLabel("liveSupport") },
-    { value: "unanswered", label: getStatusLabel("unanswered") },
-  ];
+    // Add custom label filter options
+    if (customLabels.length > 0) {
+      opts.push({
+        value: "custom_labeled",
+        label: language === "en" ? "── Custom Labels ──" : "── Özel Etiketler ──",
+      });
+      for (const label of customLabels) {
+        opts.push({
+          value: `label:${label.id}`,
+          label: `↳ ${language === "en" ? label.labelEn : label.labelTr}`,
+        });
+      }
+    }
+
+    return opts;
+  }, [t, language, customLabels]);
 
   const langOptions = [
     { value: "all", label: t("common.all") || "Tümü" },
@@ -190,7 +269,7 @@ export default function ConversationLogsTab({ clinicId }: Props) {
               options={dateOptions}
             />
           </div>
-          <div style={{ width: 180 }}>
+          <div style={{ width: 200 }}>
             <Select 
               label={t("logs.filterStatus") || "Durum"}
               value={statusFilter}
@@ -282,7 +361,13 @@ export default function ConversationLogsTab({ clinicId }: Props) {
                       </div>
                     </td>
                     <td style={{ padding: "16px 20px" }}>
-                      <Badge variant={getStatusVariant(log.status)} label={getStatusLabel(log.status)} />
+                      <ConversationStatusDropdown
+                        log={log}
+                        clinicId={clinicId}
+                        customLabels={customLabels}
+                        canEdit={canEditLabel}
+                        onLabelUpdated={handleLabelUpdated}
+                      />
                     </td>
                   </tr>
                 ))}

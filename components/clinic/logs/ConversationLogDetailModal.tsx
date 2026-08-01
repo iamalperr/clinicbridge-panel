@@ -64,7 +64,26 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
               <span style={{ fontSize: 14, color: UI_COLORS.textPrimary }}>{log.patientPhone}</span>
             </div>
           )}
-          <Badge variant={log.status === "answered" ? "resolved" : log.status === "appointment" ? "pro" : log.status === "liveSupport" ? "open" : "failed"} />
+          <Badge variant={log.status === "answered" ? "resolved" : log.status === "appointment" ? "pro" : log.status === "liveSupport" ? "open" : log.status === "collecting" ? "warning" : "failed"} label={
+            log.status === "answered" ? "Başarılı Yanıtlandı" :
+            log.status === "appointment" ? "Randevuya Dönüştü" :
+            log.status === "liveSupport" ? "Canlı Destek Gerekli" :
+            log.status === "collecting" ? "Bilgi Toplanıyor" :
+            log.status === "unanswered" ? "Yanıtlanamadı" :
+            log.status
+          } />
+          {log.customLabelId && log.customLabelName && (
+            <span style={{
+              display: "inline-flex", alignItems: "center", gap: 4,
+              padding: "3px 9px", borderRadius: 99,
+              fontSize: 11, fontWeight: 600,
+              background: "rgba(139, 92, 246, 0.1)",
+              color: "#8b5cf6",
+              border: "1px solid rgba(139, 92, 246, 0.2)",
+            }}>
+              🏷️ {log.customLabelName}
+            </span>
+          )}
         </div>
 
         {/* Training Recommendation */}

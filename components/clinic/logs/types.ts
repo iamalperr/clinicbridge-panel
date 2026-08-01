@@ -1,4 +1,14 @@
-export type LogStatus = "answered" | "liveSupport" | "unanswered" | "appointment" | "collecting";
+export type LogStatus = "answered" | "liveSupport" | "unanswered" | "appointment" | "collecting" | "open";
+
+export interface CustomLabel {
+  id: string;
+  labelTr: string;
+  labelEn: string;
+  color: string;
+  isPreset: boolean;
+  isActive: boolean;
+  order?: number;
+}
 
 export interface ConversationLog {
   id: string;
@@ -16,6 +26,9 @@ export interface ConversationLog {
   trainingTopic?: string;
   convertedToAppointment: boolean;
   appointmentId?: string;
+  // Custom label fields
+  customLabelId?: string | null;
+  customLabelName?: string | null;
 }
 
 export interface ConversationMessage {
