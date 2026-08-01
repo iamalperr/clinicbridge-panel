@@ -14,6 +14,13 @@ import {
 import { normalizeTurkishPhone } from "@/lib/phoneUtils";
 import { normalizeLegacyChannel } from "@/lib/services/channelPolicyService";
 import { resolveContactNumber } from "@/lib/utils/contact-resolver";
+import {
+  IntentRouter,
+  SlotExtractor,
+  ConversationStateEngine,
+  ConversationFeatureFlags,
+  ConversationLogger
+} from "@/lib/conversation";
 
 // Cache to avoid parsing working hours repeatedly
 const workingHoursCache = new Map<string, any>();
@@ -1421,6 +1428,50 @@ export async function POST(req: Request) {
     if (isCancel && (appointmentState !== "IDLE" || pendingAppointmentData)) {
         await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "IDLE", {}, { processedMessageIds: [...processedMessageIds, messageId] });
         return NextResponse.json({ responseType: "CHAT_REPLY", reply: "Randevu talebiniz iptal edildi. Size başka nasıl yardımcı olabilirim?" }, { headers: CORS });
+    }
+
+    // Global Intent Router Evaluation
+    const conversationIntent = IntentRouter.classifyConversationIntent({
+      message,
+      conversationHistory: history,
+      currentState: appointmentState === "IDLE" ? "INITIAL" : "APPOINTMENT_COLLECTION",
+      collectedSlots: {
+        preferredDate: appointmentDraft.requestedDate || undefined,
+        preferredTime: appointmentDraft.requestedTime || undefined,
+        fullName: appointmentDraft.patientName || undefined,
+        phone: appointmentDraft.patientPhone || undefined,
+        email: appointmentDraft.patientEmail || undefined,
+        treatment: appointmentDraft.requestedService || undefined
+      },
+      clinicContext: {
+        clinicId: actualClinicId,
+        clinicName,
+        turkishContactNumber: clinicData?.turkishContactNumber,
+        internationalContactNumber: clinicData?.internationalContactNumber
+      },
+      locale: clinicLanguage
+    });
+
+    // Handle Slot Corrections (e.g. "1 Ağustos değil 3 Ağustos olsun")
+    if (conversationIntent.intent === "appointment_correction" && conversationIntent.entities) {
+      if (conversationIntent.entities.preferredDate) {
+        appointmentDraft.requestedDate = conversationIntent.entities.preferredDate;
+        appointmentDraft.preferredDateDisplay = conversationIntent.entities.preferredDate;
+        (appointmentDraft as any).requestedWeekday = conversationIntent.entities.preferredWeekday;
+      }
+      if (conversationIntent.entities.preferredTime) {
+        appointmentDraft.requestedTime = conversationIntent.entities.preferredTime;
+      }
+      if (conversationIntent.entities.fullName) {
+        appointmentDraft.patientName = conversationIntent.entities.fullName;
+      }
+      if (conversationIntent.entities.phone) {
+        appointmentDraft.patientPhone = conversationIntent.entities.phone;
+      }
+      if (conversationIntent.entities.email) {
+        appointmentDraft.patientEmail = conversationIntent.entities.email;
+      }
+      console.log(`[INTENT_ROUTER] Appointment correction applied:`, conversationIntent.entities);
     }
 
 

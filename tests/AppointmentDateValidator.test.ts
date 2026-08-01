@@ -27,8 +27,10 @@ function restoreMockDate() {
 }
 
 describe('AppointmentDateValidator', () => {
+  let now: Date;
   beforeEach(() => {
     setupMockDate();
+    now = new Date();
   });
 
   afterEach(() => {
@@ -36,7 +38,6 @@ describe('AppointmentDateValidator', () => {
   });
 
   const timeZone = "Europe/Istanbul";
-  const now = new Date(); // Will be the mocked date
 
   it('TEST 1: Cuma günü saat 10', () => {
     const res = AppointmentDateValidator.validateAppointmentDateConsistency({

@@ -4,6 +4,12 @@ import { trackableAIRequest } from "@/lib/services/aiGateway";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { sendAgencyLeadNotification } from "@/lib/services/emailService";
 import { getCached, setCached } from "@/lib/services/agencyCache";
+import {
+  IntentRouter,
+  SlotExtractor,
+  ConversationFeatureFlags,
+  ConversationLogger
+} from "@/lib/conversation";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -478,6 +484,28 @@ export async function POST(
     const ctx: SessionContext = sessionContext || {};
     if (!ctx.sessionId) {
       ctx.sessionId = `sess_${Date.now()}`;
+    }
+
+    // Intent Router & Slot Extractor Evaluation for Agency
+    const agencySlotsExtracted = SlotExtractor.extractSlots(
+      finalMessage || message || "",
+      {
+        fullName: ctx.patientName,
+        phone: ctx.patientPhone,
+        email: ctx.patientEmail,
+        treatment: ctx.lastTreatmentCategory
+      },
+      agencyData.defaultLanguage || "tr"
+    );
+
+    if (agencySlotsExtracted.extracted.fullName && !ctx.patientName) {
+      ctx.patientName = agencySlotsExtracted.extracted.fullName;
+    }
+    if (agencySlotsExtracted.extracted.phone && !ctx.patientPhone) {
+      ctx.patientPhone = agencySlotsExtracted.extracted.phone;
+    }
+    if (agencySlotsExtracted.extracted.email && !ctx.patientEmail) {
+      ctx.patientEmail = agencySlotsExtracted.extracted.email;
     }
 
     const privacySettings = agencyData.privacySettings || {
