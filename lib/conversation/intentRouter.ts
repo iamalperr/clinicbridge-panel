@@ -33,19 +33,28 @@ export class IntentRouter {
       agencySlug?: string;
     };
     locale?: string;
+    expectedSlot?: string;
   }): IntentClassificationResult {
     const raw = (params.message || "").trim();
     const lower = raw.toLowerCase();
     const currentState = params.currentState || "INITIAL";
     const existingSlots = params.collectedSlots || {};
     const locale = params.locale || "tr";
+    const expectedSlot = params.expectedSlot;
 
     // Step 1: Extract all identifiable slots and detect corrections
-    const { extracted, isCorrection, correctedSlotKey } = SlotExtractor.extractSlots(
+    const { extracted, isCorrection, correctedSlotKey, invalidEmailAttempt, allInfoProvidedIntent } = SlotExtractor.extractSlots(
       raw,
       existingSlots,
-      locale
+      locale,
+      "Europe/Istanbul",
+      expectedSlot
     );
+
+    const isInAppointmentFlow =
+      currentState === "APPOINTMENT_COLLECTION" ||
+      currentState === "APPOINTMENT_REVIEW" ||
+      currentState === "TREATMENT_DISCOVERY";
 
     // Step 2: High priority safety / emergency intent
     if (this.isEmergency(lower)) {
@@ -71,7 +80,33 @@ export class IntentRouter {
       };
     }
 
-    // Step 4: Complaint detection
+    // Step 4: "Provided all information now" check in active flow
+    if (allInfoProvidedIntent) {
+      return {
+        intent: "appointment_continuation",
+        confidence: 1.0,
+        entities: extracted,
+        requiresKnowledgeBase: false,
+        shouldContinueActiveFlow: true,
+        allInfoProvidedIntent: true,
+        explanation: "Patient reported having provided all information"
+      };
+    }
+
+    // Step 5: Invalid email attempt in active flow / expectedSlot === "email"
+    if (invalidEmailAttempt) {
+      return {
+        intent: "appointment_continuation",
+        confidence: 1.0,
+        entities: extracted,
+        requiresKnowledgeBase: false,
+        shouldContinueActiveFlow: true,
+        validationError: "invalid_email",
+        explanation: "Invalid email attempt detected during collection"
+      };
+    }
+
+    // Step 6: Complaint detection
     if (this.isComplaint(lower)) {
       return {
         intent: "complaint",
@@ -84,8 +119,8 @@ export class IntentRouter {
       };
     }
 
-    // Step 5: Appointment Correction (e.g. "1 Ağustos değil 3 Ağustos olsun")
-    if (isCorrection && (extracted.preferredDate || extracted.preferredTime)) {
+    // Step 7: Appointment Correction (e.g. "1 Ağustos değil 3 Ağustos olsun", "Use sadia.new@hotmail.com instead")
+    if (isCorrection && (extracted.preferredDate || extracted.preferredTime || extracted.email || extracted.phone || extracted.fullName)) {
       return {
         intent: "appointment_correction",
         confidence: 0.98,
@@ -96,7 +131,7 @@ export class IntentRouter {
       };
     }
 
-    // Step 6: Explicit Confirmation / Rejection in active flows
+    // Step 8: Explicit Confirmation / Rejection in active flows
     if (this.isConfirmation(lower)) {
       const isApptReview = currentState === "APPOINTMENT_REVIEW";
       return {
@@ -120,12 +155,8 @@ export class IntentRouter {
       };
     }
 
-    // Step 7: Active Flow Continuation (User is in APPOINTMENT_COLLECTION or LEAD_COLLECTION)
+    // Step 9: Active Flow Continuation (User is in APPOINTMENT_COLLECTION or LEAD_COLLECTION)
     const hasSlotValues = Object.keys(extracted).length > 0;
-    const isInAppointmentFlow =
-      currentState === "APPOINTMENT_COLLECTION" ||
-      currentState === "APPOINTMENT_REVIEW" ||
-      currentState === "TREATMENT_DISCOVERY";
 
     // If in appointment flow and message is clearly providing a slot (date, time, visitType, name, phone, email)
     if (isInAppointmentFlow && hasSlotValues) {

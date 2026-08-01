@@ -15,7 +15,11 @@ export class ConversationStateEngine {
   /**
    * Determine required appointment slots based on flow
    */
-  public static getRequiredAppointmentSlots(): Array<keyof ConversationSlots> {
+  public static getRequiredAppointmentSlots(slots?: Partial<ConversationSlots>): Array<keyof ConversationSlots> {
+    // If email is already present or expected, include it
+    if (slots?.email !== undefined || slots?.expectedSlot === "email") {
+      return ["preferredDate", "preferredTime", "fullName", "phone", "email"];
+    }
     return ["preferredDate", "preferredTime", "fullName", "phone"];
   }
 
@@ -24,9 +28,10 @@ export class ConversationStateEngine {
    */
   public static getMissingSlots(
     slots: Partial<ConversationSlots>,
-    requiredSlots: Array<keyof ConversationSlots> = this.getRequiredAppointmentSlots()
+    requiredSlots?: Array<keyof ConversationSlots>
   ): Array<keyof ConversationSlots> {
-    return requiredSlots.filter(key => {
+    const required = requiredSlots || this.getRequiredAppointmentSlots(slots);
+    return required.filter(key => {
       const val = slots[key];
       if (key === "fullName") {
         return !slots.fullName && !slots.firstName;
@@ -55,9 +60,23 @@ export class ConversationStateEngine {
     }
 
     let nextState: ConversationState = prevState;
-    const required = this.getRequiredAppointmentSlots();
+    let expectedSlot = context.expectedSlot;
+    const required = this.getRequiredAppointmentSlots(currentSlots);
 
-    // 2. State transition rules
+    // 2. Handle validation error (e.g. invalid_email)
+    if (intentResult.validationError === "invalid_email") {
+      return {
+        previousState: prevState,
+        nextState: "APPOINTMENT_COLLECTION",
+        updatedSlots: currentSlots,
+        missingRequiredSlots: this.getMissingSlots(currentSlots, required) as string[],
+        expectedSlot: "email",
+        validationError: "invalid_email",
+        isComplete: false
+      };
+    }
+
+    // 3. State transition rules
     switch (prevState) {
       case "INITIAL":
       case "GENERAL_CONVERSATION":
@@ -149,11 +168,20 @@ export class ConversationStateEngine {
     const missingAfter = this.getMissingSlots(currentSlots, required);
     const isComplete = nextState === "APPOINTMENT_REVIEW" || nextState === "APPOINTMENT_SUBMITTED" || nextState === "COMPLETED";
 
+    if (nextState === "APPOINTMENT_COLLECTION") {
+      expectedSlot = missingAfter.length > 0 ? (missingAfter[0] as string) : undefined;
+    } else if (nextState === "APPOINTMENT_REVIEW") {
+      expectedSlot = "confirmation";
+    } else {
+      expectedSlot = undefined;
+    }
+
     return {
       previousState: prevState,
       nextState,
       updatedSlots: currentSlots,
       missingRequiredSlots: missingAfter as string[],
+      expectedSlot,
       isComplete
     };
   }
@@ -163,18 +191,43 @@ export class ConversationStateEngine {
    */
   public static generateNextSlotPrompt(
     slots: Partial<ConversationSlots>,
-    missingSlots: string[],
+    missingSlots: (keyof ConversationSlots)[] | string[],
     locale: string = "tr",
-    acknowledgedSlotText?: string
+    acknowledgedSlotText?: string,
+    validationError?: string,
+    allInfoProvidedIntent?: boolean
   ): string {
     const isEn = locale.toLowerCase().startsWith("en");
+    const isDe = locale.toLowerCase().startsWith("de");
+    const isFr = locale.toLowerCase().startsWith("fr");
+    const isAr = locale.toLowerCase().startsWith("ar");
 
-    // If no missing slots, prompt for review confirmation
+    // 1. Handle validation error
+    if (validationError === "invalid_email") {
+      if (isEn) return "That email address appears to be incomplete. Could you please check it and send it again?";
+      if (isDe) return "Diese E-Mail-Adresse scheint unvollständig zu sein. Bitte überprüfen Sie sie und senden Sie sie erneut.";
+      if (isFr) return "Cette adresse e-mail semble incomplète. Pourriez-vous la vérifier et la renvoyer ?";
+      if (isAr) return "يبدو أن عنوان البريد الإلكتروني غير مكتمل. يرجى التحقق منه وإرساله مرة أخرى.";
+      return "E-posta adresiniz eksik veya geçersiz görünüyor. Lütfen kontrol edip tekrar paylaşabilir misiniz?";
+    }
+
+    // 2. Handle "Provided all information now" with missing slots
+    if (allInfoProvidedIntent && missingSlots.length > 0) {
+      const nextMissing = missingSlots[0];
+      if (isEn) {
+        return `Almost done! I have your details, but I still need your ${this.getSlotDisplayName(nextMissing, "en")} to finalize your appointment request.`;
+      }
+      return `Neredeyse tamamladık! Bilgilerinizi aldım, randevu kaydınızı tamamlamak için yalnızca ${this.getSlotDisplayName(nextMissing, "tr")} bilginize ihtiyacım var.`;
+    }
+
+    // 3. If no missing slots, prompt for review confirmation
     if (missingSlots.length === 0) {
       const dateStr = slots.preferredDate || slots.rawDateText || "";
       const timeStr = slots.preferredTime || "";
       const nameStr = slots.fullName || slots.firstName || "";
       const phoneStr = slots.phone || "";
+      const emailStr = slots.email ? `\n✉️ Email: ${slots.email}` : "";
+      const emailStrTr = slots.email ? `\n✉️ E-posta: ${slots.email}` : "";
       const treatmentStr = slots.treatment ? ` (${slots.treatment})` : "";
 
       if (isEn) {
@@ -182,7 +235,7 @@ export class ConversationStateEngine {
           `📅 Date: ${dateStr}\n` +
           `⏰ Time Preference: ${timeStr}\n` +
           `👤 Name: ${nameStr}\n` +
-          `📞 Phone: ${phoneStr}\n\n` +
+          `📞 Phone: ${phoneStr}${emailStr}\n\n` +
           `Please confirm if you would like me to create this appointment request. By confirming, you agree to our KVKK Information Text (https://feelinhealthy.com/kvkk).`;
       }
 
@@ -190,7 +243,7 @@ export class ConversationStateEngine {
         `📅 Tarih: ${dateStr}\n` +
         `⏰ Saat Tercihi: ${timeStr}\n` +
         `👤 Ad Soyad: ${nameStr}\n` +
-        `📞 Telefon: ${phoneStr}\n\n` +
+        `📞 Telefon: ${phoneStr}${emailStrTr}\n\n` +
         `Randevu kaydınızı oluşturmamı onaylıyor musunuz? (Onayınızla birlikte https://feelinhealthy.com/kvkk Aydınlatma Metnini kabul etmiş olursunuz.)`;
     }
 
@@ -218,10 +271,32 @@ export class ConversationStateEngine {
           ? `${ackPrefix}Could you please provide your phone number so the clinic team can confirm your appointment?`
           : `${ackPrefix}Klinik ekibimizin teyit için size ulaşabilmesi adına telefon numaranızı paylaşabilir misiniz?`;
 
+      case "email":
+        return isEn
+          ? `${ackPrefix}Could you please provide your email address so we can finalize your appointment request?`
+          : `${ackPrefix}Randevu detaylarınızı iletebilmemiz için e-posta adresinizi paylaşabilir misiniz?`;
+
       default:
         return isEn
           ? `${ackPrefix}How else can we assist you with your appointment?`
           : `${ackPrefix}Randevunuzla ilgili nasıl yardımcı olabiliriz?`;
+    }
+  }
+
+  /**
+   * Get user-friendly name for a slot key
+   */
+  public static getSlotDisplayName(key: string | keyof ConversationSlots, locale: string = "tr"): string {
+    const keyStr = String(key);
+    const isEn = locale.toLowerCase().startsWith("en");
+    switch (keyStr) {
+      case "preferredDate": return isEn ? "preferred date" : "tarih";
+      case "preferredTime": return isEn ? "time preference" : "saat tercihi";
+      case "fullName": return isEn ? "full name" : "ad soyad";
+      case "phone": return isEn ? "phone number" : "telefon numarası";
+      case "email": return isEn ? "email address" : "e-posta adresi";
+      case "treatment": return isEn ? "treatment" : "tedavi";
+      default: return keyStr;
     }
   }
 
@@ -234,6 +309,16 @@ export class ConversationStateEngine {
   ): string {
     const isEn = locale.toLowerCase().startsWith("en");
 
+    if (newlyExtracted.email) {
+      return isEn
+        ? `Thank you for sharing your email (${newlyExtracted.email}).`
+        : `E-posta adresinizi (${newlyExtracted.email}) kaydettim.`;
+    }
+    if (newlyExtracted.phone) {
+      return isEn
+        ? `Thank you for sharing your phone number.`
+        : `Telefon numaranızı not aldım.`;
+    }
     if (newlyExtracted.preferredDate) {
       return isEn
         ? `I have noted the date ${newlyExtracted.preferredDate}.`

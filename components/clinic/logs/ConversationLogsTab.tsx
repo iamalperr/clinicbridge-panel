@@ -92,6 +92,7 @@ export default function ConversationLogsTab({ clinicId }: Props) {
       case "liveSupport": return t("logs.status.liveSupport") || "Canlı Destek Gerekli";
       case "unanswered": return t("logs.status.unanswered") || "Yanıtlanamadı";
       case "appointment": return t("logs.status.appointment") || "Randevuya Dönüştü";
+      case "collecting": return t("logs.status.collecting") || "Randevu Bilgisi Toplanıyor";
       default: return status;
     }
   };
@@ -102,6 +103,7 @@ export default function ConversationLogsTab({ clinicId }: Props) {
       case "appointment": return "pro";
       case "liveSupport": return "open";
       case "unanswered": return "failed";
+      case "collecting": return "warning";
       default: return "inactive";
     }
   };
@@ -109,9 +111,10 @@ export default function ConversationLogsTab({ clinicId }: Props) {
   const statusOptions = [
     { value: "all", label: t("common.all") || "Tümü" },
     { value: "answered", label: getStatusLabel("answered") },
+    { value: "appointment", label: getStatusLabel("appointment") },
+    { value: "collecting", label: getStatusLabel("collecting") },
     { value: "liveSupport", label: getStatusLabel("liveSupport") },
     { value: "unanswered", label: getStatusLabel("unanswered") },
-    { value: "appointment", label: getStatusLabel("appointment") },
   ];
 
   const langOptions = [

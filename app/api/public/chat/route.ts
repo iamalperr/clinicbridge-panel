@@ -19,7 +19,9 @@ import {
   SlotExtractor,
   ConversationStateEngine,
   ConversationFeatureFlags,
-  ConversationLogger
+  ConversationLogger,
+  formatMultilingualSummary,
+  formatMultilingualPrompt
 } from "@/lib/conversation";
 
 // Cache to avoid parsing working hours repeatedly
@@ -835,6 +837,8 @@ async function logConversation(params: {
       status = "appointment";
     } else if (params.isLiveSupport) {
       status = "liveSupport";
+    } else if (params.appointmentState && params.appointmentState !== "IDLE") {
+      status = "collecting";
     } else if (replyLower.includes("üzgünüm") && (replyLower.includes("yardımcı olamıyorum") || replyLower.includes("anlayamadım") || replyLower.includes("yanıt üretemiyorum") || replyLower.includes("bilgi havuzumda"))) {
       status = "unanswered";
       needsTraining = true;
@@ -1424,17 +1428,25 @@ export async function POST(req: Request) {
 
 
     /* ── DETERMINISTIC STATE MACHINE INTERCEPTOR ───────────────────────── */
-    const isCancel = /^(hayır|h|onaylamıyorum|iptal|vazgeçtim|hayir|no|cancel)$/i.test(msgLower);
+    const isCancel = /^(hayır|h|onaylamıyorum|iptal|vazgeçtim|hayir|no|cancel|stornieren|annuler|nein|non|لا)$/i.test(msgLower);
     if (isCancel && (appointmentState !== "IDLE" || pendingAppointmentData)) {
         await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "IDLE", {}, { processedMessageIds: [...processedMessageIds, messageId] });
-        return NextResponse.json({ responseType: "CHAT_REPLY", reply: "Randevu talebiniz iptal edildi. Size başka nasıl yardımcı olabilirim?" }, { headers: CORS });
+        return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("CANCELLED", clinicLanguage) }, { headers: CORS });
     }
+
+    const currentExpectedSlot =
+      appointmentState === "COLLECTING_EMAIL" ? "email" :
+      appointmentState === "COLLECTING_PHONE" ? "phone" :
+      appointmentState === "COLLECTING_NAME" ? "fullName" :
+      appointmentState === "AWAITING_CONFIRMATION" ? "confirmation" :
+      undefined;
 
     // Global Intent Router Evaluation
     const conversationIntent = IntentRouter.classifyConversationIntent({
       message,
       conversationHistory: history,
       currentState: appointmentState === "IDLE" ? "INITIAL" : "APPOINTMENT_COLLECTION",
+      expectedSlot: currentExpectedSlot,
       collectedSlots: {
         preferredDate: appointmentDraft.requestedDate || undefined,
         preferredTime: appointmentDraft.requestedTime || undefined,
@@ -1452,8 +1464,8 @@ export async function POST(req: Request) {
       locale: clinicLanguage
     });
 
-    // Handle Slot Corrections (e.g. "1 Ağustos değil 3 Ağustos olsun")
-    if (conversationIntent.intent === "appointment_correction" && conversationIntent.entities) {
+    // Handle Slot Extractions and Corrections (e.g. email, phone, name, date)
+    if (conversationIntent.entities) {
       if (conversationIntent.entities.preferredDate) {
         appointmentDraft.requestedDate = conversationIntent.entities.preferredDate;
         appointmentDraft.preferredDateDisplay = conversationIntent.entities.preferredDate;
@@ -1471,10 +1483,11 @@ export async function POST(req: Request) {
       if (conversationIntent.entities.email) {
         appointmentDraft.patientEmail = conversationIntent.entities.email;
       }
-      console.log(`[INTENT_ROUTER] Appointment correction applied:`, conversationIntent.entities);
+      if (conversationIntent.entities.treatment) {
+        appointmentDraft.requestedService = conversationIntent.entities.treatment;
+      }
+      console.log(`[INTENT_ROUTER] Appointment slots updated:`, conversationIntent.entities);
     }
-
-
 
     // 2. Handle specific collection phases
     if (appointmentState === "AWAITING_DATE_CLARIFICATION") {
@@ -1519,78 +1532,66 @@ export async function POST(req: Request) {
         // Progress to next missing field, or AWAITING_CONFIRMATION
         if (!appointmentDraft.patientName) {
             await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_NAME", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId] });
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: "Teşekkürler. Ön randevu talebinizi oluşturabilmem için adınızı ve soyadınızı öğrenebilir miyim?" }, { headers: CORS });
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_NAME", clinicLanguage) }, { headers: CORS });
         } else if (!appointmentDraft.patientPhone) {
             await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_PHONE", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId] });
-            const firstName = (appointmentDraft.patientName || "").split(" ")[0];
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: `Teşekkür ederim, ${firstName} Bey/Hanım. İletişime geçebilmemiz için telefon numaranızı paylaşabilir misiniz?` }, { headers: CORS });
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_PHONE", clinicLanguage, appointmentDraft.patientName) }, { headers: CORS });
         } else if (!appointmentDraft.patientEmail) {
             await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId] });
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: "Son olarak bilgilendirme için e-posta adresinizi paylaşabilir misiniz?" }, { headers: CORS });
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_EMAIL", clinicLanguage) }, { headers: CORS });
         } else {
             await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId] });
-            const phoneDisplay = appointmentDraft.patientPhone || "-";
-            const summaryMsg = `Ön randevu talebinizin özeti:\n\nAd Soyad: ${appointmentDraft.patientName}\nTelefon: ${phoneDisplay}\nE-posta: ${appointmentDraft.patientEmail}\nHizmet: ${appointmentDraft.requestedService}\nTercih Edilen Tarih: ${appointmentDraft.requestedDate}\nTercih Edilen Saat: ${appointmentDraft.requestedTime || "Belirtilmedi"}\n\nBu bilgilerle ön randevu talebinizi iletmemi onaylıyor musunuz? Evet veya Hayır şeklinde yanıtlayabilirsiniz.`;
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: summaryMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualSummary(appointmentDraft, clinicLanguage), pendingAppointmentData: appointmentDraft }, { headers: CORS });
         }
     } else if (appointmentState === "COLLECTING_NAME") {
-        if (message.trim().length < 2) {
-            return NextResponse.json({ success: true, appointmentCreated: false, responseType: "CHAT_REPLY", reply: "Lütfen geçerli bir ad ve soyad giriniz." }, { headers: CORS });
+        const nameVal = conversationIntent.entities?.fullName || (message.trim().length >= 2 ? message.trim() : "");
+        if (!nameVal) {
+            return NextResponse.json({ success: true, appointmentCreated: false, responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_NAME", clinicLanguage) }, { headers: CORS });
         }
-        appointmentDraft.patientName = message.trim();
+        appointmentDraft.patientName = nameVal;
         console.log(`[APPOINTMENT_STATE] COLLECTING_NAME completed: name="${appointmentDraft.patientName}" convId=${convId}`);
 
         if (!appointmentDraft.patientPhone) {
             await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_PHONE", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
-            const firstName = (appointmentDraft.patientName || "").split(" ")[0];
-            const replyMsg = firstName ? `Teşekkür ederim, ${firstName} Bey/Hanım. Kliniğimizin ön randevu talebinizle ilgili sizinle iletişime geçebilmesi için telefon numaranızı paylaşabilir misiniz?` : `Teşekkür ederim. Kliniğimizin ön randevu talebinizle ilgili sizinle iletişime geçebilmesi için telefon numaranızı paylaşabilir misiniz?`;
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: replyMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_PHONE", clinicLanguage, appointmentDraft.patientName), pendingAppointmentData: appointmentDraft }, { headers: CORS });
         }
         if (!appointmentDraft.patientEmail) {
             await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: "Teşekkür ederim. Son olarak, ön randevu talebinizle ilgili değerlendirme sonucu ve sonraki bilgilendirmeleri sizinle paylaşabilmemiz için e-posta adresinizi de paylaşabilir misiniz?", pendingAppointmentData: appointmentDraft }, { headers: CORS });
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_EMAIL", clinicLanguage), pendingAppointmentData: appointmentDraft }, { headers: CORS });
         }
         await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
-        
-        let phoneDisplay = appointmentDraft.patientPhone || "-";
-        const phoneCheck = normalizeTurkishPhone(phoneDisplay);
-        if (phoneCheck.valid) phoneDisplay = phoneCheck.display;
-        const summaryMsg = `Ön randevu talebinizin özeti:\n\nAd Soyad: ${appointmentDraft.patientName || "-"}\nTelefon: ${phoneDisplay}\nE-posta: ${appointmentDraft.patientEmail || "-"}\nHizmet: ${appointmentDraft.requestedService || "-"}\nTercih Edilen Tarih: ${appointmentDraft.preferredDateDisplay || appointmentDraft.requestedDate || "-"}\nTercih Edilen Saat: ${appointmentDraft.requestedTime || "Belirtilmedi"}\n\nBu bilgilerle ön randevu talebinizi kliniğimizin değerlendirmesine iletmemi onaylıyor musunuz? Evet veya Hayır şeklinde yanıtlayabilirsiniz.`;
-        return NextResponse.json({ responseType: "CHAT_REPLY", reply: summaryMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
+        return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualSummary(appointmentDraft, clinicLanguage), pendingAppointmentData: appointmentDraft }, { headers: CORS });
     } else if (appointmentState === "COLLECTING_PHONE") {
-        const phoneResult = normalizeTurkishPhone(message.trim());
-        if (!phoneResult.valid) {
-            console.log(`[APPOINTMENT_STATE] COLLECTING_PHONE invalid: raw="${message.trim()}" error=${phoneResult.error} convId=${convId}`);
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: "Telefon numaranızı kontrol edebilir misiniz? Kliniğimizin sizinle iletişime geçebilmesi için geçerli bir telefon numarası paylaşmanız gerekiyor." }, { headers: CORS });
+        const extractedPhone = conversationIntent.entities?.phone || SlotExtractor.parsePhone(message.trim());
+        let finalPhone = extractedPhone;
+        if (!finalPhone) {
+            const phoneResult = normalizeTurkishPhone(message.trim());
+            if (phoneResult.valid) {
+                finalPhone = phoneResult.normalized;
+            }
         }
-        appointmentDraft.patientPhone = phoneResult.normalized;
-        appointmentDraft.patientPhoneRaw = phoneResult.raw;
-        console.log(`[APPOINTMENT_PHONE_COLLECTED] normalized="${phoneResult.normalized}" convId=${convId} clinicId=${actualClinicId}`);
+
+        if (!finalPhone) {
+            console.log(`[APPOINTMENT_STATE] COLLECTING_PHONE invalid: raw="${message.trim()}" convId=${convId}`);
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("INVALID_PHONE", clinicLanguage) }, { headers: CORS });
+        }
+        appointmentDraft.patientPhone = finalPhone;
+        console.log(`[APPOINTMENT_PHONE_COLLECTED] phone="${finalPhone}" convId=${convId} clinicId=${actualClinicId}`);
 
         if (!appointmentDraft.patientEmail) {
             await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: "Teşekkür ederim. Son olarak, ön randevu talebinizle ilgili değerlendirme sonucu ve sonraki bilgilendirmeleri sizinle paylaşabilmemiz için e-posta adresinizi de paylaşabilir misiniz?", pendingAppointmentData: appointmentDraft }, { headers: CORS });
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_EMAIL", clinicLanguage), pendingAppointmentData: appointmentDraft }, { headers: CORS });
         }
         await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
-        const summaryMsg = `Ön randevu talebinizin özeti:\n\nAd Soyad: ${appointmentDraft.patientName || "-"}\nTelefon: ${phoneResult.display}\nE-posta: ${appointmentDraft.patientEmail || "-"}\nHizmet: ${appointmentDraft.requestedService || "-"}\nTercih Edilen Tarih: ${appointmentDraft.preferredDateDisplay || appointmentDraft.requestedDate || "-"}\nTercih Edilen Saat: ${appointmentDraft.requestedTime || "Belirtilmedi"}\n\nBu bilgilerle ön randevu talebinizi kliniğimizin değerlendirmesine iletmemi onaylıyor musunuz? Evet veya Hayır şeklinde yanıtlayabilirsiniz.`;
-        return NextResponse.json({ responseType: "CHAT_REPLY", reply: summaryMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
+        return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualSummary(appointmentDraft, clinicLanguage), pendingAppointmentData: appointmentDraft }, { headers: CORS });
     } else if (appointmentState === "COLLECTING_EMAIL") {
-        // Remove invisible characters and trim
-        const rawEmail = message.replace(/[\u200B-\u200D\uFEFF]/g, '').trim().toLowerCase();
+        const extractedEmail = conversationIntent.entities?.email || SlotExtractor.parseEmail(message.trim());
         
-        // RFC compliant-like standard email validation regex
-        const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
-        
-        if (emailRegex.test(rawEmail)) {
-             appointmentDraft.patientEmail = rawEmail;
-             console.log(`[APPOINTMENT_EMAIL_COLLECTED] email="${rawEmail}" convId=${convId} clinicId=${actualClinicId}`);
+        if (extractedEmail) {
+             appointmentDraft.patientEmail = extractedEmail;
+             console.log(`[APPOINTMENT_EMAIL_COLLECTED] email="${extractedEmail}" convId=${convId} clinicId=${actualClinicId}`);
              await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
-             // Build display phone from normalized value
-             let phoneDisplay = appointmentDraft.patientPhone || "-";
-             const phoneCheck = normalizeTurkishPhone(phoneDisplay);
-             if (phoneCheck.valid) phoneDisplay = phoneCheck.display;
-             const summaryMsg = `Ön randevu talebinizin özeti:\n\nAd Soyad: ${appointmentDraft.patientName || "-"}\nTelefon: ${phoneDisplay}\nE-posta: ${appointmentDraft.patientEmail}\nHizmet: ${appointmentDraft.requestedService || "-"}\nTercih Edilen Tarih: ${appointmentDraft.preferredDateDisplay || appointmentDraft.requestedDate || "-"}\nTercih Edilen Saat: ${appointmentDraft.requestedTime || "Belirtilmedi"}\n\nBu bilgilerle ön randevu talebinizi kliniğimizin değerlendirmesine iletmemi onaylıyor musunuz? Evet veya Hayır şeklinde yanıtlayabilirsiniz.`;
-             return NextResponse.json({ responseType: "CHAT_REPLY", reply: summaryMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
+             return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualSummary(appointmentDraft, clinicLanguage), pendingAppointmentData: appointmentDraft }, { headers: CORS });
         } else {
              const fails = (appointmentDraft.emailValidationFails || 0) + 1;
              appointmentDraft.emailValidationFails = fails;
@@ -1600,19 +1601,34 @@ export async function POST(req: Request) {
                  appointmentDraft.patientEmail = ""; // Clear invalid email
                  
                  await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
-                 
-                 let phoneDisplay = appointmentDraft.patientPhone || "-";
-                 const phoneCheck = normalizeTurkishPhone(phoneDisplay);
-                 if (phoneCheck.valid) phoneDisplay = phoneCheck.display;
-                 
-                 const summaryMsg = `E-posta adresinizi doğrulayamadık ancak işleminize devam ediyoruz.\n\nÖn randevu talebinizin özeti:\n\nAd Soyad: ${appointmentDraft.patientName || "-"}\nTelefon: ${phoneDisplay}\nE-posta: Belirtilmedi\nHizmet: ${appointmentDraft.requestedService || "-"}\nTercih Edilen Tarih: ${appointmentDraft.preferredDateDisplay || appointmentDraft.requestedDate || "-"}\nTercih Edilen Saat: ${appointmentDraft.requestedTime || "Belirtilmedi"}\n\nBu bilgilerle ön randevu talebinizi kliniğimizin değerlendirmesine iletmemi onaylıyor musunuz? Evet veya Hayır şeklinde yanıtlayabilirsiniz.`;
-                 return NextResponse.json({ responseType: "CHAT_REPLY", reply: summaryMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
+                 return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualSummary(appointmentDraft, clinicLanguage), pendingAppointmentData: appointmentDraft }, { headers: CORS });
              } else {
                  await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
-                 return NextResponse.json({ responseType: "CHAT_REPLY", reply: "E-posta adresiniz geçerli bir formatta görünmüyor. Ön randevu talebinizle ilgili bilgilendirmeleri size iletebilmemiz için geçerli bir e-posta adresi paylaşabilir misiniz?" }, { headers: CORS });
+                 return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("INVALID_EMAIL", clinicLanguage) }, { headers: CORS });
              }
         }
     }
+
+    // Opportunistic slot capture: if draft already has date or phone or email and user sends missing slot, stay in deterministic flow
+    if ((appointmentState === "IDLE" || appointmentState === "COLLECTING_INFO") && (appointmentDraft.requestedDate || appointmentDraft.patientName || appointmentDraft.patientPhone)) {
+        if (conversationIntent.entities?.email || conversationIntent.entities?.phone || conversationIntent.entities?.fullName) {
+            const hasName = Boolean(appointmentDraft.patientName);
+            const hasPhone = Boolean(appointmentDraft.patientPhone);
+            const hasEmail = Boolean(appointmentDraft.patientEmail);
+
+            if (hasName && hasPhone && hasEmail) {
+                await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
+                return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualSummary(appointmentDraft, clinicLanguage), pendingAppointmentData: appointmentDraft }, { headers: CORS });
+            } else if (hasName && hasPhone && !hasEmail) {
+                await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
+                return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_EMAIL", clinicLanguage), pendingAppointmentData: appointmentDraft }, { headers: CORS });
+            } else if (hasName && !hasPhone) {
+                await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_PHONE", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
+                return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_PHONE", clinicLanguage, appointmentDraft.patientName), pendingAppointmentData: appointmentDraft }, { headers: CORS });
+            }
+        }
+    }
+
 
 
     /* ──────────────────────────────────────────────────────────────────────── */
@@ -2358,7 +2374,24 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
 
     // GROUNDEDNESS CHECK
     // Only check if we retrieved RAG context and the AI didn't already use the safe fallback
-    const isStateActive = appointmentState !== "IDLE" || isAppointmentFlowActive;
+    const hasApptEntities = Boolean(
+      conversationIntent.entities?.email ||
+      conversationIntent.entities?.phone ||
+      conversationIntent.entities?.fullName ||
+      conversationIntent.entities?.preferredDate ||
+      conversationIntent.entities?.preferredTime ||
+      appointmentDraft.patientEmail ||
+      appointmentDraft.patientPhone
+    );
+    const isStateActive =
+      appointmentState !== "IDLE" ||
+      isAppointmentFlowActive ||
+      conversationIntent.intent === "appointment_start" ||
+      conversationIntent.intent === "appointment_continuation" ||
+      conversationIntent.intent === "appointment_confirmation" ||
+      conversationIntent.intent === "appointment_correction" ||
+      hasApptEntities;
+
     if (knowledgeContext.length > 0 && !reply.includes("doğrulamıyorum") && !reply.includes("erişemediğim") && !isDoctorIntent && !isStateActive && !isServiceIntent) {
       const { validateGroundedness } = await import("@/lib/services/retrievalService");
       

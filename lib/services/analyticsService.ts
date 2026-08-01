@@ -90,6 +90,7 @@ export const RESOLVED_STATUSES = new Set([
 export const STATUS_LABELS: Record<string, string> = {
   answered:              "Başarılı Yanıtlandı",
   appointment:           "Randevuya Dönüştü",
+  collecting:            "Randevu Bilgisi Toplanıyor",
   liveSupport:           "Canlı Destek Talebi",
   unanswered:            "Yanıtlanamayan",
   needsTraining:         "Eğitim Gerekiyor",
@@ -103,6 +104,7 @@ export const STATUS_LABELS: Record<string, string> = {
 export const STATUS_COLORS: Record<string, string> = {
   answered:    "#34d399",
   appointment: "#818cf8",
+  collecting:  "#f59e0b",
   liveSupport: "#38bdf8",
   unanswered:  "#f87171",
   needsTraining: "#fb923c",

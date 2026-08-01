@@ -41,6 +41,17 @@ export type ConversationState =
 
 export type VisitType = "first_visit" | "follow_up" | "control" | "unknown";
 
+export type ExpectedSlot =
+  | "treatment"
+  | "preferredDate"
+  | "preferredTime"
+  | "fullName"
+  | "phone"
+  | "email"
+  | "confirmation"
+  | "all_info_provided"
+  | string;
+
 export interface ConversationSlots {
   treatment?: string;
   preferredDate?: string; // ISO YYYY-MM-DD
@@ -60,6 +71,7 @@ export interface ConversationSlots {
   selectedClinicId?: string;
   selectedClinicName?: string;
   kvkkConsent?: boolean;
+  expectedSlot?: ExpectedSlot;
   [key: string]: any;
 }
 
@@ -74,6 +86,8 @@ export interface IntentClassificationResult {
   matchedKeywords?: string[];
   explanation?: string;
   suggestedNextState?: ConversationState;
+  validationError?: "invalid_email" | "invalid_phone" | "invalid_date" | "invalid_time" | string;
+  allInfoProvidedIntent?: boolean;
 }
 
 export interface ConversationContext {
@@ -85,6 +99,8 @@ export interface ConversationContext {
   channel: "admin" | "web_widget" | "agency_widget" | "embedded" | "whatsapp" | "other";
   locale: string;
   currentState: ConversationState;
+  currentFlow?: "appointment" | "lead" | "general";
+  expectedSlot?: ExpectedSlot;
   slots: Partial<ConversationSlots>;
   history?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
   turkishContactNumber?: string;
@@ -97,7 +113,9 @@ export interface StateTransitionResult {
   nextState: ConversationState;
   updatedSlots: Partial<ConversationSlots>;
   missingRequiredSlots: string[];
+  expectedSlot?: ExpectedSlot;
   nextPromptNeeded?: string;
+  validationError?: string;
   isComplete: boolean;
 }
 
@@ -107,7 +125,9 @@ export interface EngineExecutionOutput {
   previousState: ConversationState;
   nextState: ConversationState;
   slots: Partial<ConversationSlots>;
+  expectedSlot?: ExpectedSlot;
   requiresKnowledgeBase: boolean;
+  fallbackBlockedReason?: string;
   liveSupportRequired?: boolean;
   appointmentReadyForReview?: boolean;
   appointmentSubmitted?: boolean;

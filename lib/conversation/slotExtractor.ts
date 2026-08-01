@@ -27,17 +27,20 @@ const COMMON_TREATMENTS = [
 
 export class SlotExtractor {
   /**
-   * Extract all identifiable slots from a message, optionally in context of previous slots
+   * Extract all identifiable slots from a message, optionally in context of previous slots and expectedSlot
    */
   public static extractSlots(
     message: string,
     existingSlots: Partial<ConversationSlots> = {},
     locale: string = "tr",
-    timeZone: string = "Europe/Istanbul"
+    timeZone: string = "Europe/Istanbul",
+    expectedSlot?: string
   ): {
     extracted: Partial<ConversationSlots>;
     isCorrection: boolean;
     correctedSlotKey?: keyof ConversationSlots;
+    invalidEmailAttempt?: boolean;
+    allInfoProvidedIntent?: boolean;
   } {
     const raw = (message || "").trim();
     if (!raw) return { extracted: {}, isCorrection: false };
@@ -46,8 +49,18 @@ export class SlotExtractor {
     const extracted: Partial<ConversationSlots> = {};
     let isCorrection = false;
     let correctedSlotKey: keyof ConversationSlots | undefined;
+    let invalidEmailAttempt = false;
 
-    // 1. Correction Detection (e.g. "1 Ağustos değil 3 Ağustos olsun", "actually August 3 not August 1")
+    // 0. "Provided all information now" / "Tüm bilgileri verdim" Check
+    if (this.isAllInfoProvided(lower)) {
+      return {
+        extracted: {},
+        isCorrection: false,
+        allInfoProvidedIntent: true
+      };
+    }
+
+    // 1. Correction Detection (e.g. "1 Ağustos değil 3 Ağustos olsun", "Use sadia.new@hotmail.com instead")
     const correctionCheck = this.parseCorrection(raw, lower, locale, timeZone);
     if (correctionCheck.isCorrection) {
       isCorrection = true;
@@ -55,7 +68,20 @@ export class SlotExtractor {
       Object.assign(extracted, correctionCheck.slots);
     }
 
-    // 2. Date Extraction (if not already extracted by correction)
+    // 2. Email Extraction & Validation
+    const emailRes = this.parseEmail(raw);
+    if (emailRes) {
+      extracted.email = emailRes;
+    } else if (
+      expectedSlot === "email" ||
+      (raw.includes("@") && !raw.includes(" ")) ||
+      /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\b/.test(raw)
+    ) {
+      // User sent an incomplete or malformed email (e.g. sadiahammad1@hotmail without .com or invalid domain)
+      invalidEmailAttempt = true;
+    }
+
+    // 3. Date Extraction (if not already extracted by correction)
     if (!extracted.preferredDate) {
       const dateRes = this.parseDate(raw, lower, timeZone);
       if (dateRes) {
@@ -65,7 +91,7 @@ export class SlotExtractor {
       }
     }
 
-    // 3. Time / Time-Preference Extraction
+    // 4. Time / Time-Preference Extraction
     if (!extracted.preferredTime) {
       const timeRes = this.parseTime(raw, lower);
       if (timeRes) {
@@ -74,7 +100,7 @@ export class SlotExtractor {
       }
     }
 
-    // 4. Visit Type Extraction (ilk gelişimiz, kontrol vb.)
+    // 5. Visit Type Extraction (ilk gelişimiz, kontrol vb.)
     if (!extracted.visitType) {
       const visitRes = this.parseVisitType(lower);
       if (visitRes) {
@@ -82,18 +108,12 @@ export class SlotExtractor {
       }
     }
 
-    // 5. Treatment Extraction
+    // 6. Treatment Extraction
     if (!extracted.treatment) {
       const treatmentRes = this.parseTreatment(lower);
       if (treatmentRes) {
         extracted.treatment = treatmentRes;
       }
-    }
-
-    // 6. Email Extraction
-    const emailRes = this.parseEmail(raw);
-    if (emailRes) {
-      extracted.email = emailRes;
     }
 
     // 7. Phone Extraction
@@ -102,9 +122,9 @@ export class SlotExtractor {
       extracted.phone = phoneRes;
     }
 
-    // 8. Name Extraction (when explicitly phrased or matches name pattern)
+    // 8. Name Extraction (when explicitly phrased, matching name pattern, or expectedSlot is fullName/name)
     if (!extracted.fullName && !extracted.firstName) {
-      const nameRes = this.parseName(raw, lower, existingSlots);
+      const nameRes = this.parseName(raw, lower, existingSlots, expectedSlot);
       if (nameRes) {
         extracted.fullName = nameRes.fullName;
         extracted.firstName = nameRes.firstName;
@@ -120,12 +140,23 @@ export class SlotExtractor {
     return {
       extracted,
       isCorrection,
-      correctedSlotKey
+      correctedSlotKey,
+      invalidEmailAttempt,
+      allInfoProvidedIntent: false
     };
   }
 
   /**
-   * Parse slot corrections like "X değil Y olsun"
+   * Check if patient says they already provided all details
+   */
+  public static isAllInfoProvided(lower: string): boolean {
+    return /\b(provided all information now|provided all info|gave all info|all information provided|given all details|all details provided|sent all details|tüm bilgileri verdim|tum bilgileri verdim|hepsini verdim|tümünü paylaştım|bilgileri paylaştım|bilgilerimi verdim)\b/i.test(
+      lower
+    );
+  }
+
+  /**
+   * Parse slot corrections like "X değil Y olsun", "Use sadia.new@hotmail.com instead"
    */
   public static parseCorrection(
     raw: string,
@@ -133,10 +164,23 @@ export class SlotExtractor {
     locale: string,
     timeZone: string
   ): { isCorrection: boolean; slotKey?: keyof ConversationSlots; slots: Partial<ConversationSlots> } {
-    // Turkish correction pattern: "... değil ... olsun" / "... yerine ..."
+    // 1. Email correction pattern: "Use sadia.new@hotmail.com instead", "e-posta sadia.new@hotmail.com olsun"
+    const emailDirectMatch = raw.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+    if (
+      emailDirectMatch &&
+      /\b(use|instead|actually|aslında|yerine|değil|degil|olsun|lütfen|please)\b/i.test(lower)
+    ) {
+      return {
+        isCorrection: true,
+        slotKey: "email",
+        slots: { email: emailDirectMatch[0].toLowerCase() }
+      };
+    }
+
+    // 2. Turkish correction pattern: "... değil ... olsun" / "... yerine ..."
     const trDeğilMatch = raw.match(/(?:aslında\s+)?(.+?)\s+değil(?:dir)?(?:,\s*|\s+)(.+?)(?:\s+olsun|\s+lütfen|\.?$)/i);
     const trYerineMatch = raw.match(/(.+?)\s+yerine\s+(.+?)(?:\s+olsun|\s+lütfen|\.?$)/i);
-    const enInsteadMatch = raw.match(/(?:actually\s+)?(.+?)\s+instead\s+of\s+(.+?)(?:\s+please|\.?$)/i);
+    const enInsteadMatch = raw.match(/(?:actually\s+)?(?:use\s+)?(.+?)\s+instead(?:\s+of\s+(.+?))?(?:\s+please|\.?$)/i);
     const enNotMatch = raw.match(/(?:actually\s+)?not\s+(.+?)(?:,\s*|\s+)but\s+(.+?)(?:\s+please|\.?$)/i);
 
     const targetChunk = trDeğilMatch?.[2] || trYerineMatch?.[2] || enInsteadMatch?.[1] || enNotMatch?.[2];
@@ -169,6 +213,16 @@ export class SlotExtractor {
             preferredTime: timeRes.value,
             rawTimeText: timeRes.rawText
           }
+        };
+      }
+
+      // Check if target is an email
+      const emailTarget = this.parseEmail(trimmedTarget);
+      if (emailTarget) {
+        return {
+          isCorrection: true,
+          slotKey: "email",
+          slots: { email: emailTarget }
         };
       }
     }
@@ -371,40 +425,61 @@ export class SlotExtractor {
   }
 
   /**
-   * Parse email address
+   * Parse email address with sanitization
    */
   public static parseEmail(raw: string): string | null {
-    const emailMatch = raw.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+    if (!raw) return null;
+    const sanitized = raw.replace(/^[\s,.;:<>]+|[\s,.;:<>]+$/g, "").trim();
+    const emailMatch = sanitized.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
     return emailMatch ? emailMatch[0].toLowerCase() : null;
   }
 
   /**
-   * Parse and normalize phone number
+   * Parse and normalize phone number (Turkish and international)
    */
   public static parsePhone(raw: string): string | null {
-    // Match Turkish or international phone patterns
-    const phoneMatch = raw.match(/(?:\+?\d{1,3}[\s-]?)?\(?0?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}/) ||
-      raw.match(/\b(?:\+?\d{10,14})\b/);
-
-    if (phoneMatch) {
-      const clean = phoneMatch[0].replace(/[\s\(\)\-]/g, "");
-      if (clean.length >= 10 && clean.length <= 15) {
-        return phoneMatch[0].trim();
+    if (!raw) return null;
+    // 1. Match international format with country code (e.g. +44 7911 123456, +49 151 23456789, +90 532 123 45 67)
+    const intlMatch = raw.match(/\+\d{1,4}(?:[\s.-]?\(?\d{1,4}\)?)*(?:[\s.-]?\d{1,4}){2,5}/);
+    if (intlMatch) {
+      const digits = intlMatch[0].replace(/\D/g, "");
+      if (digits.length >= 9 && digits.length <= 16) {
+        return intlMatch[0].trim();
       }
     }
+
+    // 2. Match standard local phone format with optional leading zero or parentheses
+    const localMatch = raw.match(/(?:\+?\d{1,3}[\s-]?)?\(?0?\d{2,4}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}/) ||
+      raw.match(/\b(?:\+\d{1,3}[\s-]?)?\d{9,14}\b/);
+
+    if (localMatch) {
+      const clean = localMatch[0].replace(/[\s\(\)\-]/g, "");
+      const digits = clean.replace(/\D/g, "");
+      if (digits.length >= 9 && digits.length <= 16) {
+        return localMatch[0].trim();
+      }
+    }
+
+    // 3. Fallback: check if the string itself is a clean phone number
+    const allDigits = raw.replace(/\D/g, "");
+    if (allDigits.length >= 9 && allDigits.length <= 16 && (raw.startsWith("+") || raw.startsWith("0") || raw.startsWith("5"))) {
+      return raw.trim();
+    }
+
     return null;
   }
 
   /**
-   * Parse Name (e.g. "Adım Ahmet Yılmaz", "Ahmet Yılmaz")
+   * Parse Name (e.g. "Adım Ahmet Yılmaz", "Ahmet Yılmaz", or when expectedSlot is fullName)
    */
   public static parseName(
     raw: string,
     lower: string,
-    existingSlots: Partial<ConversationSlots>
+    existingSlots: Partial<ConversationSlots>,
+    expectedSlot?: string
   ): { fullName: string; firstName: string; lastName: string } | null {
-    // 1. Phrased patterns: "Adım Ahmet Yılmaz", "İsmim Mehmet", "My name is John Doe"
-    const nameMatch = raw.match(/\b(?:adım|ismim|ben|my name is|i am)\s+([A-ZÇĞİÖŞÜa-zçğıöşü]{2,}(?:\s+[A-ZÇĞİÖŞÜa-zçğıöşü]{2,}){1,3})/i);
+    // 1. Phrased patterns: "Adım Ahmet Yılmaz", "İsmim Mehmet", "My name is John Doe", "I am Sadia Hammad"
+    const nameMatch = raw.match(/\b(?:adım|ismim|ben|my name is|i am|name is|it is)\s+([A-ZÇĞİÖŞÜa-zçğıöşü]{2,}(?:\s+[A-ZÇĞİÖŞÜa-zçğıöşü]{2,}){0,3})/i);
     if (nameMatch) {
       const full = nameMatch[1].trim();
       const parts = full.split(/\s+/);
@@ -413,13 +488,35 @@ export class SlotExtractor {
       return { fullName: full, firstName: first, lastName: last };
     }
 
-    // 2. If in appointment collection and only a 2-3 word string with no numbers is provided
+    // 2. Expected slot is fullName or name
+    if (expectedSlot === "fullName" || expectedSlot === "name") {
+      const trimmed = raw.trim();
+      const words = trimmed.split(/\s+/);
+      if (
+        words.length >= 1 &&
+        words.length <= 4 &&
+        !/\d/.test(trimmed) &&
+        !trimmed.includes("@") &&
+        !/(randevu|istiyorum|fiyat|nerede|saat|gün|implant|diş|doktor|evet|hayır|yes|no|help|price|cost)/i.test(lower)
+      ) {
+        const allWordsLetter = words.every(w => /^[A-ZÇĞİÖŞÜa-zçğıöşü\.\-]+$/.test(w));
+        if (allWordsLetter) {
+          const full = words.join(" ");
+          const first = words.slice(0, -1).join(" ") || words[0];
+          const last = words.length > 1 ? words[words.length - 1] : "";
+          return { fullName: full, firstName: first, lastName: last };
+        }
+      }
+    }
+
+    // 3. If in appointment collection and only a 2-3 word string with no numbers is provided
     const words = raw.trim().split(/\s+/);
     if (
       words.length >= 2 &&
       words.length <= 4 &&
       !/\d/.test(raw) &&
-      !/(randevu|istiyorum|fiyat|nerede|saat|gün|implant|diş|doktor|evet|hayır|yes|no)/i.test(lower)
+      !raw.includes("@") &&
+      !/(randevu|istiyorum|fiyat|nerede|saat|gün|implant|diş|doktor|evet|hayır|yes|no|help|price|cost)/i.test(lower)
     ) {
       const allWordValid = words.every(w => /^[A-ZÇĞİÖŞÜa-zçğıöşü\.]+$/.test(w));
       if (allWordValid) {

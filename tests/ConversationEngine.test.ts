@@ -263,6 +263,97 @@ describe('Unified Conversation Engine & Intent Router Test Suite', () => {
     });
   });
 
+  // ── SCENARIO K: Multilingual Email, Phone & Formatters ──
+  describe('Scenario K: Multilingual Slot Extraction & Sequential Prompts', () => {
+    it('extracts emails with numbers, dots and hyphens correctly', () => {
+      const email1 = SlotExtractor.parseEmail('sadiahammad1@hotmail.com');
+      expect(email1).toBe('sadiahammad1@hotmail.com');
+
+      const email2 = SlotExtractor.parseEmail('My email is john.doe-99@sub.domain.co.uk please use it');
+      expect(email2).toBe('john.doe-99@sub.domain.co.uk');
+
+      const res = SlotExtractor.extractSlots('sadiahammad1@hotmail.com', { expectedSlot: 'email' }, 'en');
+      expect(res.extracted.email).toBe('sadiahammad1@hotmail.com');
+    });
+
+    it('classifies email intent correctly when expectedSlot is email', () => {
+      const result = IntentRouter.classifyConversationIntent({
+        message: 'sadiahammad1@hotmail.com',
+        currentState: 'APPOINTMENT_COLLECTION',
+        expectedSlot: 'email',
+        collectedSlots: {
+          preferredDate: '2026-08-03',
+          preferredTime: '10:00',
+          fullName: 'Sadia Hammad',
+          phone: '+905321234567'
+        },
+        locale: 'en'
+      });
+
+      expect(result.intent).toBe('appointment_continuation');
+      expect(result.entities.email).toBe('sadiahammad1@hotmail.com');
+      expect(result.requiresKnowledgeBase).toBe(false);
+      expect(result.shouldContinueActiveFlow).toBe(true);
+    });
+
+    it('extracts international phone numbers accurately', () => {
+      const ukPhone = SlotExtractor.parsePhone('+44 7911 123456');
+      expect(ukPhone).toBe('+44 7911 123456');
+
+      const dePhone = SlotExtractor.parsePhone('+49 151 23456789');
+      expect(dePhone).toBe('+49 151 23456789');
+
+      const trPhone = SlotExtractor.parsePhone('0532 123 45 67');
+      expect(trPhone).toBe('0532 123 45 67');
+    });
+
+    it('generates accurate multilingual appointment summaries', async () => {
+      const { formatMultilingualSummary } = await import('../lib/conversation');
+
+      const draft = {
+        patientName: 'Sadia Hammad',
+        patientPhone: '+44 7911 123456',
+        patientEmail: 'sadiahammad1@hotmail.com',
+        requestedService: 'Dental Checkup',
+        requestedDate: '2026-08-03',
+        requestedTime: '10:00'
+      };
+
+      const enSummary = formatMultilingualSummary(draft, 'en');
+      expect(enSummary).toContain('Summary of your appointment request:');
+      expect(enSummary).toContain('Sadia Hammad');
+      expect(enSummary).toContain('sadiahammad1@hotmail.com');
+      expect(enSummary).toContain('Would you like me to submit this appointment request');
+
+      const deSummary = formatMultilingualSummary(draft, 'de');
+      expect(deSummary).toContain('Zusammenfassung Ihrer Terminanfrage:');
+      expect(deSummary).toContain('Ja oder Nein');
+
+      const frSummary = formatMultilingualSummary(draft, 'fr');
+      expect(frSummary).toContain('Récapitulatif de votre demande de rendez-vous:');
+
+      const trSummary = formatMultilingualSummary(draft, 'tr');
+      expect(trSummary).toContain('Ön randevu talebinizin özeti:');
+      expect(trSummary).toContain('Evet veya Hayır');
+    });
+
+    it('generates accurate multilingual sequential prompts', async () => {
+      const { formatMultilingualPrompt } = await import('../lib/conversation');
+
+      const enNamePrompt = formatMultilingualPrompt('ASK_NAME', 'en');
+      expect(enNamePrompt).toContain('Could you please share your full name');
+
+      const enEmailPrompt = formatMultilingualPrompt('ASK_EMAIL', 'en');
+      expect(enEmailPrompt).toContain('Could you please provide your email address');
+
+      const enInvalidEmail = formatMultilingualPrompt('INVALID_EMAIL', 'en');
+      expect(enInvalidEmail).toContain('That email address appears to be incomplete');
+
+      const enCancelled = formatMultilingualPrompt('CANCELLED', 'en');
+      expect(enCancelled).toContain('Your appointment request has been cancelled');
+    });
+  });
+
   // ── SCENARIO J: PII Logging & Safety ──
   describe('Scenario J: Observability & Masking', () => {
     it('masks emails and phone numbers correctly', () => {
