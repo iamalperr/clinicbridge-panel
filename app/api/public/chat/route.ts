@@ -21,10 +21,14 @@ import {
   ConversationFeatureFlags,
   ConversationLogger,
   PendingActionManager,
-  formatMultilingualSummary,
   formatMultilingualPrompt,
   formatPricingFallback,
-  formatContactResponse
+  formatContactResponse,
+  buildAppointmentReviewMessage,
+  resolveConversationLocale,
+  formatLocalizedDate,
+  formatLocalizedTime,
+  formatLocalizedTreatment
 } from "@/lib/conversation";
 
 const CORS = {
@@ -1140,6 +1144,7 @@ export async function POST(req: Request) {
     let loadedPendingAction: any = null;
     let loadedAppointmentId: string | null = null;
     let loadedIsAppointmentCreated: boolean = false;
+    let loadedConversationLocale: string | null = null;
 
     if (adminDb && convId) {
         try {
@@ -1156,14 +1161,38 @@ export async function POST(req: Request) {
                 if (lData?.pendingAction) loadedPendingAction = lData.pendingAction;
                 if (lData?.appointmentId) loadedAppointmentId = lData.appointmentId;
                 if (lData?.isAppointmentCreated) loadedIsAppointmentCreated = lData.isAppointmentCreated;
+                if (lData?.conversationLocale || lData?.detectedLanguage || lData?.language) {
+                  loadedConversationLocale = lData.conversationLocale || lData.detectedLanguage || lData.language;
+                }
             }
         } catch (e: any) {
             console.error("[chat API] Error loading strict context:", e.message);
         }
     }
 
+    // Resolve conversation locale following strict priority
+    const conversationLocale = resolveConversationLocale({
+      requestLanguage: language,
+      persistedLocale: loadedConversationLocale,
+      currentMessage: message,
+      history,
+      clinicDefaultLocale: clinicLanguage
+    });
+
+    console.log(JSON.stringify({
+      checkpoint: "APPOINTMENT_LOCALE_RESOLUTION",
+      traceId: activeTraceId,
+      conversationId: convId,
+      clinicId: actualClinicId,
+      requestLanguage: language,
+      persistedLocale: loadedConversationLocale,
+      resolvedLocale: conversationLocale,
+      clinicDefaultLocale: clinicLanguage,
+      timestamp: new Date().toISOString()
+    }));
+
     // ── INSTRUMENTATION LOG 2 & 3 ──
-    console.log(JSON.stringify({ checkpoint: "APPT_02_STATE_LOADED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, appointmentState: loadedState, timestamp: new Date().toISOString() }));
+    console.log(JSON.stringify({ checkpoint: "APPT_02_STATE_LOADED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, appointmentState: loadedState, conversationLocale, timestamp: new Date().toISOString() }));
     console.log(JSON.stringify({ checkpoint: "APPT_03_DRAFT_LOADED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, draftFields: Object.keys(loadedDraft), timestamp: new Date().toISOString() }));
 
     // ── AŞAMA 4: CONFIRMATION HANDLER GARANTİSİ (EFFECTIVE STATE & ACTION OWNERSHIP) ──
@@ -1187,23 +1216,34 @@ export async function POST(req: Request) {
       guardReason: apptPermitted.reason,
       positiveConfirmationDetected,
       negativeConfirmationDetected,
+      conversationLocale,
       handlerWillRun: isAwaitingConfirmation && positiveConfirmationDetected && !negativeConfirmationDetected
     }));
 
     if (isAwaitingConfirmation && positiveConfirmationDetected && !negativeConfirmationDetected && adminDb) {
          // ── INSTRUMENTATION LOG 4 ──
-         console.log(JSON.stringify({ checkpoint: "APPT_04_CONFIRMATION_HANDLER_ENTERED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, timestamp: new Date().toISOString() }));
+         console.log(JSON.stringify({ checkpoint: "APPT_04_CONFIRMATION_HANDLER_ENTERED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, conversationLocale, timestamp: new Date().toISOString() }));
          
          // 1. Validate persisted draft
          if (!loadedDraft.patientName) {
              console.error(`[CONFIRMATION_FAILED] Missing patientName in persisted draft for convId=${convId}`);
-             await saveAppointmentState(adminDb, actualClinicId, convId, 0, "COLLECTING_NAME", loadedDraft, {});
-             return NextResponse.json({ success: true, responseType: "appointment_information_required", appointmentCreated: false, reply: "İşleme devam edebilmem için adınızı ve soyadınızı öğrenebilir miyim?" }, { headers: CORS });
+             await saveAppointmentState(adminDb, actualClinicId, convId, 0, "COLLECTING_NAME", loadedDraft, { conversationLocale });
+             return NextResponse.json({ 
+               success: true, 
+               responseType: "appointment_information_required", 
+               appointmentCreated: false, 
+               reply: formatMultilingualPrompt("ASK_NAME", conversationLocale) 
+             }, { headers: CORS });
          }
          if (!loadedDraft.patientPhone) {
              console.error(`[CONFIRMATION_FAILED] Missing patientPhone in persisted draft for convId=${convId}`);
-             await saveAppointmentState(adminDb, actualClinicId, convId, 0, "COLLECTING_PHONE", loadedDraft, {});
-             return NextResponse.json({ success: true, responseType: "appointment_information_required", appointmentCreated: false, reply: "Kliniğimizin sizinle iletişime geçebilmesi için telefon numaranızı öğrenebilir miyim?" }, { headers: CORS });
+             await saveAppointmentState(adminDb, actualClinicId, convId, 0, "COLLECTING_PHONE", loadedDraft, { conversationLocale });
+             return NextResponse.json({ 
+               success: true, 
+               responseType: "appointment_information_required", 
+               appointmentCreated: false, 
+               reply: formatMultilingualPrompt("ASK_PHONE", conversationLocale, loadedDraft.patientName) 
+             }, { headers: CORS });
          }
          
          // 1.5 Final Strict Date & Time Hard Block
@@ -1219,24 +1259,28 @@ export async function POST(req: Request) {
          if (finalDateValidation.hasConflict || !finalDateValidation.isValid) {
             console.error(`[CONFIRMATION_BLOCKED] Final date validation failed before creation:`, JSON.stringify(finalDateValidation));
             await saveAppointmentState(adminDb, actualClinicId, convId, 0, "AWAITING_DATE_CLARIFICATION", loadedDraft, {
-               dateAlternatives: finalDateValidation.alternatives
+               dateAlternatives: finalDateValidation.alternatives,
+               conversationLocale
             });
+            const clarificationFallback = conversationLocale.startsWith("en")
+              ? "I noticed a discrepancy with the appointment date. Could you please confirm or specify the date again?"
+              : "Tarih ile ilgili bir tutarsızlık fark ettim. Lütfen randevu tarihinizi tekrar onaylayın veya düzeltin.";
             return NextResponse.json({ 
                success: true, 
                responseType: "appointment_date_clarification_required", 
                appointmentCreated: false, 
-               reply: finalDateValidation.clarificationMessage || "Tarih ile ilgili bir tutarsızlık fark ettim. Lütfen randevu tarihinizi tekrar onaylayın veya düzeltin." 
+               reply: finalDateValidation.clarificationMessage || clarificationFallback 
             }, { headers: CORS });
          }
 
          // Override with canonical just to be absolutely sure
          loadedDraft.requestedDate = finalDateValidation.resolvedDate || loadedDraft.requestedDate;
-         (loadedDraft as any).requestedWeekday = finalDateValidation.resolvedWeekday;
+         (loadedDraft as any).requestedWeekday = conversationLocale.startsWith("en") ? (finalDateValidation.resolvedWeekdayEn || finalDateValidation.resolvedWeekday) : finalDateValidation.resolvedWeekday;
 
           // 2. Call and await createAppointmentAndNotify
          try {
              // State -> SUBMITTING_APPOINTMENT
-             await saveAppointmentState(adminDb, actualClinicId, convId, 0, "SUBMITTING_APPOINTMENT", loadedDraft, {});
+             await saveAppointmentState(adminDb, actualClinicId, convId, 0, "SUBMITTING_APPOINTMENT", loadedDraft, { conversationLocale });
 
              const { createAppointmentAndNotify } = await import("@/lib/appointment-service");
 
@@ -1248,7 +1292,7 @@ export async function POST(req: Request) {
                  patientName: loadedDraft.patientName,
                  patientPhone: loadedDraft.patientPhone,
                  patientEmail: loadedDraft.patientEmail,
-                 requestedService: loadedDraft.requestedService || "Genel Muayene",
+                 requestedService: loadedDraft.requestedService || (conversationLocale.startsWith("en") ? "General Consultation" : "Genel Muayene"),
                  requestedDate: loadedDraft.requestedDate,
                  requestedTime: loadedDraft.requestedTime,
                  preferredTimeText: loadedDraft.preferredTimeText,
@@ -1269,10 +1313,19 @@ export async function POST(req: Request) {
                  await saveAppointmentState(adminDb, actualClinicId, convId, 0, "APPOINTMENT_SUBMITTED", {}, {
                    isAppointmentCreated: true,
                    appointmentId: result.appointmentId,
-                   pendingAction: null
+                   pendingAction: null,
+                   conversationLocale
                  });
 
-                 const successReply = `Teşekkür ederim. Ön randevu talebiniz ${clinicName}'e iletildi. Klinik ekibi talebinizi değerlendirdikten sonra kayıtlı iletişim bilgileriniz üzerinden size bilgi verecektir.`;
+                 const successReply = conversationLocale.startsWith("en")
+                   ? `Thank you. Your preliminary appointment request has been submitted to ${clinicName}. The clinic team will review it and contact you using your registered contact details.`
+                   : conversationLocale.startsWith("de")
+                   ? `Vielen Dank. Ihre vorläufige Terminanfrage wurde an ${clinicName} weitergeleitet. Das Klinikteam wird Ihre Anfrage prüfen und sich bei Ihnen melden.`
+                   : conversationLocale.startsWith("fr")
+                   ? `Merci. Votre demande de rendez-vous préliminaire a été transmise à ${clinicName}. L'équipe clinique examinera votre demande et vous contactera.`
+                   : conversationLocale.startsWith("ar")
+                   ? `شكراً لك. تم إرسال طلب الموعد المبدئي الخاص بك إلى ${clinicName}. سيقوم فريق العيادة بمراجعة طلبك والتواصل معك.`
+                   : `Teşekkür ederim. Ön randevu talebiniz ${clinicName}'e iletildi. Klinik ekibi talebinizi değerlendirdikten sonra kayıtlı iletişim bilgileriniz üzerinden size bilgi verecektir.`;
 
                  // LOG THE SUCCESSFUL APPOINTMENT CREATION
                  await logConversation({
@@ -1287,7 +1340,8 @@ export async function POST(req: Request) {
                    appointmentState: "APPOINTMENT_SUBMITTED",
                    tenantId: "legacy",
                    widgetId: body.widgetId,
-                   sourceDomain: body.originUrl || "unknown"
+                   sourceDomain: body.originUrl || "unknown",
+                   detectedLanguage: conversationLocale
                  });
 
                  // 5. Return strict response
@@ -1303,24 +1357,32 @@ export async function POST(req: Request) {
                  }, { headers: CORS });
 
              } else {
-                 await saveAppointmentState(adminDb, actualClinicId, convId, 0, "AWAITING_CONFIRMATION", loadedDraft, {});
+                 await saveAppointmentState(adminDb, actualClinicId, convId, 0, "AWAITING_CONFIRMATION", loadedDraft, { conversationLocale });
+                 const failReply = conversationLocale.startsWith("en")
+                   ? "I am sorry, your preliminary appointment request could not be saved at this time. Please try again later."
+                   : conversationLocale.startsWith("de")
+                   ? "Es tut uns leid, Ihre Terminanfrage konnte derzeit nicht gespeichert werden. Bitte versuchen Sie es später noch einmal."
+                   : "Üzgünüm, ön randevu talebiniz şu anda sisteme kaydedilemedi. Lütfen daha sonra tekrar deneyin.";
                  return NextResponse.json({
                      success: false,
                      responseType: "appointment_creation_failed",
                      appointmentCreated: false,
                      errorCode: "APPOINTMENT_CREATE_FAILED",
-                     reply: "Üzgünüm, ön randevu talebiniz şu anda sisteme kaydedilemedi. Lütfen daha sonra tekrar deneyin."
+                     reply: failReply
                  }, { headers: CORS });
              }
 
          } catch (err: any) {
-             await saveAppointmentState(adminDb, actualClinicId, convId, 0, "AWAITING_CONFIRMATION", loadedDraft, {});
+             await saveAppointmentState(adminDb, actualClinicId, convId, 0, "AWAITING_CONFIRMATION", loadedDraft, { conversationLocale });
+             const failReply = conversationLocale.startsWith("en")
+               ? "I am sorry, your preliminary appointment request could not be saved at this time. Please try again later."
+               : "Üzgünüm, ön randevu talebiniz şu anda sisteme kaydedilemedi. Lütfen daha sonra tekrar deneyin.";
              return NextResponse.json({
                  success: false,
                  responseType: "appointment_creation_failed",
                  appointmentCreated: false,
                  errorCode: "APPOINTMENT_CREATE_FAILED",
-                 reply: "Üzgünüm, ön randevu talebiniz şu anda sisteme kaydedilemedi. Lütfen daha sonra tekrar deneyin."
+                 reply: failReply
              }, { headers: CORS });
          }
     } else if (positiveConfirmationDetected) {
@@ -1367,8 +1429,8 @@ export async function POST(req: Request) {
     /* ── DETERMINISTIC STATE MACHINE INTERCEPTOR ───────────────────────── */
     const isCancel = /^(hayır|h|onaylamıyorum|iptal|vazgeçtim|hayir|no|cancel|stornieren|annuler|nein|non|لا)$/i.test(msgLower);
     if (isCancel && (appointmentState !== "IDLE" || pendingAppointmentData)) {
-        await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "IDLE", {}, { processedMessageIds: [...processedMessageIds, messageId] });
-        return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("CANCELLED", clinicLanguage) }, { headers: CORS });
+        await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "IDLE", {}, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
+        return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("CANCELLED", conversationLocale) }, { headers: CORS });
     }
 
     const currentExpectedSlot =
@@ -1400,7 +1462,7 @@ export async function POST(req: Request) {
         turkishContactNumber: clinicData?.turkishContactNumber,
         internationalContactNumber: clinicData?.internationalContactNumber
       },
-      locale: clinicLanguage
+      locale: conversationLocale
     });
 
     // Handle Slot Extractions and Corrections (e.g. email, phone, name, date)
@@ -1441,7 +1503,7 @@ export async function POST(req: Request) {
     // Handle Contact / Live Support Request (Preserves active appointment flow state)
     if (conversationIntent.intent === "contact_request" || conversationIntent.intent === "live_support_request") {
       const effectiveContactNumber = clinicWhatsapp || clinicData?.turkishContactNumber || clinicData?.internationalContactNumber || clinicData?.phone;
-      const contactMsg = formatContactResponse(effectiveContactNumber, conversationIntent.entities?.contactTarget, clinicLanguage);
+      const contactMsg = formatContactResponse(effectiveContactNumber, conversationIntent.entities?.contactTarget, conversationLocale);
       return NextResponse.json({
         responseType: "CHAT_REPLY",
         reply: contactMsg,
@@ -1475,12 +1537,15 @@ export async function POST(req: Request) {
            
            if (validationResult.isValid && !validationResult.hasConflict) {
               appointmentDraft.requestedDate = validationResult.resolvedDate || appointmentDraft.requestedDate;
-              (appointmentDraft as any).requestedWeekday = validationResult.resolvedWeekday;
+              (appointmentDraft as any).requestedWeekday = conversationLocale.startsWith("en") ? (validationResult.resolvedWeekdayEn || validationResult.resolvedWeekday) : validationResult.resolvedWeekday;
            } else {
               // Still invalid or conflict
+              const clarificationFail = conversationLocale.startsWith("en")
+                ? "The date could not be understood. Please specify again."
+                : "Tarih anlaşılamadı. Lütfen tekrar belirtin.";
               return NextResponse.json({ 
                 responseType: "CHAT_REPLY", 
-                reply: validationResult.clarificationMessage || "Tarih anlaşılamadı. Lütfen tekrar belirtin.", 
+                reply: validationResult.clarificationMessage || clarificationFail, 
                 pendingAppointmentData: appointmentDraft 
               }, { headers: CORS });
            }
@@ -1491,36 +1556,38 @@ export async function POST(req: Request) {
         
         // Progress to next missing field, or AWAITING_CONFIRMATION
         if (!appointmentDraft.patientName) {
-            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_NAME", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId] });
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_NAME", clinicLanguage) }, { headers: CORS });
+            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_NAME", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_NAME", conversationLocale) }, { headers: CORS });
         } else if (!appointmentDraft.patientPhone) {
-            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_PHONE", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId] });
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_PHONE", clinicLanguage, appointmentDraft.patientName) }, { headers: CORS });
+            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_PHONE", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_PHONE", conversationLocale, appointmentDraft.patientName) }, { headers: CORS });
         } else if (!appointmentDraft.patientEmail) {
-            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId] });
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_EMAIL", clinicLanguage) }, { headers: CORS });
+            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_EMAIL", conversationLocale) }, { headers: CORS });
         } else {
-            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId] });
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualSummary(appointmentDraft, clinicLanguage), pendingAppointmentData: appointmentDraft }, { headers: CORS });
+            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { ...newStateData, processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
+            const reviewMsg = buildAppointmentReviewMessage({ locale: conversationLocale, appointmentData: appointmentDraft, clinicName });
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: reviewMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
         }
     } else if (appointmentState === "COLLECTING_NAME") {
         const nameVal = conversationIntent.entities?.fullName || (message.trim().length >= 2 ? message.trim() : "");
         if (!nameVal) {
-            return NextResponse.json({ success: true, appointmentCreated: false, responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_NAME", clinicLanguage) }, { headers: CORS });
+            return NextResponse.json({ success: true, appointmentCreated: false, responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_NAME", conversationLocale) }, { headers: CORS });
         }
         appointmentDraft.patientName = nameVal;
         console.log(`[APPOINTMENT_STATE] COLLECTING_NAME completed: name="${appointmentDraft.patientName}" convId=${convId}`);
 
         if (!appointmentDraft.patientPhone) {
-            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_PHONE", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_PHONE", clinicLanguage, appointmentDraft.patientName), pendingAppointmentData: appointmentDraft }, { headers: CORS });
+            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_PHONE", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_PHONE", conversationLocale, appointmentDraft.patientName), pendingAppointmentData: appointmentDraft }, { headers: CORS });
         }
         if (!appointmentDraft.patientEmail) {
-            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_EMAIL", clinicLanguage), pendingAppointmentData: appointmentDraft }, { headers: CORS });
+            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_EMAIL", conversationLocale), pendingAppointmentData: appointmentDraft }, { headers: CORS });
         }
-        await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
-        return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualSummary(appointmentDraft, clinicLanguage), pendingAppointmentData: appointmentDraft }, { headers: CORS });
+        await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
+        const reviewMsg = buildAppointmentReviewMessage({ locale: conversationLocale, appointmentData: appointmentDraft, clinicName });
+        return NextResponse.json({ responseType: "CHAT_REPLY", reply: reviewMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
     } else if (appointmentState === "COLLECTING_PHONE") {
         const extractedPhone = conversationIntent.entities?.phone || SlotExtractor.parsePhone(message.trim());
         let finalPhone = extractedPhone;
@@ -1533,25 +1600,27 @@ export async function POST(req: Request) {
 
         if (!finalPhone) {
             console.log(`[APPOINTMENT_STATE] COLLECTING_PHONE invalid: raw="${message.trim()}" convId=${convId}`);
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("INVALID_PHONE", clinicLanguage) }, { headers: CORS });
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("INVALID_PHONE", conversationLocale) }, { headers: CORS });
         }
         appointmentDraft.patientPhone = finalPhone;
         console.log(`[APPOINTMENT_PHONE_COLLECTED] phone="${finalPhone}" convId=${convId} clinicId=${actualClinicId}`);
 
         if (!appointmentDraft.patientEmail) {
-            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
-            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_EMAIL", clinicLanguage), pendingAppointmentData: appointmentDraft }, { headers: CORS });
+            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
+            return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_EMAIL", conversationLocale), pendingAppointmentData: appointmentDraft }, { headers: CORS });
         }
-        await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
-        return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualSummary(appointmentDraft, clinicLanguage), pendingAppointmentData: appointmentDraft }, { headers: CORS });
+        await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
+        const reviewMsg = buildAppointmentReviewMessage({ locale: conversationLocale, appointmentData: appointmentDraft, clinicName });
+        return NextResponse.json({ responseType: "CHAT_REPLY", reply: reviewMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
     } else if (appointmentState === "COLLECTING_EMAIL") {
         const extractedEmail = conversationIntent.entities?.email || SlotExtractor.parseEmail(message.trim());
         
         if (extractedEmail) {
              appointmentDraft.patientEmail = extractedEmail;
              console.log(`[APPOINTMENT_EMAIL_COLLECTED] email="${extractedEmail}" convId=${convId} clinicId=${actualClinicId}`);
-             await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
-             return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualSummary(appointmentDraft, clinicLanguage), pendingAppointmentData: appointmentDraft }, { headers: CORS });
+             await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
+             const reviewMsg = buildAppointmentReviewMessage({ locale: conversationLocale, appointmentData: appointmentDraft, clinicName });
+             return NextResponse.json({ responseType: "CHAT_REPLY", reply: reviewMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
         } else {
              const fails = (appointmentDraft.emailValidationFails || 0) + 1;
              appointmentDraft.emailValidationFails = fails;
@@ -1560,11 +1629,12 @@ export async function POST(req: Request) {
                  console.log(`[APPOINTMENT_EMAIL_FAILED] Max attempts reached, skipping. convId=${convId} clinicId=${actualClinicId}`);
                  appointmentDraft.patientEmail = ""; // Clear invalid email
                  
-                 await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
-                 return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualSummary(appointmentDraft, clinicLanguage), pendingAppointmentData: appointmentDraft }, { headers: CORS });
+                 await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
+                 const reviewMsg = buildAppointmentReviewMessage({ locale: conversationLocale, appointmentData: appointmentDraft, clinicName });
+                 return NextResponse.json({ responseType: "CHAT_REPLY", reply: reviewMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
              } else {
-                 await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
-                 return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("INVALID_EMAIL", clinicLanguage) }, { headers: CORS });
+                 await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
+                 return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("INVALID_EMAIL", conversationLocale) }, { headers: CORS });
              }
         }
     }
@@ -1577,14 +1647,15 @@ export async function POST(req: Request) {
             const hasEmail = Boolean(appointmentDraft.patientEmail);
 
             if (hasName && hasPhone && hasEmail) {
-                await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
-                return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualSummary(appointmentDraft, clinicLanguage), pendingAppointmentData: appointmentDraft }, { headers: CORS });
+                await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
+                const reviewMsg = buildAppointmentReviewMessage({ locale: conversationLocale, appointmentData: appointmentDraft, clinicName });
+                return NextResponse.json({ responseType: "CHAT_REPLY", reply: reviewMsg, pendingAppointmentData: appointmentDraft }, { headers: CORS });
             } else if (hasName && hasPhone && !hasEmail) {
-                await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
-                return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_EMAIL", clinicLanguage), pendingAppointmentData: appointmentDraft }, { headers: CORS });
+                await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
+                return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_EMAIL", conversationLocale), pendingAppointmentData: appointmentDraft }, { headers: CORS });
             } else if (hasName && !hasPhone) {
-                await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_PHONE", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId] });
-                return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_PHONE", clinicLanguage, appointmentDraft.patientName), pendingAppointmentData: appointmentDraft }, { headers: CORS });
+                await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_PHONE", appointmentDraft, { processedMessageIds: [...processedMessageIds, messageId], conversationLocale });
+                return NextResponse.json({ responseType: "CHAT_REPLY", reply: formatMultilingualPrompt("ASK_PHONE", conversationLocale, appointmentDraft.patientName), pendingAppointmentData: appointmentDraft }, { headers: CORS });
             }
         }
     }
@@ -2528,7 +2599,8 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
           
           await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_DATE_CLARIFICATION", appointmentDraft, { 
              processedMessageIds: [...processedMessageIds, messageId],
-             dateAlternatives: dateValidation.alternatives 
+             dateAlternatives: dateValidation.alternatives,
+             conversationLocale
           });
           
           console.log(JSON.stringify({
@@ -2551,13 +2623,22 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       
       // We overwrite the raw inputs so they don't leak into the summary incorrectly
       pending.requestedDate = canonicalLabel.split(" ")[0]; // just ISO
-      (pending as any).requestedWeekday = dateValidation.resolvedWeekday;
+      (pending as any).requestedWeekday = conversationLocale.startsWith("en") ? (dateValidation.resolvedWeekdayEn || dateValidation.resolvedWeekday) : dateValidation.resolvedWeekday;
 
-      // Construct a clean, canonical summary as per AŞAMA 10
-      const phoneDisplay = pending.patientPhone || "-";
-      const summaryMsg = `Ön randevu talebinizin özeti:\n\nAd Soyad: ${pending.patientName}\nTelefon: ${phoneDisplay}\nE-posta: ${pending.patientEmail || "-"}\nHizmet: ${pending.requestedService}\nTercih Edilen Tarih: ${dateValidation.resolvedDate || "-"} ${dateValidation.resolvedWeekday || ""}\nTercih Edilen Saat: ${dateValidation.resolvedTime || "Belirtilmedi"}\n\nBu bilgilerle ön randevu talebinizi kliniğin değerlendirmesine iletmemi onaylıyor musunuz?`;
+      // Construct a clean, canonical localized summary
+      const summaryMsg = buildAppointmentReviewMessage({
+        locale: conversationLocale,
+        appointmentData: {
+          ...pending,
+          requestedDate: dateValidation.resolvedDate || pending.requestedDate,
+          requestedWeekday: conversationLocale.startsWith("en") ? (dateValidation.resolvedWeekdayEn || dateValidation.resolvedWeekday) : dateValidation.resolvedWeekday,
+          requestedTime: dateValidation.resolvedTime || pending.requestedTime
+        },
+        clinicName
+      });
       
-      const pendingAction = PendingActionManager.createPendingAction("submit_appointment", pending, undefined, "Randevu onay özeti");
+      const actionDesc = conversationLocale.startsWith("en") ? "Preliminary appointment confirmation summary" : "Randevu onay özeti";
+      const pendingAction = PendingActionManager.createPendingAction("submit_appointment", pending, undefined, actionDesc);
 
       responsePayload.reply = summaryMsg;
       responsePayload.pendingAppointmentData = pending;
@@ -2605,7 +2686,7 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       tenantId: agencyIdForClinic || clinicId,
       widgetId: widgetId || "unknown",
       sourceDomain: req.headers.get("origin") || req.headers.get("referer") || "unknown",
-      detectedLanguage: clinicLanguage,
+      detectedLanguage: conversationLocale,
       promptVersionId: "production",
       knowledgeBaseId: "default",
       retrievedDocumentCount: trainingDocs.length,
@@ -2617,7 +2698,8 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
         try {
             await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, appointmentState, appointmentDraft, {
               processedMessageIds: [...processedMessageIds, messageId],
-              pendingAction: responsePayload.pendingAction || null
+              pendingAction: responsePayload.pendingAction || null,
+              conversationLocale
             });
         } catch (e: any) {
             console.error("[chat API] Error saving deterministic state at end of flow:", e.message);

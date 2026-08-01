@@ -10,6 +10,8 @@ export interface DateValidationConsistencyResult {
   resolvedDate: string | null;
   resolvedTime: string | null;
   resolvedWeekday: string | null;
+  resolvedWeekdayEn?: string | null;
+  resolvedWeekdayTr?: string | null;
   resolvedWeekdayIndex: number | null;
 
   timeZone: string;
@@ -228,6 +230,8 @@ export class AppointmentDateValidator {
     
     result.resolvedDate = isoDateStr;
     result.resolvedWeekday = canonical.weekdayTr;
+    result.resolvedWeekdayTr = canonical.weekdayTr;
+    result.resolvedWeekdayEn = canonical.weekdayEn;
     result.resolvedWeekdayIndex = canonical.weekdayIndex;
 
     // Check Past Date
