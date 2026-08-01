@@ -738,9 +738,17 @@ export default function AgencyDemoPage() {
     const userMsg = aiInput;
     setAiInput("");
 
-    // Add user message to chat
+    // Add user message to chat and a temporary AI response for immediate perceived feedback
     const userChatMsg: ChatMessage = { id: nextMsgId(), role: "user", type: "text", text: userMsg };
-    setAiMessages((prev) => [...prev, userChatMsg]);
+    const tempMsgId = nextMsgId();
+    const tempAiMsg: ChatMessage = {
+      id: tempMsgId,
+      role: "ai",
+      type: "text",
+      text: lang === "tr" ? "Talebinizi analiz ediyorum..." : "I am analyzing your request...",
+    };
+    
+    setAiMessages((prev) => [...prev, userChatMsg, tempAiMsg]);
     setAiTyping(true);
 
     // Track history for context
@@ -771,7 +779,8 @@ export default function AgencyDemoPage() {
         clinics: data.clinics || undefined,
       };
 
-      setAiMessages((prev) => [...prev, aiMsg]);
+      // Replace temporary message with actual response
+      setAiMessages((prev) => prev.map(m => m.id === tempMsgId ? aiMsg : m));
       setChatHistory([...newHistory, { role: "assistant", content: data.reply }]);
 
       if (data.sessionContext) setSessionCtx(data.sessionContext);
@@ -805,12 +814,17 @@ export default function AgencyDemoPage() {
       }
 
     } catch (err) {
-      setAiMessages((prev) => [...prev, {
-        id: nextMsgId(), role: "ai", type: "text",
-        text: lang === "tr"
-          ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin."
-          : "We're experiencing a technical issue. Please try again.",
-      }]);
+      console.error("[CB-DEMO] ERROR:", err);
+      // Remove temporary message and append error
+      setAiMessages((prev) => {
+        const withoutTemp = prev.filter(m => m.id !== tempMsgId);
+        return [...withoutTemp, {
+          id: nextMsgId(), role: "ai", type: "text",
+          text: lang === "tr"
+            ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin."
+            : "We're experiencing a technical issue. Please try again.",
+        }];
+      });
     } finally {
       setAiTyping(false);
     }

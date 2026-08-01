@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { trackableAIRequest } from "@/lib/services/aiGateway";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { sendAgencyLeadNotification } from "@/lib/services/emailService";
+import { getCached, setCached } from "@/lib/services/agencyCache";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -259,21 +260,46 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  const routeStart = performance.now();
   let requestBody: any = {};
+  let resolvedAgencyId: string | undefined = undefined;
+  let agencyContextLoadMs = 0;
+  let clinicPrefilterMs = 0;
+  let promptBuildMs = 0;
+  let openAiTotalMs = 0;
+  let responseParseMs = 0;
+  let clinicMatchingMs = 0;
+  let requestValidationMs = 0;
+
+  const jsonResponse = (respBody: any, init?: any) => {
+    try {
+      if (respBody && respBody.sessionContext && resolvedAgencyId) {
+        saveConversationStateAsync(resolvedAgencyId, respBody.sessionContext, requestBody?.history || [], respBody.reply, respBody.type).catch(console.error);
+      }
+    } catch(e) {}
+    
+    const totalMs = performance.now() - routeStart;
+    if (typeof respBody === "object" && respBody !== null) {
+      respBody.trace = {
+        requestValidationMs: Math.round(requestValidationMs),
+        agencyContextLoadMs: Math.round(agencyContextLoadMs),
+        clinicPrefilterMs: Math.round(clinicPrefilterMs),
+        promptBuildMs: Math.round(promptBuildMs),
+        openAiTotalMs: Math.round(openAiTotalMs),
+        responseParseMs: Math.round(responseParseMs),
+        clinicMatchingMs: Math.round(clinicMatchingMs),
+        totalMs: Math.round(totalMs)
+      };
+      console.log(`[matching-chat] Trace totalMs=${Math.round(totalMs)}`, respBody.trace);
+    }
+    return NextResponse.json(respBody, init);
+  };
+
   try {
     const { slug } = await params;
     requestBody = await req.json();
     const { message, action, history = [], sessionContext = {} } = requestBody;
-
-    const jsonResponse = (respBody: any, init?: any) => {
-      try {
-        if (respBody && respBody.sessionContext && typeof agencyId !== "undefined") {
-          saveConversationStateAsync(agencyId, respBody.sessionContext, history, respBody.reply, respBody.type).catch(console.error);
-        }
-      } catch(e) {}
-      return NextResponse.json(respBody, init);
-    };
-
+    requestValidationMs = performance.now() - routeStart;
 
     let finalMessage = message;
 
@@ -285,17 +311,34 @@ export async function POST(
       );
     }
 
-    const agencySnap = await adminDb.collection("agencies")
-      .where("slug", "==", slug).where("status", "==", "active").limit(1).get();
-    if (agencySnap.empty) {
-      return jsonResponse({ error: "Agency not found" }, { status: 404, headers: CORS });
+    const cacheKeyAgencySlug = `agency-config-slug:${slug}`;
+    let cachedAgency = getCached<{ agencyId: string; agencyData: any; matchingConfig: any }>(cacheKeyAgencySlug);
+
+    let agencyId: string;
+    let agencyData: any;
+    let matchingConfig: any;
+
+    if (cachedAgency) {
+      agencyId = cachedAgency.agencyId;
+      agencyData = cachedAgency.agencyData;
+      matchingConfig = cachedAgency.matchingConfig;
+    } else {
+      const agencySnap = await adminDb.collection("agencies")
+        .where("slug", "==", slug).where("status", "==", "active").limit(1).get();
+      if (agencySnap.empty) {
+        return jsonResponse({ error: "Agency not found" }, { status: 404, headers: CORS });
+      }
+      agencyId = agencySnap.docs[0].id;
+      agencyData = agencySnap.docs[0].data();
+
+      // Load Agency Matching Config
+      const matchingSnap = await adminDb.collection("agencies").doc(agencyId).collection("config").doc("matching").get();
+      matchingConfig = matchingSnap.exists ? matchingSnap.data() : null;
+
+      setCached(cacheKeyAgencySlug, { agencyId, agencyData, matchingConfig }, 5 * 60 * 1000);
     }
-    const agencyId = agencySnap.docs[0].id;
-    const agencyData = agencySnap.docs[0].data();
-    
-    // Load Agency Matching Config
-    const matchingSnap = await adminDb.collection("agencies").doc(agencyId).collection("config").doc("matching").get();
-    const matchingConfig = matchingSnap.exists ? matchingSnap.data() : null;
+    resolvedAgencyId = agencyId;
+
     const maxClinics = matchingConfig?.maxClinicsToShow || agencyData.settings?.maxClinicsPerTreatmentRequest || 3;
     const showPriceRange = matchingConfig?.showPriceRange !== false;
     const showProfileLinks = matchingConfig?.showProfileLinks !== false;
@@ -437,7 +480,7 @@ export async function POST(
       ctx.sessionId = `sess_${Date.now()}`;
     }
 
-    const privacySettings = agencySnap.docs[0].data().privacySettings || {
+    const privacySettings = agencyData.privacySettings || {
       enabled: true,
       mode: "kvkk",
       version: "v1.0",
@@ -448,12 +491,20 @@ export async function POST(
 
     // privacy_consent_response is now handled in the action block above
 
-    const clinicSnap = await adminDb.collection("agencies").doc(agencyId)
-      .collection("clinics").orderBy("priority", "asc").get();
-    let allClinics = clinicSnap.docs
-      .map((d) => ({ id: d.id, ...d.data() }))
-      .filter((c: any) => c.status === "active");
+    const perfStart = performance.now();
 
+    const cacheKeyClinics = `agency-clinics:${agencyId}`;
+    let allClinics = getCached<any[]>(cacheKeyClinics);
+    if (!allClinics) {
+      const clinicSnap = await adminDb.collection("agencies").doc(agencyId)
+        .collection("clinics").orderBy("priority", "asc").get();
+      allClinics = clinicSnap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((c: any) => c.status === "active");
+      setCached(cacheKeyClinics, allClinics);
+    }
+
+    const prefilterStart = performance.now();
     ctx.clinicSelectionMode = matchingConfig?.routingMode || "manual"; // Save routing mode for leads
     ctx.showProfileLinks = showProfileLinks; // Instruct frontend to hide links if false
     
@@ -464,86 +515,131 @@ export async function POST(
         allClinics = allClinics.filter((c: any) => activeRule.eligibleClinicIds.includes(c.id));
       }
     }
+    // Truncate candidates to max 10 to avoid sending 35 clinics to the prompt
+    if (allClinics && allClinics.length > 10) {
+      allClinics = allClinics.slice(0, 10);
+    }
+    clinicPrefilterMs = performance.now() - prefilterStart;
 
-    // Load pricing — fetch from each clinic's subcollection: agencies/{agencyId}/clinics/{clinicId}/pricing
-    const allPricing: any[] = [];
-    await Promise.all(allClinics.map(async (c: any) => {
-      const pricingSnap = await adminDb.collection("agencies").doc(agencyId)
-        .collection("clinics").doc(c.id).collection("pricing").get();
-      
-      pricingSnap.docs.forEach(pDoc => {
-        const p = pDoc.data();
-        if (p.status === "inactive") return;
-        allPricing.push({
-          id: pDoc.id,
-          clinicId: c.id,
-          clinicName: c.clinicName || "",
-          treatmentName: p.treatmentName || "",
-          subTreatmentName: p.subTreatmentName || p.treatmentName || "",
-          priceGroup: p.priceGroup || null,
-          priceMin: p.priceMin || 0,
-          priceMax: p.priceMax || 0,
-          currency: p.currency || "EUR",
-          priceType: p.priceType || "average",
-          duration: p.duration || null,
-        });
-      });
-    }));
+    const ctxLoadStart = performance.now();
+    
+    // Load Pricing
+    const cacheKeyPricing = `agency-pricing:${agencyId}`;
+    let allPricing = getCached<any[]>(cacheKeyPricing);
+    
+    // Load KB
+    const cacheKeyKb = `agency-kb:${agencyId}`;
+    let allKbRecords = getCached<any[]>(cacheKeyKb);
+
+    // Load Doctors
+    const cacheKeyDoctors = `agency-doctors:${agencyId}`;
+    let allDoctors = getCached<any[]>(cacheKeyDoctors);
 
     // Load Agency AI Config
-    const aiSnap = await adminDb.collection("agencies").doc(agencyId).collection("aiConfig").doc("main").get();
-    const agencyAiConfig = aiSnap.exists ? aiSnap.data() : null;
-
-    // Load AI Knowledge Base records for active clinics
-    const allKbRecords: any[] = [];
-    for (const c of allClinics) {
-      // Fetch Knowledge Base
-      const kbSnap = await adminDb.collection("agencies").doc(agencyId)
-        .collection("clinics").doc(c.id).collection("knowledgeBase").get();
-      for (const kDoc of kbSnap.docs) {
-        const kData = kDoc.data();
-        if (kData.isActive !== false) {
-          allKbRecords.push({ id: kDoc.id, clinicId: c.id, ...kData });
-        }
-      }
-    }
-
-    // Load active and public Doctors for the agency
-    const allDoctors: any[] = [];
-    for (const c of allClinics) {
-      const docSnap = await adminDb.collection("agencies").doc(agencyId)
-        .collection("clinics").doc(c.id).collection("doctors").get();
-      for (const dDoc of docSnap.docs) {
-        const dData = dDoc.data();
-        if (dData.status === "active" && dData.showOnPublicProfile !== false) {
-          allDoctors.push({ id: dDoc.id, clinicId: c.id, ...dData });
-        }
-      }
-    }
-
-    console.log(`[matching-chat] Agency: ${slug}, Clinics: ${allClinics.length}, Pricing: ${allPricing.length}, KB Records: ${allKbRecords.length}`);
-    if (allPricing.length > 0) {
-      console.log(`[matching-chat] Sample pricing:`, JSON.stringify(allPricing[0]));
-    }
-
-    // Fetch agency-level knowledge
-    const agencyKbRecords: any[] = [];
-    const agKbSnap = await adminDb.collection("knowledge_documents")
-      .where("tenantId", "==", agencyId)
-      .where("ownerType", "==", "agency")
-      .get();
+    const cacheKeyAiConfig = `agency-aiConfig:${agencyId}`;
+    let agencyAiConfig = getCached<any>(cacheKeyAiConfig);
     
-    agKbSnap.forEach(d => {
-      if (d.data().status === "active") {
-        agencyKbRecords.push({ id: d.id, ...d.data() });
-      }
-    });
+    // Load Agency KB
+    const cacheKeyAgencyKb = `agency-kb-main:${agencyId}`;
+    let agencyKbRecords = getCached<any[]>(cacheKeyAgencyKb);
 
-    // We add agency knowledge text into allKbRecords for the hybrid search,
-    // simulating embeddingChunks structure if we had vector indexing for it.
-    // For now we rely on keyword score in hybridSearch for these.
+    if (!allPricing || !allKbRecords || !allDoctors || !agencyAiConfig || !agencyKbRecords) {
+      const [aiSnap, agKbSnap] = await Promise.all([
+        adminDb.collection("agencies").doc(agencyId).collection("aiConfig").doc("main").get(),
+        adminDb.collection("knowledge_documents").where("tenantId", "==", agencyId).where("ownerType", "==", "agency").get()
+      ]);
+
+      agencyAiConfig = aiSnap.exists ? aiSnap.data() : null;
+      setCached(cacheKeyAiConfig, agencyAiConfig);
+
+      agencyKbRecords = [];
+      agKbSnap.forEach((d) => {
+        if (d.data().status === "active") {
+          agencyKbRecords!.push({ id: d.id, ...d.data() });
+        }
+      });
+      setCached(cacheKeyAgencyKb, agencyKbRecords);
+
+      // Now parallelize clinic-specific reads for ALL active clinics in the agency, so we can cache them globally for this agency
+      let allActiveClinics = getCached<any[]>(cacheKeyClinics);
+      if (!allActiveClinics) {
+         const fullClinicSnap = await adminDb.collection("agencies").doc(agencyId).collection("clinics").orderBy("priority", "asc").get();
+         allActiveClinics = fullClinicSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((c: any) => c.status === "active");
+         setCached(cacheKeyClinics, allActiveClinics);
+      }
+
+      const pricingPromises = allActiveClinics.map((c) => adminDb.collection("agencies").doc(agencyId).collection("clinics").doc(c.id).collection("pricing").get());
+      const kbPromises = allActiveClinics.map((c) => adminDb.collection("agencies").doc(agencyId).collection("clinics").doc(c.id).collection("knowledgeBase").get());
+      const docPromises = allActiveClinics.map((c) => adminDb.collection("agencies").doc(agencyId).collection("clinics").doc(c.id).collection("doctors").get());
+
+      const [pricingResults, kbResults, docResults] = await Promise.all([
+        Promise.all(pricingPromises),
+        Promise.all(kbPromises),
+        Promise.all(docPromises)
+      ]);
+
+      allPricing = [];
+      allKbRecords = [];
+      allDoctors = [];
+
+      pricingResults.forEach((snap, idx) => {
+        const c = allActiveClinics![idx];
+        snap.docs.forEach(pDoc => {
+          const p = pDoc.data();
+          if (p.status !== "inactive") {
+            allPricing!.push({
+              id: pDoc.id,
+              clinicId: c.id,
+              clinicName: c.clinicName || "",
+              treatmentName: p.treatmentName || "",
+              subTreatmentName: p.subTreatmentName || p.treatmentName || "",
+              priceGroup: p.priceGroup || null,
+              priceMin: p.priceMin || 0,
+              priceMax: p.priceMax || 0,
+              currency: p.currency || "EUR",
+              priceType: p.priceType || "average",
+              duration: p.duration || null,
+            });
+          }
+        });
+      });
+
+      kbResults.forEach((snap, idx) => {
+        const c = allActiveClinics![idx];
+        snap.docs.forEach(kDoc => {
+          const kData = kDoc.data();
+          if (kData.isActive !== false) {
+            allKbRecords!.push({ id: kDoc.id, clinicId: c.id, ...kData });
+          }
+        });
+      });
+
+      docResults.forEach((snap, idx) => {
+        const c = allActiveClinics![idx];
+        snap.docs.forEach(dDoc => {
+          const dData = dDoc.data();
+          if (dData.status === "active" && dData.showOnPublicProfile !== false) {
+            allDoctors!.push({ id: dDoc.id, clinicId: c.id, ...dData });
+          }
+        });
+      });
+
+      setCached(cacheKeyPricing, allPricing);
+      setCached(cacheKeyKb, allKbRecords);
+      setCached(cacheKeyDoctors, allDoctors);
+    }
+    
+    agencyContextLoadMs = performance.now() - ctxLoadStart;
+
+    console.log(`[matching-chat] Agency: ${slug}, Cached/Loaded Pricing: ${allPricing.length}, KB Records: ${allKbRecords.length}`);
+
+    // Filter pricing and KB to only include the prefiltered clinics (allClinics)
+    const activeClinicIds = new Set(allClinics.map(c => c.id));
+    const filteredPricing = allPricing.filter(p => activeClinicIds.has(p.clinicId));
+    const filteredKbRecords = allKbRecords.filter(k => activeClinicIds.has(k.clinicId));
+
     const allSearchableRecords = [
-      ...allKbRecords,
+      ...filteredKbRecords,
       ...agencyKbRecords.map(k => ({
         id: k.id,
         title: k.title,
@@ -586,7 +682,9 @@ export async function POST(
     }
 
     /* ── 2. Build clinic context for OpenAI ── */
-    const clinicContext = buildClinicContext(allClinics, allPricing, relevantKbRecords, [], agencyKbRecords, showPriceRange);
+    const promptBuildStart = performance.now();
+    const clinicContext = buildClinicContext(allClinics, filteredPricing, relevantKbRecords, [], agencyKbRecords, showPriceRange);
+    promptBuildMs = performance.now() - promptBuildStart;
 
     /* ── 3. Build session context hint ── */
     let contextHint = `\nMEVCUT KONUŞMA DURUMU (SESSION CONTEXT):
@@ -728,30 +826,48 @@ JSON FORMATI:
       console.warn(`[matching-chat] [ALERT] Context length potentially large (Clinics: ${totalClinicsLoaded}, KB: ${totalKbLoaded})`);
     }
 
-    const completion = await trackableAIRequest({
-      clinicId: ctx.selectedClinicId || undefined,
-      channel: "portal",
-      requestType: "chat",
-      model: "gpt-4o-mini",
-      temperature: 0.3,
-      maxTokens: 1200,
-      responseFormat: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...history.slice(-10).map((h: any) => ({
-          role: h.role as "user" | "assistant",
-          content: typeof h.content === "string" ? h.content : JSON.stringify(h.content),
-        })),
-        { role: "user", content: finalMessage },
-      ],
+    const aiStart = performance.now();
+    
+    // Wrap in Promise.race for 8-second hard timeout
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        const err: any = new Error("PROVIDER_TIMEOUT");
+        err.code = "OPENAI_TIMEOUT";
+        reject(err);
+      }, 8000);
     });
+
+    const completion = await Promise.race([
+      trackableAIRequest({
+        clinicId: ctx.selectedClinicId || undefined,
+        channel: "portal",
+        requestType: "chat",
+        model: "gpt-4o-mini", // Fast model for intake as requested
+        temperature: 0.3,
+        maxTokens: 1200,
+        responseFormat: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...history.slice(-6).map((h: any) => ({
+            role: h.role as "user" | "assistant",
+            content: typeof h.content === "string" ? h.content : JSON.stringify(h.content),
+          })),
+          { role: "user", content: finalMessage },
+        ],
+      }),
+      timeoutPromise
+    ]);
+
+    openAiTotalMs = performance.now() - aiStart;
+    const parseStart = performance.now();
 
     const raw = completion.content?.trim() ?? "{}";
     let parsed: any;
     try {
       parsed = JSON.parse(raw);
-    } catch {
-      console.error("[matching-chat] [ALERT] OPENAI_RESPONSE_PARSE_FAILED", raw.slice(0, 200));
+      responseParseMs = performance.now() - parseStart;
+    } catch (err: any) {
+      console.error("[matching-chat] [ALERT] OPENAI_RESPONSE_PARSE_FAILED", err.message, "RAW:", raw.slice(0, 500));
       // Degraded Mode Fallback for JSON Parse error
       const isTr = ctx.language === "tr" || (!ctx.language && true);
       const newCtx: SessionContext = { ...ctx, processingMode: "degraded" };
@@ -1219,7 +1335,7 @@ JSON FORMATI:
     ctx.processingMode = "degraded";
 
     if (action && action.type === "privacy_consent_response" && action.action === "accept") {
-      return NextResponse.json(
+      return jsonResponse(
         { 
           reply: isTr 
             ? "Onayınız alındı. Tercihinizi kaydettim. Size en uygun klinikleri hazırlarken birkaç ek bilgiye ihtiyacım var. Yaklaşık bütçeniz veya seyahat tarihiniz belli mi?"
@@ -1231,7 +1347,7 @@ JSON FORMATI:
       );
     }
 
-    return NextResponse.json(
+    return jsonResponse(
       { 
         reply: isTr 
           ? "Talebinizi aldım. Size uygun klinikleri hazırlayabilmem için yaklaşık bütçenizi, tercih ettiğiniz tarihi ve dil ihtiyacınızı paylaşabilir misiniz?"
