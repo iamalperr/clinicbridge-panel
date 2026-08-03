@@ -26,8 +26,9 @@ export async function PATCH(
     const auth = await requireClinicAccess(req, clinicId);
 
     // Only superAdmin, admin, and clinicAdmin can update labels
-    const allowedRoles = ["superAdmin", "admin", "clinicAdmin"];
-    if (!allowedRoles.includes(auth.profile?.role)) {
+    const userRole = (auth.profile?.role || "").toLowerCase().replace(/_/g, "");
+    const allowedRoles = ["superadmin", "admin", "clinicadmin"];
+    if (!allowedRoles.includes(userRole)) {
       return NextResponse.json(
         { error: "Insufficient permissions to update conversation labels" },
         { status: 403 }
@@ -107,26 +108,31 @@ export async function PATCH(
 
     // Update ONLY custom label and manual conversion fields — NEVER touch system status or appointments
     const updatePayload: Record<string, any> = {
-      customLabelId: finalLabelId,
-      customLabelName: finalLabelName,
+      customLabelId: finalLabelId ?? null,
+      customLabelName: finalLabelName ?? null,
       customLabel: isMarkingConverted ? "converted_to_appointment" : (finalLabelId || null),
       manualConversionStatus: isMarkingConverted ? "converted_to_appointment" : null,
-      customLabelUpdatedBy: auth.uid,
+      customLabelUpdatedBy: auth.uid || null,
       customLabelUpdatedAt: now,
       updatedAt: now,
     };
 
     if (isMarkingConverted) {
       updatePayload.manualConversionMarkedAt = now;
-      updatePayload.manualConversionMarkedBy = auth.uid;
+      updatePayload.manualConversionMarkedBy = auth.uid || null;
     } else if (previousManualConverted) {
       updatePayload.manualConversionRemovedAt = now;
-      updatePayload.manualConversionRemovedBy = auth.uid;
+      updatePayload.manualConversionRemovedBy = auth.uid || null;
       updatePayload.manualConversionMarkedAt = null;
       updatePayload.manualConversionMarkedBy = null;
     }
 
-    await convRef.update(updatePayload);
+    const sanitizedPayload: Record<string, any> = {};
+    for (const [k, v] of Object.entries(updatePayload)) {
+      sanitizedPayload[k] = v === undefined ? null : v;
+    }
+
+    await convRef.set(sanitizedPayload, { merge: true });
 
     return NextResponse.json({
       ok: true,
@@ -140,6 +146,6 @@ export async function PATCH(
       return NextResponse.json({ error: err.message }, { status: err.status });
     }
     console.error("[custom-label-update] Error:", err);
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    return NextResponse.json({ error: err?.message || "Internal error" }, { status: 500 });
   }
 }

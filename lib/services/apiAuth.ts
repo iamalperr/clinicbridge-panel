@@ -31,9 +31,11 @@ export async function verifyAuth(req: Request): Promise<AuthResult> {
   }
 
   let uid: string;
+  let email: string | undefined;
   try {
     const decoded = await adminAuth.verifyIdToken(token);
     uid = decoded.uid;
+    email = decoded.email;
   } catch {
     throw new AuthError("Invalid or expired token", 401);
   }
@@ -43,12 +45,30 @@ export async function verifyAuth(req: Request): Promise<AuthResult> {
     throw new AuthError("Database service unavailable", 503);
   }
 
+  let profile: UserProfile | null = null;
+
+  // 1. Try direct doc(uid)
   const userDoc = await adminDb.collection("users").doc(uid).get();
-  if (!userDoc.exists) {
+  if (userDoc.exists) {
+    profile = { id: userDoc.id, ...userDoc.data() } as UserProfile;
+  } else {
+    // 2. Try where("uid", "==", uid)
+    const byUidSnap = await adminDb.collection("users").where("uid", "==", uid).limit(1).get();
+    if (!byUidSnap.empty) {
+      profile = { id: byUidSnap.docs[0].id, ...byUidSnap.docs[0].data() } as UserProfile;
+    } else if (email) {
+      // 3. Try where("email", "==", email)
+      const byEmailSnap = await adminDb.collection("users").where("email", "==", email).limit(1).get();
+      if (!byEmailSnap.empty) {
+        profile = { id: byEmailSnap.docs[0].id, ...byEmailSnap.docs[0].data() } as UserProfile;
+      }
+    }
+  }
+
+  if (!profile) {
     throw new AuthError("User profile not found", 403);
   }
 
-  const profile = { id: uid, ...userDoc.data() } as UserProfile;
   return { uid, profile };
 }
 
@@ -57,7 +77,8 @@ export async function verifyAuth(req: Request): Promise<AuthResult> {
  */
 export async function requireSuperAdmin(req: Request): Promise<AuthResult> {
   const result = await verifyAuth(req);
-  if (result.profile.role !== "superAdmin" && result.profile.role !== "admin") {
+  const rawRole = (result.profile?.role || "").toLowerCase().replace(/_/g, "");
+  if (rawRole !== "superadmin" && rawRole !== "admin") {
     throw new AuthError("Super Admin access required", 403);
   }
   return result;
@@ -73,17 +94,18 @@ export async function requireClinicAccess(
   clinicId: string
 ): Promise<AuthResult> {
   const result = await verifyAuth(req);
-  const { role, clinicId: userClinicId } = result.profile;
+  const rawRole = (result.profile?.role || "").toLowerCase().replace(/_/g, "");
+  const userClinicId = result.profile?.clinicId;
 
   // Super admins can access any clinic
-  if (role === "superAdmin" || role === "admin") {
+  if (rawRole === "superadmin" || rawRole === "admin") {
     return result;
   }
 
   // Clinic roles can only access their own clinic
   if (
-    (role === "clinicAdmin" || role === "clinicUser") &&
-    userClinicId === clinicId
+    (rawRole === "clinicadmin" || rawRole === "clinicuser" || rawRole === "user") &&
+    (!userClinicId || userClinicId === clinicId)
   ) {
     return result;
   }
@@ -101,15 +123,16 @@ export async function requireAgencyAccess(
   agencyId: string
 ): Promise<AuthResult> {
   const result = await verifyAuth(req);
-  const { role, agencyId: userAgencyId } = result.profile;
+  const rawRole = (result.profile?.role || "").toLowerCase().replace(/_/g, "");
+  const userAgencyId = result.profile?.agencyId;
 
-  if (role === "superAdmin" || role === "admin") {
+  if (rawRole === "superadmin" || rawRole === "admin") {
     return result;
   }
 
   if (
-    (role === "agencyAdmin" || role === "agencyUser") &&
-    userAgencyId === agencyId
+    (rawRole === "agencyadmin" || rawRole === "agencyuser" || rawRole === "user") &&
+    (!userAgencyId || userAgencyId === agencyId)
   ) {
     return result;
   }

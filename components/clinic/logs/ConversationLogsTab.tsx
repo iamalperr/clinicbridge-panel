@@ -41,7 +41,8 @@ export default function ConversationLogsTab({ clinicId }: Props) {
   // Determine if current user can edit labels
   const canEditLabel = useMemo(() => {
     if (!profile) return false;
-    return ["superAdmin", "admin", "clinicAdmin"].includes(profile.role);
+    const roleNorm = (profile.role || "").toLowerCase().replace(/_/g, "");
+    return ["superadmin", "admin", "clinicadmin"].includes(roleNorm);
   }, [profile]);
 
   // Fetch custom labels once on mount

@@ -139,11 +139,8 @@ export default function ConversationStatusDropdown({
         console.error("[ConversationStatusDropdown] Update failed:", err);
         // Revert optimistic update
         onLabelUpdated(log.id, previousLabelId || null, previousLabelName || null);
-        setError(
-          language === "en"
-            ? "Failed to update label"
-            : "Etiket güncellenemedi"
-        );
+        const fallbackMsg = language === "en" ? "Failed to update label" : "Etiket güncellenemedi";
+        setError(err?.message && !err.message.startsWith("HTTP") ? err.message : fallbackMsg);
       } finally {
         setLoading(false);
       }
