@@ -703,6 +703,89 @@ export async function POST(
 
     // privacy_consent_response is now handled in the action block above
 
+    // ── STEP 1: GREETING DETECTION (P0 GREETING HANDLER) ──
+    const rawMsg = (finalMessage || message || "").trim();
+    const hasHealthKeyword = /\b(implant|diş|dis|zirkonyum|zirconium|kaplama|saç|sac|ekim|estetik|burun|rinoplasti|rhinoplasty|botoks|dolgu|liposuction|meme|bbl|obezite|tüp bebek|tup bebek|tüp|ivf|tedavi|doktor|hekim|klinik|operasyon|ameliyat|bariatrik|veneers|crowns|dental|hair|aesthetic|surgery|treatment|check-up|checkup|göz|lasik|katarakt|eye|fertility|fiyat|ucret|ücret|cost|price|randevu|appointment)\b/i.test(rawMsg);
+    const hasPersonalSlotData = Boolean(
+      agencySlotsExtracted.extracted.treatment ||
+      agencySlotsExtracted.extracted.fullName ||
+      agencySlotsExtracted.extracted.phone ||
+      agencySlotsExtracted.extracted.email ||
+      agencySlotsExtracted.extracted.patientAge ||
+      agencySlotsExtracted.extracted.patientGender
+    );
+
+    const isPureGreeting = (
+      agencyIntentResult.intent === "greeting" ||
+      /^(merhaba|merhabalar|selam|selamlar|günaydın|gunaydin|iyi günler|iyi gunler|iyi akşamlar|iyi aksamlar|iyi sabahlar|selamün aleyküm|selamun aleykum|sa|slm|hello|hi|hey|good morning|good afternoon|good evening|howdy|greetings)[!.,\s👋✨]*$/i.test(rawMsg)
+    ) && !hasHealthKeyword && !hasPersonalSlotData;
+
+    if (isPureGreeting) {
+      const isEn = /^(hello|hi|hey|good morning|good afternoon|good evening|howdy|greetings)/i.test(rawMsg) ||
+        ((agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") && !/^(merhaba|selam|günaydın|gunaydin|iyi)/i.test(rawMsg));
+      const greetingReply = isEn
+        ? ((agencyData as any)?.aiConfig?.greetingMessageEN || "Hello! How can I help you today? What treatment or clinic information are you looking for?")
+        : ((agencyData as any)?.aiConfig?.greetingMessageTR || "Merhaba! Size nasıl yardımcı olabilirim? Hangi tedavi veya klinik hakkında bilgi almak istersiniz?");
+      
+      return jsonResponse({
+        reply: greetingReply,
+        type: "text",
+        sessionContext: ctx,
+        showClinicCards: false
+      }, { headers: CORS });
+    }
+
+    // ── STEP 2 & 3: HEALTH INTENT DETECTION & KVKK CONSENT GATING ──
+    const isHealthOrTreatmentRequest = Boolean(
+      hasHealthKeyword ||
+      hasPersonalSlotData ||
+      agencySlotsExtracted.extracted.treatment ||
+      ctx.lastTreatmentCategory ||
+      agencyIntentResult.intent === "treatment_information" ||
+      agencyIntentResult.intent === "pricing_request" ||
+      agencyIntentResult.intent === "doctor_information" ||
+      agencyIntentResult.intent === "clinic_recommendation" ||
+      agencyIntentResult.intent === "clinic_information" ||
+      agencyIntentResult.intent === "quote_request"
+    );
+
+    if (isHealthOrTreatmentRequest && privacySettings.enabled && privacySettings.requiredBeforePersonalData) {
+      const hasConsent = ctx.quoteConsent === true || (await requireAcceptedAgencyConsent(agencyId, ctx.sessionId!, privacySettings.version));
+      if (!hasConsent) {
+        const isEn = (agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en");
+        if (ctx.quoteConsent === false) {
+          return jsonResponse({
+            reply: isEn
+              ? "Since you declined the privacy consent, I cannot process personal or health data. I can only assist with general information."
+              : "Daha önce onay vermediğiniz için kişiselleştirilmiş işlem yapamıyoruz. Genel konularda yardımcı olabilirim.",
+            type: "text",
+            sessionContext: ctx,
+            showClinicCards: false
+          }, { headers: CORS });
+        }
+
+        // Save the original user message so it can be automatically re-processed after consent is accepted
+        ctx.pendingUserMessage = finalMessage || message;
+        const consentLang = isEn ? "en" : "tr";
+        const structuredData = getStructuredConsentData(agencyData, consentLang);
+        return jsonResponse({
+          reply: consentLang === "tr" ? privacySettings.consentTextTr : privacySettings.consentTextEn,
+          type: "consent_request",
+          privacyNoticeUrl: structuredData.privacyNoticeUrl || (isFeelinHealthy ? "https://feelinhealthy.com/kvkk" : "https://feelinhealthy.com/kvkk"),
+          privacyNoticeLabel: structuredData.privacyNoticeLabel,
+          consentStructured: {
+            consentTextBeforeLink: structuredData.consentTextBeforeLink,
+            privacyNoticeLabel: structuredData.privacyNoticeLabel,
+            privacyNoticeUrl: structuredData.privacyNoticeUrl || (isFeelinHealthy ? "https://feelinhealthy.com/kvkk" : "https://feelinhealthy.com/kvkk"),
+            consentTextAfterLink: structuredData.consentTextAfterLink
+          },
+          consentVersion: privacySettings.version,
+          sessionContext: ctx,
+          showClinicCards: false
+        }, { headers: CORS });
+      }
+    }
+
     const perfStart = performance.now();
 
     const cacheKeyClinics = `agency-clinics:${agencyId}`;
