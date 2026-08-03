@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { parseMillis } from "@/lib/services/analyticsService";
+import { shouldPersistActivity } from "@/lib/services/analytics/heartbeatScheduler";
+import { mapInfrastructureError } from "@/lib/services/infrastructureErrors";
 
 const MAX_IDLE_BEFORE_EXPIRE_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -49,6 +51,7 @@ export async function POST(req: Request) {
     let currentSessionId = session_id;
     let sessionDocRef = currentSessionId ? sessionsRef.doc(currentSessionId) : null;
     let sessionData = sessionDocRef ? (await sessionDocRef.get()).data() : null;
+    let isFreshSession = false;
 
     const lastActivity = sessionData ? (parseMillis(sessionData.last_activity_at) || parseMillis(sessionData.login_at) || 0) : 0;
 
@@ -75,7 +78,7 @@ export async function POST(req: Request) {
       }
 
       // Create new session
-      const newSessionRef = await sessionsRef.add({
+      const newSessionData = {
         user_id,
         clinic_id: clinic_id || null,
         role: role || "unknown",
@@ -90,11 +93,15 @@ export async function POST(req: Request) {
         operating_system: os,
         device_type: device,
         status: "active"
-      });
-      
+      };
+
+      const newSessionRef = await sessionsRef.add(newSessionData);
+
       currentSessionId = newSessionRef.id;
       sessionDocRef = newSessionRef;
-      sessionData = (await newSessionRef.get()).data();
+      // Reuse the payload we just wrote instead of reading it back.
+      sessionData = newSessionData;
+      isFreshSession = true;
       
       // Log login event
       await adminDb.collection("activity_events").add({
@@ -124,10 +131,15 @@ export async function POST(req: Request) {
 
     const updates: any = {};
     const sessionLoginAt = parseMillis(sessionData.login_at) || now;
-    
+    const currentActivity = parseMillis(sessionData.last_activity_at) || lastActivity;
+
     if (!is_idle) {
-      updates.last_activity_at = now;
-      updates.session_duration_seconds = Math.max(0, Math.floor((now - sessionLoginAt) / 1000));
+      // Skip the write when the stored timestamp is already recent enough.
+      // Collapses extra tabs and duplicate calls into no-ops.
+      if (!isFreshSession && shouldPersistActivity(now, currentActivity)) {
+        updates.last_activity_at = now;
+        updates.session_duration_seconds = Math.max(0, Math.floor((now - sessionLoginAt) / 1000));
+      }
     } else {
       // If idle for more than 30 mins, mark expired
       if (now - lastActivity > MAX_IDLE_BEFORE_EXPIRE_MS) {
@@ -144,6 +156,10 @@ export async function POST(req: Request) {
 
   } catch (err: any) {
     console.error("Heartbeat error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    const mapped = mapInfrastructureError(err);
+    return NextResponse.json(
+      { error: mapped.error, code: mapped.code },
+      { status: mapped.status }
+    );
   }
 }

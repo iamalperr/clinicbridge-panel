@@ -12,6 +12,10 @@ import {
   getConversationStatusVariant,
   isConversationManuallyConverted,
 } from "@/lib/services/conversations/conversationStatusResolver";
+import {
+  resolveLabelErrorMessage,
+  shouldSendLabelUpdate,
+} from "@/lib/services/conversations/customLabelClient";
 import type { ConversationLog, CustomLabel } from "./types";
 
 interface Props {
@@ -36,6 +40,7 @@ export default function ConversationStatusDropdown({
   const [error, setError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
+  const inFlightRef = useRef(false);
 
   const normalizedStatus = normalizeConversationStatus(log.status, {
     convertedToAppointment: log.convertedToAppointment,
@@ -86,17 +91,22 @@ export default function ConversationStatusDropdown({
   const handleSelectLabel = useCallback(
     async (labelId: string | null) => {
       const isSelectingConverted = labelId === "converted_to_appointment";
-      const currentlyConverted = isConversationManuallyConverted(log);
 
-      // Don't re-select same state
-      if (
-        (isSelectingConverted && currentlyConverted) ||
-        (!labelId && !currentlyConverted && !log.customLabelId)
-      ) {
-        setIsOpen(false);
+      // Guards a no-op re-selection and, via the ref, a double-click that would
+      // otherwise fire twice before `disabled` is committed.
+      const proceed = shouldSendLabelUpdate({
+        selectedLabelId: labelId,
+        currentlyManuallyConverted: isConversationManuallyConverted(log),
+        currentCustomLabelId: log.customLabelId,
+        inFlight: inFlightRef.current,
+      });
+
+      if (!proceed) {
+        if (!inFlightRef.current) setIsOpen(false);
         return;
       }
 
+      inFlightRef.current = true;
       setLoading(true);
       setError(null);
 
@@ -131,17 +141,19 @@ export default function ConversationStatusDropdown({
 
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || `HTTP ${res.status}`);
+          // Revert to the persisted value; never auto-retry.
+          onLabelUpdated(log.id, previousLabelId || null, previousLabelName || null);
+          setError(resolveLabelErrorMessage(data?.code, language));
+          return;
         }
 
         setIsOpen(false);
       } catch (err: any) {
         console.error("[ConversationStatusDropdown] Update failed:", err);
-        // Revert optimistic update
         onLabelUpdated(log.id, previousLabelId || null, previousLabelName || null);
-        const fallbackMsg = language === "en" ? "Failed to update label" : "Etiket güncellenemedi";
-        setError(err?.message && !err.message.startsWith("HTTP") ? err.message : fallbackMsg);
+        setError(resolveLabelErrorMessage(null, language));
       } finally {
+        inFlightRef.current = false;
         setLoading(false);
       }
     },

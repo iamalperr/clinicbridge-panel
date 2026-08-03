@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { requireClinicAccess, AuthError } from "@/lib/services/apiAuth";
+import { mapInfrastructureError } from "@/lib/services/infrastructureErrors";
+import { canEditConversationLabel } from "@/lib/services/conversations/customLabelClient";
 
 /**
  * PATCH /api/clinics/[clinicId]/conversations/[conversationId]/custom-label
@@ -26,11 +28,9 @@ export async function PATCH(
     const auth = await requireClinicAccess(req, clinicId);
 
     // Only superAdmin, admin, and clinicAdmin can update labels
-    const userRole = (auth.profile?.role || "").toLowerCase().replace(/_/g, "");
-    const allowedRoles = ["superadmin", "admin", "clinicadmin"];
-    if (!allowedRoles.includes(userRole)) {
+    if (!canEditConversationLabel(auth.profile?.role)) {
       return NextResponse.json(
-        { error: "Insufficient permissions to update conversation labels" },
+        { error: "Insufficient permissions to update conversation labels", code: "FORBIDDEN" },
         { status: 403 }
       );
     }
@@ -41,14 +41,17 @@ export async function PATCH(
     // Validate: must be string or null
     if (customLabelId !== null && typeof customLabelId !== "string") {
       return NextResponse.json(
-        { error: "customLabelId must be a string or null" },
+        { error: "customLabelId must be a string or null", code: "INVALID_REQUEST" },
         { status: 400 }
       );
     }
 
     const adminDb = getAdminDb();
     if (!adminDb) {
-      return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
+      return NextResponse.json(
+        { error: "Database unavailable", code: "SERVICE_UNAVAILABLE" },
+        { status: 503 }
+      );
     }
 
     // Verify conversation exists and belongs to this clinic
@@ -61,7 +64,7 @@ export async function PATCH(
     const convSnap = await convRef.get();
     if (!convSnap.exists) {
       return NextResponse.json(
-        { error: "Conversation not found" },
+        { error: "Conversation not found", code: "NOT_FOUND" },
         { status: 404 }
       );
     }
@@ -143,9 +146,18 @@ export async function PATCH(
     });
   } catch (err: any) {
     if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
+      return NextResponse.json(
+        { error: err.message, code: err.status === 403 ? "FORBIDDEN" : "UNAUTHORIZED" },
+        { status: err.status }
+      );
     }
+    // Provider text (e.g. "8 RESOURCE_EXHAUSTED: Quota exceeded") stays in the
+    // server log; the client receives only a stable code.
     console.error("[custom-label-update] Error:", err);
-    return NextResponse.json({ error: err?.message || "Internal error" }, { status: 500 });
+    const mapped = mapInfrastructureError(err);
+    return NextResponse.json(
+      { error: mapped.error, code: mapped.code },
+      { status: mapped.status }
+    );
   }
 }

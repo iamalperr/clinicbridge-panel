@@ -20,6 +20,7 @@ import {
   isConversationManuallyConverted,
   exportConversationLogsToCSV,
 } from "@/lib/services/conversations/conversationStatusResolver";
+import { canEditConversationLabel } from "@/lib/services/conversations/customLabelClient";
 
 interface Props {
   clinicId: string;
@@ -39,25 +40,35 @@ export default function ConversationLogsTab({ clinicId }: Props) {
   const [customLabels, setCustomLabels] = useState<CustomLabel[]>([]);
 
   // Determine if current user can edit labels
-  const canEditLabel = useMemo(() => {
-    if (!profile) return false;
-    const roleNorm = (profile.role || "").toLowerCase().replace(/_/g, "");
-    return ["superadmin", "admin", "clinicadmin"].includes(roleNorm);
-  }, [profile]);
+  const canEditLabel = useMemo(
+    () => canEditConversationLabel(profile?.role),
+    [profile?.role]
+  );
 
-  // Fetch custom labels once on mount
+  // Fetch custom labels once per clinic page and share them across all rows.
+  // `getToken` is deliberately not a dependency: its identity changes on every
+  // auth-context render, which would re-issue this request on each one.
+  const getTokenRef = React.useRef(getToken);
+  React.useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
+
   React.useEffect(() => {
     if (!clinicId) return;
-    
+
+    let cancelled = false;
+
     const fetchLabels = async () => {
       try {
-        const token = await getToken();
-        if (!token) return;
-        
+        const token = await getTokenRef.current();
+        if (!token || cancelled) return;
+
         const res = await fetch(`/api/clinics/${clinicId}/custom-labels`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        
+
+        if (cancelled) return;
+
         if (res.ok) {
           const data = await res.json();
           setCustomLabels(data.labels || []);
@@ -66,30 +77,64 @@ export default function ConversationLogsTab({ clinicId }: Props) {
         console.error("[ConversationLogsTab] Failed to fetch custom labels:", err);
       }
     };
-    
-    fetchLabels();
-  }, [clinicId, getToken]);
 
-  // Fetch conversation logs via Firestore realtime listener
+    fetchLabels();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId]);
+
+  // Fetch conversation logs via Firestore realtime listener.
+  // The subscription is created inside a dynamic import, so the unsubscribe has
+  // to be routed back through a ref — returning it from the import callback
+  // would leak a listener on every mount.
   React.useEffect(() => {
     if (!clinicId) return;
-    
-    import("firebase/firestore").then(({ collection, query, orderBy, onSnapshot }) => {
-      import("@/lib/firebase").then(({ db }) => {
+
+    let cancelled = false;
+    let unsub: (() => void) | null = null;
+
+    Promise.all([import("firebase/firestore"), import("@/lib/firebase")])
+      .then(([{ collection, query, orderBy, onSnapshot }, { db }]) => {
+        if (cancelled) return;
+
         const q = query(
           collection(db, "clinics", clinicId, "conversationLogs"),
           orderBy("updatedAt", "desc")
         );
 
-        const unsub = onSnapshot(q, (snap) => {
-          const fetched = snap.docs.map(d => ({ id: d.id, ...d.data() } as ConversationLog));
-          setLogs(fetched);
-          setLoading(false);
-        });
+        const subscription = onSnapshot(
+          q,
+          (snap) => {
+            const fetched = snap.docs.map(d => ({ id: d.id, ...d.data() } as ConversationLog));
+            setLogs(fetched);
+            setLoading(false);
+          },
+          (err) => {
+            console.error("[ConversationLogsTab] Conversation listener error:", err);
+            setLoading(false);
+          }
+        );
 
-        return () => unsub();
+        // Unmounted while the import was in flight.
+        if (cancelled) {
+          subscription();
+          return;
+        }
+
+        unsub = subscription;
+      })
+      .catch((err) => {
+        console.error("[ConversationLogsTab] Failed to init conversation listener:", err);
+        setLoading(false);
       });
-    });
+
+    return () => {
+      cancelled = true;
+      unsub?.();
+      unsub = null;
+    };
   }, [clinicId]);
 
   // Optimistic label update handler — updates local state immediately

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { requireClinicAccess, AuthError } from "@/lib/services/apiAuth";
+import { mapInfrastructureError } from "@/lib/services/infrastructureErrors";
 
 /**
  * Global preset labels available to all clinics.
@@ -33,7 +34,10 @@ export async function GET(
 
     const adminDb = getAdminDb();
     if (!adminDb) {
-      return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
+      return NextResponse.json(
+        { error: "Database unavailable", code: "SERVICE_UNAVAILABLE" },
+        { status: 503 }
+      );
     }
 
     const labelsRef = adminDb
@@ -41,23 +45,28 @@ export async function GET(
       .doc(clinicId)
       .collection("customLabels");
 
-    // Seed presets idempotently
-    const existingSnap = await labelsRef.get();
-    const existingIds = new Set(existingSnap.docs.map((d) => d.id));
-
-    for (const preset of GLOBAL_PRESETS) {
-      if (!existingIds.has(preset.id)) {
-        await labelsRef.doc(preset.id).set({
-          ...preset,
-          createdAt: new Date().toISOString(),
-          isActive: true,
-        });
-      }
-    }
-
-    // Fetch all active labels
+    // Single read of the active set. Previously this endpoint read the whole
+    // subcollection twice (once to test for seeding, once to filter).
     const snap = await labelsRef.where("isActive", "==", true).get();
     const labels = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const activeIds = new Set(labels.map((l) => l.id));
+
+    // Seed presets idempotently. A preset absent from the active set is checked
+    // by id so a deliberately deactivated label is never resurrected.
+    for (const preset of GLOBAL_PRESETS) {
+      if (activeIds.has(preset.id)) continue;
+
+      const presetSnap = await labelsRef.doc(preset.id).get();
+      if (presetSnap.exists) continue;
+
+      const seeded = {
+        ...preset,
+        createdAt: new Date().toISOString(),
+        isActive: true,
+      };
+      await labelsRef.doc(preset.id).set(seeded);
+      labels.push(seeded);
+    }
 
     // Sort by order field
     labels.sort((a: any, b: any) => (a.order ?? 99) - (b.order ?? 99));
@@ -68,6 +77,10 @@ export async function GET(
       return NextResponse.json({ error: err.message }, { status: err.status });
     }
     console.error("[custom-labels] Error:", err);
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    const mapped = mapInfrastructureError(err);
+    return NextResponse.json(
+      { error: mapped.error, code: mapped.code },
+      { status: mapped.status }
+    );
   }
 }
