@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { PrivacyConsentCard } from "@/components/chat/PrivacyConsentCard";
 
 /* ── Chat Message Types (inline — no external dependency) ── */
 interface MatchedPrice {
@@ -38,6 +39,8 @@ interface ChatMessage {
   clinics?: ClinicRec[];
   showClinicCards?: boolean;
   privacyNoticeUrl?: string;
+  privacyNoticeLabel?: string;
+  consentStructured?: any;
 }
 
 interface SessionContext {
@@ -92,7 +95,7 @@ const TEXTS: Record<Lang, Record<string, string>> = {
 
     // AI Section
     "ai.title": "Ne tür bir tedavi aradığınızı bize anlatın",
-    "ai.placeholder": "Örn: Antalya'da implant yaptırmak istiyorum. 3000 EUR bütçem var. İngilizce destek ve transfer önemli.",
+    "ai.placeholder": "Örn: İstanbul'da implant tedavisi yaptırmak istiyorum. Avrupa Yakası ve İngilizce destek benim için önemli.",
     "ai.searchBtn": "AI ile Klinik Bul",
     "ai.poweredBy": "ClinicBridge AI tarafından desteklenmektedir",
     "ai.greeting": "Merhaba! 👋 Tedavi ihtiyacınızı bana anlatın; lokasyon, bütçe ve tercihlerinize göre size en uygun klinikleri fiyat aralıklarıyla birlikte önereyim.",
@@ -201,7 +204,7 @@ const TEXTS: Record<Lang, Record<string, string>> = {
 
     // AI Section
     "ai.title": "Tell us what treatment you're looking for",
-    "ai.placeholder": "Example: I want dental implants in Antalya. My budget is 3000 EUR. English support and transfer are important.",
+    "ai.placeholder": "Example: I want dental implants in Istanbul. European Side and English support are important to me.",
     "ai.searchBtn": "Find Clinic with AI",
     "ai.poweredBy": "Powered by ClinicBridge AI",
     "ai.greeting": "Hello! 👋 Tell me your treatment need, preferred location, and budget. I'll match you with suitable clinics and show estimated prices, clinic details, and quote options.",
@@ -593,6 +596,8 @@ export default function AgencyDemoPage() {
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
         privacyNoticeUrl: data.privacyNoticeUrl,
+        privacyNoticeLabel: data.privacyNoticeLabel,
+        consentStructured: data.consentStructured,
       };
       setAiMessages((prev) => [...prev, replyMsg]);
       if (data.sessionContext) setSessionCtx(data.sessionContext);
@@ -674,6 +679,8 @@ export default function AgencyDemoPage() {
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
         privacyNoticeUrl: data.privacyNoticeUrl,
+        privacyNoticeLabel: data.privacyNoticeLabel,
+        consentStructured: data.consentStructured,
       };
       setAiMessages((prev) => [...prev, replyMsg]);
       if (data.sessionContext) setSessionCtx(data.sessionContext);
@@ -716,6 +723,8 @@ export default function AgencyDemoPage() {
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
         privacyNoticeUrl: data.privacyNoticeUrl,
+        privacyNoticeLabel: data.privacyNoticeLabel,
+        consentStructured: data.consentStructured,
       };
       setAiMessages((prev) => [...prev, replyMsg]);
       if (data.sessionContext) setSessionCtx(data.sessionContext);
@@ -777,6 +786,10 @@ export default function AgencyDemoPage() {
         type: data.type || "text",
         text: data.reply || "Bir sorun oluştu.",
         clinics: data.clinics || undefined,
+        showClinicCards: data.showClinicCards,
+        privacyNoticeUrl: data.privacyNoticeUrl,
+        privacyNoticeLabel: data.privacyNoticeLabel,
+        consentStructured: data.consentStructured,
       };
 
       // Replace temporary message with actual response
@@ -1093,17 +1106,44 @@ export default function AgencyDemoPage() {
                     {msg.role === "user" ? <User size={18} color="#fff" /> : <Bot size={18} color="#fff" />}
                   </div>
                   <div style={{ maxWidth: "88%", minWidth: 0 }}>
-                    {/* Text bubble */}
-                    <div style={{
-                      background: msg.role === "user" ? C.navy : C.white,
-                      color: msg.role === "user" ? "#fff" : C.text,
-                      padding: "12px 16px",
-                      borderRadius: msg.role === "user" ? "16px 4px 16px 16px" : "4px 16px 16px 16px",
-                      border: msg.role === "user" ? "none" : `1px solid ${C.border}`,
-                      fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap",
-                    }}>
-                      {msg.text}
-                    </div>
+                    {/* Text bubble or Consent Card */}
+                    {msg.type === "consent_request" || msg.type === "consent_request_resolved" ? (
+                      <div style={{
+                        background: C.white,
+                        color: C.text,
+                        padding: "14px 18px",
+                        borderRadius: "4px 16px 16px 16px",
+                        border: `1px solid ${C.border}`,
+                        fontSize: 14,
+                        lineHeight: 1.6,
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.03)"
+                      }}>
+                        <PrivacyConsentCard
+                          lang={lang}
+                          structuredConsent={msg.consentStructured}
+                          privacyNoticeUrl={msg.privacyNoticeUrl}
+                          privacyNoticeLabel={msg.privacyNoticeLabel}
+                          isResolved={msg.type === "consent_request_resolved"}
+                          disabled={aiTyping}
+                          onAccept={() => sendConsentAction("accept")}
+                          onDecline={() => sendConsentAction("decline")}
+                          primaryColor={C.teal}
+                          navyColor={C.navy}
+                          borderColor={C.border}
+                        />
+                      </div>
+                    ) : (
+                      <div style={{
+                        background: msg.role === "user" ? C.navy : C.white,
+                        color: msg.role === "user" ? "#fff" : C.text,
+                        padding: "12px 16px",
+                        borderRadius: msg.role === "user" ? "16px 4px 16px 16px" : "4px 16px 16px 16px",
+                        border: msg.role === "user" ? "none" : `1px solid ${C.border}`,
+                        fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap",
+                      }}>
+                        {msg.text}
+                      </div>
+                    )}
                     {/* Clinic recommendation cards */}
                     {msg.clinics && msg.clinics.length > 0 && msg.showClinicCards !== false && (
                       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
@@ -1233,27 +1273,6 @@ export default function AgencyDemoPage() {
                                 </button>
                               </div>
                             )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Consent Request UI */}
-                    {(msg.type === "consent_request" || msg.type === "consent_request_resolved") && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
-                        {msg.privacyNoticeUrl && (
-                          <a href={msg.privacyNoticeUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: C.teal, textDecoration: "underline", display: "inline-block", marginBottom: 4 }}>
-                            {lang === "tr" ? "Aydınlatma Metnini Okuyun" : "Read Privacy Notice"}
-                          </a>
-                        )}
-                        {msg.type === "consent_request" && (
-                          <div style={{ display: "flex", gap: 8 }}>
-                            <button onClick={() => sendConsentAction("accept")} disabled={aiTyping} style={{ flex: 1, padding: "10px 0", borderRadius: 8, fontSize: 13, fontWeight: 700, background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer", opacity: aiTyping ? 0.6 : 1 }}>
-                              {lang === "tr" ? "Kabul Ediyorum" : "I Accept"}
-                            </button>
-                            <button onClick={() => sendConsentAction("decline")} disabled={aiTyping} style={{ flex: 1, padding: "10px 0", borderRadius: 8, fontSize: 13, fontWeight: 700, background: C.white, color: C.navy, border: `1px solid ${C.border}`, cursor: "pointer", opacity: aiTyping ? 0.6 : 1 }}>
-                              {lang === "tr" ? "Reddediyorum" : "I Decline"}
-                            </button>
                           </div>
                         )}
                       </div>

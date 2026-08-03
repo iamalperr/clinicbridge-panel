@@ -7,6 +7,7 @@ import {
   Phone, Mail, CheckCircle2, ArrowRight, Menu, X,
   Building2, TrendingUp, Loader2, ExternalLink, MessageSquare,
 } from "lucide-react";
+import { PrivacyConsentCard } from "@/components/chat/PrivacyConsentCard";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -77,7 +78,7 @@ const TX: Record<Lang, Record<string, string>> = {
     "stat.countries": "Ülkeden Hasta", "stat.savings": "Tasarruf",
     "ai.title": "Tedavi ihtiyacınızı yapay zekâya anlatın",
     "ai.sub": "Doğal dilde yazın, AI size en uygun klinikleri bulsun.",
-    "ai.placeholder": "Örn: İstanbul'da implant tedavisi yaptırmak istiyorum.",
+    "ai.placeholder": "İstanbul’da implant tedavisi yaptırmak istiyorum. Avrupa Yakası ve İngilizce destek benim için önemli.",
     "ai.send": "Klinik Bul", "ai.powered": "ClinicBridge AI tarafından desteklenmektedir",
     "ai.typing": "AI analiz ediyor...",
     "ai.noMatch": "Üzgünüm, aramanızla eşleşen klinik bulunamadı. Lütfen farklı bir tedavi türü deneyin.",
@@ -121,7 +122,7 @@ const TX: Record<Lang, Record<string, string>> = {
     "stat.countries": "Patient Countries", "stat.savings": "Average Savings",
     "ai.title": "Tell AI about your treatment needs",
     "ai.sub": "Write in natural language — AI will find the best clinics for you.",
-    "ai.placeholder": "E.g.: I want dental implants in Istanbul.",
+    "ai.placeholder": "Example: I want dental implants in Istanbul. European Side and English support are important to me.",
     "ai.send": "Find Clinics", "ai.powered": "Powered by ClinicBridge AI",
     "ai.typing": "AI is analyzing...",
     "ai.noMatch": "Sorry, no clinics match your search. Please try a different treatment type.",
@@ -246,6 +247,8 @@ export default function FeelinHealthyLive() {
     clinics?: any[];
     showClinicCards?: boolean;
     privacyNoticeUrl?: string;
+    privacyNoticeLabel?: string;
+    consentStructured?: any;
     additionalEligibleClinicCount?: number;
     conversionData?: any;
   }[]>([]);
@@ -410,6 +413,8 @@ export default function FeelinHealthyLive() {
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
         privacyNoticeUrl: data.privacyNoticeUrl,
+        privacyNoticeLabel: data.privacyNoticeLabel,
+        consentStructured: data.consentStructured,
         additionalEligibleClinicCount: data.additionalEligibleClinicCount,
         conversionData: data.conversionData,
       };
@@ -430,11 +435,14 @@ export default function FeelinHealthyLive() {
     if (aiTyping) return;
     setAiTyping(true);
 
-    // Add user's choice to the chat visually
+    // Add user's choice to the chat visually and mark previous consent cards as resolved
     const userChoice = status === "accept" 
       ? (lang === "tr" ? "Kabul Ediyorum" : "I Accept")
       : (lang === "tr" ? "Reddediyorum" : "I Decline");
-    setAiMsgs((p) => [...p, { role: "user", text: userChoice }]);
+    setAiMsgs((p) => [
+      ...p.map((m) => m.type === "consent_request" ? { ...m, type: "consent_request_resolved" } : m),
+      { role: "user", text: userChoice }
+    ]);
 
     try {
       const res = await fetch(`/api/public/agency/${SLUG}/matching-chat`, {
@@ -457,6 +465,8 @@ export default function FeelinHealthyLive() {
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
         privacyNoticeUrl: data.privacyNoticeUrl,
+        privacyNoticeLabel: data.privacyNoticeLabel,
+        consentStructured: data.consentStructured,
         additionalEligibleClinicCount: data.additionalEligibleClinicCount,
         conversionData: data.conversionData,
       };
@@ -499,6 +509,8 @@ export default function FeelinHealthyLive() {
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
         privacyNoticeUrl: data.privacyNoticeUrl,
+        privacyNoticeLabel: data.privacyNoticeLabel,
+        consentStructured: data.consentStructured,
         additionalEligibleClinicCount: data.additionalEligibleClinicCount,
         conversionData: data.conversionData,
       };
@@ -554,6 +566,8 @@ export default function FeelinHealthyLive() {
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
         privacyNoticeUrl: data.privacyNoticeUrl,
+        privacyNoticeLabel: data.privacyNoticeLabel,
+        consentStructured: data.consentStructured,
         additionalEligibleClinicCount: data.additionalEligibleClinicCount,
         conversionData: data.conversionData,
       };
@@ -793,7 +807,37 @@ export default function FeelinHealthyLive() {
                     {m.role === "user" ? <User size={18} color="#fff" /> : <Bot size={18} color="#fff" />}
                   </div>
                   <div style={{ maxWidth: "85%", display: "flex", flexDirection: "column", gap: 8 }}>
-                    <div style={{ background: m.role === "user" ? C.navy : C.white, color: m.role === "user" ? "#fff" : C.text, padding: "12px 16px", borderRadius: m.role === "user" ? "16px 4px 16px 16px" : "4px 16px 16px 16px", border: m.role === "user" ? "none" : `1px solid ${C.border}`, fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{renderMessageContent(m.text, m.role === "user")}</div>
+                    {m.type === "consent_request" || m.type === "consent_request_resolved" ? (
+                      <div style={{
+                        background: C.white,
+                        color: C.text,
+                        padding: "14px 18px",
+                        borderRadius: "4px 16px 16px 16px",
+                        border: `1px solid ${C.border}`,
+                        fontSize: 14,
+                        lineHeight: 1.6,
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.03)"
+                      }}>
+                        <PrivacyConsentCard
+                          lang={lang}
+                          agencyConfig={agency}
+                          structuredConsent={m.consentStructured}
+                          privacyNoticeUrl={m.privacyNoticeUrl}
+                          privacyNoticeLabel={m.privacyNoticeLabel}
+                          isResolved={m.type === "consent_request_resolved"}
+                          disabled={aiTyping}
+                          onAccept={() => sendConsentAction("accept")}
+                          onDecline={() => sendConsentAction("decline")}
+                          primaryColor={C.primary}
+                          navyColor={C.navy}
+                          borderColor={C.border}
+                        />
+                      </div>
+                    ) : (
+                      <div style={{ background: m.role === "user" ? C.navy : C.white, color: m.role === "user" ? "#fff" : C.text, padding: "12px 16px", borderRadius: m.role === "user" ? "16px 4px 16px 16px" : "4px 16px 16px 16px", border: m.role === "user" ? "none" : `1px solid ${C.border}`, fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                        {renderMessageContent(m.text, m.role === "user")}
+                      </div>
+                    )}
                     {/* Inline clinic cards */}
                     {m.clinics && m.clinics.length > 0 && m.showClinicCards !== false && (
                       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -989,24 +1033,6 @@ export default function FeelinHealthyLive() {
                             </a>
                           </div>
                         )}
-                      </div>
-                    )}
-                    {/* Consent Request UI */}
-                    {m.type === "consent_request" && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
-                        {m.privacyNoticeUrl && (
-                          <a href={m.privacyNoticeUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: C.primary, textDecoration: "underline", display: "inline-block", marginBottom: 4 }}>
-                            {lang === "tr" ? "Aydınlatma Metnini Okuyun" : "Read Privacy Notice"}
-                          </a>
-                        )}
-                        <div style={{ display: "flex", gap: 8 }}>
-                          <button onClick={() => sendConsentAction("accept")} disabled={aiTyping} style={{ flex: 1, padding: "10px 0", borderRadius: 8, fontSize: 13, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer", opacity: aiTyping ? 0.6 : 1 }}>
-                            {lang === "tr" ? "Kabul Ediyorum" : "I Accept"}
-                          </button>
-                          <button onClick={() => sendConsentAction("decline")} disabled={aiTyping} style={{ flex: 1, padding: "10px 0", borderRadius: 8, fontSize: 13, fontWeight: 700, background: C.white, color: C.navy, border: `1px solid ${C.border}`, cursor: "pointer", opacity: aiTyping ? 0.6 : 1 }}>
-                            {lang === "tr" ? "Reddediyorum" : "I Decline"}
-                          </button>
-                        </div>
                       </div>
                     )}
                     {/* Email Request UI */}

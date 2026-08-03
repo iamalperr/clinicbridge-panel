@@ -20,6 +20,10 @@ import {
   FEELINHEALTHY_CONFIG,
   type IntakeGroupNumber,
 } from "@/lib/agency/feelinhealthyConfig";
+import {
+  getStructuredConsentData,
+  validatePrivacyNoticeUrl
+} from "@/lib/utils/privacyNotice";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -603,10 +607,10 @@ export async function POST(
       mode: "kvkk",
       version: "v1.0",
       consentTextTr: isFeelinHealthy
-        ? "Size uygun klinikleri önerebilmemiz ve talebinizi değerlendirebilmemiz için paylaşacağınız kişisel ve sağlıkla ilgili verileri işlememize yönelik onayınıza ihtiyacımız bulunuyor. [Aydınlatma metnini](https://feelinhealthy.com/kvkk) inceleyerek onaylayabilirsiniz."
+        ? "Sizlere uygun klinikleri önerebilmemiz ve talebinizi değerlendirebilmemiz için paylaşacağınız kişisel ve sağlıkla ilgili verileri işlememize yönelik onayınıza ihtiyaç duyuyoruz. Aydınlatma metnini inceleyerek devam edebilirsiniz."
         : "Size uygun klinikleri önerebilmemiz ve talebinizi değerlendirebilmemiz için paylaşacağınız kişisel ve sağlıkla ilgili verileri işlememize yönelik onayınıza ihtiyacımız bulunuyor. Aydınlatma metnini inceleyerek devam edebilirsiniz.",
       consentTextEn: isFeelinHealthy
-        ? "We need your consent to process the personal and health-related information you share to recommend suitable clinics. You can review the [Privacy Notice](https://feelinhealthy.com/kvkk) before continuing."
+        ? "To recommend suitable clinics and evaluate your request, we need your consent to process the personal and health-related information you provide. You can review the privacy notice before continuing."
         : "We need your consent to process the personal and health-related information you may share so that we can recommend suitable clinics and evaluate your request. You can review the privacy notice before continuing.",
       noticeUrlTr: isFeelinHealthy ? "https://feelinhealthy.com/kvkk" : (agencyData.privacySettings?.noticeUrlTr || "https://feelinhealthy.com/kvkk"),
       noticeUrlEn: isFeelinHealthy ? "https://feelinhealthy.com/kvkk" : (agencyData.privacySettings?.noticeUrlEn || "https://feelinhealthy.com/kvkk"),
@@ -1162,10 +1166,18 @@ JSON FORMATI:
           
           // Save the original user message so it can be re-processed after consent
           ctx.pendingUserMessage = finalMessage;
+          const structuredData = getStructuredConsentData(agencyData, parsed.language || "tr");
           return jsonResponse({
              reply: parsed.language === "tr" ? privacySettings.consentTextTr : privacySettings.consentTextEn,
              type: "consent_request",
-             privacyNoticeUrl: parsed.language === "tr" ? privacySettings.noticeUrlTr : privacySettings.noticeUrlEn,
+             privacyNoticeUrl: structuredData.privacyNoticeUrl,
+             privacyNoticeLabel: structuredData.privacyNoticeLabel,
+             consentStructured: {
+               consentTextBeforeLink: structuredData.consentTextBeforeLink,
+               privacyNoticeLabel: structuredData.privacyNoticeLabel,
+               privacyNoticeUrl: structuredData.privacyNoticeUrl,
+               consentTextAfterLink: structuredData.consentTextAfterLink
+             },
              consentVersion: privacySettings.version,
              sessionContext: ctx,
              showClinicCards: false

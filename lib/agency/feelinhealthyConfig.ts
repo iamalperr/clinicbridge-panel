@@ -208,6 +208,10 @@ export const FEELINHEALTHY_CONFIG = {
   agencyName: "FeelinHealthy",
   maxGuestClinics: 2,
   privacyNoticeUrl: "https://feelinhealthy.com/kvkk",
+  privacyNoticeLabelTr: "Aydınlatma metnini",
+  privacyNoticeLabelEn: "privacy notice",
+  placeholderTr: "İstanbul’da implant tedavisi yaptırmak istiyorum. Avrupa Yakası ve İngilizce destek benim için önemli.",
+  placeholderEn: "I want dental implants in Istanbul. European Side and English support are important to me.",
   registrationUrl: "/demo/feelinhealthy/register",
   askBudget: false,
 };
