@@ -175,4 +175,28 @@ describe("Appointment Status Transitions and Canonical Mapping", () => {
     expect(isValidStatusTransition("approved", "confirmed")).toBe(true);
     expect(isValidStatusTransition("reschedule_requested", "confirmed")).toBe(true);
   });
+
+  it("should allow same-status updates for editing date and time on pending, under_review, and approved appointments", () => {
+    expect(isValidStatusTransition("pending", "pending")).toBe(true);
+    expect(isValidStatusTransition("under_review", "under_review")).toBe(true);
+    expect(isValidStatusTransition("approved", "approved")).toBe(true);
+    expect(isValidStatusTransition("reschedule_requested", "reschedule_requested")).toBe(true);
+  });
+
+  it("should resolve updated requested date and time correctly for unconfirmed appointments", () => {
+    const underReviewAppt = {
+      status: "under_review",
+      requestedDate: "2026-08-05",
+      requestedTime: "14:00",
+      patientName: "Ahmet Kaya"
+    };
+
+    const schedule = resolveAppointmentDisplaySchedule(underReviewAppt);
+    expect(schedule.requestedDate).toBe("2026-08-05");
+    expect(schedule.requestedTime).toBe("14:00");
+    expect(schedule.confirmedDate).toBeNull();
+    expect(schedule.confirmedTime).toBeNull();
+    expect(schedule.displayDate).toBe("2026-08-05");
+    expect(schedule.displayTime).toBe("14:00");
+  });
 });

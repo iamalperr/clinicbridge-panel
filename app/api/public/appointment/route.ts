@@ -98,7 +98,23 @@ export async function POST(req: Request) {
     const name    = patientName.trim();
     const phone   = patientPhone.trim();
 
-    if (clientDb) {
+    if (adminDb) {
+      const dupeSnap = await adminDb
+        .collection("appointments")
+        .where("clinicId", "==", clinicId)
+        .where("patientPhone", "==", phone)
+        .where("requestedDate", "==", date)
+        .where("requestedTime", "==", time)
+        .limit(1)
+        .get();
+
+      if (!dupeSnap.empty) {
+        return NextResponse.json(
+          { success: false, duplicate: true, appointmentId: dupeSnap.docs[0].id },
+          { headers: CORS }
+        );
+      }
+    } else if (clientDb) {
       const dupeQ = query(
         collection(clientDb, "appointments"),
         where("clinicId",      "==", clinicId),

@@ -405,6 +405,11 @@ export class NotificationService {
     confirmedTime?: string | null;
     confirmedTimeRange?: string | null;
     changeReason?: string | null;
+    requestedDate?: string | null;
+    requestedTime?: string | null;
+    preferredDate?: string | null;
+    preferredTime?: string | null;
+    notes?: string | null;
   }): Promise<{
     success: boolean;
     appointmentUpdated: boolean;
@@ -495,6 +500,12 @@ export class NotificationService {
           statusUpdatedBy: params.actorUserId
         };
 
+        if (params.requestedDate !== undefined) updatePayload.requestedDate = params.requestedDate;
+        if (params.requestedTime !== undefined) updatePayload.requestedTime = params.requestedTime;
+        if (params.preferredDate !== undefined) updatePayload.preferredDate = params.preferredDate;
+        if (params.preferredTime !== undefined) updatePayload.preferredTime = params.preferredTime;
+        if (params.notes !== undefined) updatePayload.notes = params.notes;
+
         if (params.newStatus === "confirmed") {
           if (finalConfirmedDate) updatePayload.confirmedDate = finalConfirmedDate;
           if (finalConfirmedTime) updatePayload.confirmedTime = finalConfirmedTime;
@@ -559,6 +570,15 @@ export class NotificationService {
         appointmentId: params.appointmentId, oldStatus: params.oldStatus, newStatus: params.newStatus,
         confirmedDate: finalConfirmedDate, confirmedTime: finalConfirmedTime,
         skipReason: "PATIENT_EMAIL_MISSING"
+      };
+    }
+
+    if (params.oldStatus === params.newStatus && params.newStatus !== "confirmed") {
+      return {
+        success: true, appointmentUpdated: true, emailSent: false, emailSkipped: true,
+        appointmentId: params.appointmentId, oldStatus: params.oldStatus, newStatus: params.newStatus,
+        confirmedDate: finalConfirmedDate, confirmedTime: finalConfirmedTime,
+        skipReason: "NO_STATUS_CHANGE"
       };
     }
 

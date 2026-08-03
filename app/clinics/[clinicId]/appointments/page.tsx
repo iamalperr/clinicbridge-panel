@@ -8,7 +8,7 @@ import { UI_COLORS } from "@/components/ui/ui-shared";
 import { Loader2, Calendar, Clock, User, Stethoscope, ChevronRight, Inbox, Phone, Mail, CheckCircle, XCircle, MessageSquare, Plus, RefreshCw, CalendarCheck } from "lucide-react";
 import Badge from "@/components/ui/Badge";
 import type { Appointment } from "@/lib/types";
-import AppointmentConfirmModal from "@/components/clinic/appointments/AppointmentConfirmModal";
+import AppointmentConfirmModal, { AppointmentModalMode } from "@/components/clinic/appointments/AppointmentConfirmModal";
 import { resolveAppointmentDisplaySchedule } from "@/lib/services/appointments/AppointmentScheduleResolver";
 
 // Client-side helper
@@ -38,8 +38,9 @@ export default function AppointmentsPage({ params }: PageProps) {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
-  // Reschedule / Confirm Modal State
+  // Reschedule / Confirm / Edit Modal State
   const [confirmModalAppt, setConfirmModalAppt] = useState<Appointment | null>(null);
+  const [confirmModalMode, setConfirmModalMode] = useState<AppointmentModalMode>("confirm");
 
   // Manual Appointment Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -197,6 +198,7 @@ export default function AppointmentsPage({ params }: PageProps) {
 
   const handleStatusSelect = (apt: Appointment, newStatus: string) => {
     if (newStatus === "confirmed") {
+      setConfirmModalMode("confirm");
       setConfirmModalAppt(apt);
     } else {
       updateStatus(apt.id!, newStatus, apt.conversationId);
@@ -328,7 +330,9 @@ export default function AppointmentsPage({ params }: PageProps) {
                     const displayPhone = apt.patientPhone ? apt.patientPhone.replace(/-+$/, "") : "";
                     const displayService = apt.treatmentType || apt.requestedService || apt.service || apt.reason || "Belirtilmedi";
                     const schedule = resolveAppointmentDisplaySchedule(apt);
-                    const isConfirmed = apt.status === "confirmed";
+                    const canonicalStatus = mapToCanonicalStatus(apt.status);
+                    const isConfirmed = canonicalStatus === "confirmed";
+                    const isEditable = ["pending", "under_review", "approved", "reschedule_requested"].includes(canonicalStatus);
                     
                     return (
                       <tr key={apt.id} style={{ borderBottom: `1px solid ${UI_COLORS.border}`, transition: "background 0.2s" }} onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-page)"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
@@ -455,7 +459,11 @@ export default function AppointmentsPage({ params }: PageProps) {
                                 </div>
                               )}
                               <button
-                                onClick={(e) => { e.stopPropagation(); setConfirmModalAppt(apt); }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setConfirmModalMode("reschedule");
+                                  setConfirmModalAppt(apt);
+                                }}
                                 style={{
                                   alignSelf: "flex-start",
                                   background: "transparent",
@@ -487,6 +495,29 @@ export default function AppointmentsPage({ params }: PageProps) {
                                 <div style={{ display: "inline-flex", alignItems: "center", padding: "2px 6px", background: "rgba(100, 116, 139, 0.1)", borderRadius: 4, color: "#475569", fontSize: 11, fontWeight: 600, marginTop: 2 }}>
                                   Saat belirtilmedi
                                 </div>
+                              )}
+                              {isEditable && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setConfirmModalMode("edit_schedule");
+                                    setConfirmModalAppt(apt);
+                                  }}
+                                  style={{
+                                    alignSelf: "flex-start",
+                                    background: "transparent",
+                                    border: "none",
+                                    color: "#6366f1",
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    cursor: "pointer",
+                                    padding: "2px 0",
+                                    textDecoration: "underline",
+                                    marginTop: 2
+                                  }}
+                                >
+                                  Tarih ve Saati Düzenle
+                                </button>
                               )}
                             </div>
                           )}
@@ -599,14 +630,24 @@ export default function AppointmentsPage({ params }: PageProps) {
         </div>
       )}
 
-      {/* Appointment Confirmation & Reschedule Modal */}
+      {/* Appointment Confirmation, Reschedule & Edit Modal */}
       <AppointmentConfirmModal
         isOpen={!!confirmModalAppt}
-        onClose={() => setConfirmModalAppt(null)}
+        onClose={() => {
+          setConfirmModalAppt(null);
+          setConfirmModalMode("confirm");
+        }}
         appointment={confirmModalAppt}
         clinicId={clinicId}
-        onSuccess={() => {
-          setToastMsg("Randevu kesinleştirildi ve hastaya bilgilendirme gönderildi.");
+        mode={confirmModalMode}
+        onSuccess={(updatedData) => {
+          if (confirmModalMode === "edit_schedule") {
+            setToastMsg("Randevu tarih ve saati güncellendi.");
+          } else if (confirmModalMode === "reschedule") {
+            setToastMsg("Randevu yeniden planlandı ve hastaya bilgilendirme gönderildi.");
+          } else {
+            setToastMsg("Randevu kesinleştirildi ve hastaya bilgilendirme gönderildi.");
+          }
           setTimeout(() => setToastMsg(null), 4000);
         }}
       />

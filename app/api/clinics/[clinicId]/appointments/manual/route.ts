@@ -60,6 +60,24 @@ export async function POST(req: Request, { params }: RouteParams) {
     }
     clinicEmailsToUse = Array.from(new Set(clinicEmailsToUse)); // remove duplicates
 
+    // Check for duplicate manual appointment (same phone, date, time)
+    const dupeSnap = await adminDb
+      .collection("clinics")
+      .doc(clinicId)
+      .collection("appointments")
+      .where("patientPhone", "==", patientPhone.trim())
+      .where("requestedDate", "==", requestedDate.trim())
+      .where("requestedTime", "==", requestedTime.trim())
+      .limit(1)
+      .get();
+
+    if (!dupeSnap.empty) {
+      return NextResponse.json(
+        { error: "Bu tarih ve saatte bu hasta için zaten bir randevu kaydı bulunmaktadır.", duplicate: true, appointmentId: dupeSnap.docs[0].id },
+        { status: 409 }
+      );
+    }
+
     // Create Appointment Document
     const now = new Date().toISOString();
     const appointmentRef = adminDb.collection("clinics").doc(clinicId).collection("appointments").doc();

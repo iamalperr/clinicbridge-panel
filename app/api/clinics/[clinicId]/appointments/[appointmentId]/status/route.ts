@@ -77,12 +77,23 @@ async function handleStatusUpdate(req: Request, paramsPromise: Promise<{ clinicI
     const confirmedTime = body.confirmedTime !== undefined ? (body.confirmedTime ? String(body.confirmedTime).trim() : null) : undefined;
     const confirmedTimeRange = body.confirmedTimeRange !== undefined ? (body.confirmedTimeRange ? String(body.confirmedTimeRange).trim() : null) : undefined;
     const changeReason = body.changeReason ? String(body.changeReason).trim() : undefined;
+    const requestedDate = body.requestedDate !== undefined ? (body.requestedDate ? String(body.requestedDate).trim() : null) : undefined;
+    const requestedTime = body.requestedTime !== undefined ? (body.requestedTime ? String(body.requestedTime).trim() : null) : undefined;
+    const preferredDate = body.preferredDate !== undefined ? (body.preferredDate ? String(body.preferredDate).trim() : null) : undefined;
+    const preferredTime = body.preferredTime !== undefined ? (body.preferredTime ? String(body.preferredTime).trim() : null) : undefined;
+    const notes = body.notes !== undefined ? (body.notes ? String(body.notes).trim() : null) : undefined;
 
-    // 4. Idempotency vs Reschedule Check
-    const isDateChanged = (confirmedDate !== undefined && confirmedDate !== (apptData.confirmedDate || null)) ||
-                          (confirmedTime !== undefined && confirmedTime !== (apptData.confirmedTime || null));
+    // 4. Idempotency vs Reschedule/Edit Check
+    const isScheduleChanged = 
+      (confirmedDate !== undefined && confirmedDate !== (apptData.confirmedDate || null)) ||
+      (confirmedTime !== undefined && confirmedTime !== (apptData.confirmedTime || null)) ||
+      (requestedDate !== undefined && requestedDate !== (apptData.requestedDate || null)) ||
+      (requestedTime !== undefined && requestedTime !== (apptData.requestedTime || null)) ||
+      (preferredDate !== undefined && preferredDate !== (apptData.preferredDate || null)) ||
+      (preferredTime !== undefined && preferredTime !== (apptData.preferredTime || null)) ||
+      (notes !== undefined && notes !== (apptData.notes || null));
 
-    if (oldStatus === newStatus && !isDateChanged) {
+    if (oldStatus === newStatus && !isScheduleChanged) {
       return NextResponse.json({ 
         success: true, 
         appointmentUpdated: false,
@@ -107,7 +118,12 @@ async function handleStatusUpdate(req: Request, paramsPromise: Promise<{ clinicI
       confirmedDate,
       confirmedTime,
       confirmedTimeRange,
-      changeReason
+      changeReason,
+      requestedDate,
+      requestedTime,
+      preferredDate,
+      preferredTime,
+      notes
     });
 
     if (!result.success && !result.appointmentUpdated) {

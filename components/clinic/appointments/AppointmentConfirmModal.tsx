@@ -3,17 +3,26 @@
 import React, { useState, useEffect } from "react";
 import Modal from "@/components/ui/Modal";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
-import { Calendar, Clock, CheckCircle2, AlertCircle, Loader2, Mail, Info } from "lucide-react";
+import { Calendar, Clock, CheckCircle2, AlertCircle, Loader2, Mail, Info, Edit3 } from "lucide-react";
 import { Appointment } from "@/lib/types";
 import { resolveAppointmentDisplaySchedule } from "@/lib/services/appointments/AppointmentScheduleResolver";
 import { auth } from "@/lib/firebase";
+
+export type AppointmentModalMode = "confirm" | "reschedule" | "edit_schedule";
 
 interface AppointmentConfirmModalProps {
   isOpen: boolean;
   onClose: () => void;
   appointment: Appointment | null;
   clinicId: string;
-  onSuccess: (updatedData: { confirmedDate: string; confirmedTime: string; status: string }) => void;
+  mode?: AppointmentModalMode;
+  onSuccess: (updatedData: { 
+    confirmedDate?: string; 
+    confirmedTime?: string; 
+    requestedDate?: string;
+    requestedTime?: string;
+    status: string 
+  }) => void;
 }
 
 export default function AppointmentConfirmModal({
@@ -21,13 +30,17 @@ export default function AppointmentConfirmModal({
   onClose,
   appointment,
   clinicId,
+  mode,
   onSuccess
 }: AppointmentConfirmModalProps) {
-  const [confirmedDate, setConfirmedDate] = useState("");
-  const [confirmedTime, setConfirmedTime] = useState("");
+  const [selectedDate, setSelectedDate] = useState("");
+  const [selectedTime, setSelectedTime] = useState("");
   const [changeReason, setChangeReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Derive effective mode
+  const effectiveMode: AppointmentModalMode = mode || (appointment?.status === "confirmed" ? "reschedule" : "confirm");
 
   useEffect(() => {
     if (!isOpen || !appointment) {
@@ -38,46 +51,44 @@ export default function AppointmentConfirmModal({
     const schedule = resolveAppointmentDisplaySchedule(appointment);
     
     // Set initial date
-    if (appointment.confirmedDate) {
-      setConfirmedDate(appointment.confirmedDate);
+    if (appointment.confirmedDate && effectiveMode !== "edit_schedule") {
+      setSelectedDate(appointment.confirmedDate);
     } else if (schedule.requestedDate && schedule.requestedDate !== "Bildirilecek") {
-      setConfirmedDate(schedule.requestedDate);
+      setSelectedDate(schedule.requestedDate);
     } else {
-      setConfirmedDate(new Date().toISOString().split("T")[0]);
+      setSelectedDate(new Date().toISOString().split("T")[0]);
     }
 
     // Set initial time
-    if (appointment.confirmedTime) {
-      setConfirmedTime(appointment.confirmedTime);
+    if (appointment.confirmedTime && effectiveMode !== "edit_schedule") {
+      setSelectedTime(appointment.confirmedTime);
     } else if (schedule.requestedTime && schedule.requestedTime !== "Saat belirtilmedi") {
-      // If time format is like "14:30" or includes time
       const timeMatch = schedule.requestedTime.match(/\b\d{1,2}:\d{2}\b/);
       if (timeMatch) {
-        setConfirmedTime(timeMatch[0]);
+        setSelectedTime(timeMatch[0]);
       } else {
-        setConfirmedTime(schedule.requestedTime);
+        setSelectedTime(schedule.requestedTime);
       }
     } else {
-      setConfirmedTime("10:00");
+      setSelectedTime("10:00");
     }
 
-    setChangeReason(appointment.rescheduleReason || "");
+    setChangeReason(appointment.rescheduleReason || appointment.notes || "");
     setError(null);
-  }, [isOpen, appointment]);
+  }, [isOpen, appointment, effectiveMode]);
 
   if (!appointment) return null;
 
   const schedule = resolveAppointmentDisplaySchedule(appointment);
-  const isAlreadyConfirmed = appointment.status === "confirmed";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!confirmedDate.trim()) {
-      setError("Lütfen kesinleşen randevu tarihini belirtin.");
+    if (!selectedDate.trim()) {
+      setError("Lütfen randevu tarihini belirtin.");
       return;
     }
-    if (!confirmedTime.trim()) {
-      setError("Lütfen kesinleşen randevu saatini belirtin.");
+    if (!selectedTime.trim()) {
+      setError("Lütfen randevu saatini belirtin.");
       return;
     }
 
@@ -91,18 +102,34 @@ export default function AppointmentConfirmModal({
       }
 
       const token = await user.getIdToken();
+
+      let payload: Record<string, any> = {};
+
+      if (effectiveMode === "edit_schedule") {
+        payload = {
+          status: appointment.status,
+          requestedDate: selectedDate.trim(),
+          requestedTime: selectedTime.trim(),
+          preferredDate: selectedDate.trim(),
+          preferredTime: selectedTime.trim(),
+          notes: changeReason.trim() || undefined
+        };
+      } else {
+        payload = {
+          status: "confirmed",
+          confirmedDate: selectedDate.trim(),
+          confirmedTime: selectedTime.trim(),
+          changeReason: changeReason.trim() || undefined
+        };
+      }
+
       const res = await fetch(`/api/clinics/${clinicId}/appointments/${appointment.id}/status`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         },
-        body: JSON.stringify({
-          status: "confirmed",
-          confirmedDate: confirmedDate.trim(),
-          confirmedTime: confirmedTime.trim(),
-          changeReason: changeReason.trim() || undefined
-        })
+        body: JSON.stringify(payload)
       });
 
       const data = await res.json();
@@ -110,14 +137,22 @@ export default function AppointmentConfirmModal({
         throw new Error(data.message || data.error || "Randevu durumu güncellenirken bir hata oluştu.");
       }
 
-      onSuccess({
-        confirmedDate: confirmedDate.trim(),
-        confirmedTime: confirmedTime.trim(),
-        status: "confirmed"
-      });
+      if (effectiveMode === "edit_schedule") {
+        onSuccess({
+          requestedDate: selectedDate.trim(),
+          requestedTime: selectedTime.trim(),
+          status: appointment.status
+        });
+      } else {
+        onSuccess({
+          confirmedDate: selectedDate.trim(),
+          confirmedTime: selectedTime.trim(),
+          status: "confirmed"
+        });
+      }
       onClose();
     } catch (err: any) {
-      console.error("Appointment confirmation error:", err);
+      console.error("Appointment update error:", err);
       setError(err.message || "İşlem gerçekleştirilemedi.");
     } finally {
       setSubmitting(false);
@@ -126,11 +161,32 @@ export default function AppointmentConfirmModal({
 
   const patientEmail = appointment.patientEmail || "";
 
+  // Title and button text based on mode
+  let modalTitle = "Randevu Kesinleştirme";
+  let submitButtonText = "Randevuyu Kesinleştir ve Bildir";
+  let dateLabel = "Kesinleşen Tarih";
+  let timeLabel = "Kesinleşen Saat";
+  let noticeText = "✉️ Bu işlem tamamlandığında, hastaya belirlenen kesin tarih ve saati içeren resmi onay e-postası iletilecektir.";
+
+  if (effectiveMode === "reschedule") {
+    modalTitle = "Randevuyu Yeniden Planla";
+    submitButtonText = "Değişikliği Kaydet ve Bildir";
+    dateLabel = "Yeni Randevu Tarihi";
+    timeLabel = "Yeni Randevu Saati";
+    noticeText = "✉️ Bu işlem tamamlandığında, hastaya yeni randevu tarih ve saatini içeren güncellenmiş bildirim iletilecektir.";
+  } else if (effectiveMode === "edit_schedule") {
+    modalTitle = "Tarih ve Saati Düzenle";
+    submitButtonText = "Değişikliği Kaydet";
+    dateLabel = "Randevu Tarihi";
+    timeLabel = "Randevu Saati";
+    noticeText = "ℹ️ Bu işlem randevunun tarih ve saatini günceller. Randevu durumu değiştirilmez ve hastaya onay e-postası gönderilmez.";
+  }
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={submitting ? () => {} : onClose}
-      title={isAlreadyConfirmed ? "Randevuyu Yeniden Planla" : "Randevu Kesinleştirme"}
+      title={modalTitle}
       width={540}
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -179,7 +235,7 @@ export default function AppointmentConfirmModal({
         }}>
           <Info size={18} style={{ color: "#818cf8", marginTop: 2, flexShrink: 0 }} />
           <div style={{ fontSize: 13, color: UI_COLORS.textPrimary, lineHeight: 1.5 }}>
-            <div style={{ fontWeight: 600, color: "#a5b4fc", marginBottom: 2 }}>Hastanın İlk Talebi:</div>
+            <div style={{ fontWeight: 600, color: "#a5b4fc", marginBottom: 2 }}>Kayıtlı Talep:</div>
             <div>Tarih: <strong>{schedule.requestedDate}</strong> &bull; Saat: <strong>{schedule.requestedTime}</strong></div>
           </div>
         </div>
@@ -187,16 +243,16 @@ export default function AppointmentConfirmModal({
         {/* Form Inputs */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           
-          {/* Confirmed Date */}
+          {/* Selected Date */}
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <label style={{ fontSize: 13, fontWeight: 600, color: UI_COLORS.textPrimary, display: "flex", alignItems: "center", gap: 6 }}>
               <Calendar size={14} style={{ color: UI_COLORS.brand }} />
-              Kesinleşen Tarih <span style={{ color: "#f87171" }}>*</span>
+              {dateLabel} <span style={{ color: "#f87171" }}>*</span>
             </label>
             <input
               type="text"
-              value={confirmedDate}
-              onChange={(e) => setConfirmedDate(e.target.value)}
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
               placeholder="Örn: 2026-08-05 veya 5 Ağustos 2026"
               required
               disabled={submitting}
@@ -213,16 +269,16 @@ export default function AppointmentConfirmModal({
             />
           </div>
 
-          {/* Confirmed Time */}
+          {/* Selected Time */}
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <label style={{ fontSize: 13, fontWeight: 600, color: UI_COLORS.textPrimary, display: "flex", alignItems: "center", gap: 6 }}>
               <Clock size={14} style={{ color: UI_COLORS.brand }} />
-              Kesinleşen Saat <span style={{ color: "#f87171" }}>*</span>
+              {timeLabel} <span style={{ color: "#f87171" }}>*</span>
             </label>
             <input
               type="text"
-              value={confirmedTime}
-              onChange={(e) => setConfirmedTime(e.target.value)}
+              value={selectedTime}
+              onChange={(e) => setSelectedTime(e.target.value)}
               placeholder="Örn: 14:30"
               required
               disabled={submitting}
@@ -243,13 +299,20 @@ export default function AppointmentConfirmModal({
         {/* Change / Reschedule Reason */}
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <label style={{ fontSize: 13, fontWeight: 500, color: UI_COLORS.textMuted }}>
-            Açıklama / Değişiklik Nedeni <span style={{ fontSize: 11 }}>(Opsiyonel, e-postada yer alır)</span>
+            {effectiveMode === "edit_schedule" ? "İç Not / Açıklama" : "Açıklama / Değişiklik Nedeni"}{" "}
+            <span style={{ fontSize: 11 }}>
+              {effectiveMode === "edit_schedule" ? "(Opsiyonel)" : "(Opsiyonel, e-postada yer alır)"}
+            </span>
           </label>
           <input
             type="text"
             value={changeReason}
             onChange={(e) => setChangeReason(e.target.value)}
-            placeholder="Örn: Doktor takvimine göre saat 14:30 olarak güncellenmiştir."
+            placeholder={
+              effectiveMode === "edit_schedule" 
+                ? "Örn: Hasta isteği üzerine tarih 14:00 olarak güncellendi." 
+                : "Örn: Doktor takvimine göre saat 14:30 olarak güncellenmiştir."
+            }
             disabled={submitting}
             style={{
               background: "rgba(0, 0, 0, 0.25)",
@@ -264,7 +327,7 @@ export default function AppointmentConfirmModal({
           />
         </div>
 
-        {/* Email Notice */}
+        {/* Notice */}
         <div style={{
           fontSize: 12,
           color: UI_COLORS.textMuted,
@@ -274,7 +337,7 @@ export default function AppointmentConfirmModal({
           borderRadius: 8,
           border: `1px solid ${UI_COLORS.border}`
         }}>
-          ✉️ Bu işlem tamamlandığında, hastaya belirlenen kesin tarih ve saati içeren resmi onay e-postası iletilecektir.
+          {noticeText}
         </div>
 
         {/* Error Alert */}
@@ -342,8 +405,8 @@ export default function AppointmentConfirmModal({
               </>
             ) : (
               <>
-                <CheckCircle2 size={16} />
-                {isAlreadyConfirmed ? "Değişikliği Kaydet ve Bildir" : "Randevuyu Kesinleştir ve Bildir"}
+                {effectiveMode === "edit_schedule" ? <Edit3 size={16} /> : <CheckCircle2 size={16} />}
+                {submitButtonText}
               </>
             )}
           </button>
