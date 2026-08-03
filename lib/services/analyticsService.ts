@@ -1,8 +1,7 @@
 /**
  * analyticsService.ts
  *
- * Analizler sayfası için merkezi hesaplama ve veri servisleri.
- * Tüm kliniklerin conversationLogs verilerini toplayıp global metrikleri hesaplar.
+ * Analizler sayfası ve Kullanım Analitiği (Usage Analytics) için merkezi hesaplama ve veri servisleri.
  */
 
 import {
@@ -14,10 +13,12 @@ import {
   QuerySnapshot,
   DocumentData,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import type { Clinic, Plan } from "@/lib/types";
+import { db } from "../firebase";
+import type { Clinic, Plan, UserProfile } from "../types";
+import { isSuperAdmin } from "../types";
+import type { UserActivityStatus } from "../types/analytics";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// ─── Conversation Analytics Types ───────────────────────────────────────────
 
 export type DateRange = "today" | "7d" | "30d" | "month" | "all";
 
@@ -74,7 +75,7 @@ export interface GlobalAnalytics {
   clinics: ClinicAnalytics[];
 }
 
-// ─── Constants ───────────────────────────────────────────────────────────────
+// ─── Conversation Analytics Constants ───────────────────────────────────────
 
 /** "Çözülmüş" sayılan status değerleri */
 export const RESOLVED_STATUSES = new Set([
@@ -111,7 +112,7 @@ export const STATUS_COLORS: Record<string, string> = {
   other:       "#6b7280",
 };
 
-// ─── Date Helpers ─────────────────────────────────────────────────────────────
+// ─── Conversation Analytics Date Helpers ─────────────────────────────────────
 
 export function getDateRangeStart(range: DateRange): Date | null {
   const now = new Date();
@@ -167,7 +168,7 @@ export function generateDayKeys(range: DateRange): string[] {
   if (range === "today") days = 1;
   else if (range === "7d") days = 7;
   else if (range === "30d" || range === "month") days = 30;
-  else if (range === "all") days = 30; // all'da son 30 günü göster
+  else if (range === "all") days = 30;
 
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(now);
@@ -187,7 +188,7 @@ export function formatDayLabel(key: string): string {
   }
 }
 
-// ─── Core Calculation ─────────────────────────────────────────────────────────
+// ─── Conversation Analytics Calculation ──────────────────────────────────────
 
 export function calculateClinicMetrics(
   clinicId: string,
@@ -385,26 +386,167 @@ export function getUsageWarnings(usagePercentage: number): {
     return {
       level: "critical",
       message: "Bu klinik mevcut paket limitini aştı.",
-      color: "#ef4444" // red
+      color: "#ef4444"
     };
   }
   if (usagePercentage >= 90) {
     return {
       level: "critical",
       message: "Bu klinik aylık kullanım limitine yaklaştı. Paket yükseltme önerilebilir.",
-      color: "#ef4444" // red
+      color: "#ef4444"
     };
   }
   if (usagePercentage >= 70) {
     return {
       level: "warning",
       message: `Bu klinik aylık kullanım limitinin %${usagePercentage}'sini geçti.`,
-      color: "#fb923c" // orange
+      color: "#fb923c"
     };
   }
   return {
     level: "normal",
     message: null,
-    color: "#10b981" // green
+    color: "#10b981"
   };
+}
+
+// ─── Usage Analytics (User Sessions & Activity) ──────────────────────────────
+
+/**
+ * Universal timestamp parser that reliably converts:
+ * - Firestore Timestamp (with .toMillis() or .toDate())
+ * - Firestore raw object { _seconds, _nanoseconds }
+ * - Javascript Date instance
+ * - Millisecond timestamp number
+ * - ISO date string
+ * to epoch milliseconds, or null if invalid/missing.
+ */
+export function parseMillis(val: any): number | null {
+  if (val === null || val === undefined) return null;
+
+  if (typeof val === "number") {
+    if (isNaN(val) || val <= 0) return null;
+    if (val < 10000000000) {
+      return val * 1000;
+    }
+    return val;
+  }
+
+  if (val instanceof Date) {
+    const time = val.getTime();
+    return isNaN(time) ? null : time;
+  }
+
+  if (typeof val.toMillis === "function") {
+    return val.toMillis();
+  }
+
+  if (typeof val.toDate === "function") {
+    return val.toDate().getTime();
+  }
+
+  if (typeof val._seconds === "number") {
+    const ms = val._seconds * 1000 + Math.round((val._nanoseconds || 0) / 1000000);
+    return ms;
+  }
+
+  if (typeof val === "string") {
+    const parsed = Date.parse(val);
+    return isNaN(parsed) ? null : parsed;
+  }
+
+  return null;
+}
+
+/**
+ * Returns epoch milliseconds for the start of today (midnight 00:00:00.000).
+ */
+export function getStartOfDay(referenceTime = Date.now()): number {
+  const d = new Date(referenceTime);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/**
+ * Human-friendly Turkish label for user roles.
+ */
+export function getRoleDisplayName(role?: string): string {
+  switch (role) {
+    case "superAdmin":
+    case "admin":
+      return "Super Admin";
+    case "agencyAdmin":
+      return "Acente Yöneticisi";
+    case "agencyUser":
+      return "Acente Kullanıcısı";
+    case "clinicAdmin":
+      return "Klinik Yöneticisi";
+    case "clinicUser":
+      return "Klinik Kullanıcısı";
+    case "viewer":
+      return "Görüntüleyici";
+    default:
+      return role || "Kullanıcı";
+  }
+}
+
+/**
+ * Deterministic activity status based on last activity and login history.
+ */
+export function calculateActivityStatus(
+  lastActivityAt: number | null,
+  loginsTotal: number,
+  now = Date.now()
+): UserActivityStatus {
+  if (!lastActivityAt || loginsTotal === 0) {
+    return "Hiç Giriş Yapmadı";
+  }
+
+  const diffMs = now - lastActivityAt;
+  const FIVE_MINUTES_MS = 5 * 60 * 1000;
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+  if (diffMs <= FIVE_MINUTES_MS) {
+    return "Aktif";
+  }
+
+  if (diffMs <= SEVEN_DAYS_MS) {
+    return "Aktif";
+  }
+
+  if (diffMs <= THIRTY_DAYS_MS) {
+    return "Düşük Kullanım";
+  }
+
+  return "Pasif";
+}
+
+/**
+ * Verifies if an admin user has access to view a specific user's analytics.
+ */
+export function canAdminViewUser(
+  adminProfile: UserProfile,
+  targetUser: { clinicId?: string | null; agencyId?: string | null; role?: string; id?: string },
+  agencyClinicIds?: Set<string>
+): boolean {
+  if (isSuperAdmin(adminProfile.role)) {
+    return true;
+  }
+
+  if (adminProfile.role === "clinicAdmin") {
+    return !!adminProfile.clinicId && targetUser.clinicId === adminProfile.clinicId;
+  }
+
+  if (adminProfile.role === "agencyAdmin") {
+    if (adminProfile.agencyId && targetUser.agencyId === adminProfile.agencyId) {
+      return true;
+    }
+    if (targetUser.clinicId && agencyClinicIds?.has(targetUser.clinicId)) {
+      return true;
+    }
+    return false;
+  }
+
+  return false;
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
+import { parseMillis } from "@/lib/services/analyticsService";
 
 const MAX_IDLE_BEFORE_EXPIRE_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -49,22 +50,26 @@ export async function POST(req: Request) {
     let sessionDocRef = currentSessionId ? sessionsRef.doc(currentSessionId) : null;
     let sessionData = sessionDocRef ? (await sessionDocRef.get()).data() : null;
 
+    const lastActivity = sessionData ? (parseMillis(sessionData.last_activity_at) || parseMillis(sessionData.login_at) || 0) : 0;
+
     // Check if we need to create a new session
     const needsNewSession = !sessionData || 
                             sessionData.status !== "active" ||
-                            (now - sessionData.last_activity_at > MAX_IDLE_BEFORE_EXPIRE_MS);
+                            (now - lastActivity > MAX_IDLE_BEFORE_EXPIRE_MS);
 
     if (needsNewSession) {
       if (sessionData && sessionData.status === "active") {
         // Close the old expired session
+        const loginAt = parseMillis(sessionData.login_at) || lastActivity;
+        const durationSec = Math.max(0, Math.floor((lastActivity - loginAt) / 1000));
         await sessionDocRef?.update({
           status: "expired",
-          logout_at: sessionData.last_activity_at,
-          session_duration_seconds: Math.floor((sessionData.last_activity_at - sessionData.login_at) / 1000)
+          logout_at: lastActivity,
+          session_duration_seconds: durationSec
         });
       }
 
-      // If they are just unloading or already idle, we don't necessarily want to start a new session just to end it
+      // If they are just unloading or already idle, ignore without starting new session
       if (is_unload) {
         return NextResponse.json({ success: true, message: "Unload ignored as no active session" });
       }
@@ -91,7 +96,7 @@ export async function POST(req: Request) {
       sessionDocRef = newSessionRef;
       sessionData = (await newSessionRef.get()).data();
       
-      // Also log a login event
+      // Log login event
       await adminDb.collection("activity_events").add({
         user_id,
         clinic_id: clinic_id || null,
@@ -100,6 +105,17 @@ export async function POST(req: Request) {
         page_path: page_path || "/",
         created_at: now
       });
+
+      // Update user doc in 'users' collection with lastLoginAt & lastActiveAt
+      try {
+        const userDocRef = adminDb.collection("users").doc(user_id);
+        const userSnap = await userDocRef.get();
+        if (userSnap.exists) {
+          await userDocRef.set({ lastLoginAt: now, lastActiveAt: now }, { merge: true });
+        }
+      } catch (userDocErr) {
+        // Non-fatal
+      }
     }
 
     if (!sessionData || !sessionDocRef) {
@@ -107,22 +123,17 @@ export async function POST(req: Request) {
     }
 
     const updates: any = {};
+    const sessionLoginAt = parseMillis(sessionData.login_at) || now;
     
     if (!is_idle) {
       updates.last_activity_at = now;
-      updates.session_duration_seconds = Math.floor((now - sessionData.login_at) / 1000);
+      updates.session_duration_seconds = Math.max(0, Math.floor((now - sessionLoginAt) / 1000));
     } else {
-      // They are idle, meaning they haven't done anything for 5 minutes.
-      // We don't update last_activity_at, but we can check if it's been 30 minutes since last activity.
-      if (now - sessionData.last_activity_at > MAX_IDLE_BEFORE_EXPIRE_MS) {
+      // If idle for more than 30 mins, mark expired
+      if (now - lastActivity > MAX_IDLE_BEFORE_EXPIRE_MS) {
         updates.status = "expired";
-        updates.logout_at = sessionData.last_activity_at;
+        updates.logout_at = lastActivity;
       }
-    }
-
-    if (is_unload && sessionData.status === "active") {
-      // Don't terminate entirely unless we want to. For now, we'll just log the event.
-      // Usually users close tabs and come back. We let 30-min idle timeout close the session.
     }
 
     if (Object.keys(updates).length > 0) {
