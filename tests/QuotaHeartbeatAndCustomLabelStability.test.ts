@@ -39,6 +39,8 @@ import {
   normalizeConversationStatus,
 } from "../lib/services/conversations/conversationStatusResolver";
 
+import { buildManualLabelPayload } from "../lib/services/conversations/manualLabelPayload";
+
 const REPO_ROOT = resolve(__dirname, "..");
 const readSource = (relPath: string) => readFileSync(resolve(REPO_ROOT, relPath), "utf8");
 
@@ -353,11 +355,18 @@ describe("Quota Incident: Heartbeat & Custom Label Stability", () => {
     });
 
     it("writes the dedicated manual conversion fields", () => {
-      const route = readSource(LABEL_ROUTE);
-      expect(route).toContain("manualConversionStatus");
-      expect(route).toContain("manualConversionMarkedAt");
-      expect(route).toContain("manualConversionMarkedBy");
-      expect(route).toContain("updatedAt");
+      const payload = buildManualLabelPayload({
+        labelId: "converted_to_appointment",
+        labelName: "Randevuya Dönüştü",
+        actorUid: "user-1",
+        now: "2026-08-03T21:00:00.000Z",
+        previouslyConverted: false,
+      });
+
+      expect(payload.manualConversionStatus).toBe("converted_to_appointment");
+      expect(payload.manualConversionMarkedAt).toBe("2026-08-03T21:00:00.000Z");
+      expect(payload.manualConversionMarkedBy).toBe("user-1");
+      expect(payload.updatedAt).toBe("2026-08-03T21:00:00.000Z");
     });
   });
 
@@ -488,10 +497,19 @@ describe("Quota Incident: Heartbeat & Custom Label Stability", () => {
     });
 
     it("clears every manual marker so no stale signal keeps it converted", () => {
-      const route = readSource(LABEL_ROUTE);
-      expect(route).toContain("manualConversionRemovedAt");
-      expect(route).toContain("updatePayload.manualConversionMarkedAt = null");
-      expect(route).toContain("updatePayload.manualConversionMarkedBy = null");
+      const payload = buildManualLabelPayload({
+        labelId: null,
+        labelName: null,
+        actorUid: "user-1",
+        now: "2026-08-03T21:00:00.000Z",
+        previouslyConverted: true,
+      });
+
+      expect(payload.manualConversionStatus).toBeNull();
+      expect(payload.manualConversionMarkedAt).toBeNull();
+      expect(payload.manualConversionMarkedBy).toBeNull();
+      expect(payload.manualConversionRemovedAt).toBe("2026-08-03T21:00:00.000Z");
+      expect(isConversationManuallyConverted(payload)).toBe(false);
     });
   });
 

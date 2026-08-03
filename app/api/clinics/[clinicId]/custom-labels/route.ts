@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { requireClinicAccess, AuthError } from "@/lib/services/apiAuth";
-import { mapInfrastructureError } from "@/lib/services/infrastructureErrors";
+import {
+  mapInfrastructureError,
+  logInfrastructureFailure,
+} from "@/lib/services/infrastructureErrors";
 
 /**
  * Global preset labels available to all clinics.
@@ -24,14 +27,31 @@ const GLOBAL_PRESETS = [
  * Returns available custom labels for the clinic.
  * Seeds global presets on first call (idempotent).
  */
+const ROUTE_NAME = "GET /api/clinics/[clinicId]/custom-labels";
+
+type LabelListOperation =
+  | "resolve_params"
+  | "authorize"
+  | "init_db"
+  | "read_labels"
+  | "seed_preset";
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ clinicId: string }> }
 ) {
-  try {
-    const { clinicId } = await params;
-    await requireClinicAccess(req, clinicId);
+  let clinicId: string | null = null;
+  let role: string | null = null;
+  let operation: LabelListOperation = "resolve_params";
 
+  try {
+    ({ clinicId } = await params);
+
+    operation = "authorize";
+    const auth = await requireClinicAccess(req, clinicId);
+    role = auth.profile?.role ?? null;
+
+    operation = "init_db";
     const adminDb = getAdminDb();
     if (!adminDb) {
       return NextResponse.json(
@@ -47,6 +67,7 @@ export async function GET(
 
     // Single read of the active set. Previously this endpoint read the whole
     // subcollection twice (once to test for seeding, once to filter).
+    operation = "read_labels";
     const snap = await labelsRef.where("isActive", "==", true).get();
     const labels = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     const activeIds = new Set(labels.map((l) => l.id));
@@ -56,6 +77,7 @@ export async function GET(
     for (const preset of GLOBAL_PRESETS) {
       if (activeIds.has(preset.id)) continue;
 
+      operation = "seed_preset";
       const presetSnap = await labelsRef.doc(preset.id).get();
       if (presetSnap.exists) continue;
 
@@ -76,8 +98,15 @@ export async function GET(
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
     }
-    console.error("[custom-labels] Error:", err);
     const mapped = mapInfrastructureError(err);
+    logInfrastructureFailure({
+      route: ROUTE_NAME,
+      operation,
+      clinicId,
+      role,
+      mapped,
+      err,
+    });
     return NextResponse.json(
       { error: mapped.error, code: mapped.code },
       { status: mapped.status }
