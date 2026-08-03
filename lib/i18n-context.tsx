@@ -51,41 +51,45 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const t = (key: string): string => {
-    const keys = key.split(".");
-    let result: TranslationValue | undefined = translations[language];
-    
-    for (const k of keys) {
-      if (result && typeof result === "object" && result[k]) {
-        result = result[k];
+  const lookupKey = (lang: Language, keyPath: string[]): string | undefined => {
+    let current: TranslationValue | undefined = translations[lang];
+    for (const k of keyPath) {
+      if (current && typeof current === "object" && k in current) {
+        current = current[k];
       } else {
-        result = undefined;
-        break;
+        return undefined;
       }
     }
+    return typeof current === "string" ? current : undefined;
+  };
 
-    // Fallback to Turkish or English if not found in current language
-    if (result === undefined && language !== "tr") {
-      let fallbackResult: TranslationValue | undefined = translations["tr"];
-      for (const k of keys) {
-        if (fallbackResult && typeof fallbackResult === "object" && fallbackResult[k]) {
-          fallbackResult = fallbackResult[k];
-        } else {
-          fallbackResult = undefined;
-          break;
-        }
-      }
-      if (typeof fallbackResult === "string") return fallbackResult;
-    }
-
-    if (result === undefined) {
-      if (process.env.NODE_ENV !== "production") {
-        console.warn(`[i18n] Missing translation key: "${key}" for language: "${language}"`);
-      }
-      return key;
-    }
+  const t = (key: string): string => {
+    if (!key) return "";
+    const keys = key.split(".");
     
-    return typeof result === "string" ? result : key;
+    // 1. Try active language
+    const val = lookupKey(language, keys);
+    if (val !== undefined && val !== "") return val;
+
+    // 2. Fallback to Turkish if active language is not Turkish
+    if (language !== "tr") {
+      const fallbackTr = lookupKey("tr", keys);
+      if (fallbackTr !== undefined && fallbackTr !== "") return fallbackTr;
+    }
+
+    // 3. Fallback to English if active language is not English
+    if (language !== "en") {
+      const fallbackEn = lookupKey("en", keys);
+      if (fallbackEn !== undefined && fallbackEn !== "") return fallbackEn;
+    }
+
+    // 4. Missing key handling: Log in dev, never leak raw dotted technical keys to production UI
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(`[i18n] Missing translation key: "${key}" for language: "${language}"`);
+    }
+
+    // Returning empty string ensures expressions like `t("common.all") || "Tümü"` evaluate the human fallback
+    return "";
   };
 
   if (!isLoaded) return null;
@@ -99,7 +103,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
 
 export function useI18n() {
   const context = useContext(I18nContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error("useI18n must be used within an I18nProvider");
   }
   return context;

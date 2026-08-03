@@ -38,12 +38,20 @@ describe("Conversation Status Normalization and Localization", () => {
       expect(tr.logs.status.converted_to_appointment).toBe("Randevuya Dönüştü");
       expect(tr.logs.status.live_support_required).toBe("Canlı Destek Gerekli");
       expect(tr.logs.status.unanswered).toBe("Yanıtlanamadı");
+      expect(tr.logs.status.answered).toBe("Başarılı Yanıtlandı");
+      expect(tr.logs.status.appointment).toBe("Randevuya Dönüştü");
+      expect(tr.logs.status.collecting).toBe("Randevu Bilgisi Toplanıyor");
+      expect(tr.logs.status.liveSupport).toBe("Canlı Destek Gerekli");
 
       expect(en.logs.status.successfully_answered).toBe("Successfully Answered");
       expect(en.logs.status.collecting_appointment_information).toBe("Collecting Appointment Information");
       expect(en.logs.status.converted_to_appointment).toBe("Converted to Appointment");
       expect(en.logs.status.live_support_required).toBe("Live Support Required");
       expect(en.logs.status.unanswered).toBe("Unanswered");
+      expect(en.logs.status.answered).toBe("Successfully Answered");
+      expect(en.logs.status.appointment).toBe("Converted to Appointment");
+      expect(en.logs.status.collecting).toBe("Collecting Appointment Information");
+      expect(en.logs.status.liveSupport).toBe("Live Support Required");
     });
 
     it("should provide valid keys in DE, AR, ES without throwing or returning undefined", () => {
@@ -127,7 +135,7 @@ describe("Conversation Status Normalization and Localization", () => {
     });
   });
 
-  describe("4. Multi-Criteria Filtering Logic", () => {
+  describe("4. Multi-Criteria Filtering Logic and Filter Options Match", () => {
     const mockLogs: Array<{
       id: string;
       patientName: string;
@@ -238,6 +246,38 @@ describe("Conversation Status Normalization and Localization", () => {
 
       expect(filtered).toHaveLength(1);
       expect(filtered[0].id).toBe("log-4");
+    });
+
+    it("should match TR filter option labels with row badge labels exactly", () => {
+      const statuses = [
+        { code: "answered", expected: "Başarılı Yanıtlandı" },
+        { code: "appointment", expected: "Randevuya Dönüştü" },
+        { code: "collecting", expected: "Randevu Bilgisi Toplanıyor" },
+        { code: "liveSupport", expected: "Canlı Destek Gerekli" },
+        { code: "unanswered", expected: "Yanıtlanamadı" },
+      ];
+
+      for (const item of statuses) {
+        const normalized = normalizeConversationStatus(item.code);
+        const label = getConversationStatusLabel(normalized, "tr");
+        expect(label).toBe(item.expected);
+      }
+    });
+
+    it("should match EN filter option labels with row badge labels exactly", () => {
+      const statuses = [
+        { code: "answered", expected: "Successfully Answered" },
+        { code: "appointment", expected: "Converted to Appointment" },
+        { code: "collecting", expected: "Collecting Appointment Information" },
+        { code: "liveSupport", expected: "Live Support Required" },
+        { code: "unanswered", expected: "Unanswered" },
+      ];
+
+      for (const item of statuses) {
+        const normalized = normalizeConversationStatus(item.code);
+        const label = getConversationStatusLabel(normalized, "en");
+        expect(label).toBe(item.expected);
+      }
     });
   });
 

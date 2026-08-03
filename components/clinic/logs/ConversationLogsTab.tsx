@@ -1,23 +1,21 @@
 "use client";
 
 import React, { useState, useMemo, useCallback } from "react";
-import { MessageSquare, Search, Filter, AlertCircle, Calendar, PhoneCall, CalendarCheck, Download } from "lucide-react";
+import { MessageSquare, Search, AlertCircle, PhoneCall, CalendarCheck, Download } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
 import { useAuth } from "@/lib/auth-context";
 import StatCard from "@/components/ui/StatCard";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
-import Button from "@/components/ui/Button";
+import { Button } from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 
-import { ConversationLog, CustomLabel } from "./types";
+import { ConversationLog, CustomLabel, LogStatus } from "./types";
 import ConversationLogDetailModal from "./ConversationLogDetailModal";
 import ConversationStatusDropdown from "./ConversationStatusDropdown";
 import {
   normalizeConversationStatus,
-  getConversationStatusLabel,
-  CANONICAL_CONVERSATION_STATUSES,
   exportConversationLogsToCSV,
 } from "@/lib/services/conversations/conversationStatusResolver";
 
@@ -30,7 +28,6 @@ export default function ConversationLogsTab({ clinicId }: Props) {
   const { profile, getToken } = useAuth();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [customLabelFilter, setCustomLabelFilter] = useState<string>("all");
   const [langFilter, setLangFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<string>("all");
 
@@ -114,28 +111,31 @@ export default function ConversationLogsTab({ clinicId }: Props) {
 
   const filteredLogs = useMemo(() => {
     return logs.filter((log) => {
-      // 1. Conversation Status Filter
+      // Status filter: supports both system status (normalized) and custom label filter
       if (statusFilter !== "all") {
-        const normalized = normalizeConversationStatus(log.status, {
-          convertedToAppointment: log.convertedToAppointment,
-          appointmentId: log.appointmentId,
-        });
-        if (normalized !== statusFilter) return false;
-      }
-
-      // 2. Custom Label Filter
-      if (customLabelFilter !== "all") {
-        if (customLabelFilter === "none") {
-          if (log.customLabelId) return false;
+        if (statusFilter === "custom_labeled") {
+          // Show only conversations with any custom label
+          if (!log.customLabelId) return false;
+        } else if (statusFilter.startsWith("label:")) {
+          // Filter by specific custom label
+          const labelId = statusFilter.replace("label:", "");
+          if (log.customLabelId !== labelId) return false;
         } else {
-          if (log.customLabelId !== customLabelFilter) return false;
+          // System status filter using canonical resolver normalization
+          const norm = normalizeConversationStatus(log.status, {
+            convertedToAppointment: log.convertedToAppointment,
+            appointmentId: log.appointmentId,
+          });
+          if (statusFilter === "answered" && norm !== "successfully_answered") return false;
+          if (statusFilter === "appointment" && norm !== "converted_to_appointment") return false;
+          if (statusFilter === "collecting" && norm !== "collecting_appointment_information") return false;
+          if (statusFilter === "liveSupport" && norm !== "live_support_required") return false;
+          if (statusFilter === "unanswered" && norm !== "unanswered") return false;
         }
       }
       
-      // 3. Language Filter
       if (langFilter !== "all" && log.language !== langFilter) return false;
       
-      // 4. Date Filter
       if (dateFilter !== "all") {
         const logDate = new Date(log.createdAt);
         const now = new Date();
@@ -146,7 +146,6 @@ export default function ConversationLogsTab({ clinicId }: Props) {
         if (dateFilter === "month" && diffDays > 30) return false;
       }
       
-      // 5. Search Filter
       if (search) {
         const query = search.toLowerCase();
         const patientName = log.patientName?.toLowerCase() || "";
@@ -158,7 +157,7 @@ export default function ConversationLogsTab({ clinicId }: Props) {
       }
       return true;
     });
-  }, [logs, search, statusFilter, customLabelFilter, langFilter, dateFilter]);
+  }, [logs, search, statusFilter, langFilter, dateFilter]);
 
   const metrics = useMemo(() => {
     let unansweredCount = 0;
@@ -189,30 +188,49 @@ export default function ConversationLogsTab({ clinicId }: Props) {
     };
   }, [logs]);
 
-  // System Status Filter Options (Pure System Statuses)
-  const statusOptions = useMemo(() => {
-    return [
-      { value: "all", label: t("common.all") || (language === "en" ? "All" : "Tümü") },
-      ...CANONICAL_CONVERSATION_STATUSES.map((status) => ({
-        value: status,
-        label: getConversationStatusLabel(status, language),
-      })),
-    ];
-  }, [t, language]);
+  const getStatusLabel = (status: LogStatus | string) => {
+    switch (status) {
+      case "answered":
+        return t("logs.status.answered") || (language === "en" ? "Successfully Answered" : "Başarılı Yanıtlandı");
+      case "liveSupport":
+        return t("logs.status.liveSupport") || (language === "en" ? "Live Support Required" : "Canlı Destek Gerekli");
+      case "unanswered":
+        return t("logs.status.unanswered") || (language === "en" ? "Unanswered" : "Yanıtlanamadı");
+      case "appointment":
+        return t("logs.status.appointment") || (language === "en" ? "Converted to Appointment" : "Randevuya Dönüştü");
+      case "collecting":
+        return t("logs.status.collecting") || (language === "en" ? "Collecting Appointment Information" : "Randevu Bilgisi Toplanıyor");
+      case "open":
+        return t("logs.status.open") || (language === "en" ? "Open" : "Açık");
+      default:
+        return status;
+    }
+  };
 
-  // Custom Label Filter Options (Dedicated Custom Label Filter)
-  const customLabelOptions = useMemo(() => {
+  // Build filter options — include canonical system statuses and custom labels
+  const statusOptions = useMemo(() => {
     const opts = [
       { value: "all", label: t("common.all") || (language === "en" ? "All" : "Tümü") },
-      { value: "none", label: t("common.noLabel") || (language === "en" ? "No Label" : "Etiket Yok") },
+      { value: "answered", label: getStatusLabel("answered") },
+      { value: "appointment", label: getStatusLabel("appointment") },
+      { value: "collecting", label: getStatusLabel("collecting") },
+      { value: "liveSupport", label: getStatusLabel("liveSupport") },
+      { value: "unanswered", label: getStatusLabel("unanswered") },
     ];
 
-    customLabels.forEach((label) => {
+    // Add custom label filter options
+    if (customLabels.length > 0) {
       opts.push({
-        value: label.id,
-        label: language === "en" ? label.labelEn : label.labelTr,
+        value: "custom_labeled",
+        label: language === "en" ? "── Custom Labels ──" : "── Özel Etiketler ──",
       });
-    });
+      for (const label of customLabels) {
+        opts.push({
+          value: `label:${label.id}`,
+          label: `↳ ${language === "en" ? label.labelEn : label.labelTr}`,
+        });
+      }
+    }
 
     return opts;
   }, [t, language, customLabels]);
@@ -221,13 +239,10 @@ export default function ConversationLogsTab({ clinicId }: Props) {
     { value: "all", label: t("common.all") || (language === "en" ? "All" : "Tümü") },
     { value: "tr", label: "TR" },
     { value: "en", label: "EN" },
-    { value: "de", label: "DE" },
-    { value: "ar", label: "AR" },
-    { value: "es", label: "ES" },
   ];
 
   const dateOptions = [
-    { value: "all", label: t("common.allTimes") || (language === "en" ? "All Time" : "Tüm Zamanlar") },
+    { value: "all", label: t("common.all") || (language === "en" ? "All" : "Tümü") },
     { value: "today", label: t("logs.date.today") || (language === "en" ? "Today" : "Bugün") },
     { value: "week", label: t("logs.date.week") || (language === "en" ? "Last 7 Days" : "Son 7 Gün") },
     { value: "month", label: t("logs.date.month") || (language === "en" ? "Last 30 Days" : "Son 30 Gün") },
@@ -282,14 +297,14 @@ export default function ConversationLogsTab({ clinicId }: Props) {
           alignItems: "flex-end",
           flexWrap: "wrap"
         }}>
-          <div style={{ flex: "1 1 220px" }}>
+          <div style={{ flex: "1 1 250px" }}>
             <Input 
-              placeholder={t("logs.searchPlaceholder") || (language === "en" ? "Search patient name, message or topic..." : "İsim, mesaj veya konu ara...")}
+              placeholder={t("logs.searchPlaceholder") || (language === "en" ? "Search patient name, message or topic..." : "İsim, mesaj veya içerik ara...")}
               value={search}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
             />
           </div>
-          <div style={{ width: 150 }}>
+          <div style={{ width: 160 }}>
             <Select 
               label={t("logs.filterDate") || (language === "en" ? "Date" : "Tarih")}
               value={dateFilter}
@@ -297,25 +312,15 @@ export default function ConversationLogsTab({ clinicId }: Props) {
               options={dateOptions}
             />
           </div>
-          <div style={{ width: 180 }}>
+          <div style={{ width: 220 }}>
             <Select 
-              label={t("logs.filterStatus") || (language === "en" ? "Conversation Status" : "Görüşme Durumu")}
+              label={t("logs.filterStatus") || (language === "en" ? "Status" : "Durum")}
               value={statusFilter}
               onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setStatusFilter(e.target.value)}
               options={statusOptions}
             />
           </div>
-          {customLabels.length > 0 && (
-            <div style={{ width: 160 }}>
-              <Select 
-                label={t("logs.filterCustomLabel") || (language === "en" ? "Custom Label" : "Özel Etiket")}
-                value={customLabelFilter}
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setCustomLabelFilter(e.target.value)}
-                options={customLabelOptions}
-              />
-            </div>
-          )}
-          <div style={{ width: 100 }}>
+          <div style={{ width: 120 }}>
             <Select 
               label={t("logs.filterLang") || (language === "en" ? "Language" : "Dil")}
               value={langFilter}
@@ -357,13 +362,13 @@ export default function ConversationLogsTab({ clinicId }: Props) {
                     {t("logs.table.patient") || (language === "en" ? "Patient" : "Hasta")}
                   </th>
                   <th style={{ padding: "16px 20px", fontSize: 13, fontWeight: 600, color: UI_COLORS.textSecondary }}>
-                    {t("logs.table.preview") || (language === "en" ? "Conversation Preview" : "Görüşme Özeti")}
+                    {t("logs.table.preview") || (language === "en" ? "Preview" : "Son Mesaj")}
                   </th>
                   <th style={{ padding: "16px 20px", fontSize: 13, fontWeight: 600, color: UI_COLORS.textSecondary }}>
                     {t("logs.table.date") || (language === "en" ? "Date" : "Tarih")}
                   </th>
                   <th style={{ padding: "16px 20px", fontSize: 13, fontWeight: 600, color: UI_COLORS.textSecondary }}>
-                    {t("logs.table.status") || (language === "en" ? "Conversation Status" : "Görüşme Durumu")}
+                    {t("logs.table.status") || (language === "en" ? "Status" : "Durum")}
                   </th>
                 </tr>
               </thead>
@@ -410,7 +415,7 @@ export default function ConversationLogsTab({ clinicId }: Props) {
                       </div>
                       {log.needsTraining && (
                         <div style={{ fontSize: 11, color: UI_COLORS.danger, display: "flex", alignItems: "center", gap: 4, marginTop: 4, fontWeight: 500 }}>
-                          <AlertCircle size={12} /> {t("logs.trainingNeeded") || (language === "en" ? "Training needed" : "Eğitim gerekli")}
+                          <AlertCircle size={12} /> {t("logs.trainingNeeded") || (language === "en" ? "Training Needed" : "Eğitim Gerekli")}
                         </div>
                       )}
                     </td>
