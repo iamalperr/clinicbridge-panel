@@ -16,13 +16,19 @@ export async function OPTIONS() {
  * Returns public agency config by slug.
  */
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ slug: string }> }
 ) {
   let slug = "";
   try {
-    const p = await params;
-    slug = p.slug;
+    try {
+      const p = await params;
+      slug = p?.slug || "";
+    } catch {}
+    if (!slug && req.url) {
+      const pathParts = new URL(req.url).pathname.split("/").filter(Boolean);
+      slug = pathParts[pathParts.length - 1] || "";
+    }
     let snap: any = null;
     try {
       const adminDb = getAdminDb();

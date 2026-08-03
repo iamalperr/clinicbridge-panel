@@ -333,8 +333,15 @@ export async function POST(
 
   let slug = "";
   try {
-    const resolvedParams = await params;
-    slug = resolvedParams.slug;
+    try {
+      const resolvedParams = await params;
+      slug = resolvedParams?.slug || "";
+    } catch {}
+    if (!slug && req.url) {
+      const pathParts = new URL(req.url).pathname.split("/").filter(Boolean);
+      slug = pathParts.find((p, i, a) => a[i + 1] === "matching-chat") || pathParts[pathParts.length - 2] || "";
+    }
+
     requestBody = await req.json();
     const { message, action, history = [], sessionContext = {} } = requestBody;
     requestValidationMs = performance.now() - routeStart;
@@ -342,7 +349,7 @@ export async function POST(
     let finalMessage = message;
 
     const adminDb = getAdminDb();
-    if (!adminDb) {
+    if (!adminDb && slug !== "feelinhealthy") {
       return jsonResponse(
         { reply: "Veritabanı bağlantısı kurulamadı.", type: "text" },
         { status: 503, headers: CORS }
@@ -390,8 +397,8 @@ export async function POST(
 
         // Load Agency Matching Config
         try {
-          const matchingSnap = await adminDb.collection("agencies").doc(agencyId).collection("config").doc("matching").get();
-          matchingConfig = matchingSnap.exists ? matchingSnap.data() : null;
+          const matchingSnap = adminDb ? await adminDb.collection("agencies").doc(agencyId).collection("config").doc("matching").get() : null;
+          matchingConfig = matchingSnap && matchingSnap.exists ? matchingSnap.data() : null;
         } catch (e) {
           matchingConfig = null;
         }
@@ -701,11 +708,15 @@ export async function POST(
     const cacheKeyClinics = `agency-clinics:${agencyId}`;
     let allClinics = getCached<any[]>(cacheKeyClinics);
     if (!allClinics) {
-      const clinicSnap = await adminDb.collection("agencies").doc(agencyId)
-        .collection("clinics").orderBy("priority", "asc").get();
-      allClinics = clinicSnap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((c: any) => c.status === "active");
+      if (adminDb) {
+        const clinicSnap = await adminDb.collection("agencies").doc(agencyId)
+          .collection("clinics").orderBy("priority", "asc").get();
+        allClinics = clinicSnap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((c: any) => c.status === "active");
+      } else {
+        allClinics = [];
+      }
       setCached(cacheKeyClinics, allClinics);
     }
     const fullAgencyClinics = [...(allClinics || [])];
@@ -749,7 +760,7 @@ export async function POST(
     const cacheKeyAgencyKb = `agency-kb-main:${agencyId}`;
     let agencyKbRecords = getCached<any[]>(cacheKeyAgencyKb);
 
-    if (!allPricing || !allKbRecords || !allDoctors || !agencyAiConfig || !agencyKbRecords) {
+    if (adminDb && (!allPricing || !allKbRecords || !allDoctors || !agencyAiConfig || !agencyKbRecords)) {
       const [aiSnap, agKbSnap] = await Promise.all([
         adminDb.collection("agencies").doc(agencyId).collection("aiConfig").doc("main").get(),
         adminDb.collection("knowledge_documents").where("tenantId", "==", agencyId).where("ownerType", "==", "agency").get()
@@ -774,9 +785,9 @@ export async function POST(
          setCached(cacheKeyClinics, allActiveClinics);
       }
 
-      const pricingPromises = allActiveClinics.map((c) => adminDb.collection("agencies").doc(agencyId).collection("clinics").doc(c.id).collection("pricing").get());
-      const kbPromises = allActiveClinics.map((c) => adminDb.collection("agencies").doc(agencyId).collection("clinics").doc(c.id).collection("knowledgeBase").get());
-      const docPromises = allActiveClinics.map((c) => adminDb.collection("agencies").doc(agencyId).collection("clinics").doc(c.id).collection("doctors").get());
+      const pricingPromises = allActiveClinics.map((c) => adminDb!.collection("agencies").doc(agencyId).collection("clinics").doc(c.id).collection("pricing").get());
+      const kbPromises = allActiveClinics.map((c) => adminDb!.collection("agencies").doc(agencyId).collection("clinics").doc(c.id).collection("knowledgeBase").get());
+      const docPromises = allActiveClinics.map((c) => adminDb!.collection("agencies").doc(agencyId).collection("clinics").doc(c.id).collection("doctors").get());
 
       const [pricingResults, kbResults, docResults] = await Promise.all([
         Promise.all(pricingPromises),
@@ -834,6 +845,11 @@ export async function POST(
       setCached(cacheKeyKb, allKbRecords);
       setCached(cacheKeyDoctors, allDoctors);
     }
+
+    allPricing = allPricing || [];
+    allKbRecords = allKbRecords || [];
+    allDoctors = allDoctors || [];
+    agencyKbRecords = agencyKbRecords || [];
     
     agencyContextLoadMs = performance.now() - ctxLoadStart;
 
@@ -1678,19 +1694,20 @@ JSON FORMATI:
         newCtx.lastFocusedClinicName = clinic.clinicName;
 
         try {
-          const doctorSnap = await adminDb.collection("agencies").doc(agencyId)
-            .collection("clinics").doc(clinic.id)
-            .collection("doctors").orderBy("order", "asc").get();
-          const doctors = doctorSnap.docs
-            .map((d) => ({ id: d.id, ...d.data() }))
-            .filter((doc: any) => doc.status === "active");
+          if (adminDb) {
+            const doctorSnap = await adminDb.collection("agencies").doc(agencyId)
+              .collection("clinics").doc(clinic.id)
+              .collection("doctors").orderBy("order", "asc").get();
+            const doctors = doctorSnap.docs
+              .map((d) => ({ id: d.id, ...d.data() }))
+              .filter((doc: any) => doc.status === "active");
 
-          if (doctors.length > 0) {
-            const docLines = doctors.map((d: any) => {
-              const title = d.title || "";
-              const specs = (d.specialties || []).join(", ");
-              return `• ${title} ${d.name}${specs ? ` — ${specs}` : ""}`;
-            }).join("\n");
+            if (doctors.length > 0) {
+              const docLines = doctors.map((d: any) => {
+                const title = d.title || "";
+                const specs = (d.specialties || []).join(", ");
+                return `• ${title} ${d.name}${specs ? ` — ${specs}` : ""}`;
+              }).join("\n");
 
             const lang = parsed.language || "tr";
             const replyText = parsed.replyText || (lang === "tr"
@@ -1703,7 +1720,8 @@ JSON FORMATI:
               sessionContext: newCtx,
             }, { headers: CORS });
           }
-        } catch (e) {
+        }
+      } catch (e) {
           console.error("[matching-chat] Doctor fetch error:", e);
         }
 
