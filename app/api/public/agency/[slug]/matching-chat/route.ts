@@ -361,17 +361,41 @@ export async function POST(
       agencyData = cachedAgency.agencyData;
       matchingConfig = cachedAgency.matchingConfig;
     } else {
-      const agencySnap = await adminDb.collection("agencies")
-        .where("slug", "==", slug).where("status", "==", "active").limit(1).get();
-      if (agencySnap.empty) {
-        return jsonResponse({ error: "Agency not found" }, { status: 404, headers: CORS });
+      let agencySnap: any = null;
+      try {
+        if (adminDb) {
+          agencySnap = await adminDb.collection("agencies")
+            .where("slug", "==", slug).where("status", "==", "active").limit(1).get();
+        }
+      } catch (dbErr) {
+        console.warn("[matching-chat] Agency DB fetch failed, using fallback if available:", dbErr);
       }
-      agencyId = agencySnap.docs[0].id;
-      agencyData = agencySnap.docs[0].data();
 
-      // Load Agency Matching Config
-      const matchingSnap = await adminDb.collection("agencies").doc(agencyId).collection("config").doc("matching").get();
-      matchingConfig = matchingSnap.exists ? matchingSnap.data() : null;
+      if (!agencySnap || agencySnap.empty) {
+        if (slug === "feelinhealthy") {
+          agencyId = "feelinhealthy";
+          agencyData = {
+            name: "FeelinHealthy",
+            slug: "feelinhealthy",
+            privacyUrl: "https://feelinhealthy.com/kvkk",
+            settings: { maxClinicsPerTreatmentRequest: 3 }
+          };
+          matchingConfig = { maxClinicsToShow: 3, showPriceRange: true, showProfileLinks: true };
+        } else {
+          return jsonResponse({ error: "Agency not found" }, { status: 404, headers: CORS });
+        }
+      } else {
+        agencyId = agencySnap.docs[0].id;
+        agencyData = agencySnap.docs[0].data();
+
+        // Load Agency Matching Config
+        try {
+          const matchingSnap = await adminDb.collection("agencies").doc(agencyId).collection("config").doc("matching").get();
+          matchingConfig = matchingSnap.exists ? matchingSnap.data() : null;
+        } catch (e) {
+          matchingConfig = null;
+        }
+      }
 
       setCached(cacheKeyAgencySlug, { agencyId, agencyData, matchingConfig }, 5 * 60 * 1000);
     }
@@ -1153,6 +1177,67 @@ JSON FORMATI:
       newCtx.quoteConsent = true;
     }
 
+    // --- CONSENT GATING ---
+    const leadAlreadyCreated = ctx.leadStage === "quote_request_created" || ctx.leadStage === "completed";
+    
+    const isTryingToCollectData = parsed.missingLeadField && parsed.missingLeadField !== "quoteConsent" && ["patientName", "patientPhone", "patientEmail", "patientAge"].includes(parsed.missingLeadField);
+    const hasGivenHealthData = !!(
+      parsed.treatmentCategory ||
+      parsed.subTreatment ||
+      parsed.patientAge ||
+      parsed.patientGender ||
+      agencySlotsExtracted.extracted.treatment ||
+      (isFeelinHealthy && (parsed.intent === "clinic_recommendation" || parsed.intent === "clinic_matching" || /\b(implant|diş|zirkonyum|saç|estetik|botoks|rinoplasti|obezite|tüp bebek|tedavi|doktor|klinik|operasyon|bariatrik|veneers|crowns|dental|hair|aesthetic|rhinoplasty|surgery|treatment)\b/i.test(finalMessage || message || "")))
+    );
+    
+    // Explicitly bypass consent gating for simple greetings when no health data is passed in current turn
+    const isSimpleGreeting = (parsed.intent === "greeting" || parsed.intent === "general_info") && !hasGivenHealthData && !/\b(implant|diş|zirkonyum|saç|estetik|botoks|rinoplasti|obezite|tüp bebek|tedavi|doktor|klinik|operasyon|bariatrik|veneers|crowns|dental|hair|aesthetic|rhinoplasty|surgery|treatment)\b/i.test(finalMessage || message || "");
+
+    const isMedicalOrTreatmentRequest = !isSimpleGreeting && (
+      hasGivenHealthData ||
+      parsed.shouldCreateLead ||
+      parsed.requiresConsent ||
+      isTryingToCollectData ||
+      parsed.intent === "clinic_recommendation" ||
+      parsed.intent === "clinic_matching" ||
+      (isFeelinHealthy && (!!parsed.treatmentCategory || !!newCtx.lastTreatmentCategory || /\b(implant|diş|zirkonyum|saç|estetik|botoks|rinoplasti|obezite|tüp bebek|tedavi|doktor|klinik|operasyon|bariatrik|veneers|crowns|dental|hair|aesthetic|rhinoplasty|surgery|treatment)\b/i.test(finalMessage || message || "")))
+    );
+    
+    if (isMedicalOrTreatmentRequest && privacySettings.enabled && privacySettings.requiredBeforePersonalData) {
+      const hasConsent = ctx.quoteConsent === true || (await requireAcceptedAgencyConsent(agencyId, ctx.sessionId!, privacySettings.version));
+      if (!hasConsent) {
+        if (ctx.quoteConsent === false) {
+           return jsonResponse({
+             reply: parsed.language === "tr" 
+               ? "Daha önce onay vermediğiniz için kişiselleştirilmiş işlem yapamıyoruz. Genel konularda yardımcı olabilirim."
+               : "Since you declined the privacy consent, I cannot process personal data. I can only assist with general information.",
+             type: "text",
+             sessionContext: ctx,
+             showClinicCards: false
+           }, { headers: CORS });
+        }
+        
+        // Save the original user message so it can be re-processed after consent
+        ctx.pendingUserMessage = finalMessage;
+        const structuredData = getStructuredConsentData(agencyData, parsed.language || "tr");
+        return jsonResponse({
+           reply: parsed.language === "tr" ? privacySettings.consentTextTr : privacySettings.consentTextEn,
+           type: "consent_request",
+           privacyNoticeUrl: structuredData.privacyNoticeUrl,
+           privacyNoticeLabel: structuredData.privacyNoticeLabel,
+           consentStructured: {
+             consentTextBeforeLink: structuredData.consentTextBeforeLink,
+             privacyNoticeLabel: structuredData.privacyNoticeLabel,
+             privacyNoticeUrl: structuredData.privacyNoticeUrl,
+             consentTextAfterLink: structuredData.consentTextAfterLink
+           },
+           consentVersion: privacySettings.version,
+           sessionContext: ctx,
+           showClinicCards: false
+        }, { headers: CORS });
+      }
+    }
+
     // ── FeelinHealthy Location & Istanbul Side Clarification Interceptors ──
     if (isFeelinHealthy && (parsed.intent === "clinic_recommendation" || parsed.intent === "clinic_matching" || parsed.treatmentCategory || newCtx.lastTreatmentCategory)) {
       const branchOrCat = parsed.treatmentCategory || newCtx.lastTreatmentCategory || agencySlotsExtracted.extracted.treatment || "dental";
@@ -1248,49 +1333,6 @@ JSON FORMATI:
         shouldCreateNewLead: false,
         shouldUpdateLead: false
       }, { headers: CORS });
-    }
-
-    // --- CONSENT GATING ---
-    const leadAlreadyCreated = ctx.leadStage === "quote_request_created" || ctx.leadStage === "completed";
-    
-    const isTryingToCollectData = parsed.missingLeadField && parsed.missingLeadField !== "quoteConsent" && ["patientName", "patientPhone", "patientEmail", "patientAge"].includes(parsed.missingLeadField);
-    const hasGivenHealthData = parsed.treatmentCategory || parsed.subTreatment || parsed.patientAge || parsed.patientGender;
-    
-    if (parsed.shouldCreateLead || parsed.requiresConsent || isTryingToCollectData || (hasGivenHealthData && !ctx.quoteConsent)) {
-      if (privacySettings.enabled && privacySettings.requiredBeforePersonalData) {
-        const hasConsent = await requireAcceptedAgencyConsent(agencyId, ctx.sessionId!, privacySettings.version);
-        if (!hasConsent) {
-          if (ctx.quoteConsent === false) {
-             return jsonResponse({
-               reply: parsed.language === "tr" 
-                 ? "Daha önce onay vermediğiniz için kişiselleştirilmiş işlem yapamıyoruz. Genel konularda yardımcı olabilirim."
-                 : "Since you declined the privacy consent, I cannot process personal data. I can only assist with general information.",
-               type: "text",
-               sessionContext: ctx,
-               showClinicCards: false
-             }, { headers: CORS });
-          }
-          
-          // Save the original user message so it can be re-processed after consent
-          ctx.pendingUserMessage = finalMessage;
-          const structuredData = getStructuredConsentData(agencyData, parsed.language || "tr");
-          return jsonResponse({
-             reply: parsed.language === "tr" ? privacySettings.consentTextTr : privacySettings.consentTextEn,
-             type: "consent_request",
-             privacyNoticeUrl: structuredData.privacyNoticeUrl,
-             privacyNoticeLabel: structuredData.privacyNoticeLabel,
-             consentStructured: {
-               consentTextBeforeLink: structuredData.consentTextBeforeLink,
-               privacyNoticeLabel: structuredData.privacyNoticeLabel,
-               privacyNoticeUrl: structuredData.privacyNoticeUrl,
-               consentTextAfterLink: structuredData.consentTextAfterLink
-             },
-             consentVersion: privacySettings.version,
-             sessionContext: ctx,
-             showClinicCards: false
-          }, { headers: CORS });
-        }
-      }
     }
 
     // --- SHOULD CREATE LEAD ---
