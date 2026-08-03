@@ -48,11 +48,18 @@ export function getStructuredConsentData(
 ): StructuredConsentData {
   const isEn = lang.toLowerCase().startsWith("en");
 
-  const rawUrl = isEn
-    ? (agencyConfig?.privacySettings?.noticeUrlEn || agencyConfig?.privacySettings?.privacyNoticeUrlEn || agencyConfig?.privacyUrl || agencyConfig?.privacyNoticeUrl || "https://feelinhealthy.com/kvkk")
-    : (agencyConfig?.privacySettings?.noticeUrlTr || agencyConfig?.privacySettings?.privacyNoticeUrlTr || agencyConfig?.privacyUrl || agencyConfig?.privacyNoticeUrl || "https://feelinhealthy.com/kvkk");
+  // Specifically check for feelinhealthy or fallback to feelinhealthy kvkk URL
+  const isFeelinHealthy = agencyConfig?.slug === "feelinhealthy" || agencyConfig?.id === "feelinhealthy" || !agencyConfig;
+  
+  let candidateUrl = isEn
+    ? (agencyConfig?.privacySettings?.noticeUrlEn || agencyConfig?.privacySettings?.privacyNoticeUrlEn)
+    : (agencyConfig?.privacySettings?.noticeUrlTr || agencyConfig?.privacySettings?.privacyNoticeUrlTr);
 
-  const validatedUrl = validatePrivacyNoticeUrl(rawUrl);
+  if (!candidateUrl || candidateUrl.includes("clinicbridge-ai.com/privacy")) {
+    candidateUrl = isFeelinHealthy ? "https://feelinhealthy.com/kvkk" : (agencyConfig?.privacyUrl || agencyConfig?.privacyNoticeUrl || "https://feelinhealthy.com/kvkk");
+  }
+
+  const validatedUrl = validatePrivacyNoticeUrl(candidateUrl || "https://feelinhealthy.com/kvkk");
 
   if (isEn) {
     const privacyNoticeLabel = agencyConfig?.privacySettings?.privacyNoticeLabelEn || agencyConfig?.privacyNoticeLabelEn || "privacy notice";

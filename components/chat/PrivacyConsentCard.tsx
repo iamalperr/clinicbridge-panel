@@ -36,6 +36,7 @@ export const PrivacyConsentCard: React.FC<PrivacyConsentCardProps> = ({
   navyColor = "#0f172a",
   borderColor = "#e2e8f0"
 }) => {
+  console.info("CONSENT COMPONENT V2 ACTIVE");
   const fallback = getStructuredConsentData(agencyConfig, lang);
   const beforeText = structuredConsent?.consentTextBeforeLink ?? fallback.consentTextBeforeLink;
   const labelText = propLabel || structuredConsent?.privacyNoticeLabel || fallback.privacyNoticeLabel;

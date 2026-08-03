@@ -506,6 +506,47 @@ export default function AgencyDemoPage() {
 
   const t = (key: string) => TEXTS[lang][key] || key;
 
+  const renderMessageContent = (text: string, isUser: boolean) => {
+    if (!text) return null;
+    const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+    const parts = [];
+    let lastIdx = 0;
+    let match;
+
+    while ((match = linkRegex.exec(text)) !== null) {
+      if (match.index > lastIdx) {
+        parts.push(text.substring(lastIdx, match.index));
+      }
+      const label = match[1];
+      const url = match[2];
+      parts.push(
+        <a
+          key={match.index}
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            color: isUser ? "#fff" : C.teal,
+            textDecoration: "underline",
+            fontWeight: 600,
+            cursor: "pointer",
+            wordBreak: "break-all"
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {label}
+        </a>
+      );
+      lastIdx = linkRegex.lastIndex;
+    }
+
+    if (lastIdx < text.length) {
+      parts.push(text.substring(lastIdx));
+    }
+
+    return parts.length > 0 ? parts : text;
+  };
+
   // Fetch live clinic data for results section
   useEffect(() => {
     (async () => {
@@ -1141,7 +1182,7 @@ export default function AgencyDemoPage() {
                         border: msg.role === "user" ? "none" : `1px solid ${C.border}`,
                         fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap",
                       }}>
-                        {msg.text}
+                        {renderMessageContent(msg.text, msg.role === "user")}
                       </div>
                     )}
                     {/* Clinic recommendation cards */}
