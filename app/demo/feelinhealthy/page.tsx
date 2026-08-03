@@ -77,7 +77,7 @@ const TX: Record<Lang, Record<string, string>> = {
     "stat.countries": "Ülkeden Hasta", "stat.savings": "Tasarruf",
     "ai.title": "Tedavi ihtiyacınızı yapay zekâya anlatın",
     "ai.sub": "Doğal dilde yazın, AI size en uygun klinikleri bulsun.",
-    "ai.placeholder": "Örn: İstanbul'da implant yaptırmak istiyorum. Bütçem 3.000€.",
+    "ai.placeholder": "Örn: İstanbul'da implant tedavisi yaptırmak istiyorum.",
     "ai.send": "Klinik Bul", "ai.powered": "ClinicBridge AI tarafından desteklenmektedir",
     "ai.typing": "AI analiz ediyor...",
     "ai.noMatch": "Üzgünüm, aramanızla eşleşen klinik bulunamadı. Lütfen farklı bir tedavi türü deneyin.",
@@ -87,7 +87,7 @@ const TX: Record<Lang, Record<string, string>> = {
     "rec.quote": "Teklif İste", "rec.profile": "Daha Fazla Bilgi",
     "rec.noPrice": "Teklif alarak öğrenin",
     "steps.title": "Nasıl Çalışır?", "steps.sub": "3 adımda doğru kliniği bulun",
-    "steps.1.t": "İhtiyacınızı AI'ya Anlatın", "steps.1.d": "Tedavi ihtiyacınızı, bütçenizi ve tercihlerinizi doğal dilde yazın.",
+    "steps.1.t": "İhtiyacınızı AI'ya Anlatın", "steps.1.d": "Tedavi ihtiyacınızı ve tercihlerinizi doğal dilde yazın.",
     "steps.2.t": "Klinik ve Teklifleri Karşılaştırın", "steps.2.d": "AI önerilen kliniklerin fiyat ve hizmetlerini karşılaştırın.",
     "steps.3.t": "Tedavinizi Başlatın", "steps.3.d": "Kliniğinizi seçin, teklif alın ve tedavi sürecini başlatın.",
     "treat.title": "Tedavi Kategorileri", "treat.sub": "AI destekli klinik eşleştirme",
@@ -121,7 +121,7 @@ const TX: Record<Lang, Record<string, string>> = {
     "stat.countries": "Patient Countries", "stat.savings": "Average Savings",
     "ai.title": "Tell AI about your treatment needs",
     "ai.sub": "Write in natural language — AI will find the best clinics for you.",
-    "ai.placeholder": "E.g.: I want dental implants in Istanbul. Budget around €3,000.",
+    "ai.placeholder": "E.g.: I want dental implants in Istanbul.",
     "ai.send": "Find Clinics", "ai.powered": "Powered by ClinicBridge AI",
     "ai.typing": "AI is analyzing...",
     "ai.noMatch": "Sorry, no clinics match your search. Please try a different treatment type.",
@@ -131,7 +131,7 @@ const TX: Record<Lang, Record<string, string>> = {
     "rec.quote": "Request Quote", "rec.profile": "More Info",
     "rec.noPrice": "Request a quote to learn",
     "steps.title": "How It Works", "steps.sub": "Find the right clinic in 3 steps",
-    "steps.1.t": "Tell AI Your Needs", "steps.1.d": "Describe your treatment needs, budget, and preferences.",
+    "steps.1.t": "Tell AI Your Needs", "steps.1.d": "Describe your treatment needs and preferences.",
     "steps.2.t": "Compare Clinics & Offers", "steps.2.d": "Compare prices and services of AI-recommended clinics.",
     "steps.3.t": "Start Your Treatment", "steps.3.d": "Choose your clinic, request a quote, and start your journey.",
     "treat.title": "Treatment Categories", "treat.sub": "AI-powered clinic matching",
@@ -239,7 +239,16 @@ export default function FeelinHealthyLive() {
   // AI Chat
   const [aiInput, setAiInput] = useState("");
   const [emailInput, setEmailInput] = useState("");
-  const [aiMsgs, setAiMsgs] = useState<{ role: "user" | "ai"; text: string; type?: string; clinics?: any[]; showClinicCards?: boolean; privacyNoticeUrl?: string }[]>([]);
+  const [aiMsgs, setAiMsgs] = useState<{
+    role: "user" | "ai";
+    text: string;
+    type?: string;
+    clinics?: any[];
+    showClinicCards?: boolean;
+    privacyNoticeUrl?: string;
+    additionalEligibleClinicCount?: number;
+    conversionData?: any;
+  }[]>([]);
   const [aiTyping, setAiTyping] = useState(false);
 
   // Extended Request UX
@@ -265,6 +274,44 @@ export default function FeelinHealthyLive() {
 
   const chatEnd = useRef<HTMLDivElement>(null);
   const t = (k: string) => TX[lang][k] || k;
+
+  const renderMessageContent = (text: string, isUser: boolean) => {
+    if (!text) return null;
+    const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+    const parts: (string | React.ReactNode)[] = [];
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = linkRegex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(text.substring(lastIndex, match.index));
+      }
+      const label = match[1];
+      const url = match[2];
+      parts.push(
+        <a
+          key={match.index}
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            color: isUser ? "#93C5FD" : C.primary,
+            textDecoration: "underline",
+            fontWeight: 700,
+          }}
+        >
+          {label}
+        </a>
+      );
+      lastIndex = linkRegex.lastIndex;
+    }
+
+    if (lastIndex < text.length) {
+      parts.push(text.substring(lastIndex));
+    }
+
+    return parts;
+  };
 
   // ── FETCH LIVE DATA ──
 
@@ -356,13 +403,15 @@ export default function FeelinHealthyLive() {
       if (!res.ok) throw new Error(`API error ${res.status}`);
       const data = await res.json();
 
-      const replyMsg: { role: "ai"; text: string; type?: string; clinics?: any[]; showClinicCards?: boolean; privacyNoticeUrl?: string } = {
+      const replyMsg: any = {
         role: "ai",
         text: data.reply || "Yanıt alınamadı.",
         type: data.type || "text",
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
         privacyNoticeUrl: data.privacyNoticeUrl,
+        additionalEligibleClinicCount: data.additionalEligibleClinicCount,
+        conversionData: data.conversionData,
       };
       setAiMsgs((p) => [...p, replyMsg]);
       if (data.sessionContext) setSessionCtx(data.sessionContext);
@@ -408,6 +457,8 @@ export default function FeelinHealthyLive() {
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
         privacyNoticeUrl: data.privacyNoticeUrl,
+        additionalEligibleClinicCount: data.additionalEligibleClinicCount,
+        conversionData: data.conversionData,
       };
       setAiMsgs((p) => [...p, replyMsg]);
       if (data.sessionContext) setSessionCtx(data.sessionContext);
@@ -448,6 +499,8 @@ export default function FeelinHealthyLive() {
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
         privacyNoticeUrl: data.privacyNoticeUrl,
+        additionalEligibleClinicCount: data.additionalEligibleClinicCount,
+        conversionData: data.conversionData,
       };
       setAiMsgs((p) => [...p, replyMsg]);
       if (data.sessionContext) setSessionCtx(data.sessionContext);
@@ -494,12 +547,15 @@ export default function FeelinHealthyLive() {
       console.log("[CB-DEMO] Clinics:", data.clinics?.length || 0);
 
       // Show AI reply text
-      const replyMsg: { role: "ai"; text: string; type?: string; clinics?: any[]; showClinicCards?: boolean } = {
+      const replyMsg: any = {
         role: "ai",
         text: data.reply || "Yanıt alınamadı.",
         type: data.type || "text",
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
+        privacyNoticeUrl: data.privacyNoticeUrl,
+        additionalEligibleClinicCount: data.additionalEligibleClinicCount,
+        conversionData: data.conversionData,
       };
       setAiMsgs((p) => [...p, replyMsg]);
       if (data.sessionContext) setSessionCtx(data.sessionContext);
@@ -728,7 +784,7 @@ export default function FeelinHealthyLive() {
               {aiMsgs.length === 0 && (
                 <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
                   <div style={{ width: 36, height: 36, borderRadius: "50%", background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Bot size={18} color="#fff" /></div>
-                  <div style={{ background: C.white, padding: "12px 16px", borderRadius: "4px 16px 16px 16px", border: `1px solid ${C.border}`, maxWidth: "85%", fontSize: 14, lineHeight: 1.6 }}>{welcomeMsg}</div>
+                  <div style={{ background: C.white, padding: "12px 16px", borderRadius: "4px 16px 16px 16px", border: `1px solid ${C.border}`, maxWidth: "85%", fontSize: 14, lineHeight: 1.6 }}>{renderMessageContent(welcomeMsg, false)}</div>
                 </div>
               )}
               {aiMsgs.map((m, i) => (
@@ -737,7 +793,7 @@ export default function FeelinHealthyLive() {
                     {m.role === "user" ? <User size={18} color="#fff" /> : <Bot size={18} color="#fff" />}
                   </div>
                   <div style={{ maxWidth: "85%", display: "flex", flexDirection: "column", gap: 8 }}>
-                    <div style={{ background: m.role === "user" ? C.navy : C.white, color: m.role === "user" ? "#fff" : C.text, padding: "12px 16px", borderRadius: m.role === "user" ? "16px 4px 16px 16px" : "4px 16px 16px 16px", border: m.role === "user" ? "none" : `1px solid ${C.border}`, fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{m.text}</div>
+                    <div style={{ background: m.role === "user" ? C.navy : C.white, color: m.role === "user" ? "#fff" : C.text, padding: "12px 16px", borderRadius: m.role === "user" ? "16px 4px 16px 16px" : "4px 16px 16px 16px", border: m.role === "user" ? "none" : `1px solid ${C.border}`, fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{renderMessageContent(m.text, m.role === "user")}</div>
                     {/* Inline clinic cards */}
                     {m.clinics && m.clinics.length > 0 && m.showClinicCards !== false && (
                       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -891,6 +947,46 @@ export default function FeelinHealthyLive() {
                                 </button>
                               </div>
                             )}
+                          </div>
+                        )}
+                        {/* Guest Conversion / Additional Clinics Banner */}
+                        {((m.additionalEligibleClinicCount && m.additionalEligibleClinicCount > 0) || m.conversionData) && (
+                          <div style={{ marginTop: 12, padding: "14px 16px", background: "linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%)", borderRadius: 12, border: "1px solid #86EFAC", display: "flex", flexDirection: "column", gap: 8 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <Sparkles size={16} color="#16A34A" />
+                              <span style={{ fontSize: 13, fontWeight: 700, color: "#166534" }}>
+                                {lang === "tr"
+                                  ? `Kriterlerinize uygun +${m.additionalEligibleClinicCount || 1} klinik daha var!`
+                                  : `+${m.additionalEligibleClinicCount || 1} more clinics match your criteria!`}
+                              </span>
+                            </div>
+                            <p style={{ fontSize: 12, color: "#14532D", lineHeight: 1.5 }}>
+                              {m.conversionData?.conversionMessage || (lang === "tr"
+                                ? "Tüm onaylı partner klinik seçeneklerini görmek ve birden fazla klinikten karşılaştırmalı teklif almak için hemen ücretsiz kayıt olun."
+                                : "Register for free to view all certified partner clinics and receive comparative quotes from multiple providers.")}
+                            </p>
+                            <a
+                              href={m.conversionData?.registrationUrl || "https://feelinhealthy.com/register"}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: 6,
+                                padding: "8px 16px",
+                                borderRadius: 8,
+                                background: "#16A34A",
+                                color: "#fff",
+                                fontSize: 12,
+                                fontWeight: 700,
+                                textDecoration: "none",
+                                alignSelf: "flex-start",
+                                marginTop: 2
+                              }}
+                            >
+                              {m.conversionData?.ctaText || (lang === "tr" ? "Ücretsiz Kayıt Ol & Tüm Teklifleri Gör" : "Register Free & View All Quotes")} <ChevronRight size={14} />
+                            </a>
                           </div>
                         )}
                       </div>

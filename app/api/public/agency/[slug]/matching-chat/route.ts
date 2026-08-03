@@ -10,6 +10,16 @@ import {
   ConversationFeatureFlags,
   ConversationLogger
 } from "@/lib/conversation";
+import {
+  getCuratedClinicsForFeelinHealthy,
+  evaluateFeelinHealthyIntake,
+  getGroupIntakePrompt,
+  getUnsupportedLocationPrompt,
+  calculateAdditionalCountAndConversion,
+  resolveCityAndSide,
+  FEELINHEALTHY_CONFIG,
+  type IntakeGroupNumber,
+} from "@/lib/agency/feelinhealthyConfig";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -91,6 +101,13 @@ interface SessionContext {
   showProfileLinks?: boolean;
   pendingUserMessage?: string;
   processingMode?: "degraded" | "normal";
+
+  // FeelinHealthy specific session fields
+  intakeStage?: IntakeGroupNumber;
+  pendingLocationExpansion?: boolean;
+  pendingLocationExpansionTarget?: string;
+  pendingLocationBranch?: string;
+  isGuestUser?: boolean;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -301,8 +318,10 @@ export async function POST(
     return NextResponse.json(respBody, init);
   };
 
+  let slug = "";
   try {
-    const { slug } = await params;
+    const resolvedParams = await params;
+    slug = resolvedParams.slug;
     requestBody = await req.json();
     const { message, action, history = [], sessionContext = {} } = requestBody;
     requestValidationMs = performance.now() - routeStart;
@@ -536,6 +555,8 @@ export async function POST(
       }, { headers: CORS });
     }
 
+    const isFeelinHealthy = slug === "feelinhealthy" || agencyData.slug === "feelinhealthy";
+
     if (agencySlotsExtracted.extracted.treatment && !ctx.lastTreatmentCategory) {
       ctx.lastTreatmentCategory = agencySlotsExtracted.extracted.treatment;
     }
@@ -548,13 +569,47 @@ export async function POST(
     if (agencySlotsExtracted.extracted.email && !ctx.patientEmail) {
       ctx.patientEmail = agencySlotsExtracted.extracted.email;
     }
+    if (agencySlotsExtracted.extracted.patientAge && !ctx.patientAge) {
+      ctx.patientAge = agencySlotsExtracted.extracted.patientAge;
+    }
+    if (agencySlotsExtracted.extracted.patientGender && !ctx.patientGender) {
+      ctx.patientGender = agencySlotsExtracted.extracted.patientGender;
+    }
+    if (agencySlotsExtracted.extracted.patientCountry && !ctx.patientCountry) {
+      ctx.patientCountry = agencySlotsExtracted.extracted.patientCountry;
+    }
+    if (agencySlotsExtracted.extracted.travelDate && !ctx.travelDate) {
+      ctx.travelDate = agencySlotsExtracted.extracted.travelDate;
+    }
+    if (agencySlotsExtracted.extracted.city && !ctx.lastLocation) {
+      ctx.lastLocation = agencySlotsExtracted.extracted.district
+        ? `${agencySlotsExtracted.extracted.city} / ${agencySlotsExtracted.extracted.district}`
+        : agencySlotsExtracted.extracted.city;
+    }
+
+    // Handle user affirmative response to location negotiation
+    if (ctx.pendingLocationExpansion) {
+      const isAffirmative = /\b(evet|olur|uygun|fark etmez|tamam|yes|sure|okay|ok|why not|neden olmasın|tabi|tabii|kabul)\b/i.test(finalMessage || message || "");
+      if (isAffirmative) {
+        ctx.lastLocation = ctx.pendingLocationExpansionTarget || "İstanbul Anadolu Yakası";
+        delete ctx.pendingLocationExpansion;
+        delete ctx.pendingLocationExpansionTarget;
+        delete ctx.pendingLocationBranch;
+      }
+    }
 
     const privacySettings = agencyData.privacySettings || {
       enabled: true,
       mode: "kvkk",
       version: "v1.0",
-      consentTextTr: "Size uygun klinikleri önerebilmemiz ve talebinizi değerlendirebilmemiz için paylaşacağınız kişisel ve sağlıkla ilgili verileri işlememize yönelik onayınıza ihtiyacımız bulunuyor. Aydınlatma metnini inceleyerek devam edebilirsiniz.",
-      consentTextEn: "We need your consent to process the personal and health-related information you may share so that we can recommend suitable clinics and evaluate your request. You can review the privacy notice before continuing.",
+      consentTextTr: isFeelinHealthy
+        ? "Size uygun klinikleri önerebilmemiz ve talebinizi değerlendirebilmemiz için paylaşacağınız kişisel ve sağlıkla ilgili verileri işlememize yönelik onayınıza ihtiyacımız bulunuyor. [Aydınlatma metnini](https://feelinhealthy.com/kvkk) inceleyerek onaylayabilirsiniz."
+        : "Size uygun klinikleri önerebilmemiz ve talebinizi değerlendirebilmemiz için paylaşacağınız kişisel ve sağlıkla ilgili verileri işlememize yönelik onayınıza ihtiyacımız bulunuyor. Aydınlatma metnini inceleyerek devam edebilirsiniz.",
+      consentTextEn: isFeelinHealthy
+        ? "We need your consent to process the personal and health-related information you share to recommend suitable clinics. You can review the [Privacy Notice](https://feelinhealthy.com/kvkk) before continuing."
+        : "We need your consent to process the personal and health-related information you may share so that we can recommend suitable clinics and evaluate your request. You can review the privacy notice before continuing.",
+      noticeUrlTr: isFeelinHealthy ? "https://feelinhealthy.com/kvkk" : (agencyData.privacySettings?.noticeUrlTr || "https://feelinhealthy.com/kvkk"),
+      noticeUrlEn: isFeelinHealthy ? "https://feelinhealthy.com/kvkk" : (agencyData.privacySettings?.noticeUrlEn || "https://feelinhealthy.com/kvkk"),
       requiredBeforePersonalData: true
     };
 
@@ -798,7 +853,13 @@ STANDART KURALLAR:
 1. Hastanın mesajını analiz et ve aşağıdaki JSON formatında yanıt ver.
 2. PASİF KAPANIS YAPMA. "Daha fazla bilgi isterseniz buradayım" gibi zayıf kapanışlar yerine, hastayı daima bir sonraki lead (kayıt) adımına yönlendir.
 3. KLİNİK SEÇİMİ: Eğer hasta "Hospitadent ile devam edelim", "Bu klinik iyi", "[Klinik Adı] hakkında bilgi ver", "İlk klinik olsun" gibi sözler söylerse intent: "clinic_selected" yap ve o kliniğin adını "selectedClinicName", ID'sini "selectedClinicId" olarak set et. 
-4. LEAD TOPLAMA: Hasta bir klinik seçtiğinde veya tavsiye istediğinde yavaş yavaş "lead_capture" aşamasına geç. Bilgileri asla aynı anda sorma. Sırasıyla SADECE 1 eksik bilgiyi sor.
+4. LEAD TOPLAMA KURALLARI:
+${isFeelinHealthy ? `   * BU ACENTEDE BÜTÇE KESİNLİKLE SORULMAZ. Bütçe alanı tamamen kaldırılmıştır.
+   * Bilgiler 3 grup halinde toplanır:
+     - Grup 1: Ad Soyad, Yaş, Cinsiyet (Eksikse bu gruptaki eksiklerin hepsini tek bir kibar soruda iste).
+     - Grup 2: E-posta, Telefon/WhatsApp, Ülke (Grup 1 tamamsa bu gruptaki eksikleri tek soruda iste).
+     - Grup 3: Seyahat Tarihi (Grup 1 ve Grup 2 tamamsa seyahat veya tercih edilen tedavi tarihini sor).
+   * Kullanıcı tek bir mesajda birden fazla bilgi vermişse hepsini çıkar ve eksik kalan sıradaki grubu sor.` : `   * Hasta bir klinik seçtiğinde veya tavsiye istediğinde yavaş yavaş "lead_capture" aşamasına geç. Bilgileri asla aynı anda sorma. Sırasıyla SADECE 1 eksik bilgiyi sor.
    Sıra KESİNLİKLE şöyle olmalı: 
    1. Ad Soyad (patientName)
    2. E-posta (patientEmail)
@@ -809,9 +870,9 @@ STANDART KURALLAR:
    7. Tedavi Detayı (treatmentCategory / subTreatment)
    8. Bütçe (budgetAmount)
    9. Seyahat Tarihi (travelDate)
-   10. KVKK/GDPR Onayı (quoteConsent)
-5. "missingLeadField" alanına sıradaki sorman gereken 1 alanı yaz. Eğer E-posta toplanacaksa leadStage = 'collecting_email' yap.
-6. HASTA BİLGİ VERDİKÇE JSON içinde ilgili alanı (patientName, patientPhone vb.) doldur.
+   10. KVKK/GDPR Onayı (quoteConsent)`}
+5. "missingLeadField" alanına sıradaki sorman gereken alanı yaz. Eğer E-posta toplanacaksa leadStage = 'collecting_email' yap.
+6. HASTA BİLGİ VERDİKÇE JSON içinde ilgili alanı (patientName, patientPhone, patientEmail, patientAge, patientGender, patientCountry, travelDate vb.) doldur.
 7. Tüm lead bilgileri tamamsa ve KVKK onayı alındıysa "shouldCreateLead": true dön.
 8. FİYATLARI ASLA UYDURMA. Aşağıdaki verilerden çek.
 9. Türkçe mesaja Türkçe, İngilizce mesaja İngilizce yanıt ver. (Dil davranışı: ${agencyAiConfig?.languageBehavior || "user_lang"})
@@ -828,10 +889,9 @@ STANDART KURALLAR:
     - Toplanan e-postayı sohbet özetinde açık şekilde yazma (örn. p***@example.com şeklinde maskele).
 14. KLİNİK SEÇİM KURALLARI:
     - Klinik önerdikten sonra kullanıcıya seçim modlarını sun ("Tüm uygun kliniklerden teklif al" veya "Klinikleri tek tek seç").
-    - Kullanıcının aynı talep için en fazla ${maxClinics} klinik seçebileceğini belirt. Aynı anda en fazla ${maxClinics} klinik önerebilirsin. Asla daha fazlasını listeleme.
-    - "Tüm uygun klinikler" seçeneğini sınırsız klinik olarak yorumlama. En fazla ${maxClinics} uygun klinik seçilecektir.
+    - Kullanıcının aynı talep için en fazla ${isFeelinHealthy ? 2 : maxClinics} klinik seçebileceğini belirt. Aynı anda en fazla ${isFeelinHealthy ? 2 : maxClinics} klinik önerebilirsin. Asla daha fazlasını listeleme.
+    - "Tüm uygun klinikler" seçeneğini sınırsız klinik olarak yorumlama. En fazla ${isFeelinHealthy ? 2 : maxClinics} uygun klinik seçilecektir.
     - Sistemde olmayan clinic ID veya clinic adı uydurma. Kullanıcı seçmeden klinik seçilmiş gibi davranma.
-    - Kullanıcının seçimlerini backend sonucu olmadan onaylanmış sayma. Aynı kliniği iki kez ekleme.
     - Limit aşıldığında kullanıcıyı nazikçe bilgilendir. Seçimlerini değiştirmesine izin ver.
     - Klinik seçiminden sonra henüz teklif gönderilmiş gibi konuşma ("Talebiniz kliniklere iletildi" DEME). Yalnızca "seçiminiz kaydedildi" veya "talebiniz için klinikler seçildi" de.
     ${!showPriceRange ? "- DİKKAT: Fiyat bilgisi KESİNLİKLE PAYLAŞMA. Sistemde fiyat aralığı gösterimi kapalı." : ""}
@@ -879,8 +939,6 @@ JSON FORMATI:
   "missingLeadField": "patientName" | "patientEmail" | "patientPhone" | "patientCountry" | "patientAge" | "patientGender" | "travelDate" | "quoteConsent" | null,
   "requiresConsent": boolean,
   "shouldCreateLead": boolean,
-  "missingLeadField": string | null,
-  "requiresConsent": boolean,
   "showClinicCards": boolean,
   "replyText": string
 }
@@ -942,8 +1000,8 @@ JSON FORMATI:
       const newCtx: SessionContext = { ...ctx, processingMode: "degraded" };
       return jsonResponse({
         reply: isTr 
-          ? "Talebinizi aldım. Size uygun klinikleri hazırlayabilmem için yaklaşık bütçenizi, tercih ettiğiniz tarihi ve dil ihtiyacınızı paylaşabilir misiniz?"
-          : "I've saved your request. To prepare suitable clinic options, could you share your approximate budget, preferred dates and language requirements?",
+          ? (isFeelinHealthy ? "Talebinizi aldım. Size en uygun klinikleri hazırlayabilmemiz için adınızı soyadınızı, yaşınızı ve cinsiyetinizi paylaşabilir misiniz?" : "Talebinizi aldım. Size uygun klinikleri hazırlayabilmem için yaklaşık bütçenizi, tercih ettiğiniz tarihi ve dil ihtiyacınızı paylaşabilir misiniz?")
+          : (isFeelinHealthy ? "I've saved your request. To prepare the most suitable clinic options for you, could you please share your full name, age, and gender?" : "I've saved your request. To prepare suitable clinic options, could you share your approximate budget, preferred dates and language requirements?"),
         type: "text",
         sessionContext: newCtx,
       }, { headers: CORS });
@@ -1015,6 +1073,55 @@ JSON FORMATI:
     
     if (parsed.shouldCreateLead && !ctx.quoteConsent && parsed.quoteConsent) {
       newCtx.quoteConsent = true;
+    }
+
+    // ── FeelinHealthy Location Negotiation Check ──
+    if (isFeelinHealthy && (parsed.intent === "clinic_recommendation" || parsed.intent === "clinic_matching" || parsed.treatmentCategory || newCtx.lastTreatmentCategory)) {
+      const branchOrCat = parsed.treatmentCategory || newCtx.lastTreatmentCategory || agencySlotsExtracted.extracted.treatment;
+      const rawLoc = parsed.location || newCtx.lastLocation || agencySlotsExtracted.extracted.city || agencySlotsExtracted.extracted.district;
+      
+      if (branchOrCat && rawLoc && !newCtx.pendingLocationExpansion) {
+        const locInfo = resolveCityAndSide(rawLoc);
+        const curatedCheck = getCuratedClinicsForFeelinHealthy(branchOrCat, locInfo.city, locInfo.side, allClinics);
+        
+        if (curatedCheck.isUnsupportedLocation && curatedCheck.supportedLocationsForBranch && curatedCheck.supportedLocationsForBranch.length > 0) {
+          newCtx.pendingLocationExpansion = true;
+          newCtx.pendingLocationExpansionTarget = curatedCheck.supportedLocationsForBranch[0].displayNameTr;
+          newCtx.pendingLocationBranch = branchOrCat;
+          const currentLang = (parsed.language || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
+          const negotiationReply = getUnsupportedLocationPrompt(
+            branchOrCat,
+            rawLoc,
+            curatedCheck.supportedLocationsForBranch,
+            currentLang
+          );
+          return jsonResponse({
+            reply: negotiationReply,
+            type: "location_negotiation",
+            sessionContext: newCtx,
+            showClinicCards: false
+          }, { headers: CORS });
+        }
+      }
+    }
+
+    // ── FeelinHealthy Deterministic Intake Evaluation ──
+    if (isFeelinHealthy && (parsed.intent === "lead_capture" || parsed.intent === "followup" || parsed.needsFollowUp || newCtx.leadStage === "lead_capture" || newCtx.leadStage === "clinic_selected")) {
+      const intakeStatus = evaluateFeelinHealthyIntake(newCtx);
+      newCtx.intakeStage = intakeStatus.currentGroup;
+
+      if (!intakeStatus.allGroupsComplete) {
+        const currentLang = (parsed.language || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
+        const groupPrompt = getGroupIntakePrompt(intakeStatus, newCtx, currentLang);
+        return jsonResponse({
+          reply: groupPrompt,
+          type: "text",
+          sessionContext: newCtx,
+          showClinicCards: false,
+        }, { headers: CORS });
+      } else {
+        parsed.shouldCreateLead = true;
+      }
     }
 
     /* ── 5. Handle each intent type ── */
@@ -1108,37 +1215,31 @@ JSON FORMATI:
 
     // --- CLINIC MATCHING OR RECOMMENDATION ---
     if (parsed.intent === "clinic_matching" || parsed.intent === "clinic_recommendation") {
-      const scored = allClinics
-        .map((clinic: any) => {
-          const { score, reason, matchedPrices } = scoreClinic(clinic, allPricing, parsed);
-          return { clinic, score, reason, matchedPrices };
-        })
-        .filter(({ score }) => score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 3);
+      let recommendations: ClinicRecommendation[] = [];
+      let additionalEligibleClinicCount = 0;
+      let conversionData: any = undefined;
 
-      const recommendations: ClinicRecommendation[] = scored.map(({ clinic, score, reason, matchedPrices }: any) => ({
-        clinicId: clinic.id,
-        clinicName: clinic.clinicName,
-        clinicSlug: clinic.clinicSlug || clinic.clinicName?.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+$/g, "") || clinic.id,
-        clinicType: clinic.category || clinic.clinicType || "",
-        location: clinic.location ? `${clinic.location.city || ""}, ${clinic.location.country || ""}`.replace(/^, |, $/g, "") : "",
-        rating: clinic.rating || 0,
-        reviews: clinic.reviewCount || 0,
-        matchScore: Math.min(99, 70 + Math.round(score / 2)),
-        matchedPrices,
-        supportedLanguages: (clinic.supportedLanguages || []).map((l: string) => l.toUpperCase()),
-        reason,
-        profilePath: `/agency-demo/medicalcenter/${clinic.clinicSlug || clinic.id}`,
-        accommodation: clinic.accommodation !== false,
-        transfer: clinic.transfer !== false,
-        shortDescription: clinic.shortDescription || clinic.overview || "",
-        doctorMatch: (() => {
-          // Resolve doctors for this clinic and treatment
+      if (isFeelinHealthy) {
+        const branchOrCat = parsed.treatmentCategory || newCtx.lastTreatmentCategory || agencySlotsExtracted.extracted.treatment;
+        const rawLoc = parsed.location || newCtx.lastLocation || agencySlotsExtracted.extracted.city || agencySlotsExtracted.extracted.district;
+        const locInfo = resolveCityAndSide(rawLoc);
+        const curatedResult = getCuratedClinicsForFeelinHealthy(branchOrCat, locInfo.city, locInfo.side, allClinics);
+        
+        const isGuest = newCtx.isGuestUser !== false;
+        const displayLimit = isGuest ? 2 : maxClinics;
+        const displayedClinics = curatedResult.matchingCuratedClinics.slice(0, displayLimit);
+        
+        const currentLang = (parsed.language || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
+        const conv = calculateAdditionalCountAndConversion(curatedResult.allEligibleClinics.length, displayedClinics.length, currentLang);
+        additionalEligibleClinicCount = conv.additionalCount;
+        conversionData = conv;
+
+        recommendations = displayedClinics.map((clinic: any) => {
+          const { matchedPrices } = scoreClinic(clinic, allPricing, parsed);
           const cDocs = allDoctors.filter(d => d.clinicId === clinic.id);
+          const trLower = (parsed.subTreatment || parsed.treatmentCategory || "").toLowerCase();
           const relevantDocs = cDocs.filter(d => {
-            if (!parsed.subTreatment && !parsed.treatmentCategory) return true; // if no specific intent, show all
-            const trLower = (parsed.subTreatment || parsed.treatmentCategory || "").toLowerCase();
+            if (!trLower) return true;
             const dStr = [
               ...(d.treatmentCategories || []),
               ...(d.subTreatments || []),
@@ -1148,30 +1249,110 @@ JSON FORMATI:
             ].join(" ").toLowerCase();
             return dStr.includes(trLower);
           });
-          
-          if (cDocs.length === 0) return { hasRelevantDoctors: false, relevantDoctorCount: 0, displayedDoctorCount: 0, matchBasis: "none", doctors: [] };
-          
+
           return {
-            hasRelevantDoctors: relevantDocs.length > 0,
-            relevantDoctorCount: relevantDocs.length || cDocs.length,
-            displayedDoctorCount: Math.min(2, relevantDocs.length || cDocs.length),
-            matchBasis: relevantDocs.length > 0 ? "treatment" : "clinic_default",
-            doctors: (relevantDocs.length > 0 ? relevantDocs : cDocs).map(d => ({
-              id: d.id,
-              fullName: d.doctorName,
-              title: d.title || "",
-              specialty: d.specialty || (d.expertiseAreas && d.expertiseAreas.length > 0 ? d.expertiseAreas[0] : ""),
-              languages: d.supportedLanguages || [],
-              photoUrl: d.photoUrl || null,
-              experienceYears: d.experienceYears || null,
-              education: d.education || null,
-              shortBio: d.shortBio || null,
-              treatmentCategories: d.treatmentCategories || [],
-              subTreatments: d.subTreatments || []
-            }))
+            clinicId: clinic.id,
+            clinicName: clinic.clinicName,
+            clinicSlug: clinic.clinicSlug || clinic.clinicName?.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+$/g, "") || clinic.id,
+            clinicType: clinic.category || clinic.clinicType || "",
+            location: clinic.location ? `${clinic.location.city || ""}, ${clinic.location.country || ""}`.replace(/^, |, $/g, "") : "",
+            rating: clinic.rating || 4.9,
+            reviews: clinic.reviewCount || 120,
+            matchScore: 98,
+            matchedPrices,
+            supportedLanguages: (clinic.supportedLanguages || []).map((l: string) => l.toUpperCase()),
+            reason: currentLang === "tr" ? "Onaylı FeelinHealthy partner kliniği" : "Certified FeelinHealthy partner clinic",
+            profilePath: `/agency-demo/medicalcenter/${clinic.clinicSlug || clinic.id}`,
+            accommodation: clinic.accommodation !== false,
+            transfer: clinic.transfer !== false,
+            shortDescription: clinic.shortDescription || clinic.overview || "",
+            doctorMatch: {
+              hasRelevantDoctors: (relevantDocs.length > 0 ? relevantDocs : cDocs).length > 0,
+              relevantDoctorCount: relevantDocs.length || cDocs.length,
+              displayedDoctorCount: Math.min(2, relevantDocs.length || cDocs.length),
+              matchBasis: relevantDocs.length > 0 ? "treatment" : "clinic_default",
+              doctors: (relevantDocs.length > 0 ? relevantDocs : cDocs).map(d => ({
+                id: d.id,
+                fullName: d.doctorName,
+                title: d.title || "",
+                specialty: d.specialty || (d.expertiseAreas && d.expertiseAreas.length > 0 ? d.expertiseAreas[0] : ""),
+                languages: d.supportedLanguages || [],
+                photoUrl: d.photoUrl || null,
+                experienceYears: d.experienceYears || null,
+                education: d.education || null,
+                shortBio: d.shortBio || null,
+                treatmentCategories: d.treatmentCategories || [],
+                subTreatments: d.subTreatments || []
+              }))
+            }
           };
-        })()
-      }));
+        });
+      } else {
+        const scored = allClinics
+          .map((clinic: any) => {
+            const { score, reason, matchedPrices } = scoreClinic(clinic, allPricing, parsed);
+            return { clinic, score, reason, matchedPrices };
+          })
+          .filter(({ score }) => score > 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 3);
+
+        recommendations = scored.map(({ clinic, score, reason, matchedPrices }: any) => ({
+          clinicId: clinic.id,
+          clinicName: clinic.clinicName,
+          clinicSlug: clinic.clinicSlug || clinic.clinicName?.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+$/g, "") || clinic.id,
+          clinicType: clinic.category || clinic.clinicType || "",
+          location: clinic.location ? `${clinic.location.city || ""}, ${clinic.location.country || ""}`.replace(/^, |, $/g, "") : "",
+          rating: clinic.rating || 0,
+          reviews: clinic.reviewCount || 0,
+          matchScore: Math.min(99, 70 + Math.round(score / 2)),
+          matchedPrices,
+          supportedLanguages: (clinic.supportedLanguages || []).map((l: string) => l.toUpperCase()),
+          reason,
+          profilePath: `/agency-demo/medicalcenter/${clinic.clinicSlug || clinic.id}`,
+          accommodation: clinic.accommodation !== false,
+          transfer: clinic.transfer !== false,
+          shortDescription: clinic.shortDescription || clinic.overview || "",
+          doctorMatch: (() => {
+            // Resolve doctors for this clinic and treatment
+            const cDocs = allDoctors.filter(d => d.clinicId === clinic.id);
+            const relevantDocs = cDocs.filter(d => {
+              if (!parsed.subTreatment && !parsed.treatmentCategory) return true; // if no specific intent, show all
+              const trLower = (parsed.subTreatment || parsed.treatmentCategory || "").toLowerCase();
+              const dStr = [
+                ...(d.treatmentCategories || []),
+                ...(d.subTreatments || []),
+                ...(d.highlightedTreatments || []),
+                ...(d.expertiseAreas || []),
+                d.specialty || ""
+              ].join(" ").toLowerCase();
+              return dStr.includes(trLower);
+            });
+            
+            if (cDocs.length === 0) return { hasRelevantDoctors: false, relevantDoctorCount: 0, displayedDoctorCount: 0, matchBasis: "none", doctors: [] };
+            
+            return {
+              hasRelevantDoctors: relevantDocs.length > 0,
+              relevantDoctorCount: relevantDocs.length || cDocs.length,
+              displayedDoctorCount: Math.min(2, relevantDocs.length || cDocs.length),
+              matchBasis: relevantDocs.length > 0 ? "treatment" : "clinic_default",
+              doctors: (relevantDocs.length > 0 ? relevantDocs : cDocs).map(d => ({
+                id: d.id,
+                fullName: d.doctorName,
+                title: d.title || "",
+                specialty: d.specialty || (d.expertiseAreas && d.expertiseAreas.length > 0 ? d.expertiseAreas[0] : ""),
+                languages: d.supportedLanguages || [],
+                photoUrl: d.photoUrl || null,
+                experienceYears: d.experienceYears || null,
+                education: d.education || null,
+                shortBio: d.shortBio || null,
+                treatmentCategories: d.treatmentCategories || [],
+                subTreatments: d.subTreatments || []
+              }))
+            };
+          })()
+        }));
+      }
 
       if (recommendations.length > 0) {
         newCtx.lastRecommendedClinicIds = recommendations.map((r) => r.clinicId);
@@ -1185,6 +1366,8 @@ JSON FORMATI:
           : `I found ${recommendations.length} suitable clinic(s) for ${parsed.subTreatment || "your treatment"}.`),
         type: "clinic_recommendations",
         clinics: recommendations,
+        additionalEligibleClinicCount,
+        conversionData,
         sessionContext: newCtx,
         showClinicCards: true, // always true for recommendations unless AI explicitly says false, but let's enforce true.
       }, { headers: CORS });
@@ -1383,8 +1566,8 @@ JSON FORMATI:
     // --- GENERAL / FALLBACK ---
     return jsonResponse({
       reply: parsed.replyText || (parsed.language === "tr"
-        ? "Size nasıl yardımcı olabilirim? Hangi tedaviyi aradığınızı, lokasyonunuzu veya bütçenizi paylaşabilirsiniz."
-        : "How can I help you? Share the treatment you're looking for, your preferred location, or budget."),
+        ? (isFeelinHealthy ? "Size nasıl yardımcı olabilirim? Hangi tedaviyi aradığınızı veya tercih ettiğiniz lokasyonu paylaşabilirsiniz." : "Size nasıl yardımcı olabilirim? Hangi tedaviyi aradığınızı, lokasyonunuzu veya bütçenizi paylaşabilirsiniz.")
+        : (isFeelinHealthy ? "How can I help you? Share the treatment you're looking for or your preferred location." : "How can I help you? Share the treatment you're looking for, your preferred location, or budget.")),
       type: "text",
       sessionContext: newCtx,
       showClinicCards: parsed.showClinicCards === true,
@@ -1398,6 +1581,7 @@ JSON FORMATI:
     const ctx = sessionContext || {};
     const lang = ctx.language || (action?.locale) || "tr";
     const isTr = lang === "tr";
+    const isFeelinHealthyFallback = slug === "feelinhealthy" || ctx.isGuestUser !== undefined;
     
     // SAFE DEGRADED MODE (Deterministic Fallback)
     // Preserves the user message and session, ensures no fake success is shown.
@@ -1407,8 +1591,8 @@ JSON FORMATI:
       return jsonResponse(
         { 
           reply: isTr 
-            ? "Onayınız alındı. Tercihinizi kaydettim. Size en uygun klinikleri hazırlarken birkaç ek bilgiye ihtiyacım var. Yaklaşık bütçeniz veya seyahat tarihiniz belli mi?"
-            : "Consent received. I've noted your preference. While I prepare the most suitable clinics, I need a few more details. Do you have an approximate budget or travel date in mind?",
+            ? (isFeelinHealthyFallback ? "Onayınız alındı. Tercihinizi kaydettim. Size en uygun klinikleri hazırlayabilmemiz için adınızı soyadınızı, yaşınızı ve cinsiyetinizi paylaşabilir misiniz?" : "Onayınız alındı. Tercihinizi kaydettim. Size en uygun klinikleri hazırlarken birkaç ek bilgiye ihtiyacım var. Yaklaşık bütçeniz veya seyahat tarihiniz belli mi?")
+            : (isFeelinHealthyFallback ? "Consent received. I've noted your preference. To prepare the most suitable clinic options for you, could you please share your full name, age, and gender?" : "Consent received. I've noted your preference. While I prepare the most suitable clinics, I need a few more details. Do you have an approximate budget or travel date in mind?"),
           type: "text",
           sessionContext: ctx
         },
@@ -1419,8 +1603,8 @@ JSON FORMATI:
     return jsonResponse(
       { 
         reply: isTr 
-          ? "Talebinizi aldım. Size uygun klinikleri hazırlayabilmem için yaklaşık bütçenizi, tercih ettiğiniz tarihi ve dil ihtiyacınızı paylaşabilir misiniz?"
-          : "I've saved your request. To prepare suitable clinic options, could you share your approximate budget, preferred dates and language requirements?", 
+          ? (isFeelinHealthyFallback ? "Talebinizi aldım. Size en uygun klinikleri hazırlayabilmemiz için adınızı soyadınızı, yaşınızı ve cinsiyetinizi paylaşabilir misiniz?" : "Talebinizi aldım. Size uygun klinikleri hazırlayabilmem için yaklaşık bütçenizi, tercih ettiğiniz tarihi ve dil ihtiyacınızı paylaşabilir misiniz?")
+          : (isFeelinHealthyFallback ? "I've saved your request. To prepare the most suitable clinic options for you, could you please share your full name, age, and gender?" : "I've saved your request. To prepare suitable clinic options, could you share your approximate budget, preferred dates and language requirements?"), 
         type: "text",
         sessionContext: ctx
       },

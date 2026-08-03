@@ -280,10 +280,39 @@ export class SlotExtractor {
         extracted.fullName = nameRes.fullName;
         extracted.firstName = nameRes.firstName;
         extracted.lastName = nameRes.lastName;
+        extracted.patientName = nameRes.fullName;
       }
     }
 
-    // 12. KVKK Consent
+    // 12. Age Extraction
+    const ageRes = this.parseAge(raw, lower, expectedSlot);
+    if (ageRes !== null) {
+      extracted.age = ageRes;
+      extracted.patientAge = ageRes;
+    }
+
+    // 13. Gender Extraction
+    const genderRes = this.parseGender(lower, expectedSlot);
+    if (genderRes) {
+      extracted.gender = genderRes;
+      extracted.patientGender = genderRes;
+    }
+
+    // 14. Country Extraction
+    const countryRes = this.parseCountry(lower, expectedSlot);
+    if (countryRes) {
+      extracted.country = countryRes;
+      extracted.patientCountry = countryRes;
+    }
+
+    // 15. Travel Date / Timeframe Extraction
+    const travelDateRes = this.parseTravelDate(raw, lower);
+    if (travelDateRes) {
+      extracted.travelDate = travelDateRes;
+      extracted.travelDateText = travelDateRes;
+    }
+
+    // 16. KVKK Consent
     if (this.isKvkkConsent(lower)) {
       extracted.kvkkConsent = true;
     }
@@ -725,8 +754,24 @@ export class SlotExtractor {
       };
     }
 
-    // Pattern 2: When expectedSlot is fullName / name, or in APPOINTMENT_COLLECTION without a name
-    if (expectedSlot === "fullName" || expectedSlot === "name") {
+    // Pattern 1b: Comma or delimiter separated multi-field input like "Ahmet Yılmaz, 35 yaşındayım, erkeğim" or "Caner Kurt, 32, erkek"
+    const segment = raw.split(/[,;\n]/)[0].trim();
+    if (segment && segment !== raw) {
+      const segParts = segment.split(/\s+/);
+      if (segParts.length >= 2 && segParts.length <= 3 && /^[A-Za-zÇĞİÖŞÜçğıöşü\s]+$/.test(segment)) {
+        const badWords = ["randevu", "fiyat", "tarih", "saat", "doktor", "klinik", "bilgi", "evet", "hayır", "tamam", "merhaba", "selam"];
+        if (!segParts.some(p => badWords.includes(p.toLowerCase()))) {
+          return {
+            fullName: segment,
+            firstName: segParts[0],
+            lastName: segParts.slice(1).join(" ")
+          };
+        }
+      }
+    }
+
+    // Pattern 2: When expectedSlot is fullName / name / patientName, or in APPOINTMENT_COLLECTION without a name
+    if (expectedSlot === "fullName" || expectedSlot === "name" || expectedSlot === "patientName") {
       const clean = raw.trim();
       const parts = clean.split(/\s+/);
       if (parts.length >= 2 && parts.length <= 4 && /^[A-Za-zÇĞİÖŞÜçğıöşü\s]+$/.test(clean) && clean.length <= 40) {
@@ -745,6 +790,128 @@ export class SlotExtractor {
           };
         }
       }
+    }
+
+    return null;
+  }
+
+  /**
+   * Parse patient age (e.g. "35 yaşındayım", "yaşım 28", "age: 42", "30 years old", or standalone number)
+   */
+  public static parseAge(raw: string, lower: string, expectedSlot?: string): number | null {
+    // Pattern 1: "35 yaşındayım", "35 yasindayim", "yaşım 35", "yasim 35", "35 yaş", "35 yas"
+    const trMatch = lower.match(/(?:yaşım|yasim|yaşında|yasinda|yaşındayım|yasindayim|yaş|yas)\s*[:=]?\s*(\d{1,3})/i) ||
+      lower.match(/(\d{1,3})\s*(?:yaşındayım|yasindayim|yaşında|yasinda|yaş|yas)/i);
+    if (trMatch) {
+      const val = parseInt(trMatch[1], 10);
+      if (val >= 1 && val <= 115) return val;
+    }
+
+    // Pattern 2: "35 years old", "age 35", "age: 35", "35 y/o"
+    const enMatch = lower.match(/(?:age|aged)\s*[:=]?\s*(\d{1,3})/i) ||
+      lower.match(/(\d{1,3})\s*(?:years\s*old|yo|y\/o)/i);
+    if (enMatch) {
+      const val = parseInt(enMatch[1], 10);
+      if (val >= 1 && val <= 115) return val;
+    }
+
+    // Pattern 3: Standalone number when expectedSlot is age
+    if (expectedSlot === "patientAge" || expectedSlot === "age") {
+      const numMatch = raw.trim().match(/^(\d{1,3})$/);
+      if (numMatch) {
+        const val = parseInt(numMatch[1], 10);
+        if (val >= 1 && val <= 115) return val;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Parse patient gender ("kadın" | "erkek" | "belirtmek istemiyorum" | "female" | "male")
+   */
+  public static parseGender(lower: string, expectedSlot?: string): string | null {
+    if (/\b(kadın|kadin|bayan|female|woman)\b/i.test(lower)) {
+      return "Kadın";
+    }
+    if (/\b(erkek|bay|male|man)\b/i.test(lower)) {
+      return "Erkek";
+    }
+    if (/\b(belirtmek istemiyorum|fark etmez|prefer not to say|other|unspecified)\b/i.test(lower)) {
+      return "Belirtmek istemiyorum";
+    }
+    return null;
+  }
+
+  /**
+   * Parse patient country of residence
+   */
+  public static parseCountry(lower: string, expectedSlot?: string): string | null {
+    const countriesTr: Record<string, string> = {
+      türkiye: "Türkiye", turkiye: "Türkiye", turkey: "Türkiye",
+      almanya: "Almanya", germany: "Almanya", deutschland: "Almanya",
+      ingiltere: "İngiltere", "birleşik krallık": "İngiltere", uk: "İngiltere", "united kingdom": "İngiltere", britain: "İngiltere",
+      hollanda: "Hollanda", netherlands: "Hollanda",
+      fransa: "Fransa", france: "Fransa",
+      belçika: "Belçika", belcika: "Belçika", belgium: "Belçika",
+      isviçre: "İsviçre", isvicre: "İsviçre", switzerland: "İsviçre",
+      avusturya: "Avusturya", austria: "Avusturya",
+      rusya: "Rusya", russia: "Rusya",
+      azerbaycan: "Azerbaycan", azerbaijan: "Azerbaycan",
+      amerika: "ABD", usa: "ABD", "united states": "ABD", abd: "ABD",
+      kanada: "Kanada", canada: "Kanada",
+      isveç: "İsveç", isvec: "İsveç", sweden: "İsveç",
+      norveç: "Norveç", norvec: "Norveç", norway: "Norveç",
+      danimarka: "Danimarka", denmark: "Danimarka",
+      irak: "Irak", iraq: "Irak", iran: "İran",
+      "suudi arabistan": "Suudi Arabistan", "saudi arabia": "Suudi Arabistan",
+      dubai: "BAE", bae: "BAE", uae: "BAE"
+    };
+
+    for (const [key, name] of Object.entries(countriesTr)) {
+      const regex = new RegExp(`\\b${key}\\b`, "i");
+      if (regex.test(lower)) {
+        return name;
+      }
+    }
+
+    if (expectedSlot === "patientCountry" || expectedSlot === "country") {
+      const clean = lower.trim();
+      if (clean.length >= 3 && clean.length <= 30 && /^[a-zA-ZçğıöşüÇĞİÖŞÜ\s]+$/.test(clean)) {
+        return clean.charAt(0).toUpperCase() + clean.slice(1);
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Parse travel date preference or fuzzy timeframe (e.g. "önümüzdeki ay", "temmuz başı", "next month", "early july")
+   */
+  public static parseTravelDate(raw: string, lower: string): string | null {
+    // 1. Fuzzy month expressions
+    const fuzzyPatterns = [
+      /\b(önümüzdeki ay|onumuzdeki ay|next month)\b/i,
+      /\b(haftaya|gelecek hafta|next week)\b/i,
+      /\b(bu ay|bu ay içinde|this month)\b/i,
+      /\b(yazın|yazin|in summer|bu yaz)\b/i,
+      /\b(sonbaharda|in autumn|in fall)\b/i,
+      /\b(en kısa sürede|en kisa surede|asap|as soon as possible)\b/i,
+      /\b((?:ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık)(?:\s+(?:başı|ortası|sonu|gibi))?)\b/i,
+      /\b((?:january|february|march|april|may|june|july|august|september|october|november|december)(?:\s+(?:early|mid|late|end))?)\b/i,
+    ];
+
+    for (const pat of fuzzyPatterns) {
+      const match = lower.match(pat);
+      if (match) {
+        return match[0].trim();
+      }
+    }
+
+    // 2. Specific date range or date format
+    const rangeMatch = raw.match(/\b\d{1,2}(?:\s*-\s*|\s+ila\s+|\s+to\s+)\d{1,2}\s+[a-zA-ZçğıöşüÇĞİÖŞÜ]+\b/i);
+    if (rangeMatch) {
+      return rangeMatch[0].trim();
     }
 
     return null;
