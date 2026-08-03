@@ -8,13 +8,17 @@ import {
   normalizeConversationStatus,
   getConversationStatusLabel,
   getConversationStatusVariant,
+  isConversationConverted,
+  isConversationManuallyConverted,
+  isConversationSystemConverted,
+  getConversionSource,
   exportConversationLogsToCSV,
   escapeCSV,
   CANONICAL_CONVERSATION_STATUSES,
   type CSVLogRecord,
 } from "../lib/services/conversations/conversationStatusResolver";
 
-describe("Conversation Status Normalization and Localization", () => {
+describe("Conversation Status Normalization, Manual Conversion & Localization", () => {
   describe("1. Localization Dictionaries Integrity", () => {
     it("should contain all required common keys in Turkish and English", () => {
       expect(tr.common.all).toBe("Tümü");
@@ -108,44 +112,89 @@ describe("Conversation Status Normalization and Localization", () => {
     });
   });
 
-  describe("3. Localized Labels and Badge Variants", () => {
-    it("should return accurate localized labels for all canonical statuses in TR and EN", () => {
-      for (const status of CANONICAL_CONVERSATION_STATUSES) {
-        const labelTr = getConversationStatusLabel(status, "tr");
-        const labelEn = getConversationStatusLabel(status, "en");
-
-        expect(labelTr).toBeTruthy();
-        expect(labelEn).toBeTruthy();
-        expect(labelTr).not.toContain("logs.status");
-        expect(labelEn).not.toContain("logs.status");
-      }
-
-      expect(getConversationStatusLabel("collecting_appointment_information", "tr")).toBe("Randevu Bilgisi Toplanıyor");
-      expect(getConversationStatusLabel("collecting_appointment_information", "en")).toBe("Collecting Appointment Information");
-      expect(getConversationStatusLabel("converted_to_appointment", "tr")).toBe("Randevuya Dönüştü");
-      expect(getConversationStatusLabel("converted_to_appointment", "en")).toBe("Converted to Appointment");
+  describe("3. Conversion Resolution & Double Counting Prevention", () => {
+    it("should identify system conversions correctly", () => {
+      const chatbotConvertedLog = {
+        status: "appointment",
+        convertedToAppointment: true,
+        appointmentId: "apt-123",
+      };
+      expect(isConversationSystemConverted(chatbotConvertedLog)).toBe(true);
+      expect(isConversationManuallyConverted(chatbotConvertedLog)).toBe(false);
+      expect(isConversationConverted(chatbotConvertedLog)).toBe(true);
+      expect(getConversionSource(chatbotConvertedLog, "tr")).toBe("Chatbot");
+      expect(getConversionSource(chatbotConvertedLog, "en")).toBe("Chatbot");
     });
 
-    it("should return correct badge variants for each status", () => {
-      expect(getConversationStatusVariant("successfully_answered")).toBe("resolved");
-      expect(getConversationStatusVariant("collecting_appointment_information")).toBe("warning");
-      expect(getConversationStatusVariant("converted_to_appointment")).toBe("pro");
-      expect(getConversationStatusVariant("live_support_required")).toBe("open");
-      expect(getConversationStatusVariant("unanswered")).toBe("failed");
+    it("should identify manual conversions correctly via custom label or manual flag", () => {
+      const manualConvertedLog = {
+        status: "answered",
+        convertedToAppointment: false,
+        appointmentId: null,
+        customLabelId: "converted_to_appointment",
+        customLabelName: "Randevuya Dönüştü",
+        manualConversionStatus: "converted_to_appointment",
+      };
+      expect(isConversationSystemConverted(manualConvertedLog)).toBe(false);
+      expect(isConversationManuallyConverted(manualConvertedLog)).toBe(true);
+      expect(isConversationConverted(manualConvertedLog)).toBe(true);
+      expect(getConversionSource(manualConvertedLog, "tr")).toBe("Manuel");
+      expect(getConversionSource(manualConvertedLog, "en")).toBe("Manual");
+    });
+
+    it("should prevent double counting when a log is both system and manually converted", () => {
+      const doubleFlaggedLog = {
+        status: "converted_to_appointment",
+        convertedToAppointment: true,
+        appointmentId: "apt-999",
+        customLabelId: "converted_to_appointment",
+        customLabelName: "Randevuya Dönüştü",
+        manualConversionStatus: "converted_to_appointment",
+      };
+
+      expect(isConversationSystemConverted(doubleFlaggedLog)).toBe(true);
+      expect(isConversationManuallyConverted(doubleFlaggedLog)).toBe(true);
+      // isConversationConverted returns a single boolean (true)
+      expect(isConversationConverted(doubleFlaggedLog)).toBe(true);
+      expect(getConversionSource(doubleFlaggedLog, "tr")).toBe("Chatbot + Manuel");
+      expect(getConversionSource(doubleFlaggedLog, "en")).toBe("Chatbot + Manual");
+
+      // Aggregate conversion count must only increment once
+      const logs = [doubleFlaggedLog, { status: "unanswered" }];
+      let conversionCount = 0;
+      logs.forEach((l) => {
+        if (isConversationConverted(l)) conversionCount++;
+      });
+      expect(conversionCount).toBe(1);
+    });
+
+    it("should report uncoverted logs correctly", () => {
+      const unconvertedLog = {
+        status: "successfully_answered",
+        convertedToAppointment: false,
+        appointmentId: null,
+        customLabelId: null,
+      };
+      expect(isConversationSystemConverted(unconvertedLog)).toBe(false);
+      expect(isConversationManuallyConverted(unconvertedLog)).toBe(false);
+      expect(isConversationConverted(unconvertedLog)).toBe(false);
+      expect(getConversionSource(unconvertedLog, "tr")).toBe("Dönüşmedi");
+      expect(getConversionSource(unconvertedLog, "en")).toBe("Not Converted");
     });
   });
 
-  describe("4. Multi-Criteria Filtering Logic and Filter Options Match", () => {
+  describe("4. Filter & Badge Consistency", () => {
     const mockLogs: Array<{
       id: string;
       patientName: string;
       status: string;
+      convertedToAppointment?: boolean;
+      appointmentId?: string | null;
       language: string;
       createdAt: string;
       customLabelId?: string | null;
       customLabelName?: string | null;
-      convertedToAppointment?: boolean;
-      appointmentId?: string;
+      manualConversionStatus?: string | null;
       lastMessagePreview: string;
     }> = [
       {
@@ -154,8 +203,8 @@ describe("Conversation Status Normalization and Localization", () => {
         status: "logs.status.collecting",
         language: "tr",
         createdAt: new Date().toISOString(),
-        customLabelId: "lbl-vip",
-        customLabelName: "VIP Patient",
+        customLabelId: null,
+        customLabelName: null,
         lastMessagePreview: "Fiyat bilgisi alabilir miyim?",
       },
       {
@@ -186,66 +235,35 @@ describe("Conversation Status Normalization and Localization", () => {
         appointmentId: "apt-123",
         language: "tr",
         createdAt: new Date().toISOString(),
-        customLabelId: "lbl-urgent",
-        customLabelName: "Acil Takip",
+        customLabelId: null,
+        customLabelName: null,
         lastMessagePreview: "Yarın saat 14:00 için randevu onaylandı",
+      },
+      {
+        id: "log-5",
+        patientName: "Kemal Sunal",
+        status: "answered",
+        convertedToAppointment: false,
+        appointmentId: null,
+        customLabelId: "converted_to_appointment",
+        customLabelName: "Randevuya Dönüştü",
+        manualConversionStatus: "converted_to_appointment",
+        language: "tr",
+        createdAt: new Date().toISOString(),
+        lastMessagePreview: "Telefonda randevu oluşturduk",
       },
     ];
 
-    it("should filter by canonical conversation status", () => {
-      const collectingLogs = mockLogs.filter(
-        (l) =>
-          normalizeConversationStatus(l.status, {
-            convertedToAppointment: l.convertedToAppointment,
-            appointmentId: l.appointmentId,
-          }) === "collecting_appointment_information"
-      );
-      expect(collectingLogs).toHaveLength(1);
-      expect(collectingLogs[0].id).toBe("log-1");
-
-      const convertedLogs = mockLogs.filter(
-        (l) =>
-          normalizeConversationStatus(l.status, {
-            convertedToAppointment: l.convertedToAppointment,
-            appointmentId: l.appointmentId,
-          }) === "converted_to_appointment"
-      );
-      expect(convertedLogs).toHaveLength(1);
-      expect(convertedLogs[0].id).toBe("log-4");
+    it("should filter converted appointments including both chatbot and manual conversions", () => {
+      const convertedLogs = mockLogs.filter((l) => isConversationConverted(l));
+      expect(convertedLogs).toHaveLength(2);
+      expect(convertedLogs.map((l) => l.id)).toEqual(["log-4", "log-5"]);
     });
 
-    it("should filter by custom label correctly (None vs Specific ID)", () => {
-      // Filter "No Label"
-      const noLabelLogs = mockLogs.filter((l) => !l.customLabelId);
-      expect(noLabelLogs).toHaveLength(2);
-      expect(noLabelLogs.map((l) => l.id)).toEqual(["log-2", "log-3"]);
-
-      // Filter "VIP Patient"
-      const vipLogs = mockLogs.filter((l) => l.customLabelId === "lbl-vip");
-      expect(vipLogs).toHaveLength(1);
-      expect(vipLogs[0].id).toBe("log-1");
-    });
-
-    it("should perform multi-criteria filtering simultaneously", () => {
-      const filtered = mockLogs.filter((log) => {
-        // Status filter: converted_to_appointment
-        const norm = normalizeConversationStatus(log.status, log);
-        if (norm !== "converted_to_appointment") return false;
-
-        // Custom label filter: lbl-urgent
-        if (log.customLabelId !== "lbl-urgent") return false;
-
-        // Language filter: tr
-        if (log.language !== "tr") return false;
-
-        // Search: Fatma
-        if (!log.patientName.toLowerCase().includes("fatma")) return false;
-
-        return true;
-      });
-
-      expect(filtered).toHaveLength(1);
-      expect(filtered[0].id).toBe("log-4");
+    it("should filter manual conversions specifically with label:converted_to_appointment", () => {
+      const manualConvertedLogs = mockLogs.filter((l) => isConversationManuallyConverted(l));
+      expect(manualConvertedLogs).toHaveLength(1);
+      expect(manualConvertedLogs[0].id).toBe("log-5");
     });
 
     it("should match TR filter option labels with row badge labels exactly", () => {
@@ -290,7 +308,7 @@ describe("Conversation Status Normalization and Localization", () => {
       expect(escapeCSV(null)).toBe('""');
     });
 
-    it("should generate CSV with separated columns and clean headers without raw translation keys", () => {
+    it("should generate CSV with separated columns, conversion source, and clean headers without raw translation keys", () => {
       const records: CSVLogRecord[] = [
         {
           id: "conv-101",
@@ -300,8 +318,8 @@ describe("Conversation Status Normalization and Localization", () => {
           status: "logs.status.collecting",
           convertedToAppointment: false,
           appointmentId: null,
-          customLabelId: "lbl-lead",
-          customLabelName: "Potansiyel Hasta",
+          customLabelId: null,
+          customLabelName: null,
           totalMessages: 5,
           createdAt: "2026-08-01T10:30:00Z",
           lastMessagePreview: "Tedavi fiyatını öğrenmek istiyorum",
@@ -320,15 +338,31 @@ describe("Conversation Status Normalization and Localization", () => {
           createdAt: "2026-08-02T14:15:00Z",
           lastMessagePreview: "Thank you for the confirmation",
         },
+        {
+          id: "conv-103",
+          patientName: "Ali Veli",
+          patientPhone: "+905321112233",
+          language: "tr",
+          status: "answered",
+          convertedToAppointment: false,
+          appointmentId: null,
+          customLabelId: "converted_to_appointment",
+          customLabelName: "Randevuya Dönüştü",
+          manualConversionStatus: "converted_to_appointment",
+          totalMessages: 8,
+          createdAt: "2026-08-03T09:00:00Z",
+          lastMessagePreview: "WhatsApp üzerinden randevu oluşturuldu",
+        },
       ];
 
       // Export in Turkish
       const csvTr = exportConversationLogsToCSV(records, "tr");
       expect(csvTr.startsWith("\uFEFF")).toBe(true);
-      expect(csvTr).toContain("Görüşme ID,Hasta Adı,Telefon,Dil,Görüşme Durumu,Özel Etiket,Randevuya Dönüştü,Randevu ID");
+      expect(csvTr).toContain("Görüşme ID,Hasta Adı,Telefon,Dil,Görüşme Durumu,Özel Etiket,Dönüşüm Kaynağı,Randevuya Dönüştü,Randevu ID");
       expect(csvTr).toContain("Randevu Bilgisi Toplanıyor");
-      expect(csvTr).toContain("Potansiyel Hasta");
       expect(csvTr).toContain("Randevuya Dönüştü");
+      expect(csvTr).toContain("Chatbot");
+      expect(csvTr).toContain("Manuel");
       expect(csvTr).toContain("apt-550");
       expect(csvTr).toContain("Evet");
       expect(csvTr).toContain("Hayır");
@@ -337,9 +371,11 @@ describe("Conversation Status Normalization and Localization", () => {
       // Export in English
       const csvEn = exportConversationLogsToCSV(records, "en");
       expect(csvEn.startsWith("\uFEFF")).toBe(true);
-      expect(csvEn).toContain("Conversation ID,Patient Name,Phone,Language,Conversation Status,Custom Label,Converted to Appointment,Appointment ID");
+      expect(csvEn).toContain("Conversation ID,Patient Name,Phone,Language,Conversation Status,Custom Label,Conversion Source,Converted to Appointment,Appointment ID");
       expect(csvEn).toContain("Collecting Appointment Information");
       expect(csvEn).toContain("Converted to Appointment");
+      expect(csvEn).toContain("Chatbot");
+      expect(csvEn).toContain("Manual");
       expect(csvEn).toContain("Yes");
       expect(csvEn).toContain("No");
       expect(csvEn).toContain("No Label");

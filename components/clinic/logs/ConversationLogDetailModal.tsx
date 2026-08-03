@@ -11,6 +11,7 @@ import {
   normalizeConversationStatus,
   getConversationStatusLabel,
   getConversationStatusVariant,
+  isConversationManuallyConverted,
 } from "@/lib/services/conversations/conversationStatusResolver";
 
 interface Props {
@@ -77,7 +78,18 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
             </div>
           )}
           <Badge variant={statusVariant} label={statusLabel} />
-          {log.customLabelId && log.customLabelName && (
+          {isConversationManuallyConverted(log) ? (
+            <span style={{
+              display: "inline-flex", alignItems: "center", gap: 4,
+              padding: "3px 9px", borderRadius: 99,
+              fontSize: 11, fontWeight: 600,
+              background: "rgba(139, 92, 246, 0.1)",
+              color: "#8b5cf6",
+              border: "1px solid rgba(139, 92, 246, 0.2)",
+            }}>
+              🏷️ {language === "en" ? "Converted to Appointment" : "Randevuya Dönüştü"}
+            </span>
+          ) : (log.customLabelId && log.customLabelName ? (
             <span style={{
               display: "inline-flex", alignItems: "center", gap: 4,
               padding: "3px 9px", borderRadius: 99,
@@ -88,7 +100,7 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
             }}>
               🏷️ {log.customLabelName}
             </span>
-          )}
+          ) : null)}
         </div>
 
         {/* Training Recommendation */}

@@ -5,17 +5,17 @@ import { requireClinicAccess, AuthError } from "@/lib/services/apiAuth";
 /**
  * PATCH /api/clinics/[clinicId]/conversations/[conversationId]/custom-label
  *
- * Updates the custom label on a conversation log document.
+ * Updates the manual custom label / manual conversion status on a conversation log document.
  * 
  * Rules:
- * - NEVER modifies the system `status` field
+ * - NEVER modifies the automatic system `status` field
  * - Does NOT create appointments, send emails, or trigger notifications
- * - Does NOT change agent state or conversation transcript
- * - Writes audit fields: customLabelUpdatedBy, customLabelUpdatedAt
+ * - Does NOT change agent state, conversation transcript, or existing appointment records
+ * - Writes audit fields: customLabelUpdatedBy, customLabelUpdatedAt, manualConversionMarkedAt/By, manualConversionRemovedAt/By
  * - Accepts { customLabelId: string | null }
  * - null clears the label
  *
- * Permission: Super Admin, Clinic Admin (NOT clinicUser)
+ * Permission: Super Admin, Admin, Clinic Admin (403 for clinicUser or unauthorized roles)
  */
 export async function PATCH(
   req: Request,
@@ -27,7 +27,7 @@ export async function PATCH(
 
     // Only superAdmin, admin, and clinicAdmin can update labels
     const allowedRoles = ["superAdmin", "admin", "clinicAdmin"];
-    if (!allowedRoles.includes(auth.profile.role)) {
+    if (!allowedRoles.includes(auth.profile?.role)) {
       return NextResponse.json(
         { error: "Insufficient permissions to update conversation labels" },
         { status: 403 }
@@ -65,40 +65,75 @@ export async function PATCH(
       );
     }
 
-    // If setting a label, verify it exists in the clinic's custom labels
-    let labelName: string | null = null;
-    if (customLabelId) {
-      const labelRef = adminDb
-        .collection("clinics")
-        .doc(clinicId)
-        .collection("customLabels")
-        .doc(customLabelId);
+    const convData = convSnap.data() || {};
+    const previousManualConverted =
+      convData.manualConversionStatus === "converted_to_appointment" ||
+      convData.customLabel === "converted_to_appointment" ||
+      convData.customLabelId === "converted_to_appointment" ||
+      convData.customLabelId === "appointment_converted";
 
-      const labelSnap = await labelRef.get();
-      if (!labelSnap.exists) {
-        return NextResponse.json(
-          { error: "Custom label not found" },
-          { status: 404 }
-        );
+    const isMarkingConverted =
+      customLabelId === "converted_to_appointment" ||
+      customLabelId === "appointment_converted";
+
+    let finalLabelId: string | null = null;
+    let finalLabelName: string | null = null;
+
+    if (customLabelId) {
+      if (isMarkingConverted) {
+        finalLabelId = "converted_to_appointment";
+        finalLabelName = "Randevuya Dönüştü";
+      } else {
+        // Check if exists in clinic customLabels collection
+        const labelRef = adminDb
+          .collection("clinics")
+          .doc(clinicId)
+          .collection("customLabels")
+          .doc(customLabelId);
+
+        const labelSnap = await labelRef.get();
+        if (labelSnap.exists) {
+          const labelData = labelSnap.data();
+          finalLabelId = customLabelId;
+          finalLabelName = labelData?.labelTr || labelData?.labelEn || customLabelId;
+        } else {
+          finalLabelId = customLabelId;
+          finalLabelName = customLabelId;
+        }
       }
-      const labelData = labelSnap.data();
-      labelName = labelData?.labelTr || labelData?.labelEn || customLabelId;
     }
 
-    // Update ONLY custom label fields — NEVER touch status
+    const now = new Date().toISOString();
+
+    // Update ONLY custom label and manual conversion fields — NEVER touch system status or appointments
     const updatePayload: Record<string, any> = {
-      customLabelId: customLabelId || null,
-      customLabelName: labelName,
+      customLabelId: finalLabelId,
+      customLabelName: finalLabelName,
+      customLabel: isMarkingConverted ? "converted_to_appointment" : (finalLabelId || null),
+      manualConversionStatus: isMarkingConverted ? "converted_to_appointment" : null,
       customLabelUpdatedBy: auth.uid,
-      customLabelUpdatedAt: new Date().toISOString(),
+      customLabelUpdatedAt: now,
+      updatedAt: now,
     };
+
+    if (isMarkingConverted) {
+      updatePayload.manualConversionMarkedAt = now;
+      updatePayload.manualConversionMarkedBy = auth.uid;
+    } else if (previousManualConverted) {
+      updatePayload.manualConversionRemovedAt = now;
+      updatePayload.manualConversionRemovedBy = auth.uid;
+      updatePayload.manualConversionMarkedAt = null;
+      updatePayload.manualConversionMarkedBy = null;
+    }
 
     await convRef.update(updatePayload);
 
     return NextResponse.json({
       ok: true,
-      customLabelId: customLabelId || null,
-      customLabelName: labelName,
+      customLabelId: finalLabelId,
+      customLabelName: finalLabelName,
+      manualConversionStatus: isMarkingConverted ? "converted_to_appointment" : null,
+      updatedAt: now,
     });
   } catch (err: any) {
     if (err instanceof AuthError) {

@@ -2,8 +2,8 @@
  * conversationStatusResolver.ts
  *
  * Single source of truth for canonical conversation system statuses,
- * backward-compatible status normalization, localization mappings,
- * badge variants, and CSV export formatting.
+ * backward-compatible status normalization, manual conversion detection,
+ * localization mappings, badge variants, and CSV export formatting.
  */
 
 export type CanonicalConversationStatus =
@@ -17,6 +17,10 @@ export interface ConversationStatusContext {
   convertedToAppointment?: boolean;
   appointmentId?: string | null;
   appointmentStatus?: string | null;
+  manualConversionStatus?: string | null;
+  customLabel?: string | null;
+  customLabelId?: string | null;
+  customLabelName?: string | null;
 }
 
 export const CANONICAL_CONVERSATION_STATUSES: CanonicalConversationStatus[] = [
@@ -80,6 +84,62 @@ export const CONVERSATION_STATUS_VARIANTS: Record<
 };
 
 /**
+ * Checks if a conversation has been manually marked as converted via custom label.
+ */
+export function isConversationManuallyConverted(log: Partial<ConversationStatusContext> | any): boolean {
+  if (!log) return false;
+  if (log.manualConversionStatus === "converted_to_appointment") return true;
+  if (log.customLabel === "converted_to_appointment") return true;
+  if (log.customLabelId === "converted_to_appointment" || log.customLabelId === "appointment_converted") return true;
+  if (
+    log.customLabelName === "Randevuya Dönüştü" ||
+    log.customLabelName === "Converted to Appointment" ||
+    log.customLabelName === "Appointment Converted"
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Checks if a conversation was converted automatically by chatbot (real appointment created).
+ */
+export function isConversationSystemConverted(log: Partial<ConversationStatusContext> | any): boolean {
+  if (!log) return false;
+  if (typeof log.appointmentId === "string" && log.appointmentId.trim().length > 0) return true;
+  if (log.convertedToAppointment === true) return true;
+  if (log.appointmentStatus === "created") return true;
+  const s = String(log.status || "").toLowerCase();
+  if (s === "appointment" || s === "converted_to_appointment" || s === "logs.status.appointment") return true;
+  return false;
+}
+
+/**
+ * Evaluates whether a conversation is converted (either automatically by chatbot OR manually marked).
+ * Guaranteed to return true once, preventing any double-counting in analytics.
+ */
+export function isConversationConverted(log: Partial<ConversationStatusContext> | any): boolean {
+  return isConversationSystemConverted(log) || isConversationManuallyConverted(log);
+}
+
+/**
+ * Returns the human-readable conversion source for display and CSV export.
+ * Possible values:
+ * - TR: "Chatbot", "Manuel", "Chatbot + Manuel", "Dönüşmedi"
+ * - EN: "Chatbot", "Manual", "Chatbot + Manual", "Not Converted"
+ */
+export function getConversionSource(log: Partial<ConversationStatusContext> | any, language: string = "tr"): string {
+  const isEn = language === "en";
+  const sys = isConversationSystemConverted(log);
+  const man = isConversationManuallyConverted(log);
+
+  if (sys && man) return isEn ? "Chatbot + Manual" : "Chatbot + Manuel";
+  if (sys) return "Chatbot";
+  if (man) return isEn ? "Manual" : "Manuel";
+  return isEn ? "Not Converted" : "Dönüşmedi";
+}
+
+/**
  * Normalizes any legacy or canonical status string to a CanonicalConversationStatus.
  *
  * Supported legacy inputs include:
@@ -96,7 +156,7 @@ export function normalizeConversationStatus(
   rawStatus: string | undefined | null,
   context?: ConversationStatusContext
 ): CanonicalConversationStatus {
-  // If an appointment was created from this conversation
+  // If an appointment was created from this conversation (system conversion)
   if (
     context?.convertedToAppointment === true ||
     (typeof context?.appointmentId === "string" && context.appointmentId.trim().length > 0) ||
@@ -223,6 +283,8 @@ export interface CSVLogRecord {
   appointmentId?: string | null;
   customLabelId?: string | null;
   customLabelName?: string | null;
+  manualConversionStatus?: string | null;
+  customLabel?: string | null;
   totalMessages?: number;
   createdAt?: string | Date;
   lastMessagePreview?: string;
@@ -232,6 +294,7 @@ export interface CSVLogRecord {
  * Generates and triggers download of conversation logs in CSV format with separated columns:
  * - Görüşme Durumu / Conversation Status
  * - Özel Etiket / Custom Label
+ * - Dönüşüm Kaynağı / Conversion Source
  * - Randevuya Dönüştü / Converted to Appointment
  * - Randevu ID / Appointment ID
  */
@@ -249,6 +312,7 @@ export function exportConversationLogsToCSV(
     isEn ? "Language" : "Dil",
     isEn ? "Conversation Status" : "Görüşme Durumu",
     isEn ? "Custom Label" : "Özel Etiket",
+    isEn ? "Conversion Source" : "Dönüşüm Kaynağı",
     isEn ? "Converted to Appointment" : "Randevuya Dönüştü",
     isEn ? "Appointment ID" : "Randevu ID",
     isEn ? "Total Messages" : "Toplam Mesaj",
@@ -262,17 +326,17 @@ export function exportConversationLogsToCSV(
       appointmentId: log.appointmentId,
     });
     const statusLabel = getConversationStatusLabel(normalizedStatus, isEn ? "en" : "tr");
-    const customLabel = log.customLabelName || (isEn ? "No Label" : "Etiket Yok");
-    const isConverted =
-      log.convertedToAppointment ||
-      !!log.appointmentId ||
-      normalizedStatus === "converted_to_appointment"
-        ? isEn
-          ? "Yes"
-          : "Evet"
-        : isEn
-        ? "No"
-        : "Hayır";
+    
+    // Custom label: if manually converted, localized "Randevuya Dönüştü" / "Converted to Appointment"
+    let customLabel = log.customLabelName;
+    if (isConversationManuallyConverted(log)) {
+      customLabel = isEn ? "Converted to Appointment" : "Randevuya Dönüştü";
+    } else if (!customLabel) {
+      customLabel = isEn ? "No Label" : "Etiket Yok";
+    }
+
+    const conversionSource = getConversionSource(log, isEn ? "en" : "tr");
+    const isConverted = isConversationConverted(log) ? (isEn ? "Yes" : "Evet") : (isEn ? "No" : "Hayır");
     const appointmentId = log.appointmentId || "-";
 
     let dateFormatted = "-";
@@ -292,6 +356,7 @@ export function exportConversationLogsToCSV(
       escapeCSV(log.language?.toUpperCase() || "-"),
       escapeCSV(statusLabel),
       escapeCSV(customLabel),
+      escapeCSV(conversionSource),
       escapeCSV(isConverted),
       escapeCSV(appointmentId),
       escapeCSV(log.totalMessages || 0),

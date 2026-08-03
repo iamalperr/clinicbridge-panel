@@ -29,9 +29,15 @@ export interface ConversationLog {
   trainingTopic?: string;
   convertedToAppointment: boolean;
   appointmentId?: string;
-  // Custom label fields
+  // Custom label & manual conversion fields
   customLabelId?: string | null;
   customLabelName?: string | null;
+  customLabel?: string | null;
+  manualConversionStatus?: "converted_to_appointment" | null;
+  manualConversionMarkedAt?: string | null;
+  manualConversionMarkedBy?: string | null;
+  manualConversionRemovedAt?: string | null;
+  manualConversionRemovedBy?: string | null;
 }
 
 export interface ConversationMessage {

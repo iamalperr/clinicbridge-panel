@@ -18,6 +18,8 @@ import type { Clinic, Plan, UserProfile } from "../types";
 import { isSuperAdmin } from "../types";
 import type { UserActivityStatus } from "../types/analytics";
 
+import { isConversationConverted } from "./conversations/conversationStatusResolver";
+
 // ─── Conversation Analytics Types ───────────────────────────────────────────
 
 export type DateRange = "today" | "7d" | "30d" | "month" | "all";
@@ -33,6 +35,11 @@ export interface ConversationLogDoc {
   language?: string;
   needsTraining?: boolean;
   convertedToAppointment?: boolean;
+  appointmentId?: string | null;
+  manualConversionStatus?: string | null;
+  customLabel?: string | null;
+  customLabelId?: string | null;
+  customLabelName?: string | null;
 }
 
 export interface ClinicAnalytics {
@@ -204,8 +211,8 @@ export function calculateClinicMetrics(
     (s, l) => s + (typeof l.totalMessages === "number" ? l.totalMessages : 0),
     0
   );
-  const resolvedCount = filtered.filter((l) => RESOLVED_STATUSES.has(l.status)).length;
-  const appointments = filtered.filter((l) => l.status === "appointment" || l.status === "appointment_converted").length;
+  const resolvedCount = filtered.filter((l) => RESOLVED_STATUSES.has(l.status) || isConversationConverted(l)).length;
+  const appointments = filtered.filter((l) => isConversationConverted(l)).length;
   const liveSupport = filtered.filter((l) => l.status === "liveSupport").length;
   const unanswered = filtered.filter((l) => l.status === "unanswered").length;
   const needsTraining = filtered.filter((l) => l.needsTraining).length;

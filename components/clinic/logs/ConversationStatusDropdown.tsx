@@ -10,13 +10,14 @@ import {
   normalizeConversationStatus,
   getConversationStatusLabel,
   getConversationStatusVariant,
+  isConversationManuallyConverted,
 } from "@/lib/services/conversations/conversationStatusResolver";
 import type { ConversationLog, CustomLabel } from "./types";
 
 interface Props {
   log: ConversationLog;
   clinicId: string;
-  customLabels: CustomLabel[];
+  customLabels?: CustomLabel[];
   canEdit: boolean;
   onLabelUpdated: (logId: string, labelId: string | null, labelName: string | null) => void;
 }
@@ -24,7 +25,7 @@ interface Props {
 export default function ConversationStatusDropdown({
   log,
   clinicId,
-  customLabels,
+  customLabels = [],
   canEdit,
   onLabelUpdated,
 }: Props) {
@@ -42,6 +43,8 @@ export default function ConversationStatusDropdown({
   });
   const systemLabel = getConversationStatusLabel(normalizedStatus, language);
   const systemVariant = getConversationStatusVariant(normalizedStatus);
+
+  const isManuallyConverted = isConversationManuallyConverted(log);
 
   // Close dropdown on click outside or ESC
   useEffect(() => {
@@ -82,8 +85,14 @@ export default function ConversationStatusDropdown({
 
   const handleSelectLabel = useCallback(
     async (labelId: string | null) => {
-      // Don't re-select same label
-      if ((labelId || null) === (log.customLabelId || null)) {
+      const isSelectingConverted = labelId === "converted_to_appointment";
+      const currentlyConverted = isConversationManuallyConverted(log);
+
+      // Don't re-select same state
+      if (
+        (isSelectingConverted && currentlyConverted) ||
+        (!labelId && !currentlyConverted && !log.customLabelId)
+      ) {
         setIsOpen(false);
         return;
       }
@@ -94,17 +103,15 @@ export default function ConversationStatusDropdown({
       const previousLabelId = log.customLabelId;
       const previousLabelName = log.customLabelName;
 
-      // Optimistic update
-      const selectedLabel = labelId
-        ? customLabels.find((l) => l.id === labelId)
-        : null;
-      const newLabelName = selectedLabel
+      const newLabelId = isSelectingConverted ? "converted_to_appointment" : null;
+      const newLabelName = isSelectingConverted
         ? language === "en"
-          ? selectedLabel.labelEn
-          : selectedLabel.labelTr
+          ? "Converted to Appointment"
+          : "Randevuya Dönüştü"
         : null;
 
-      onLabelUpdated(log.id, labelId, newLabelName);
+      // Optimistic UI update
+      onLabelUpdated(log.id, newLabelId, newLabelName);
 
       try {
         const token = await getToken();
@@ -118,7 +125,7 @@ export default function ConversationStatusDropdown({
               "Content-Type": "application/json",
               Authorization: `Bearer ${token}`,
             },
-            body: JSON.stringify({ customLabelId: labelId }),
+            body: JSON.stringify({ customLabelId: newLabelId }),
           }
         );
 
@@ -141,7 +148,7 @@ export default function ConversationStatusDropdown({
         setLoading(false);
       }
     },
-    [log, clinicId, customLabels, language, getToken, onLabelUpdated]
+    [log, clinicId, language, getToken, onLabelUpdated]
   );
 
   return (
@@ -171,7 +178,7 @@ export default function ConversationStatusDropdown({
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-start" }}>
           <Badge variant={systemVariant} label={systemLabel} />
-          {log.customLabelId && log.customLabelName && (
+          {isManuallyConverted && (
             <span
               style={{
                 display: "inline-flex",
@@ -187,7 +194,7 @@ export default function ConversationStatusDropdown({
               }}
             >
               <Tag size={10} />
-              {log.customLabelName}
+              {language === "en" ? "Converted to Appointment" : "Randevuya Dönüştü"}
             </span>
           )}
         </div>
@@ -226,7 +233,7 @@ export default function ConversationStatusDropdown({
             border: `1px solid ${UI_COLORS.border}`,
             borderRadius: 10,
             boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-            minWidth: 220,
+            minWidth: 230,
             overflow: "hidden",
           }}
         >
@@ -261,7 +268,7 @@ export default function ConversationStatusDropdown({
             </div>
           </div>
 
-          {/* Section 2: Custom Labels (Selectable) */}
+          {/* Section 2: Custom Labels (Selectable) - ONLY "Etiket Yok" and "Randevuya Dönüştü" */}
           <div style={{ padding: "8px 6px" }}>
             <div
               style={{
@@ -292,7 +299,7 @@ export default function ConversationStatusDropdown({
                 padding: "7px 8px",
                 border: "none",
                 borderRadius: 6,
-                background: !log.customLabelId ? "var(--bg-app)" : "transparent",
+                background: !isManuallyConverted ? "var(--bg-app)" : "transparent",
                 cursor: loading ? "wait" : "pointer",
                 fontSize: 12.5,
                 fontWeight: 500,
@@ -301,11 +308,11 @@ export default function ConversationStatusDropdown({
                 textAlign: "left",
               }}
               onMouseEnter={(e) => {
-                if (!log.customLabelId) return;
+                if (!isManuallyConverted) return;
                 e.currentTarget.style.background = "var(--bg-app)";
               }}
               onMouseLeave={(e) => {
-                if (!log.customLabelId) return;
+                if (!isManuallyConverted) return;
                 e.currentTarget.style.background = "transparent";
               }}
             >
@@ -314,84 +321,76 @@ export default function ConversationStatusDropdown({
                   width: 16,
                   height: 16,
                   borderRadius: "50%",
-                  border: `2px solid ${!log.customLabelId ? UI_COLORS.brand : UI_COLORS.border}`,
+                  border: `2px solid ${!isManuallyConverted ? UI_COLORS.brand : UI_COLORS.border}`,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   flexShrink: 0,
                 }}
               >
-                {!log.customLabelId && (
+                {!isManuallyConverted && (
                   <Check size={10} color={UI_COLORS.brand} strokeWidth={3} />
                 )}
               </span>
               {t("common.noLabel") || (language === "en" ? "No Label" : "Etiket Yok")}
             </button>
 
-            {/* Custom label options */}
-            {customLabels.map((label) => {
-              const isSelected = log.customLabelId === label.id;
-              const displayName = language === "en" ? label.labelEn : label.labelTr;
-
-              return (
-                <button
-                  key={label.id}
-                  onClick={() => handleSelectLabel(label.id)}
-                  disabled={loading}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    width: "100%",
-                    padding: "7px 8px",
-                    border: "none",
-                    borderRadius: 6,
-                    background: isSelected ? "var(--bg-app)" : "transparent",
-                    cursor: loading ? "wait" : "pointer",
-                    fontSize: 12.5,
-                    fontWeight: 500,
-                    color: UI_COLORS.textPrimary,
-                    transition: UI_COMMON_STYLES.transition,
-                    textAlign: "left",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (isSelected) return;
-                    e.currentTarget.style.background = "var(--bg-app)";
-                  }}
-                  onMouseLeave={(e) => {
-                    if (isSelected) return;
-                    e.currentTarget.style.background = "transparent";
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 16,
-                      height: 16,
-                      borderRadius: "50%",
-                      border: `2px solid ${isSelected ? label.color : UI_COLORS.border}`,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {isSelected && (
-                      <Check size={10} color={label.color} strokeWidth={3} />
-                    )}
-                  </span>
-                  <span
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: "50%",
-                      background: label.color,
-                      flexShrink: 0,
-                    }}
-                  />
-                  {displayName}
-                </button>
-              );
-            })}
+            {/* "Randevuya Dönüştü" manual conversion option */}
+            <button
+              onClick={() => handleSelectLabel("converted_to_appointment")}
+              disabled={loading}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                width: "100%",
+                padding: "7px 8px",
+                border: "none",
+                borderRadius: 6,
+                background: isManuallyConverted ? "var(--bg-app)" : "transparent",
+                cursor: loading ? "wait" : "pointer",
+                fontSize: 12.5,
+                fontWeight: 500,
+                color: UI_COLORS.textPrimary,
+                transition: UI_COMMON_STYLES.transition,
+                textAlign: "left",
+              }}
+              onMouseEnter={(e) => {
+                if (isManuallyConverted) return;
+                e.currentTarget.style.background = "var(--bg-app)";
+              }}
+              onMouseLeave={(e) => {
+                if (isManuallyConverted) return;
+                e.currentTarget.style.background = "transparent";
+              }}
+            >
+              <span
+                style={{
+                  width: 16,
+                  height: 16,
+                  borderRadius: "50%",
+                  border: `2px solid ${isManuallyConverted ? "#8b5cf6" : UI_COLORS.border}`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                {isManuallyConverted && (
+                  <Check size={10} color="#8b5cf6" strokeWidth={3} />
+                )}
+              </span>
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: "#8b5cf6",
+                  flexShrink: 0,
+                }}
+              />
+              {language === "en" ? "Converted to Appointment" : "Randevuya Dönüştü"}
+            </button>
           </div>
 
           {/* Error message */}

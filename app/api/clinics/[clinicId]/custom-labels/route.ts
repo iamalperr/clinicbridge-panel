@@ -8,9 +8,9 @@ import { requireClinicAccess, AuthError } from "@/lib/services/apiAuth";
  */
 const GLOBAL_PRESETS = [
   {
-    id: "appointment_converted",
+    id: "converted_to_appointment",
     labelTr: "Randevuya Dönüştü",
-    labelEn: "Appointment Converted",
+    labelEn: "Converted to Appointment",
     color: "#8b5cf6",
     isPreset: true,
     order: 1,

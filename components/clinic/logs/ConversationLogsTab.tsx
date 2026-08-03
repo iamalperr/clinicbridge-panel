@@ -16,6 +16,8 @@ import ConversationLogDetailModal from "./ConversationLogDetailModal";
 import ConversationStatusDropdown from "./ConversationStatusDropdown";
 import {
   normalizeConversationStatus,
+  isConversationConverted,
+  isConversationManuallyConverted,
   exportConversationLogsToCSV,
 } from "@/lib/services/conversations/conversationStatusResolver";
 
@@ -92,19 +94,17 @@ export default function ConversationLogsTab({ clinicId }: Props) {
   // Optimistic label update handler — updates local state immediately
   const handleLabelUpdated = useCallback(
     (logId: string, labelId: string | null, labelName: string | null) => {
-      setLogs((prev) =>
-        prev.map((l) =>
-          l.id === logId
-            ? { ...l, customLabelId: labelId, customLabelName: labelName }
-            : l
-        )
-      );
-      // Also update selectedLog if open
-      setSelectedLog((prev) =>
-        prev && prev.id === logId
-          ? { ...prev, customLabelId: labelId, customLabelName: labelName }
-          : prev
-      );
+      const isConverted = labelId === "converted_to_appointment" || labelId === "appointment_converted";
+      const updater = (prev: ConversationLog): ConversationLog => ({
+        ...prev,
+        customLabelId: labelId,
+        customLabelName: labelName,
+        customLabel: isConverted ? "converted_to_appointment" : labelId,
+        manualConversionStatus: isConverted ? ("converted_to_appointment" as const) : null,
+      });
+
+      setLogs((prev) => prev.map((l) => (l.id === logId ? updater(l) : l)));
+      setSelectedLog((prev) => (prev && prev.id === logId ? updater(prev) : prev));
     },
     []
   );
@@ -115,19 +115,25 @@ export default function ConversationLogsTab({ clinicId }: Props) {
       if (statusFilter !== "all") {
         if (statusFilter === "custom_labeled") {
           // Show only conversations with any custom label
-          if (!log.customLabelId) return false;
+          if (!isConversationManuallyConverted(log) && !log.customLabelId) return false;
         } else if (statusFilter.startsWith("label:")) {
           // Filter by specific custom label
           const labelId = statusFilter.replace("label:", "");
-          if (log.customLabelId !== labelId) return false;
+          const isTargetConverted = labelId === "converted_to_appointment" || labelId === "appointment_converted";
+          if (isTargetConverted) {
+            if (!isConversationManuallyConverted(log)) return false;
+          } else {
+            if (log.customLabelId !== labelId) return false;
+          }
+        } else if (statusFilter === "appointment") {
+          if (!isConversationConverted(log)) return false;
         } else {
           // System status filter using canonical resolver normalization
           const norm = normalizeConversationStatus(log.status, {
             convertedToAppointment: log.convertedToAppointment,
             appointmentId: log.appointmentId,
           });
-          if (statusFilter === "answered" && norm !== "successfully_answered") return false;
-          if (statusFilter === "appointment" && norm !== "converted_to_appointment") return false;
+          if (statusFilter === "answered" && (norm !== "successfully_answered" || isConversationConverted(log))) return false;
           if (statusFilter === "collecting" && norm !== "collecting_appointment_information") return false;
           if (statusFilter === "liveSupport" && norm !== "live_support_required") return false;
           if (statusFilter === "unanswered" && norm !== "unanswered") return false;
@@ -171,11 +177,16 @@ export default function ConversationLogsTab({ clinicId }: Props) {
         convertedToAppointment: l.convertedToAppointment,
         appointmentId: l.appointmentId,
       });
+      const isConv = isConversationConverted(l);
+
+      if (isConv) {
+        appointmentsCount++;
+      }
+
       if (s === "unanswered") unansweredCount++;
       else if (s === "live_support_required") liveSupportCount++;
-      else if (s === "converted_to_appointment") appointmentsCount++;
       else if (s === "collecting_appointment_information") collectingCount++;
-      else if (s === "successfully_answered") answeredCount++;
+      else if (s === "successfully_answered" && !isConv) answeredCount++;
     });
 
     return {

@@ -8,7 +8,10 @@
 
 import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { normalizeConversationStatus } from "./conversations/conversationStatusResolver";
+import {
+  normalizeConversationStatus,
+  isConversationConverted,
+} from "./conversations/conversationStatusResolver";
 
 /** Hesaplanan metrikler */
 export interface ClinicMetrics {
@@ -90,11 +93,13 @@ export function subscribeToClinicMetrics(
         convertedToAppointment: d.convertedToAppointment,
         appointmentId: d.appointmentId,
       });
+      const isConv = isConversationConverted(d);
 
       if (
         normalized === "successfully_answered" ||
         normalized === "converted_to_appointment" ||
-        normalized === "collecting_appointment_information"
+        normalized === "collecting_appointment_information" ||
+        isConv
       ) {
         resolvedCount++;
       }
@@ -103,7 +108,9 @@ export function subscribeToClinicMetrics(
         unanswered++;
       } else if (normalized === "live_support_required") {
         liveSupport++;
-      } else if (normalized === "converted_to_appointment") {
+      }
+
+      if (isConv) {
         appointments++;
       }
     });
