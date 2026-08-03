@@ -885,10 +885,11 @@ export interface IntakeGroupStatus {
 }
 
 export function evaluateFeelinHealthyIntake(context: any): IntakeGroupStatus {
-  // Group 1 (Personal): patientName (or firstName), patientAge, patientGender
-  const hasName = Boolean(context.patientName || context.firstName);
-  const hasAge = context.patientAge !== undefined && context.patientAge !== null && Number(context.patientAge) > 0;
-  const hasGender = Boolean(context.patientGender);
+  // Group 1 (Personal): patientName (or firstName & lastName), patientAge (or age), patientGender (or gender)
+  const hasName = Boolean(context.patientName || context.fullName || (context.firstName && context.lastName));
+  const hasAge = (context.patientAge !== undefined && context.patientAge !== null && Number(context.patientAge) > 0) ||
+                 (context.age !== undefined && context.age !== null && Number(context.age) > 0);
+  const hasGender = Boolean(context.patientGender || context.gender);
   const group1Complete = hasName && hasAge && hasGender;
 
   const missingGroup1: string[] = [];

@@ -754,15 +754,21 @@ export class SlotExtractor {
       };
     }
 
-    // Pattern 1b: Comma or delimiter separated multi-field input like "Ahmet Yılmaz, 35 yaşındayım, erkeğim" or "Caner Kurt, 32, erkek"
-    const segment = raw.split(/[,;\n]/)[0].trim();
-    if (segment && segment !== raw) {
-      const segParts = segment.split(/\s+/);
-      if (segParts.length >= 2 && segParts.length <= 3 && /^[A-Za-zÇĞİÖŞÜçğıöşü\s]+$/.test(segment)) {
-        const badWords = ["randevu", "fiyat", "tarih", "saat", "doktor", "klinik", "bilgi", "evet", "hayır", "tamam", "merhaba", "selam"];
+    // Pattern 1b: Comma, hyphen or delimiter separated multi-field input like "Alper Özgül - 27 - Erkek" or "Alper Özgül, 27 yaşındayım, erkeğim."
+    const segments = raw.split(/[-–—,;\/\n]+/);
+    for (const seg of segments) {
+      const trimmedSeg = seg.trim();
+      if (!trimmedSeg) continue;
+      const segParts = trimmedSeg.split(/\s+/);
+      if (segParts.length >= 2 && segParts.length <= 4 && /^[A-Za-zÇĞİÖŞÜçğıöşü\s]+$/.test(trimmedSeg) && trimmedSeg.length <= 40) {
+        const badWords = [
+          "randevu", "fiyat", "tarih", "saat", "doktor", "klinik", "bilgi", "evet", "hayır", "hayir",
+          "tamam", "merhaba", "selam", "erkek", "kadın", "kadin", "erkeğim", "erkeim", "kadınım", "kadinim",
+          "male", "female", "bayan", "bay", "yaşındayım", "yasindayim", "yaşında", "yasinda"
+        ];
         if (!segParts.some(p => badWords.includes(p.toLowerCase()))) {
           return {
-            fullName: segment,
+            fullName: trimmedSeg,
             firstName: segParts[0],
             lastName: segParts.slice(1).join(" ")
           };
@@ -815,11 +821,12 @@ export class SlotExtractor {
       if (val >= 1 && val <= 115) return val;
     }
 
-    // Pattern 3: Standalone number when expectedSlot is age
-    if (expectedSlot === "patientAge" || expectedSlot === "age") {
-      const numMatch = raw.trim().match(/^(\d{1,3})$/);
-      if (numMatch) {
-        const val = parseInt(numMatch[1], 10);
+    // Pattern 3: Standalone number or number token in multi-field string
+    const tokens = raw.split(/[\s\-–—,;\/]+/);
+    for (const tok of tokens) {
+      const cleanTok = tok.trim();
+      if (/^\d{1,3}$/.test(cleanTok)) {
+        const val = parseInt(cleanTok, 10);
         if (val >= 1 && val <= 115) return val;
       }
     }
@@ -831,11 +838,11 @@ export class SlotExtractor {
    * Parse patient gender ("kadın" | "erkek" | "belirtmek istemiyorum" | "female" | "male")
    */
   public static parseGender(lower: string, expectedSlot?: string): string | null {
-    if (/\b(kadın|kadin|bayan|female|woman)\b/i.test(lower)) {
-      return "Kadın";
+    if (/\b(kadın|kadin|bayan|female|woman|kadınım|kadinim)\b/i.test(lower) || /\b(kadın|kadin|female)\b/i.test(lower)) {
+      return "female";
     }
-    if (/\b(erkek|bay|male|man)\b/i.test(lower)) {
-      return "Erkek";
+    if (/\b(erkek|bay|male|man|erkeğim|erkeim|erkeğım)\b/i.test(lower) || /\b(erkek|male)\b/i.test(lower)) {
+      return "male";
     }
     if (/\b(belirtmek istemiyorum|fark etmez|prefer not to say|other|unspecified)\b/i.test(lower)) {
       return "Belirtmek istemiyorum";
