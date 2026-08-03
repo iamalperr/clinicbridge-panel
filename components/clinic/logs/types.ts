@@ -1,4 +1,7 @@
-export type LogStatus = "answered" | "liveSupport" | "unanswered" | "appointment" | "collecting" | "open";
+import type { CanonicalConversationStatus } from "@/lib/services/conversations/conversationStatusResolver";
+
+export type { CanonicalConversationStatus };
+export type LogStatus = CanonicalConversationStatus | "answered" | "liveSupport" | "unanswered" | "appointment" | "collecting" | "open" | string;
 
 export interface CustomLabel {
   id: string;

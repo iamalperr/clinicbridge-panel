@@ -8,15 +8,13 @@
 
 import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-
-/** Firestore'daki conversationLogs dokümanının status alanı */
-type LogStatus = "answered" | "liveSupport" | "unanswered" | "appointment" | string;
+import { normalizeConversationStatus } from "./conversations/conversationStatusResolver";
 
 /** Hesaplanan metrikler */
 export interface ClinicMetrics {
   totalConversations: number;
   totalMessages: number;
-  /** Çözülmüş görüşme sayısı (answered + appointment) */
+  /** Çözülmüş görüşme sayısı (successfully_answered + converted_to_appointment + collecting_appointment_information) */
   resolvedCount: number;
   /** 0-100 arası oran; veri yoksa null */
   resolvedRate: number | null;
@@ -33,12 +31,6 @@ export interface ClinicMetrics {
   appointmentsCompleted: number;
   conversionRate: number | null;
 }
-
-/**
- * "Çözülmüş" sayılan status'lar.
- * answered + appointment → başarılı etkileşim olarak kabul edilir.
- */
-const RESOLVED_STATUSES = new Set<LogStatus>(["answered", "appointment"]);
 
 /** Boş/başlangıç metrik değeri */
 export const EMPTY_METRICS: ClinicMetrics = {
@@ -88,11 +80,33 @@ export function subscribeToClinicMetrics(
       0
     );
 
-    const resolvedCount = logsData.filter((d) => RESOLVED_STATUSES.has(d.status)).length;
-    const unanswered = logsData.filter((d) => d.status === "unanswered").length;
-    const liveSupport = logsData.filter((d) => d.status === "liveSupport").length;
-    // Keep legacy conversation-level appointment metric for logs tab fallback
-    const appointments = logsData.filter((d) => d.status === "appointment").length;
+    let resolvedCount = 0;
+    let unanswered = 0;
+    let liveSupport = 0;
+    let appointments = 0;
+
+    logsData.forEach((d) => {
+      const normalized = normalizeConversationStatus(d.status, {
+        convertedToAppointment: d.convertedToAppointment,
+        appointmentId: d.appointmentId,
+      });
+
+      if (
+        normalized === "successfully_answered" ||
+        normalized === "converted_to_appointment" ||
+        normalized === "collecting_appointment_information"
+      ) {
+        resolvedCount++;
+      }
+
+      if (normalized === "unanswered") {
+        unanswered++;
+      } else if (normalized === "live_support_required") {
+        liveSupport++;
+      } else if (normalized === "converted_to_appointment") {
+        appointments++;
+      }
+    });
 
     const resolvedRate =
       totalConversations > 0
@@ -100,18 +114,32 @@ export function subscribeToClinicMetrics(
         : null;
 
     // Funnel metrics from appointments collection
-    // Filter only AI-created appointments for accurate funnel if needed, 
-    // or assume all if clinic uses AI chatbot heavily. Let's count all or AI specific:
-    const aiAppointments = appointmentsData.filter(d => d.source === "ai_chatbot" || d.createdBy === "ai_assistant" || d.source === "ai_agent" || !d.source);
+    const aiAppointments = appointmentsData.filter(
+      (d) =>
+        d.source === "ai_chatbot" ||
+        d.createdBy === "ai_assistant" ||
+        d.source === "ai_agent" ||
+        !d.source
+    );
 
     const appointmentRequestsCreated = aiAppointments.length;
-    const appointmentsPendingReview = aiAppointments.filter(d => d.status === "PENDING_REVIEW").length;
-    const appointmentsApproved = aiAppointments.filter(d => d.status === "APPROVED").length;
-    const appointmentsRejected = aiAppointments.filter(d => d.status === "REJECTED").length;
-    const appointmentsCompleted = aiAppointments.filter(d => d.status === "CONFIRMED").length;
+    const appointmentsPendingReview = aiAppointments.filter(
+      (d) => d.status === "PENDING_REVIEW"
+    ).length;
+    const appointmentsApproved = aiAppointments.filter(
+      (d) => d.status === "APPROVED"
+    ).length;
+    const appointmentsRejected = aiAppointments.filter(
+      (d) => d.status === "REJECTED"
+    ).length;
+    const appointmentsCompleted = aiAppointments.filter(
+      (d) => d.status === "CONFIRMED"
+    ).length;
     
     // Check if patient was notified. This relies on patientNotificationSent field.
-    const appointmentsPatientNotified = aiAppointments.filter(d => d.patientNotificationSent === true).length;
+    const appointmentsPatientNotified = aiAppointments.filter(
+      (d) => d.patientNotificationSent === true
+    ).length;
 
     const conversionRate =
       totalConversations > 0
@@ -132,7 +160,7 @@ export function subscribeToClinicMetrics(
       appointmentsRejected,
       appointmentsPatientNotified,
       appointmentsCompleted,
-      conversionRate
+      conversionRate,
     });
   };
 

@@ -9,6 +9,12 @@
     "portal": "Portal"
   },
   "common": {
+    "all": "All",
+    "allTimes": "All Time",
+    "noLabel": "No Label",
+    "systemStatus": "System Status",
+    "customLabel": "Custom Label",
+    "exportCsv": "Export CSV",
     "addClinic": "Add Clinic",
     "save": "Save",
     "cancel": "Cancel",
@@ -859,14 +865,18 @@
     "subtitle": "Monitor patient conversations, assistant performance, and topics that require additional training.",
     "metrics": {
       "total": "Total Conversations",
-      "unanswered": "Unanswered Questions",
+      "unanswered": "Unanswered",
       "liveSupport": "Live Support Requests",
-      "appointments": "Converted to Appointments"
+      "appointments": "Converted to Appointments",
+      "collecting": "Collecting Info",
+      "answered": "Answered Successfully"
     },
     "searchPlaceholder": "Search patient name, message or topic...",
     "filterDate": "Date",
-    "filterStatus": "Status",
+    "filterStatus": "Conversation Status",
+    "filterCustomLabel": "Custom Label",
     "filterLang": "Language",
+    "exportCsv": "Export CSV",
     "date": {
       "today": "Today",
       "week": "Last 7 Days",
@@ -876,16 +886,28 @@
       "patient": "Patient",
       "preview": "Conversation Preview",
       "date": "Date",
-      "status": "Status"
+      "status": "Conversation Status",
+      "customLabel": "Custom Label"
     },
     "messages": "messages",
     "trainingNeeded": "Training needed",
     "anonymous": "Anonymous Visitor",
     "status": {
-      "appointment": "Converted to Appointment",
+      "successfully_answered": "Successfully Answered",
+      "collecting_appointment_information": "Collecting Appointment Information",
+      "converted_to_appointment": "Converted to Appointment",
+      "live_support_required": "Live Support Required",
       "unanswered": "Unanswered",
+      "answered": "Successfully Answered",
+      "collecting": "Collecting Appointment Information",
+      "appointment": "Converted to Appointment",
       "liveSupport": "Live Support Required",
-      "answered": "Answered Successfully"
+      "open": "Open"
+    },
+    "customLabels": {
+      "all": "All",
+      "noLabel": "No Label",
+      "header": "── Custom Labels ──"
     },
     "emptyTitle": "No conversations yet",
     "emptyDesc": "Conversations will appear here once patients start chatting on the widget.",

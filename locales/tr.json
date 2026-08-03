@@ -9,6 +9,12 @@
     "portal": "Portal"
   },
   "common": {
+    "all": "Tümü",
+    "allTimes": "Tüm Zamanlar",
+    "noLabel": "Etiket Yok",
+    "systemStatus": "Sistem Durumu",
+    "customLabel": "Özel Etiket",
+    "exportCsv": "CSV İndir",
     "addClinic": "Klinik Ekle",
     "save": "Kaydet",
     "cancel": "İptal",
@@ -896,14 +902,18 @@
     "subtitle": "Sanal asistanın hasta görüşmelerini, yanıt performansını ve eğitim ihtiyacı olan konuları takip edin.",
     "metrics": {
       "total": "Toplam Görüşme",
-      "unanswered": "Yanıtlanamayan Sorular",
+      "unanswered": "Yanıtlanamayan",
       "liveSupport": "Canlı Destek Talepleri",
-      "appointments": "Randevuya Dönüşenler"
+      "appointments": "Randevuya Dönüşen",
+      "collecting": "Bilgi Toplananlar",
+      "answered": "Başarılı Yanıtlanan"
     },
     "searchPlaceholder": "Hasta adı, mesaj veya konu ara...",
     "filterDate": "Tarih",
-    "filterStatus": "Durum",
+    "filterStatus": "Görüşme Durumu",
+    "filterCustomLabel": "Özel Etiket",
     "filterLang": "Dil",
+    "exportCsv": "CSV İndir",
     "date": {
       "today": "Bugün",
       "week": "Son 7 Gün",
@@ -913,16 +923,28 @@
       "patient": "Hasta",
       "preview": "Görüşme Özeti",
       "date": "Tarih",
-      "status": "Durum"
+      "status": "Görüşme Durumu",
+      "customLabel": "Özel Etiket"
     },
     "messages": "mesaj",
     "trainingNeeded": "Eğitim gerekli",
     "anonymous": "Anonim Ziyaretçi",
     "status": {
-      "appointment": "Randevuya Dönüştü",
+      "successfully_answered": "Başarılı Yanıtlandı",
+      "collecting_appointment_information": "Randevu Bilgisi Toplanıyor",
+      "converted_to_appointment": "Randevuya Dönüştü",
+      "live_support_required": "Canlı Destek Gerekli",
       "unanswered": "Yanıtlanamadı",
+      "answered": "Başarılı Yanıtlandı",
+      "collecting": "Randevu Bilgisi Toplanıyor",
+      "appointment": "Randevuya Dönüştü",
       "liveSupport": "Canlı Destek Gerekli",
-      "answered": "Başarılı Yanıtlandı"
+      "open": "Açık"
+    },
+    "customLabels": {
+      "all": "Tümü",
+      "noLabel": "Etiket Yok",
+      "header": "── Özel Etiketler ──"
     },
     "emptyTitle": "Henüz görüşme kaydı bulunmuyor",
     "emptyDesc": "Web widget üzerinden hasta görüşmeleri başladığında kayıtlar burada listelenecek.",

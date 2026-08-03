@@ -6,7 +6,12 @@ import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 import Badge from "@/components/ui/Badge";
 import { useI18n } from "@/lib/i18n-context";
 import { useAuth } from "@/lib/auth-context";
-import type { ConversationLog, LogStatus, CustomLabel } from "./types";
+import {
+  normalizeConversationStatus,
+  getConversationStatusLabel,
+  getConversationStatusVariant,
+} from "@/lib/services/conversations/conversationStatusResolver";
+import type { ConversationLog, CustomLabel } from "./types";
 
 interface Props {
   log: ConversationLog;
@@ -15,33 +20,6 @@ interface Props {
   canEdit: boolean;
   onLabelUpdated: (logId: string, labelId: string | null, labelName: string | null) => void;
 }
-
-const STATUS_LABEL_TR: Record<string, string> = {
-  answered: "Başarılı Yanıtlandı",
-  liveSupport: "Canlı Destek Gerekli",
-  unanswered: "Yanıtlanamadı",
-  appointment: "Randevuya Dönüştü",
-  collecting: "Randevu Bilgisi Toplanıyor",
-  open: "Açık",
-};
-
-const STATUS_LABEL_EN: Record<string, string> = {
-  answered: "Answered",
-  liveSupport: "Live Support Required",
-  unanswered: "Unanswered",
-  appointment: "Appointment Created",
-  collecting: "Collecting Info",
-  open: "Open",
-};
-
-const STATUS_VARIANT: Record<string, any> = {
-  answered: "resolved",
-  appointment: "pro",
-  liveSupport: "open",
-  unanswered: "failed",
-  collecting: "warning",
-  open: "info",
-};
 
 export default function ConversationStatusDropdown({
   log,
@@ -58,9 +36,12 @@ export default function ConversationStatusDropdown({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
 
-  const statusLabels = language === "en" ? STATUS_LABEL_EN : STATUS_LABEL_TR;
-  const systemLabel = statusLabels[log.status] || log.status;
-  const systemVariant = STATUS_VARIANT[log.status] || "inactive";
+  const normalizedStatus = normalizeConversationStatus(log.status, {
+    convertedToAppointment: log.convertedToAppointment,
+    appointmentId: log.appointmentId,
+  });
+  const systemLabel = getConversationStatusLabel(normalizedStatus, language);
+  const systemVariant = getConversationStatusVariant(normalizedStatus);
 
   // Close dropdown on click outside or ESC
   useEffect(() => {
@@ -186,7 +167,7 @@ export default function ConversationStatusDropdown({
         onMouseLeave={(e) => {
           e.currentTarget.style.background = "transparent";
         }}
-        title={canEdit ? (language === "en" ? "Click to change label" : "Etiket değiştirmek için tıklayın") : ""}
+        title={canEdit ? (language === "en" ? "Click to change custom label" : "Özel etiket değiştirmek için tıklayın") : ""}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-start" }}>
           <Badge variant={systemVariant} label={systemLabel} />
@@ -270,7 +251,7 @@ export default function ConversationStatusDropdown({
               }}
             >
               <Shield size={10} />
-              {language === "en" ? "System Status" : "Sistem Durumu"}
+              {t("common.systemStatus") || (language === "en" ? "System Status" : "Sistem Durumu")}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 0 6px" }}>
               <Badge variant={systemVariant} label={systemLabel} />
@@ -296,7 +277,7 @@ export default function ConversationStatusDropdown({
               }}
             >
               <Tag size={10} />
-              {language === "en" ? "Custom Label" : "Özel Etiket"}
+              {t("common.customLabel") || (language === "en" ? "Custom Label" : "Özel Etiket")}
             </div>
 
             {/* "No Label" option */}
@@ -344,7 +325,7 @@ export default function ConversationStatusDropdown({
                   <Check size={10} color={UI_COLORS.brand} strokeWidth={3} />
                 )}
               </span>
-              {language === "en" ? "No Label" : "Etiket Yok"}
+              {t("common.noLabel") || (language === "en" ? "No Label" : "Etiket Yok")}
             </button>
 
             {/* Custom label options */}

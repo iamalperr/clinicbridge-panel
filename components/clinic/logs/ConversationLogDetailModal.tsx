@@ -7,6 +7,11 @@ import { ConversationLog, ConversationMessage } from "./types";
 import { useI18n } from "@/lib/i18n-context";
 import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import {
+  normalizeConversationStatus,
+  getConversationStatusLabel,
+  getConversationStatusVariant,
+} from "@/lib/services/conversations/conversationStatusResolver";
 
 interface Props {
   isOpen: boolean;
@@ -24,7 +29,7 @@ function formatTime(isoStr: string) {
 }
 
 export default function ConversationLogDetailModal({ isOpen, onClose, log }: Props) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -48,30 +53,30 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
 
   if (!log) return null;
 
+  const normalizedStatus = normalizeConversationStatus(log.status, {
+    convertedToAppointment: log.convertedToAppointment,
+    appointmentId: log.appointmentId,
+  });
+  const statusLabel = getConversationStatusLabel(normalizedStatus, language);
+  const statusVariant = getConversationStatusVariant(normalizedStatus);
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={t("logs.detailTitle") || "Görüşme Detayı"} width={600}>
+    <Modal isOpen={isOpen} onClose={onClose} title={t("logs.detailTitle") || (language === "en" ? "Conversation Details" : "Görüşme Detayı")} width={600}>
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         
         {/* Header Info */}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
           <div>
-            <span style={{ fontSize: 12, color: UI_COLORS.textMuted }}>{t("logs.patient") || "Hasta"}: </span>
-            <strong style={{ fontSize: 14, color: UI_COLORS.textPrimary }}>{log.patientName || "Anonim Ziyaretçi"}</strong>
+            <span style={{ fontSize: 12, color: UI_COLORS.textMuted }}>{t("logs.patient") || (language === "en" ? "Patient" : "Hasta")}: </span>
+            <strong style={{ fontSize: 14, color: UI_COLORS.textPrimary }}>{log.patientName || (language === "en" ? "Anonymous Visitor" : "Anonim Ziyaretçi")}</strong>
           </div>
           {log.patientPhone && (
             <div>
-              <span style={{ fontSize: 12, color: UI_COLORS.textMuted }}>{t("logs.phone") || "Telefon"}: </span>
+              <span style={{ fontSize: 12, color: UI_COLORS.textMuted }}>{t("logs.phone") || (language === "en" ? "Phone" : "Telefon")}: </span>
               <span style={{ fontSize: 14, color: UI_COLORS.textPrimary }}>{log.patientPhone}</span>
             </div>
           )}
-          <Badge variant={log.status === "answered" ? "resolved" : log.status === "appointment" ? "pro" : log.status === "liveSupport" ? "open" : log.status === "collecting" ? "warning" : "failed"} label={
-            log.status === "answered" ? "Başarılı Yanıtlandı" :
-            log.status === "appointment" ? "Randevuya Dönüştü" :
-            log.status === "liveSupport" ? "Canlı Destek Gerekli" :
-            log.status === "collecting" ? "Bilgi Toplanıyor" :
-            log.status === "unanswered" ? "Yanıtlanamadı" :
-            log.status
-          } />
+          <Badge variant={statusVariant} label={statusLabel} />
           {log.customLabelId && log.customLabelName && (
             <span style={{
               display: "inline-flex", alignItems: "center", gap: 4,
@@ -100,10 +105,10 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
             <AlertCircle size={20} color={UI_COLORS.danger} style={{ marginTop: 2 }} />
             <div>
               <h4 style={{ fontSize: 14, fontWeight: 600, color: UI_COLORS.danger, marginBottom: 4 }}>
-                {t("logs.needsTrainingTopic") || "Eğitime İhtiyaç Duyulan Konu"}
+                {t("logs.needsTrainingTopic") || (language === "en" ? "Topic needing training" : "Eğitime İhtiyaç Duyulan Konu")}
               </h4>
               <p style={{ fontSize: 13, color: UI_COLORS.textSecondary, marginBottom: 8 }}>
-                {t("logs.needsTrainingDesc") || "Bu soru için AI Kuralları veya Eğitim sekmesinden bilgi eklemeniz önerilir."}
+                {t("logs.needsTrainingDesc") || (language === "en" ? "It is recommended to add information for this topic from the AI Rules or Training tab." : "Bu soru için AI Kuralları veya Eğitim sekmesinden bilgi eklemeniz önerilir.")}
               </p>
               {log.trainingTopic && (
                 <div style={{ background: UI_COLORS.bgCard, padding: "8px 12px", borderRadius: 6, border: `1px solid ${UI_COLORS.border}`, fontSize: 13, fontWeight: 500 }}>
@@ -115,7 +120,7 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
         )}
 
         {/* Live Support Banner */}
-        {log.status === "liveSupport" && (
+        {normalizedStatus === "live_support_required" && (
           <div style={{ 
             background: "rgba(59, 130, 246, 0.05)", 
             border: `1px solid rgba(59, 130, 246, 0.2)`, 
@@ -128,10 +133,12 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
             <span style={{ fontSize: 20 }}>📡</span>
             <div>
               <p style={{ fontSize: 13.5, fontWeight: 600, color: "#3b82f6", marginBottom: 2 }}>
-                Canlı Destek Gerekli
+                {language === "en" ? "Live Support Required" : "Canlı Destek Gerekli"}
               </p>
               <p style={{ fontSize: 12.5, color: UI_COLORS.textSecondary, lineHeight: 1.5 }}>
-                Bu görüşmede kullanıcıya canlı destek yönlendirmesi gösterildi. Mesaj geçmişinde eylem loglarını inceleyebilirsiniz.
+                {language === "en"
+                  ? "A live support prompt or action was triggered in this conversation. Review the message history for system action events."
+                  : "Bu görüşmede kullanıcıya canlı destek yönlendirmesi gösterildi. Mesaj geçmişinde eylem loglarını inceleyebilirsiniz."}
               </p>
             </div>
           </div>
@@ -156,7 +163,7 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
             </div>
           ) : messages.length === 0 ? (
             <div style={{ padding: 40, textAlign: "center", color: UI_COLORS.textMuted, fontSize: 13.5 }}>
-              Henüz mesaj yok.
+              {language === "en" ? "No messages yet." : "Henüz mesaj yok."}
             </div>
           ) : (
             messages.map((msg) => {
@@ -166,11 +173,12 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
               if (isSystem) {
                 const isWhatsAppAction  = msg.content.includes("WhatsApp");
                 const isTelegramAction  = msg.content.includes("Telegram");
-                const isSurveyDisplayed = msg.content.includes("Memnuniyet Anketi Gösterildi");
-                const isSurveySubmitted = msg.content.includes("Memnuniyet Anketi Yanıtlandı");
+                const isSurveyDisplayed = msg.content.includes("Memnuniyet Anketi Gösterildi") || msg.content.includes("Survey Displayed");
+                const isSurveySubmitted = msg.content.includes("Memnuniyet Anketi Yanıtlandı") || msg.content.includes("Survey Submitted");
                 const isLiveSupportGeneric =
                   !isWhatsAppAction && !isTelegramAction && !isSurveyDisplayed && !isSurveySubmitted &&
                   (msg.content.includes("Canlı Destek") ||
+                   msg.content.includes("Live Support") ||
                    msg.content.includes("Yönlendirme") ||
                    msg.content.includes("Yönlendirildi"));
 
@@ -247,7 +255,7 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
                     )}
                   </div>
                   <div style={{ fontSize: 11, color: UI_COLORS.textMuted, padding: "0 4px" }}>
-                    {isPatient ? (t("logs.patient") || "Hasta") : (t("logs.assistant") || "Asistan")} • {formatTime(msg.createdAt)}
+                    {isPatient ? (t("logs.patient") || (language === "en" ? "Patient" : "Hasta")) : (t("logs.assistant") || (language === "en" ? "Assistant" : "Asistan"))} • {formatTime(msg.createdAt)}
                   </div>
                 </div>
               );

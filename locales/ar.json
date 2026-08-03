@@ -9,6 +9,12 @@
     "portal": "البوابة"
   },
   "common": {
+    "all": "الكل",
+    "allTimes": "كل الأوقات",
+    "noLabel": "بدون علامة",
+    "systemStatus": "حالة النظام",
+    "customLabel": "علامة مخصصة",
+    "exportCsv": "تصدير CSV",
     "addClinic": "إضافة عيادة",
     "save": "حفظ",
     "cancel": "إلغاء",
@@ -146,5 +152,62 @@
   },
   "settings": {
     "subtitle": "إدارة تفضيلات المسؤول وتكوينات النظام."
+  },
+  "logs": {
+    "subtitle": "مراقبة محادثات المرضى وأداء المساعد والموضوعات التي تحتاج إلى تدريب إضافي.",
+    "metrics": {
+      "total": "إجمالي المحادثات",
+      "unanswered": "لم يتم الرد",
+      "liveSupport": "طلبات الدعم المباشر",
+      "appointments": "تحولت إلى مواعيد",
+      "collecting": "جمع المعلومات",
+      "answered": "تمت الإجابة بنجاح"
+    },
+    "searchPlaceholder": "البحث عن اسم المريض أو الرسالة أو الموضوع...",
+    "filterDate": "التاريخ",
+    "filterStatus": "حالة المحادثة",
+    "filterCustomLabel": "علامة مخصصة",
+    "filterLang": "اللغة",
+    "exportCsv": "تصدير CSV",
+    "date": {
+      "today": "اليوم",
+      "week": "آخر 7 أيام",
+      "month": "آخر 30 يومًا"
+    },
+    "table": {
+      "patient": "المريض",
+      "preview": "معاينة المحادثة",
+      "date": "التاريخ",
+      "status": "حالة المحادثة",
+      "customLabel": "علامة مخصصة"
+    },
+    "messages": "رسائل",
+    "trainingNeeded": "مطلوب تدريب",
+    "anonymous": "زائر مجهول",
+    "status": {
+      "successfully_answered": "تمت الإجابة بنجاح",
+      "collecting_appointment_information": "جاري جمع معلومات الموعد",
+      "converted_to_appointment": "تحول إلى موعد",
+      "live_support_required": "الدعم المباشر مطلوب",
+      "unanswered": "لم يتم الرد",
+      "answered": "تمت الإجابة بنجاح",
+      "collecting": "جاري جمع معلومات الموعد",
+      "appointment": "تحول إلى موعد",
+      "liveSupport": "الدعم المباشر مطلوب",
+      "open": "مفتوح"
+    },
+    "customLabels": {
+      "all": "الكل",
+      "noLabel": "بدون علامة",
+      "header": "── العلامات المخصصة ──"
+    },
+    "emptyTitle": "لا توجد سجلات محادثات بعد",
+    "emptyDesc": "ستظهر المحادثات هنا بمجرد أن يبدأ المرضى الدردشة عبر الأداة.",
+    "patient": "المريض",
+    "phone": "الهاتف",
+    "assistant": "المساعد",
+    "needsTrainingTopic": "الموضوع يحتاج إلى تدريب",
+    "needsTrainingDesc": "يوصى بإضافة معلومات لهذا الموضوع من قسم التدريب.",
+    "detailTitle": "تفاصيل المحادثة"
   }
 }

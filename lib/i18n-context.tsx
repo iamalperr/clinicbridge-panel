@@ -59,8 +59,30 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
       if (result && typeof result === "object" && result[k]) {
         result = result[k];
       } else {
-        return key; 
+        result = undefined;
+        break;
       }
+    }
+
+    // Fallback to Turkish or English if not found in current language
+    if (result === undefined && language !== "tr") {
+      let fallbackResult: TranslationValue | undefined = translations["tr"];
+      for (const k of keys) {
+        if (fallbackResult && typeof fallbackResult === "object" && fallbackResult[k]) {
+          fallbackResult = fallbackResult[k];
+        } else {
+          fallbackResult = undefined;
+          break;
+        }
+      }
+      if (typeof fallbackResult === "string") return fallbackResult;
+    }
+
+    if (result === undefined) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn(`[i18n] Missing translation key: "${key}" for language: "${language}"`);
+      }
+      return key;
     }
     
     return typeof result === "string" ? result : key;

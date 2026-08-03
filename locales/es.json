@@ -9,6 +9,12 @@
     "portal": "Portal"
   },
   "common": {
+    "all": "Todos",
+    "allTimes": "Todo el tiempo",
+    "noLabel": "Sin etiqueta",
+    "systemStatus": "Estado del sistema",
+    "customLabel": "Etiqueta personalizada",
+    "exportCsv": "Exportar CSV",
     "addClinic": "Añadir clínica",
     "save": "Guardar",
     "cancel": "Cancelar",
@@ -146,5 +152,62 @@
   },
   "settings": {
     "subtitle": "Gestione las preferencias del administrador y configuraciones del sistema."
+  },
+  "logs": {
+    "subtitle": "Monitoree las conversaciones de pacientes, rendimiento del asistente y temas que requieren entrenamiento.",
+    "metrics": {
+      "total": "Total de conversaciones",
+      "unanswered": "Sin respuesta",
+      "liveSupport": "Solicitudes de soporte en vivo",
+      "appointments": "Convertidos en citas",
+      "collecting": "Recopilando info",
+      "answered": "Respondido con éxito"
+    },
+    "searchPlaceholder": "Buscar nombre de paciente, mensaje o tema...",
+    "filterDate": "Fecha",
+    "filterStatus": "Estado de conversación",
+    "filterCustomLabel": "Etiqueta personalizada",
+    "filterLang": "Idioma",
+    "exportCsv": "Exportar CSV",
+    "date": {
+      "today": "Hoy",
+      "week": "Últimos 7 días",
+      "month": "Últimos 30 días"
+    },
+    "table": {
+      "patient": "Paciente",
+      "preview": "Vista previa",
+      "date": "Fecha",
+      "status": "Estado de conversación",
+      "customLabel": "Etiqueta personalizada"
+    },
+    "messages": "mensajes",
+    "trainingNeeded": "Entrenamiento necesario",
+    "anonymous": "Visitante anónimo",
+    "status": {
+      "successfully_answered": "Respondido con éxito",
+      "collecting_appointment_information": "Recopilando información de la cita",
+      "converted_to_appointment": "Convertido en cita",
+      "live_support_required": "Se requiere soporte en vivo",
+      "unanswered": "Sin respuesta",
+      "answered": "Respondido con éxito",
+      "collecting": "Recopilando información de la cita",
+      "appointment": "Convertido en cita",
+      "liveSupport": "Se requiere soporte en vivo",
+      "open": "Abierto"
+    },
+    "customLabels": {
+      "all": "Todos",
+      "noLabel": "Sin etiqueta",
+      "header": "── Etiquetas personalizadas ──"
+    },
+    "emptyTitle": "No hay registros de conversación aún",
+    "emptyDesc": "Las conversaciones aparecerán aquí una vez que los pacientes comiencen a chatear en el widget.",
+    "patient": "Paciente",
+    "phone": "Teléfono",
+    "assistant": "Asistente",
+    "needsTrainingTopic": "Tema que necesita entrenamiento",
+    "needsTrainingDesc": "Se recomienda agregar información para este tema desde la pestaña de entrenamiento.",
+    "detailTitle": "Detalle de la conversación"
   }
 }

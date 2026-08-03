@@ -9,6 +9,12 @@
     "portal": "Portal"
   },
   "common": {
+    "all": "Alle",
+    "allTimes": "Gesamte Zeit",
+    "noLabel": "Kein Label",
+    "systemStatus": "Systemstatus",
+    "customLabel": "Benutzerdefiniertes Label",
+    "exportCsv": "CSV exportieren",
     "addClinic": "Klinik hinzufügen",
     "save": "Speichern",
     "cancel": "Abbrechen",
@@ -146,5 +152,62 @@
   },
   "settings": {
     "subtitle": "Administratoreinstellungen und Systemkonfigurationen verwalten."
+  },
+  "logs": {
+    "subtitle": "Patientengespräche, Antwortleistung und Schulungsthemen überwachen.",
+    "metrics": {
+      "total": "Gespräche Gesamt",
+      "unanswered": "Unbeantwortet",
+      "liveSupport": "Live-Support-Anfragen",
+      "appointments": "In Termine umgewandelt",
+      "collecting": "Angaben werden erfasst",
+      "answered": "Erfolgreich beantwortet"
+    },
+    "searchPlaceholder": "Patientenname, Nachricht oder Thema suchen...",
+    "filterDate": "Datum",
+    "filterStatus": "Gesprächsstatus",
+    "filterCustomLabel": "Benutzerdefiniertes Label",
+    "filterLang": "Sprache",
+    "exportCsv": "CSV exportieren",
+    "date": {
+      "today": "Heute",
+      "week": "Letzte 7 Tage",
+      "month": "Letzte 30 Tage"
+    },
+    "table": {
+      "patient": "Patient",
+      "preview": "Gesprächsvorschau",
+      "date": "Datum",
+      "status": "Gesprächsstatus",
+      "customLabel": "Benutzerdefiniertes Label"
+    },
+    "messages": "Nachrichten",
+    "trainingNeeded": "Schulung erforderlich",
+    "anonymous": "Anonymer Besucher",
+    "status": {
+      "successfully_answered": "Erfolgreich beantwortet",
+      "collecting_appointment_information": "Terminangaben werden erfasst",
+      "converted_to_appointment": "In Termin umgewandelt",
+      "live_support_required": "Live-Support erforderlich",
+      "unanswered": "Unbeantwortet",
+      "answered": "Erfolgreich beantwortet",
+      "collecting": "Terminangaben werden erfasst",
+      "appointment": "In Termin umgewandelt",
+      "liveSupport": "Live-Support erforderlich",
+      "open": "Offen"
+    },
+    "customLabels": {
+      "all": "Alle",
+      "noLabel": "Kein Label",
+      "header": "── Benutzerdefinierte Labels ──"
+    },
+    "emptyTitle": "Noch keine Gesprächsprotokolle",
+    "emptyDesc": "Gespräche werden hier angezeigt, sobald Patienten über das Widget chatten.",
+    "patient": "Patient",
+    "phone": "Telefon",
+    "assistant": "Assistent",
+    "needsTrainingTopic": "Thema benötigt Schulung",
+    "needsTrainingDesc": "Es wird empfohlen, für dieses Thema Informationen im Schulungsbereich hinzuzufügen.",
+    "detailTitle": "Gesprächsdetails"
   }
 }
