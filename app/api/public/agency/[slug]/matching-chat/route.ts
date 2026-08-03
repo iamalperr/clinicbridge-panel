@@ -17,6 +17,11 @@ import {
   getUnsupportedLocationPrompt,
   calculateAdditionalCountAndConversion,
   resolveCityAndSide,
+  resolveIstanbulSideFromText,
+  getBranchIstanbulSideAvailability,
+  getIstanbulSideClarificationCard,
+  getSideGuidancePrompt,
+  formatClinicCardLocation,
   FEELINHEALTHY_CONFIG,
   type IntakeGroupNumber,
 } from "@/lib/agency/feelinhealthyConfig";
@@ -112,6 +117,10 @@ interface SessionContext {
   pendingLocationExpansionTarget?: string;
   pendingLocationBranch?: string;
   isGuestUser?: boolean;
+  istanbul_side?: "european" | "anatolian" | "unsure" | null;
+  istanbul_side_source?: "explicit_text" | "structured_card" | "district_cue" | "airport_cue" | "branch_implicit" | null;
+  pendingSideClarification?: boolean;
+  pendingSideGuidance?: boolean;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -295,7 +304,7 @@ export async function POST(
   let promptBuildMs = 0;
   let openAiTotalMs = 0;
   let responseParseMs = 0;
-  let clinicMatchingMs = 0;
+  const clinicMatchingMs = 0;
   let requestValidationMs = 0;
 
   const jsonResponse = (respBody: any, init?: any) => {
@@ -341,7 +350,7 @@ export async function POST(
     }
 
     const cacheKeyAgencySlug = `agency-config-slug:${slug}`;
-    let cachedAgency = getCached<{ agencyId: string; agencyData: any; matchingConfig: any }>(cacheKeyAgencySlug);
+    const cachedAgency = getCached<{ agencyId: string; agencyData: any; matchingConfig: any }>(cacheKeyAgencySlug);
 
     let agencyId: string;
     let agencyData: any;
@@ -487,18 +496,50 @@ export async function POST(
             ? "Onayım var, tedavi ihtiyacım hakkında bilgi vermek istiyorum."
             : "I have given my consent, I would like to provide information about my treatment needs.";
         }
+      } else if (action.type === "side_selection") {
+        const sideLang = action.locale || "tr";
+        const isEn = sideLang.toLowerCase().startsWith("en");
+        if (action.side === "european" || action.side === "anatolian") {
+          sessionContext.istanbul_side = action.side;
+          sessionContext.istanbul_side_source = "structured_card";
+          sessionContext.lastLocation = action.side === "anatolian" ? "İstanbul Anadolu Yakası" : "İstanbul Avrupa Yakası";
+          delete sessionContext.pendingSideClarification;
+          delete sessionContext.pendingSideGuidance;
+          finalMessage = action.side === "european"
+            ? (isEn ? "I prefer Istanbul European Side. Please recommend suitable clinics." : "İstanbul Avrupa Yakası'nı tercih ediyorum. Uygun klinikleri listeleyebilir misiniz?")
+            : (isEn ? "I prefer Istanbul Anatolian Side. Please recommend suitable clinics." : "İstanbul Anadolu Yakası'nı tercih ediyorum. Uygun klinikleri listeleyebilir misiniz?");
+        } else if (action.side === "unsure") {
+          sessionContext.istanbul_side = "unsure";
+          sessionContext.istanbul_side_source = "structured_card";
+          sessionContext.pendingSideGuidance = true;
+          finalMessage = isEn
+            ? "I am not sure between the European and Anatolian sides. Could you help guide me based on my arrival airport or hotel area?"
+            : "İstanbul'un iki yakası arasında emin değilim. Havaalanı veya otel bölgesine göre bana yardımcı olabilir misiniz?";
+        }
+      } else if (action.type === "branch_side_confirm") {
+        const sideLang = action.locale || "tr";
+        const isEn = sideLang.toLowerCase().startsWith("en");
+        if (action.action === "confirm" && (action.side === "anatolian" || action.side === "european")) {
+          sessionContext.istanbul_side = action.side;
+          sessionContext.istanbul_side_source = "structured_card";
+          sessionContext.lastLocation = action.side === "anatolian" ? "İstanbul Anadolu Yakası" : "İstanbul Avrupa Yakası";
+          delete sessionContext.pendingSideClarification;
+          delete sessionContext.pendingSideGuidance;
+          finalMessage = action.side === "anatolian"
+            ? (isEn ? "Yes, please show options on the Anatolian Side." : "Evet, Anadolu Yakası'ndaki seçenekleri değerlendirmek istiyorum.")
+            : (isEn ? "Yes, please show options on the European Side." : "Evet, Avrupa Yakası'ndaki seçenekleri değerlendirmek istiyorum.");
+        } else {
+          delete sessionContext.istanbul_side;
+          delete sessionContext.pendingSideClarification;
+          finalMessage = isEn
+            ? "No, I would like to explore options in other cities."
+            : "Hayır, İstanbul dışındaki diğer şehir seçeneklerini görmek istiyorum.";
+        }
       }
     }
 
     if (!finalMessage) {
       return jsonResponse({ error: "message or action is required" }, { status: 400, headers: CORS });
-    }
-
-    if (!process.env.OPENAI_API_KEY) {
-      return jsonResponse(
-        { reply: "AI servisi yapılandırılmamış.", type: "text" },
-        { headers: CORS }
-      );
     }
 
     /* ── DETERMINISTIC INTERCEPTORS (PHASE 3) ── */
@@ -591,6 +632,18 @@ export async function POST(
         : agencySlotsExtracted.extracted.city;
     }
 
+    if (isFeelinHealthy) {
+      const incomingText = `${finalMessage || message || ""} ${agencySlotsExtracted.extracted.city || ""} ${agencySlotsExtracted.extracted.district || ""}`;
+      const sideRes = resolveIstanbulSideFromText(incomingText);
+      if (sideRes.side === "european" || sideRes.side === "anatolian") {
+        ctx.istanbul_side = sideRes.side;
+        ctx.istanbul_side_source = sideRes.source;
+        ctx.lastLocation = sideRes.side === "anatolian" ? "İstanbul Anadolu Yakası" : "İstanbul Avrupa Yakası";
+        delete ctx.pendingSideClarification;
+        delete ctx.pendingSideGuidance;
+      }
+    }
+
     // Handle user affirmative response to location negotiation
     if (ctx.pendingLocationExpansion) {
       const isAffirmative = /\b(evet|olur|uygun|fark etmez|tamam|yes|sure|okay|ok|why not|neden olmasın|tabi|tabii|kabul)\b/i.test(finalMessage || message || "");
@@ -631,6 +684,7 @@ export async function POST(
         .filter((c: any) => c.status === "active");
       setCached(cacheKeyClinics, allClinics);
     }
+    const fullAgencyClinics = [...(allClinics || [])];
 
     const prefilterStart = performance.now();
     ctx.clinicSelectionMode = matchingConfig?.routingMode || "manual"; // Save routing mode for leads
@@ -959,56 +1013,76 @@ JSON FORMATI:
 
     const aiStart = performance.now();
     
-    // Wrap in Promise.race for 8-second hard timeout
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
-        const err: any = new Error("PROVIDER_TIMEOUT");
-        err.code = "OPENAI_TIMEOUT";
-        reject(err);
-      }, 8000);
-    });
-
-    const completion = await Promise.race([
-      trackableAIRequest({
-        clinicId: ctx.selectedClinicId || undefined,
-        channel: "portal",
-        requestType: "chat",
-        model: "gpt-4o-mini", // Fast model for intake as requested
-        temperature: 0.3,
-        maxTokens: 1200,
-        responseFormat: { type: "json_object" },
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...history.slice(-6).map((h: any) => ({
-            role: h.role as "user" | "assistant",
-            content: typeof h.content === "string" ? h.content : JSON.stringify(h.content),
-          })),
-          { role: "user", content: finalMessage },
-        ],
-      }),
-      timeoutPromise
-    ]);
-
-    openAiTotalMs = performance.now() - aiStart;
-    const parseStart = performance.now();
-
-    const raw = completion.content?.trim() ?? "{}";
     let parsed: any;
-    try {
-      parsed = JSON.parse(raw);
-      responseParseMs = performance.now() - parseStart;
-    } catch (err: any) {
-      console.error("[matching-chat] [ALERT] OPENAI_RESPONSE_PARSE_FAILED", err.message, "RAW:", raw.slice(0, 500));
-      // Degraded Mode Fallback for JSON Parse error
-      const isTr = ctx.language === "tr" || (!ctx.language && true);
-      const newCtx: SessionContext = { ...ctx, processingMode: "degraded" };
-      return jsonResponse({
-        reply: isTr 
-          ? (isFeelinHealthy ? "Talebinizi aldım. Size en uygun klinikleri hazırlayabilmemiz için adınızı soyadınızı, yaşınızı ve cinsiyetinizi paylaşabilir misiniz?" : "Talebinizi aldım. Size uygun klinikleri hazırlayabilmem için yaklaşık bütçenizi, tercih ettiğiniz tarihi ve dil ihtiyacınızı paylaşabilir misiniz?")
-          : (isFeelinHealthy ? "I've saved your request. To prepare the most suitable clinic options for you, could you please share your full name, age, and gender?" : "I've saved your request. To prepare suitable clinic options, could you share your approximate budget, preferred dates and language requirements?"),
-        type: "text",
-        sessionContext: newCtx,
-      }, { headers: CORS });
+
+    if (!process.env.OPENAI_API_KEY) {
+      console.warn("[matching-chat] OPENAI_API_KEY is not configured. Running in deterministic intake mode.");
+      const trBranch = agencySlotsExtracted.extracted.treatment || ctx.lastTreatmentCategory || "dental";
+      const trLoc = agencySlotsExtracted.extracted.city || ctx.lastLocation || "İstanbul";
+      const isEn = (agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en");
+      parsed = {
+        intent: "clinic_recommendation",
+        language: isEn ? "en" : "tr",
+        treatmentCategory: trBranch,
+        location: trLoc,
+        showClinicCards: true,
+        replyText: isEn 
+          ? "Here are our curated partner clinics for your treatment."
+          : "Tedaviniz için size en uygun anlaşmalı kliniklerimiz aşağıda listelenmiştir."
+      };
+      openAiTotalMs = 0;
+      responseParseMs = 0;
+    } else {
+      // Wrap in Promise.race for 8-second hard timeout
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          const err: any = new Error("PROVIDER_TIMEOUT");
+          err.code = "OPENAI_TIMEOUT";
+          reject(err);
+        }, 8000);
+      });
+
+      const completion = await Promise.race([
+        trackableAIRequest({
+          clinicId: ctx.selectedClinicId || undefined,
+          channel: "portal",
+          requestType: "chat",
+          model: "gpt-4o-mini", // Fast model for intake as requested
+          temperature: 0.3,
+          maxTokens: 1200,
+          responseFormat: { type: "json_object" },
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...history.slice(-6).map((h: any) => ({
+              role: h.role as "user" | "assistant",
+              content: typeof h.content === "string" ? h.content : JSON.stringify(h.content),
+            })),
+            { role: "user", content: finalMessage },
+          ],
+        }),
+        timeoutPromise
+      ]);
+
+      openAiTotalMs = performance.now() - aiStart;
+      const parseStart = performance.now();
+
+      const raw = completion.content?.trim() ?? "{}";
+      try {
+        parsed = JSON.parse(raw);
+        responseParseMs = performance.now() - parseStart;
+      } catch (err: any) {
+        console.error("[matching-chat] [ALERT] OPENAI_RESPONSE_PARSE_FAILED", err.message, "RAW:", raw.slice(0, 500));
+        // Degraded Mode Fallback for JSON Parse error
+        const isTr = ctx.language === "tr" || (!ctx.language && true);
+        const newCtx: SessionContext = { ...ctx, processingMode: "degraded" };
+        return jsonResponse({
+          reply: isTr 
+            ? (isFeelinHealthy ? "Talebinizi aldım. Size en uygun klinikleri hazırlayabilmemiz için adınızı soyadınızı, yaşınızı ve cinsiyetinizi paylaşabilir misiniz?" : "Talebinizi aldım. Size uygun klinikleri hazırlayabilmem için yaklaşık bütçenizi, tercih ettiğiniz tarihi ve dil ihtiyacınızı paylaşabilir misiniz?")
+            : (isFeelinHealthy ? "I've saved your request. To prepare the most suitable clinic options for you, could you please share your full name, age, and gender?" : "I've saved your request. To prepare suitable clinic options, could you share your approximate budget, preferred dates and language requirements?"),
+          type: "text",
+          sessionContext: newCtx,
+        }, { headers: CORS });
+      }
     }
 
     // Strip markdown formatting characters from reply text
@@ -1079,33 +1153,66 @@ JSON FORMATI:
       newCtx.quoteConsent = true;
     }
 
-    // ── FeelinHealthy Location Negotiation Check ──
+    // ── FeelinHealthy Location & Istanbul Side Clarification Interceptors ──
     if (isFeelinHealthy && (parsed.intent === "clinic_recommendation" || parsed.intent === "clinic_matching" || parsed.treatmentCategory || newCtx.lastTreatmentCategory)) {
-      const branchOrCat = parsed.treatmentCategory || newCtx.lastTreatmentCategory || agencySlotsExtracted.extracted.treatment;
+      const branchOrCat = parsed.treatmentCategory || newCtx.lastTreatmentCategory || agencySlotsExtracted.extracted.treatment || "dental";
       const rawLoc = parsed.location || newCtx.lastLocation || agencySlotsExtracted.extracted.city || agencySlotsExtracted.extracted.district;
-      
-      if (branchOrCat && rawLoc && !newCtx.pendingLocationExpansion) {
+      const currentLang = (parsed.language || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
+
+      // 1. Check if user needs side guidance or answered "fark etmez" / "emin değilim"
+      const isUnsureOrGuidance = newCtx.pendingSideGuidance || /\b(fark etmez|emin degilim|emin değilim|bilmiyorum|kararsizim|kararsızım|neresi uygun|hangisi daha iyi|yardım|not sure|any|unsure|dont know|help me choose)\b/i.test(finalMessage || message || "");
+      if (isUnsureOrGuidance) {
+        const sideCues = resolveIstanbulSideFromText(finalMessage || message || "");
+        const guidanceText = getSideGuidancePrompt(sideCues.cueName, currentLang);
+        const cardData = getIstanbulSideClarificationCard(branchOrCat, currentLang);
+        delete newCtx.pendingSideGuidance;
+        return jsonResponse({
+          reply: guidanceText,
+          type: cardData.type,
+          sideClarificationCard: cardData,
+          sessionContext: newCtx,
+          showClinicCards: false
+        }, { headers: CORS });
+      }
+
+      // 2. Check if requested city is outside Istanbul and unsupported for this branch
+      if (rawLoc && !newCtx.pendingLocationExpansion) {
         const locInfo = resolveCityAndSide(rawLoc);
-        const curatedCheck = getCuratedClinicsForFeelinHealthy(branchOrCat, locInfo.city, locInfo.side, allClinics);
-        
-        if (curatedCheck.isUnsupportedLocation && curatedCheck.supportedLocationsForBranch && curatedCheck.supportedLocationsForBranch.length > 0) {
-          newCtx.pendingLocationExpansion = true;
-          newCtx.pendingLocationExpansionTarget = curatedCheck.supportedLocationsForBranch[0].displayNameTr;
-          newCtx.pendingLocationBranch = branchOrCat;
-          const currentLang = (parsed.language || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
-          const negotiationReply = getUnsupportedLocationPrompt(
-            branchOrCat,
-            rawLoc,
-            curatedCheck.supportedLocationsForBranch,
-            currentLang
-          );
-          return jsonResponse({
-            reply: negotiationReply,
-            type: "location_negotiation",
-            sessionContext: newCtx,
-            showClinicCards: false
-          }, { headers: CORS });
+        if (locInfo.city && locInfo.city !== "istanbul") {
+          const curatedCheck = getCuratedClinicsForFeelinHealthy(branchOrCat, locInfo.city, locInfo.side, fullAgencyClinics);
+          if (curatedCheck.isUnsupportedLocation && curatedCheck.supportedLocationsForBranch && curatedCheck.supportedLocationsForBranch.length > 0) {
+            newCtx.pendingLocationExpansion = true;
+            newCtx.pendingLocationExpansionTarget = curatedCheck.supportedLocationsForBranch[0].displayNameTr;
+            newCtx.pendingLocationBranch = branchOrCat;
+            const negotiationReply = getUnsupportedLocationPrompt(
+              branchOrCat,
+              rawLoc,
+              curatedCheck.supportedLocationsForBranch,
+              currentLang
+            );
+            return jsonResponse({
+              reply: negotiationReply,
+              type: "location_negotiation",
+              sessionContext: newCtx,
+              showClinicCards: false
+            }, { headers: CORS });
+          }
         }
+      }
+
+      // 3. For Istanbul (or unspecified location), check if Side Clarification is needed before matching clinics
+      const locInfo = resolveCityAndSide(rawLoc || "istanbul");
+      const isIstanbul = !locInfo.city || locInfo.city === "istanbul";
+      if (isIstanbul && !newCtx.istanbul_side && (parsed.intent === "clinic_recommendation" || parsed.intent === "clinic_matching" || branchOrCat)) {
+        const cardData = getIstanbulSideClarificationCard(branchOrCat, currentLang);
+        newCtx.pendingSideClarification = true;
+        return jsonResponse({
+          reply: cardData.message,
+          type: cardData.type,
+          sideClarificationCard: cardData,
+          sessionContext: newCtx,
+          showClinicCards: false
+        }, { headers: CORS });
       }
     }
 
@@ -1235,7 +1342,8 @@ JSON FORMATI:
         const branchOrCat = parsed.treatmentCategory || newCtx.lastTreatmentCategory || agencySlotsExtracted.extracted.treatment;
         const rawLoc = parsed.location || newCtx.lastLocation || agencySlotsExtracted.extracted.city || agencySlotsExtracted.extracted.district;
         const locInfo = resolveCityAndSide(rawLoc);
-        const curatedResult = getCuratedClinicsForFeelinHealthy(branchOrCat, locInfo.city, locInfo.side, allClinics);
+        const effectiveSide = newCtx.istanbul_side || locInfo.side;
+        const curatedResult = getCuratedClinicsForFeelinHealthy(branchOrCat, locInfo.city, effectiveSide, fullAgencyClinics);
         
         const isGuest = newCtx.isGuestUser !== false;
         const displayLimit = isGuest ? 2 : maxClinics;
@@ -1267,7 +1375,7 @@ JSON FORMATI:
             clinicName: clinic.clinicName,
             clinicSlug: clinic.clinicSlug || clinic.clinicName?.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+$/g, "") || clinic.id,
             clinicType: clinic.category || clinic.clinicType || "",
-            location: clinic.location ? `${clinic.location.city || ""}, ${clinic.location.country || ""}`.replace(/^, |, $/g, "") : "",
+            location: formatClinicCardLocation(clinic, currentLang),
             rating: clinic.rating || 4.9,
             reviews: clinic.reviewCount || 120,
             matchScore: 98,

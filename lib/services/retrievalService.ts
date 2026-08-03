@@ -77,13 +77,21 @@ export async function hybridSearch(
 ): Promise<RetrievedChunk[]> {
   if (!clinicDocs || clinicDocs.length === 0) return [];
 
-  // 1. Rewrite queries
-  const queries = await rewriteQuery(userMessage, clinicName);
-  // Add original message to queries
-  queries.push(userMessage);
+  // 1. Rewrite queries & generate embeddings if OpenAI is configured
+  let queries = [userMessage];
+  let queryEmbeddings: number[][] = [];
 
-  // 2. Generate embeddings for the queries
-  const queryEmbeddings = await generateEmbeddings(queries);
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      const rewritten = await rewriteQuery(userMessage, clinicName);
+      queries = Array.from(new Set([...rewritten, userMessage]));
+      queryEmbeddings = await generateEmbeddings(queries);
+    } catch (err) {
+      console.warn("[retrievalService] OpenAI embedding/rewrite skipped, falling back to keyword search:", err);
+      queries = [userMessage];
+      queryEmbeddings = [];
+    }
+  }
 
   const results: RetrievedChunk[] = [];
 

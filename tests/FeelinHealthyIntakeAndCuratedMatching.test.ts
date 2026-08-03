@@ -32,9 +32,10 @@ describe("FeelinHealthy Curated Clinic Matching & Location Resolver", () => {
   });
 
   const mockClinics = [
-    { id: "hospitadent-cevizlibag", clinicSlug: "hospitadent-cevizlibag", clinicName: "Hospitadent Cevizlibağ", treatmentCategories: ["dental"], location: { city: "İstanbul", address: "Zeytinburnu/Cevizlibağ" } },
-    { id: "hospitadent-bakirkoy", clinicSlug: "hospitadent-bakirkoy", clinicName: "Hospitadent Bakırköy", treatmentCategories: ["dental"], location: { city: "İstanbul", address: "Bakırköy" } },
-    { id: "hospitadent-serifali", clinicSlug: "hospitadent-serifali", clinicName: "Hospitadent Şerifali", treatmentCategories: ["dental"], location: { city: "İstanbul", address: "Ümraniye Şerifali" } },
+    { id: "hospitadent-mecidiyekoy", clinicSlug: "hospitadent-mecidiyekoy", clinicName: "Hospitadent Mecidiyeköy", treatmentCategories: ["dental"], location: { city: "İstanbul", address: "Mecidiyeköy, Şişli" } },
+    { id: "bht-clinic-istanbul-tema", clinicSlug: "bht-clinic-istanbul-tema", clinicName: "BHT Clinic İstanbul TEMA Hospital", treatmentCategories: ["dental"], location: { city: "İstanbul", address: "Halkalı" } },
+    { id: "istanbul-dis-akademisi", clinicSlug: "istanbul-dis-akademisi", clinicName: "İstanbul Diş Akademisi", treatmentCategories: ["dental"], location: { city: "İstanbul", address: "Kadıköy" } },
+    { id: "hospitadent-camlica", clinicSlug: "hospitadent-camlica", clinicName: "Hospitadent Çamlıca", treatmentCategories: ["dental"], location: { city: "İstanbul", address: "Üsküdar" } },
     { id: "hospitadent-antalya", clinicSlug: "hospitadent-antalya", clinicName: "Hospitadent Antalya", treatmentCategories: ["dental"], location: { city: "Antalya", address: "Muratpaşa" } },
     { id: "dunyagoz-etiler", clinicSlug: "dunyagoz-etiler", clinicName: "Dünyagöz Etiler", treatmentCategories: ["eye_treatments"], location: { city: "İstanbul", address: "Etiler Beşiktaş" } },
     { id: "dunyagoz-atakoy", clinicSlug: "dunyagoz-atakoy", clinicName: "Dünyagöz Ataköy", treatmentCategories: ["eye_treatments"], location: { city: "İstanbul", address: "Ataköy Bakırköy" } },
@@ -47,17 +48,17 @@ describe("FeelinHealthy Curated Clinic Matching & Location Resolver", () => {
     expect(res.isUnsupportedLocation).toBe(false);
     expect(res.matchingCuratedClinics.length).toBeGreaterThan(0);
     const names = res.matchingCuratedClinics.map(c => c.clinicName);
-    expect(names).toContain("Hospitadent Cevizlibağ");
-    expect(names).toContain("Hospitadent Bakırköy");
-    expect(names).not.toContain("Hospitadent Şerifali");
+    expect(names).toContain("Hospitadent Mecidiyeköy");
+    expect(names).toContain("BHT Clinic İstanbul TEMA Hospital");
+    expect(names).not.toContain("İstanbul Diş Akademisi");
   });
 
   it("filters dental clinics in Istanbul Anadolu side", () => {
     const res = getCuratedClinicsForFeelinHealthy("dental", "istanbul", "anatolian", mockClinics);
     expect(res.isUnsupportedLocation).toBe(false);
     const names = res.matchingCuratedClinics.map(c => c.clinicName);
-    expect(names).toContain("Hospitadent Şerifali");
-    expect(names).not.toContain("Hospitadent Bakırköy");
+    expect(names).toContain("İstanbul Diş Akademisi");
+    expect(names).not.toContain("Hospitadent Mecidiyeköy");
   });
 
   it("flags unsupported location for branch and returns alternatives", () => {

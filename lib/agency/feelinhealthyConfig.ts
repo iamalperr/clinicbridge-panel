@@ -1,28 +1,40 @@
 /**
- * feelinhealthyConfig.ts
- *
- * Central configuration and business rules for FeelinHealthy agency portal:
- * 1. 3-Group Lead Intake Flow (Personal, Contact & Country, Travel Plan) - No Budget.
- * 2. Curated Clinic Matrix by Branch and Location/Side.
- * 3. Guest Clinic Limit (max 2 clinics) and Additional Count Calculator.
- * 4. Location Expansion Negotiation for Unsupported Branch/Location Combinations.
- * 5. Registration Conversion CTA and KVKK Privacy Notice Config.
+ * FeelinHealthy Curated Matching, Rules, and Intake Configuration
+ * 
+ * Rules:
+ * 1. Guest users get max 2 curated clinics.
+ * 2. Curated lists per branch & location (Section 6 matrix).
+ * 3. Never ask for budget anywhere.
+ * 4. Deterministic 3-group intake progression (Group 1 -> Group 2 -> Group 3).
+ * 5. Istanbul side clarification before clinic matching:
+ *    - Istanbul has European and Anatolian sides.
+ *    - If user only mentions "İstanbul" or says "fark etmez" / "emin değilim", clarify or guide.
+ *    - Branch-specific side availability:
+ *      * Dental: Both European & Anatolian
+ *      * IVF, Cardiology, Check-up: Anatolian Side only
+ *      * Eye Treatments: European Side only
+ *    - Structured state: istanbul_side saved as "european" | "anatolian".
+ *    - Clinic cards display exact side ("İstanbul, Avrupa Yakası" / "İstanbul, Anadolu Yakası").
  */
 
+export interface CuratedClinicTarget {
+  name: string;
+  slugOrId: string;
+  aliasPatterns?: string[];
+  district?: string;
+  address?: string;
+}
+
 export interface CuratedLocationRule {
-  city: string; // e.g. "istanbul", "izmir", "antalya", "ankara"
+  city: "istanbul" | "izmir" | "antalya" | "ankara" | "kocaeli" | string;
   side?: "anatolian" | "european" | "any";
   displayNameTr: string;
   displayNameEn: string;
-  curatedClinics: Array<{
-    name: string;
-    slugOrId: string;
-    aliasPatterns?: string[];
-  }>;
+  curatedClinics: CuratedClinicTarget[];
 }
 
 export interface CuratedBranchRule {
-  branchKey: string;
+  branchKey: "dental" | "ivf" | "cardiology" | "check_up" | "eye_treatments" | string;
   categoryNameTr: string;
   categoryNameEn: string;
   locations: CuratedLocationRule[];
@@ -40,11 +52,18 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         displayNameTr: "İstanbul Anadolu Yakası",
         displayNameEn: "Istanbul Anatolian Side",
         curatedClinics: [
-          { name: "İstanbul Diş Akademisi", slugOrId: "istanbul-dis-akademisi", aliasPatterns: ["istanbul diş akademisi", "istanbul dis akademisi", "istanbul dental academy"] },
-          { name: "Hospitadent Çamlıca", slugOrId: "hospitadent-camlica", aliasPatterns: ["hospitadent çamlıca", "hospitadent camlica", "çamlıca hospitadent"] },
-          { name: "Hospitadent Şerifali", slugOrId: "hospitadent-serifali", aliasPatterns: ["hospitadent şerifali", "hospitadent serifali"] },
-          { name: "Hospitadent Pendik", slugOrId: "hospitadent-pendik", aliasPatterns: ["hospitadent pendik", "pendik hospitadent"] },
-          { name: "Beyaz Işık Sancaktepe", slugOrId: "beyazisik-sancaktepe", aliasPatterns: ["beyaz ışık sancaktepe", "beyazisik sancaktepe"] },
+          {
+            name: "İstanbul Diş Akademisi",
+            slugOrId: "istanbul-dis-akademisi",
+            aliasPatterns: ["istanbul diş akademisi", "istanbul dis akademisi", "istanbul dental academy", "dis akademisi", "diş akademisi"],
+            district: "Kadıköy / Ataşehir",
+          },
+          {
+            name: "Hospitadent Çamlıca",
+            slugOrId: "hospitadent-camlica",
+            aliasPatterns: ["hospitadent çamlıca", "hospitadent camlica", "çamlıca hospitadent", "camlica hospitadent"],
+            district: "Çamlıca, Üsküdar",
+          },
         ],
       },
       {
@@ -53,13 +72,18 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         displayNameTr: "İstanbul Avrupa Yakası",
         displayNameEn: "Istanbul European Side",
         curatedClinics: [
-          { name: "Hospitadent Mecidiyeköy", slugOrId: "hospitadent-mecidiyekoy", aliasPatterns: ["hospitadent mecidiyeköy", "hospitadent mecidiyekoy", "mecidiyeköy hospitadent"] },
-          { name: "Hospitadent Cevizlibağ", slugOrId: "hospitadent-cevizlibag", aliasPatterns: ["hospitadent cevizlibağ", "hospitadent cevizlibag", "cevizlibağ hospitadent", "cevizlibag hospitadent"] },
-          { name: "Hospitadent Bakırköy", slugOrId: "hospitadent-bakirkoy", aliasPatterns: ["hospitadent bakırköy", "hospitadent bakirkoy"] },
-          { name: "Hospitadent Göktürk", slugOrId: "hospitadent-gokturk", aliasPatterns: ["hospitadent göktürk", "hospitadent gokturk", "göktürk hospitadent"] },
-          { name: "BHT Clinic İstanbul TEMA Hospital", slugOrId: "bht-clinic-istanbul-tema", aliasPatterns: ["bht clinic", "bht tema", "bht clinic istanbul tema hospital", "bht"] },
-          { name: "Hospitadent Bağcılar", slugOrId: "hospitadent-bagcilar", aliasPatterns: ["hospitadent bağcılar", "hospitadent bagcilar"] },
-          { name: "Hospitadent Fatih", slugOrId: "hospitadent-fatih", aliasPatterns: ["hospitadent fatih", "hospitadent dental group fatih"] },
+          {
+            name: "Hospitadent Mecidiyeköy",
+            slugOrId: "hospitadent-mecidiyekoy",
+            aliasPatterns: ["hospitadent mecidiyeköy", "hospitadent mecidiyekoy", "mecidiyeköy hospitadent", "mecidiyekoy hospitadent"],
+            district: "Mecidiyeköy, Şişli",
+          },
+          {
+            name: "BHT Clinic İstanbul TEMA Hospital",
+            slugOrId: "bht-clinic-istanbul-tema",
+            aliasPatterns: ["bht clinic", "bht tema", "bht clinic istanbul tema hospital", "bht clinic istanbul tema", "bht"],
+            district: "Halkalı / Küçükçekmece",
+          },
         ],
       },
       {
@@ -68,8 +92,18 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         displayNameTr: "İzmir",
         displayNameEn: "Izmir",
         curatedClinics: [
-          { name: "Westdent Clinic", slugOrId: "westdent-clinic", aliasPatterns: ["westdent", "westdent clinic", "westdent izmir"] },
-          { name: "Beyaz Işık İzmir Dental Group", slugOrId: "beyazisik-izmir-dental-group", aliasPatterns: ["beyaz ışık izmir", "beyazisik izmir", "beyaz ışık izmir dental group", "beyazisik-izmir"] },
+          {
+            name: "Westdent Clinic",
+            slugOrId: "westdent-clinic",
+            aliasPatterns: ["westdent", "westdent clinic", "westdent izmir"],
+            district: "Bayraklı, İzmir",
+          },
+          {
+            name: "Beyaz Işık İzmir Dental Group",
+            slugOrId: "beyazisik-izmir-dental-group",
+            aliasPatterns: ["beyaz ışık izmir", "beyazisik izmir", "beyaz ışık izmir dental group", "beyazisik-izmir", "beyaz isik izmir"],
+            district: "Alsancak, İzmir",
+          },
         ],
       },
       {
@@ -78,9 +112,18 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         displayNameTr: "Antalya",
         displayNameEn: "Antalya",
         curatedClinics: [
-          { name: "Hospitadent Antalya", slugOrId: "hospitadent-antalya", aliasPatterns: ["hospitadent antalya", "antalya hospitadent"] },
-          { name: "Memorial Antalya", slugOrId: "memorial-hospital", aliasPatterns: ["memorial antalya", "memorial hospital antalya", "memorial"] },
-          { name: "Hospitadent Alanya", slugOrId: "hospitadent-alanya", aliasPatterns: ["hospitadent alanya", "alanya hospitadent"] },
+          {
+            name: "Hospitadent Antalya",
+            slugOrId: "hospitadent-antalya",
+            aliasPatterns: ["hospitadent antalya", "antalya hospitadent"],
+            district: "Muratpaşa, Antalya",
+          },
+          {
+            name: "Memorial Antalya",
+            slugOrId: "memorial-hospital",
+            aliasPatterns: ["memorial antalya", "memorial hospital antalya", "memorial"],
+            district: "Kepez, Antalya",
+          },
         ],
       },
       {
@@ -89,7 +132,18 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         displayNameTr: "Ankara",
         displayNameEn: "Ankara",
         curatedClinics: [
-          { name: "Hospitadent Ankara", slugOrId: "hospitadent-ankara", aliasPatterns: ["hospitadent ankara", "ankara hospitadent"] },
+          {
+            name: "Hospitadent Ankara",
+            slugOrId: "hospitadent-ankara",
+            aliasPatterns: ["hospitadent ankara", "ankara hospitadent", "hospitadent"],
+            district: "Çankaya, Ankara",
+          },
+          {
+            name: "Lokman Hekim Ankara",
+            slugOrId: "lokman-hekim-university-ankara-hospital",
+            aliasPatterns: ["lokman hekim ankara", "lokman hekim university ankara hospital", "lokman hekim akay", "lokman hekim akay hospital", "lokman hekim üniversite hastanesi ankara", "lokman hekim"],
+            district: "Söğütözü, Ankara",
+          },
         ],
       },
     ],
@@ -101,23 +155,22 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
     locations: [
       {
         city: "istanbul",
-        side: "european",
-        displayNameTr: "İstanbul Avrupa Yakası",
-        displayNameEn: "Istanbul European Side",
-        curatedClinics: [
-          { name: "Intermed Nişantaşı", slugOrId: "intermed-nisantasi", aliasPatterns: ["intermed", "intermed nişantaşı", "intermed nisantasi"] },
-          { name: "Memorial Bahçelievler Hastanesi", slugOrId: "memorial-hospital", aliasPatterns: ["memorial", "memorial bahçelievler", "memorial bahcelievler"] },
-          { name: "BHT Clinic İstanbul TEMA Hospital", slugOrId: "bht-clinic-istanbul-tema", aliasPatterns: ["bht clinic", "bht tema"] },
-        ],
-      },
-      {
-        city: "istanbul",
         side: "anatolian",
         displayNameTr: "İstanbul Anadolu Yakası",
         displayNameEn: "Istanbul Anatolian Side",
         curatedClinics: [
-          { name: "Anadolu Medical Center", slugOrId: "anadolu-medical-center", aliasPatterns: ["anadolu medical center", "anadolu sağlık merkezi", "anadolu saglik merkezi", "anadolu"] },
-          { name: "Memorial Ataşehir Hastanesi", slugOrId: "memorial-hospital", aliasPatterns: ["memorial ataşehir", "memorial atasehir"] },
+          {
+            name: "Lokman Hekim",
+            slugOrId: "lokman-hekim-istanbul-hospital",
+            aliasPatterns: ["lokman hekim", "lokman hekim istanbul", "lokman hekim istanbul hospital", "lokman hekim kurtköy", "lokman hekim pendik", "lokman hekim sağlık grubu"],
+            district: "Kurtköy, Pendik",
+          },
+          {
+            name: "Anadolu Medical Center",
+            slugOrId: "anadolu-medical-center",
+            aliasPatterns: ["anadolu medical center", "anadolu sağlık merkezi", "anadolu saglik merkezi", "anadolu"],
+            district: "Gebze / Anadolu Yakası",
+          },
         ],
       },
     ],
@@ -128,22 +181,37 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
     categoryNameEn: "Cardiology",
     locations: [
       {
+        city: "istanbul",
+        side: "anatolian",
+        displayNameTr: "İstanbul Anadolu Yakası",
+        displayNameEn: "Istanbul Anatolian Side",
+        curatedClinics: [
+          {
+            name: "Lokman Hekim",
+            slugOrId: "lokman-hekim-istanbul-hospital",
+            aliasPatterns: ["lokman hekim", "lokman hekim istanbul", "lokman hekim istanbul hospital", "lokman hekim kurtköy", "lokman hekim pendik", "lokman hekim sağlık grubu"],
+            district: "Kurtköy, Pendik",
+          },
+          {
+            name: "Anadolu Medical Center",
+            slugOrId: "anadolu-medical-center",
+            aliasPatterns: ["anadolu medical center", "anadolu sağlık merkezi", "anadolu saglik merkezi", "anadolu"],
+            district: "Gebze / Anadolu Yakası",
+          },
+        ],
+      },
+      {
         city: "kocaeli",
         side: "any",
         displayNameTr: "Kocaeli / Gebze",
         displayNameEn: "Kocaeli / Gebze",
         curatedClinics: [
-          { name: "Anadolu Medical Center", slugOrId: "anadolu-medical-center", aliasPatterns: ["anadolu medical center", "anadolu sağlık merkezi", "anadolu saglik merkezi", "anadolu"] },
-        ],
-      },
-      {
-        city: "istanbul",
-        side: "european",
-        displayNameTr: "İstanbul Avrupa Yakası",
-        displayNameEn: "Istanbul European Side",
-        curatedClinics: [
-          { name: "Memorial Bahçelievler Hastanesi", slugOrId: "memorial-hospital", aliasPatterns: ["memorial", "memorial bahçelievler", "memorial bahcelievler"] },
-          { name: "BHT Clinic İstanbul TEMA Hospital", slugOrId: "bht-clinic-istanbul-tema", aliasPatterns: ["bht clinic", "bht tema"] },
+          {
+            name: "Anadolu Medical Center",
+            slugOrId: "anadolu-medical-center",
+            aliasPatterns: ["anadolu medical center", "anadolu sağlık merkezi", "anadolu saglik merkezi", "anadolu"],
+            district: "Gebze, Kocaeli",
+          },
         ],
       },
     ],
@@ -155,13 +223,22 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
     locations: [
       {
         city: "istanbul",
-        side: "european",
-        displayNameTr: "İstanbul Avrupa Yakası",
-        displayNameEn: "Istanbul European Side",
+        side: "anatolian",
+        displayNameTr: "İstanbul Anadolu Yakası",
+        displayNameEn: "Istanbul Anatolian Side",
         curatedClinics: [
-          { name: "Intermed Nişantaşı", slugOrId: "intermed-nisantasi", aliasPatterns: ["intermed", "intermed nişantaşı", "intermed nisantasi"] },
-          { name: "Memorial Bahçelievler Hastanesi", slugOrId: "memorial-hospital", aliasPatterns: ["memorial"] },
-          { name: "BHT Clinic İstanbul TEMA Hospital", slugOrId: "bht-clinic-istanbul-tema", aliasPatterns: ["bht clinic", "bht tema"] },
+          {
+            name: "Lokman Hekim",
+            slugOrId: "lokman-hekim-istanbul-hospital",
+            aliasPatterns: ["lokman hekim", "lokman hekim istanbul", "lokman hekim istanbul hospital", "lokman hekim kurtköy", "lokman hekim pendik", "lokman hekim sağlık grubu"],
+            district: "Kurtköy, Pendik",
+          },
+          {
+            name: "Anadolu Medical Center",
+            slugOrId: "anadolu-medical-center",
+            aliasPatterns: ["anadolu medical center", "anadolu sağlık merkezi", "anadolu saglik merkezi", "anadolu"],
+            district: "Gebze / Anadolu Yakası",
+          },
         ],
       },
       {
@@ -170,7 +247,47 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         displayNameTr: "Kocaeli / Gebze",
         displayNameEn: "Kocaeli / Gebze",
         curatedClinics: [
-          { name: "Anadolu Medical Center", slugOrId: "anadolu-medical-center", aliasPatterns: ["anadolu medical center", "anadolu sağlık merkezi", "anadolu saglik merkezi"] },
+          {
+            name: "Anadolu Medical Center",
+            slugOrId: "anadolu-medical-center",
+            aliasPatterns: ["anadolu medical center", "anadolu sağlık merkezi", "anadolu saglik merkezi"],
+            district: "Gebze, Kocaeli",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    branchKey: "hair_transplant",
+    categoryNameTr: "Saç Ekimi",
+    categoryNameEn: "Hair Transplant",
+    locations: [
+      {
+        city: "istanbul",
+        side: "anatolian",
+        displayNameTr: "İstanbul Anadolu Yakası",
+        displayNameEn: "Istanbul Anatolian Side",
+        curatedClinics: [
+          {
+            name: "Lokman Hekim",
+            slugOrId: "lokman-istanbul",
+            aliasPatterns: ["lokman hekim", "lokman hekim istanbul"],
+            district: "Kurtköy, Pendik",
+          },
+        ],
+      },
+      {
+        city: "istanbul",
+        side: "european",
+        displayNameTr: "İstanbul Avrupa Yakası",
+        displayNameEn: "Istanbul European Side",
+        curatedClinics: [
+          {
+            name: "BHT Clinic İstanbul TEMA Hospital",
+            slugOrId: "bht-tema",
+            aliasPatterns: ["bht clinic", "bht tema"],
+            district: "Halkalı / Küçükçekmece",
+          },
         ],
       },
     ],
@@ -186,8 +303,18 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         displayNameTr: "İstanbul Avrupa Yakası",
         displayNameEn: "Istanbul European Side",
         curatedClinics: [
-          { name: "Dünyagöz Etiler", slugOrId: "dunyagoz-etiler", aliasPatterns: ["dunyagoz etiler", "dünyagöz etiler", "dunyagoz"] },
-          { name: "Dünyagöz Ataköy", slugOrId: "dunyagoz-atakoy", aliasPatterns: ["dunyagoz ataköy", "dünyagöz atakoy", "dunyagoz atakoy"] },
+          {
+            name: "Dünyagöz Ataköy",
+            slugOrId: "dunyagoz-atakoy",
+            aliasPatterns: ["dunyagoz ataköy", "dünyagöz atakoy", "dunyagoz atakoy", "dünyagöz ataköy", "dunyagoz"],
+            district: "Ataköy, Bakırköy",
+          },
+          {
+            name: "BHT Clinic İstanbul TEMA Hospital",
+            slugOrId: "bht-clinic-istanbul-tema",
+            aliasPatterns: ["bht clinic", "bht tema", "bht clinic istanbul tema hospital", "bht clinic istanbul tema", "bht"],
+            district: "Halkalı / Küçükçekmece",
+          },
         ],
       },
       {
@@ -196,7 +323,12 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         displayNameTr: "Antalya",
         displayNameEn: "Antalya",
         curatedClinics: [
-          { name: "Dünyagöz Antalya", slugOrId: "dunyagoz-antalya", aliasPatterns: ["dunyagoz antalya", "dünyagöz antalya"] },
+          {
+            name: "Dünyagöz Antalya",
+            slugOrId: "dunyagoz-antalya",
+            aliasPatterns: ["dunyagoz antalya", "dünyagöz antalya"],
+            district: "Muratpaşa, Antalya",
+          },
         ],
       },
     ],
@@ -218,18 +350,51 @@ export const FEELINHEALTHY_CONFIG = {
 
 // ─── Location & Side Matching Helpers ────────────────────────────────────────
 
-const ANATOLIAN_KEYWORDS = [
-  "anadolu", "anatolian", "asya", "asian",
-  "kadikoy", "uskudar", "camlica", "pendik", "atasehir", "umraniye",
-  "maltepe", "kartal", "serifali", "sancaktepe", "tuzla", "kocaeli", "gebze",
-  "kurtkoy", "bostanci"
+export interface SideDetectionResult {
+  city: string | null;
+  side: "anatolian" | "european" | "any" | null;
+  source: "explicit_text" | "structured_card" | "district_cue" | "airport_cue" | "branch_implicit" | null;
+  confidence: "high" | "moderate" | "low";
+  cueName?: string;
+}
+
+const ANATOLIAN_EXPLICIT_KEYWORDS = [
+  "anadolu yakasi", "anadolu yakası", "anadoluyakasi", "anadoluyakası",
+  "anatolian side", "anatolianside", "asian side", "asianside",
+  "asya yakasi", "asya yakası", "anadolu'da", "anadoluda", "anadolu yakasında", "anadolu yakasinda",
+  "anatolian", "asian"
 ];
 
-const EUROPEAN_KEYWORDS = [
-  "avrupa", "european",
-  "mecidiyekoy", "sisli", "bakirkoy", "atakoy", "kucukcekmece", "fatih",
-  "bagcilar", "besiktas", "beylikduzu", "tema", "halkali", "etiler", "levent",
-  "nisantasi", "bahcelievler", "gokturk", "cevizlibag", "zeytinburnu"
+const EUROPEAN_EXPLICIT_KEYWORDS = [
+  "avrupa yakasi", "avrupa yakası", "avrupayakasi", "avrupayakası",
+  "european side", "europeanside",
+  "avrupa'da", "avrupada", "avrupa yakasında", "avrupa yakasinda",
+  "european"
+];
+
+const ANATOLIAN_DISTRICT_KEYWORDS = [
+  "kadikoy", "kadıköy", "uskudar", "üsküdar", "camlica", "çamlıca",
+  "pendik", "atasehir", "ataşehir", "umraniye", "ümraniye", "maltepe",
+  "kartal", "serifali", "şerifali", "sancaktepe", "tuzla", "kurtkoy", "kurtköy",
+  "bostanci", "bostancı", "cekmekoy", "çekmeköy", "beykoz"
+];
+
+const EUROPEAN_DISTRICT_KEYWORDS = [
+  "taksim", "sisli", "şişli", "besiktas", "beşiktaş", "bakirkoy", "bakırköy",
+  "mecidiyekoy", "mecidiyeköy", "atakoy", "ataköy", "kucukcekmece", "küçükçekmece",
+  "fatih", "bagcilar", "bağcılar", "beylikduzu", "beylikdüzü", "tema", "halkali", "halkalı",
+  "etiler", "levent", "nisantasi", "nişantaşı", "bahcelievler", "bahçelievler",
+  "gokturk", "göktürk", "cevizlibag", "cevizlibağ", "zeytinburnu", "sariyer", "sarıyer"
+];
+
+const ANATOLIAN_AIRPORT_KEYWORDS = [
+  "sabiha gokcen", "sabiha gökçen", "sabiha gokcen havalimani", "sabiha gökçen havalimanı",
+  "sabiha gokcen airport", "saw airport", "saw havalimani", "saw havalimanı", "saw"
+];
+
+const EUROPEAN_AIRPORT_KEYWORDS = [
+  "istanbul havalimani", "istanbul havalimanı", "istanbul airport", "ist airport",
+  "ist havalimani", "ist havalimanı", "yeni havalimani", "yeni havalimanı", "ist"
 ];
 
 function normalizeLocString(str: string): string {
@@ -253,35 +418,333 @@ function normalizeLocString(str: string): string {
     .trim();
 }
 
+export function resolveIstanbulSideFromText(rawText?: string | null): SideDetectionResult {
+  if (!rawText) {
+    return { city: null, side: null, source: null, confidence: "low" };
+  }
+  const norm = normalizeLocString(rawText);
+
+  let city: string | null = null;
+  if (norm.includes("istanbul")) city = "istanbul";
+  else if (norm.includes("izmir")) city = "izmir";
+  else if (norm.includes("antalya")) city = "antalya";
+  else if (norm.includes("ankara")) city = "ankara";
+  else if (norm.includes("alanya")) city = "antalya";
+  else if (norm.includes("bodrum")) city = "bodrum";
+  else if (norm.includes("bursa")) city = "bursa";
+  else if (norm.includes("kocaeli") || norm.includes("gebze")) city = "kocaeli";
+
+  // 1. Check Explicit Side Keywords (High Confidence)
+  if (EUROPEAN_EXPLICIT_KEYWORDS.some(k => norm.includes(normalizeLocString(k)))) {
+    return { city: "istanbul", side: "european", source: "explicit_text", confidence: "high" };
+  }
+  if (ANATOLIAN_EXPLICIT_KEYWORDS.some(k => norm.includes(normalizeLocString(k)))) {
+    return { city: "istanbul", side: "anatolian", source: "explicit_text", confidence: "high" };
+  }
+
+  // 2. Check District Keywords (High Confidence)
+  for (const dist of EUROPEAN_DISTRICT_KEYWORDS) {
+    const distNorm = normalizeLocString(dist);
+    const regex = new RegExp(`\\b${distNorm}\\b`, "i");
+    if (regex.test(norm) || norm.includes(distNorm)) {
+      return { city: "istanbul", side: "european", source: "district_cue", confidence: "high", cueName: dist };
+    }
+  }
+  for (const dist of ANATOLIAN_DISTRICT_KEYWORDS) {
+    const distNorm = normalizeLocString(dist);
+    const regex = new RegExp(`\\b${distNorm}\\b`, "i");
+    if (regex.test(norm) || norm.includes(distNorm)) {
+      return { city: "istanbul", side: "anatolian", source: "district_cue", confidence: "high", cueName: dist };
+    }
+  }
+
+  // 3. Check Airport Keywords (Moderate Confidence - signal for confirmation)
+  for (const apt of EUROPEAN_AIRPORT_KEYWORDS) {
+    const aptNorm = normalizeLocString(apt);
+    const regex = new RegExp(`\\b${aptNorm}\\b`, "i");
+    if (regex.test(norm) || (apt.length > 3 && norm.includes(aptNorm))) {
+      return { city: "istanbul", side: "european", source: "airport_cue", confidence: "moderate", cueName: "İstanbul Havalimanı (IST)" };
+    }
+  }
+  for (const apt of ANATOLIAN_AIRPORT_KEYWORDS) {
+    const aptNorm = normalizeLocString(apt);
+    const regex = new RegExp(`\\b${aptNorm}\\b`, "i");
+    if (regex.test(norm) || (apt.length > 3 && norm.includes(aptNorm))) {
+      return { city: "istanbul", side: "anatolian", source: "airport_cue", confidence: "moderate", cueName: "Sabiha Gökçen Havalimanı (SAW)" };
+    }
+  }
+
+  return {
+    city,
+    side: city && city !== "istanbul" ? "any" : null,
+    source: null,
+    confidence: "low",
+  };
+}
+
 export function resolveCityAndSide(rawLocation?: string | null): {
   city: string | null;
   side: "anatolian" | "european" | "any" | null;
 } {
-  if (!rawLocation) return { city: null, side: null };
-  const normalized = normalizeLocString(rawLocation);
+  const res = resolveIstanbulSideFromText(rawLocation);
+  return { city: res.city, side: res.side };
+}
 
-  let city: string | null = null;
-  if (normalized.includes("istanbul")) city = "istanbul";
-  else if (normalized.includes("izmir")) city = "izmir";
-  else if (normalized.includes("antalya")) city = "antalya";
-  else if (normalized.includes("ankara")) city = "ankara";
-  else if (normalized.includes("alanya")) city = "antalya";
-  else if (normalized.includes("bodrum")) city = "bodrum";
-  else if (normalized.includes("bursa")) city = "bursa";
-  else if (normalized.includes("kocaeli") || normalized.includes("gebze")) city = "kocaeli";
+// ─── Branch Istanbul Side Availability & Clarification Helper ────────────────
 
-  let side: "anatolian" | "european" | "any" | null = null;
-  if (city === "istanbul" || !city) {
-    if (ANATOLIAN_KEYWORDS.some(k => normalized.includes(k))) {
-      side = "anatolian";
-      if (!city) city = "istanbul";
-    } else if (EUROPEAN_KEYWORDS.some(k => normalized.includes(k))) {
-      side = "european";
-      if (!city) city = "istanbul";
+export interface BranchSideAvailability {
+  branchKey: string;
+  sideAvailability: "both" | "anatolian_only" | "european_only" | "none";
+  availableSides: ("anatolian" | "european")[];
+  singleSideNameTr?: string;
+  singleSideNameEn?: string;
+  clarificationMessageTr: string;
+  clarificationMessageEn: string;
+  confirmActionTr: string;
+  confirmActionEn: string;
+  rejectActionTr: string;
+  rejectActionEn: string;
+  hasAnatolian?: boolean;
+  hasEuropean?: boolean;
+}
+
+export function getBranchIstanbulSideAvailability(rawBranch?: string | null): BranchSideAvailability {
+  const branchKey = normalizeTreatmentBranch(rawBranch);
+
+  if (branchKey === "dental") {
+    return {
+      branchKey,
+      sideAvailability: "both",
+      availableSides: ["european", "anatolian"],
+      clarificationMessageTr: "İstanbul, Avrupa ve Anadolu Yakası olmak üzere iki ana bölgeye ayrılıyor. Konaklama planınıza ve ulaşım tercihinize göre doğru bölgedeki klinikleri önerebilmem için hangi yakayı tercih ettiğinizi netleştirebilir miyiz?",
+      clarificationMessageEn: "Istanbul is divided into two main areas: the European Side and the Anatolian Side. To recommend clinics in the most convenient location, could you tell me which side you prefer?",
+      confirmActionTr: "Avrupa Yakası",
+      confirmActionEn: "European Side",
+      rejectActionTr: "Anadolu Yakası",
+      rejectActionEn: "Anatolian Side",
+      hasAnatolian: true,
+      hasEuropean: true,
+    };
+  }
+
+  if (branchKey === "ivf") {
+    return {
+      branchKey,
+      sideAvailability: "anatolian_only",
+      availableSides: ["anatolian"],
+      singleSideNameTr: "Anadolu Yakası",
+      singleSideNameEn: "Anatolian Side",
+      clarificationMessageTr: "Tüp Bebek (IVF) için şu anda öne çıkan partner seçeneklerimiz İstanbul Anadolu Yakası’nda bulunuyor. Anadolu Yakası’ndaki klinikleri değerlendirmek ister misiniz?",
+      clarificationMessageEn: "For IVF treatments, our featured partner clinic options are located on Istanbul's Anatolian Side. Would you like to evaluate clinics on the Anatolian Side?",
+      confirmActionTr: "Evet, Anadolu Yakası seçeneklerini göster",
+      confirmActionEn: "Yes, show Anatolian Side options",
+      rejectActionTr: "Hayır, başka şehirleri değerlendirmek istiyorum",
+      rejectActionEn: "No, I'd like to explore other cities",
+      hasAnatolian: true,
+      hasEuropean: false,
+    };
+  }
+
+  if (branchKey === "cardiology") {
+    return {
+      branchKey,
+      sideAvailability: "anatolian_only",
+      availableSides: ["anatolian"],
+      singleSideNameTr: "Anadolu Yakası",
+      singleSideNameEn: "Anatolian Side",
+      clarificationMessageTr: "Kardiyoloji için şu anda öne çıkan partner seçeneklerimiz İstanbul Anadolu Yakası’nda bulunuyor. Anadolu Yakası’ndaki klinikleri değerlendirmek ister misiniz?",
+      clarificationMessageEn: "For Cardiology, our featured partner clinic options are located on Istanbul's Anatolian Side. Would you like to evaluate clinics on the Anatolian Side?",
+      confirmActionTr: "Evet, Anadolu Yakası seçeneklerini göster",
+      confirmActionEn: "Yes, show Anatolian Side options",
+      rejectActionTr: "Hayır, başka şehirleri değerlendirmek istiyorum",
+      rejectActionEn: "No, I'd like to explore other cities",
+      hasAnatolian: true,
+      hasEuropean: false,
+    };
+  }
+
+  if (branchKey === "check_up") {
+    return {
+      branchKey,
+      sideAvailability: "anatolian_only",
+      availableSides: ["anatolian"],
+      singleSideNameTr: "Anadolu Yakası",
+      singleSideNameEn: "Anatolian Side",
+      clarificationMessageTr: "Check-up için şu anda öne çıkan partner seçeneklerimiz İstanbul Anadolu Yakası’nda bulunuyor. Anadolu Yakası’ndaki klinikleri değerlendirmek ister misiniz?",
+      clarificationMessageEn: "For Check-Up, our featured partner clinic options are located on Istanbul's Anatolian Side. Would you like to evaluate clinics on the Anatolian Side?",
+      confirmActionTr: "Evet, Anadolu Yakası seçeneklerini göster",
+      confirmActionEn: "Yes, show Anatolian Side options",
+      rejectActionTr: "Hayır, başka şehirleri değerlendirmek istiyorum",
+      rejectActionEn: "No, I'd like to explore other cities",
+      hasAnatolian: true,
+      hasEuropean: false,
+    };
+  }
+
+  if (branchKey === "eye_treatments") {
+    return {
+      branchKey,
+      sideAvailability: "european_only",
+      availableSides: ["european"],
+      singleSideNameTr: "Avrupa Yakası",
+      singleSideNameEn: "European Side",
+      clarificationMessageTr: "Göz tedavisi için şu anda öne çıkan partner seçeneklerimiz İstanbul Avrupa Yakası’nda bulunuyor. Avrupa Yakası’ndaki klinikleri değerlendirmek ister misiniz?",
+      clarificationMessageEn: "For Eye Treatments, our featured partner clinic options are located on Istanbul's European Side. Would you like to evaluate clinics on the European Side?",
+      confirmActionTr: "Evet, Avrupa Yakası seçeneklerini göster",
+      confirmActionEn: "Yes, show European Side options",
+      rejectActionTr: "Hayır, başka şehirleri değerlendirmek istiyorum",
+      rejectActionEn: "No, I'd like to explore other cities",
+      hasAnatolian: false,
+      hasEuropean: true,
+    };
+  }
+
+  return {
+    branchKey,
+    sideAvailability: "both",
+    availableSides: ["european", "anatolian"],
+    clarificationMessageTr: "İstanbul, Avrupa ve Anadolu Yakası olmak üzere iki ana bölgeye ayrılıyor. Size en uygun klinikleri önerebilmem için hangi yakayı tercih ettiğinizi netleştirebilir miyiz?",
+    clarificationMessageEn: "Istanbul is divided into the European Side and the Anatolian Side. Which side do you prefer?",
+    confirmActionTr: "Avrupa Yakası",
+    confirmActionEn: "European Side",
+    rejectActionTr: "Anadolu Yakası",
+    rejectActionEn: "Anatolian Side",
+    hasAnatolian: true,
+    hasEuropean: true,
+  };
+}
+
+export function getIstanbulSideClarificationCard(rawBranch?: string | null, locale: string = "tr") {
+  const isEn = locale.toLowerCase().startsWith("en");
+  const avail = getBranchIstanbulSideAvailability(rawBranch);
+
+  if (avail.sideAvailability === "both") {
+    return {
+      type: "side_clarification",
+      title: isEn ? "Istanbul Side Selection" : "İstanbul Yaka Tercihi",
+      message: isEn ? avail.clarificationMessageEn : avail.clarificationMessageTr,
+      options: [
+        {
+          id: "european",
+          side: "european",
+          title: isEn ? "European Side (Avrupa Yakası)" : "Avrupa Yakası",
+          subtitle: isEn ? "Near Istanbul Airport (IST), Taksim, Şişli, Mecidiyeköy" : "İstanbul Havalimanı (IST), Taksim, Şişli, Mecidiyeköy yakınları",
+          badge: isEn ? "Central & Tourist Hub" : "Turistik & Ulaşım Merkezi",
+        },
+        {
+          id: "anatolian",
+          side: "anatolian",
+          title: isEn ? "Anatolian / Asian Side (Anadolu Yakası)" : "Anadolu Yakası",
+          subtitle: isEn ? "Near Sabiha Gökçen Airport (SAW), Kadıköy, Çamlıca, Kurtköy" : "Sabiha Gökçen Havalimanı (SAW), Kadıköy, Çamlıca, Kurtköy yakınları",
+          badge: isEn ? "Quiet & Modern Centers" : "Sakin & Modern Merkezler",
+        },
+        {
+          id: "unsure",
+          side: "unsure",
+          title: isEn ? "I'm Not Sure / Help Me Choose" : "Emin Değilim / Bana Yardımcı Ol",
+          subtitle: isEn ? "Select based on my airport or accommodation" : "Havaalanıma veya konaklama yerime göre öner",
+          badge: isEn ? "Guided Matching" : "Rehberli Eşleştirme",
+        },
+      ],
+    };
+  }
+
+  // Single side branches (IVF, Cardiology, Check-up, Eye)
+  const singleSide = avail.availableSides[0];
+  return {
+    type: "branch_side_confirm",
+    branchKey: avail.branchKey,
+    side: singleSide,
+    title: isEn ? "Branch Location Information" : "Tedavi Lokasyon Bilgisi",
+    message: isEn ? avail.clarificationMessageEn : avail.clarificationMessageTr,
+    options: [
+      {
+        id: `confirm_${singleSide}`,
+        side: singleSide,
+        action: "confirm",
+        title: isEn ? avail.confirmActionEn : avail.confirmActionTr,
+        badge: isEn ? "Recommended" : "Önerilen Seçenek",
+      },
+      {
+        id: "explore_other_cities",
+        side: "other_cities",
+        action: "reject",
+        title: isEn ? avail.rejectActionEn : avail.rejectActionTr,
+        badge: isEn ? "Alternative" : "Alternatif Şehirler",
+      },
+    ],
+  };
+}
+
+export function getSideGuidancePrompt(airportOrDistrictCue?: string | null, locale: string = "tr"): string {
+  const isEn = locale.toLowerCase().startsWith("en");
+
+  if (airportOrDistrictCue) {
+    const norm = normalizeLocString(airportOrDistrictCue);
+    if (norm.includes("ist") || norm.includes("istanbul havalimani") || norm.includes("istanbul airport")) {
+      return isEn
+        ? "You mentioned using Istanbul Airport (IST). For travel convenience, clinics on the European Side (such as Mecidiyeköy and Halkalı) are usually more practical. Would you like to evaluate European Side options?"
+        : "İstanbul Havalimanı’nı (IST) kullanacağınızı belirttiniz. Ulaşım kolaylığı açısından Avrupa Yakası’ndaki klinikler (Mecidiyeköy ve Halkalı) genellikle daha pratiktir. Avrupa Yakası seçeneklerini değerlendirmek ister misiniz?";
+    }
+    if (norm.includes("saw") || norm.includes("sabiha")) {
+      return isEn
+        ? "You mentioned using Sabiha Gökçen Airport (SAW). For travel convenience, clinics on the Anatolian Side (such as Çamlıca and Kurtköy) are usually closer. Would you like to evaluate Anatolian Side options?"
+        : "Sabiha Gökçen Havalimanı’nı (SAW) kullanacağınızı belirttiniz. Ulaşım kolaylığı açısından Anadolu Yakası’ndaki klinikler (Çamlıca ve Kurtköy) genellikle daha pratiktir. Anadolu Yakası seçeneklerini değerlendirmek ister misiniz?";
     }
   }
 
-  return { city, side: side || (city ? "any" : null) };
+  return isEn
+    ? "Istanbul is a large metropolis spanning two continents. Which airport will you use (Istanbul Airport (IST) or Sabiha Gökçen Airport (SAW)), or in which area will you stay?"
+    : "İstanbul iki kıtaya yayılan büyük bir metropol. Hangi havalimanını kullanacaksınız (İstanbul Havalimanı veya Sabiha Gökçen) veya hangi bölgede konaklayacaksınız?";
+}
+
+export function formatClinicCardLocation(clinic: any, locale: string = "tr"): string {
+  const isEn = locale.toLowerCase().startsWith("en");
+  const cName = (clinic.clinicName || "").toLowerCase();
+  const cSlug = (clinic.clinicSlug || clinic.id || "").toLowerCase();
+  const rawCity = (clinic.location?.city || "").toLowerCase();
+
+  // If not Istanbul, return standard city name
+  // Workaround for Turkish dotless i (ı) / dotted I (İ) matching
+  const normalizedCity = rawCity.replace(/i̇/g, "i").replace(/ı/g, "i").replace(/istanbul/g, "istanbul");
+  const isIstanbul = normalizedCity.includes("istanbul") || cName.includes("istanbul") || cSlug.includes("istanbul") || cName.includes("camlica") || cName.includes("mecidiyekoy") || cName.includes("bht") || cName.includes("atakoy") || cSlug.includes("dis-akademisi");
+  
+  if (!isIstanbul) {
+    const cityCap = clinic.location?.city || "Türkiye";
+    const countryCap = clinic.location?.country || "Türkiye";
+    return `${cityCap}, ${countryCap}`;
+  }
+
+  // Check which side this clinic belongs to
+  const sideRes = resolveIstanbulSideFromText(`${cName} ${cSlug} ${clinic.location?.address || ""} ${clinic.location?.district || ""}`);
+  const side = sideRes.side || (cSlug.includes("camlica") || cSlug.includes("lokman") || cSlug.includes("dis-akademisi") || cSlug.includes("anadolu-medical") ? "anatolian" : "european");
+
+  let districtSubtitle = "";
+  if (cSlug.includes("mecidiyekoy") || cName.includes("mecidiyeköy") || cName.includes("mecidiyekoy")) {
+    districtSubtitle = "Mecidiyeköy, Şişli";
+  } else if (cSlug.includes("camlica") || cName.includes("çamlıca") || cName.includes("camlica")) {
+    districtSubtitle = "Çamlıca, Üsküdar";
+  } else if (cSlug.includes("bht") || cName.includes("bht")) {
+    districtSubtitle = "Halkalı / Küçükçekmece";
+  } else if (cSlug.includes("atakoy") || cName.includes("ataköy") || cName.includes("atakoy")) {
+    districtSubtitle = "Ataköy, Bakırköy";
+  } else if (cSlug.includes("dis-akademisi") || cName.includes("akademisi")) {
+    districtSubtitle = "Kadıköy / Ataşehir";
+  } else if (cSlug.includes("lokman-hekim") || cName.includes("lokman")) {
+    districtSubtitle = "Kurtköy, Pendik";
+  } else if (cSlug.includes("anadolu-medical") || cName.includes("anadolu")) {
+    districtSubtitle = "Gebze / Anadolu Yakası";
+  } else if (clinic.location?.district) {
+    districtSubtitle = clinic.location.district;
+  }
+
+  if (side === "anatolian") {
+    const base = isEn ? "Location: Istanbul, Anatolian Side" : "Lokasyon: İstanbul, Anadolu Yakası";
+    return districtSubtitle ? `${base} • ${districtSubtitle}` : base;
+  } else {
+    const base = isEn ? "Location: Istanbul, European Side" : "Lokasyon: İstanbul, Avrupa Yakası";
+    return districtSubtitle ? `${base} • ${districtSubtitle}` : base;
+  }
 }
 
 // ─── Treatment Branch Normalizer ─────────────────────────────────────────────
@@ -312,7 +775,7 @@ export function normalizeTreatmentBranch(rawCategory?: string | null): string {
 export function getCuratedClinicsForFeelinHealthy(
   category: string,
   city?: string | null,
-  side?: "anatolian" | "european" | "any" | null,
+  side?: "anatolian" | "european" | "any" | "unsure" | null,
   availableClinics: any[] = []
 ): {
   matchingCuratedClinics: any[];
@@ -345,7 +808,7 @@ export function getCuratedClinicsForFeelinHealthy(
     const cityLower = city.toLowerCase();
     matchedLocRule = branchRule.locations.find(l => {
       if (l.city !== cityLower) return false;
-      if (side && side !== "any" && l.side && l.side !== "any") {
+      if (side && side !== "any" && side !== "unsure" && l.side && l.side !== "any") {
         return l.side === side;
       }
       return true;

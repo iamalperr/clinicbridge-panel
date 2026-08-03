@@ -8,6 +8,7 @@ import {
   Building2, TrendingUp, Loader2, ExternalLink, MessageSquare,
 } from "lucide-react";
 import { PrivacyConsentCard } from "@/components/chat/PrivacyConsentCard";
+import { IstanbulSideClarificationCard } from "@/components/chat/IstanbulSideClarificationCard";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -249,6 +250,8 @@ export default function FeelinHealthyLive() {
     privacyNoticeUrl?: string;
     privacyNoticeLabel?: string;
     consentStructured?: any;
+    sideClarificationCard?: any;
+    selectedSideOptionId?: string;
     additionalEligibleClinicCount?: number;
     conversionData?: any;
   }[]>([]);
@@ -431,6 +434,68 @@ export default function FeelinHealthyLive() {
     }
   };
 
+  const sendSideSelectionAction = async (side: string, optionId: string, actionType?: "confirm" | "reject") => {
+    if (aiTyping) return;
+    setAiTyping(true);
+
+    let userDisplay = "";
+    if (side === "european") userDisplay = lang === "tr" ? "İstanbul Avrupa Yakası" : "Istanbul European Side";
+    else if (side === "anatolian") userDisplay = lang === "tr" ? "İstanbul Anadolu Yakası" : "Istanbul Anatolian Side";
+    else if (side === "unsure") userDisplay = lang === "tr" ? "Emin Değilim, Bana Yardımcı Olun" : "Not Sure, Help Me Choose";
+    else if (actionType === "confirm") userDisplay = lang === "tr" ? "Evet, bu bölgedeki seçenekleri görmek istiyorum" : "Yes, show options in this location";
+    else userDisplay = lang === "tr" ? "Farklı şehir seçeneklerini değerlendirmek istiyorum" : "I want to explore other cities";
+
+    setAiMsgs((p) => [
+      ...p.map((m) => (m.type === "side_clarification" || m.type === "side_clarification_single")
+        ? { ...m, type: "side_clarification_resolved", selectedSideOptionId: optionId }
+        : m),
+      { role: "user", text: userDisplay }
+    ]);
+
+    try {
+      const actionPayload = actionType
+        ? { type: "branch_side_confirm", side, action: actionType, optionId, locale: lang }
+        : { type: "side_selection", side, optionId, locale: lang };
+
+      const res = await fetch(`/api/public/agency/${SLUG}/matching-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: actionPayload,
+          history: aiMsgs.slice(-10).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text })),
+          sessionContext: sessionCtx,
+        }),
+      });
+
+      if (!res.ok) throw new Error(`API error ${res.status}`);
+      const data = await res.json();
+
+      const replyMsg: any = {
+        role: "ai",
+        text: data.reply || "Yanıt alınamadı.",
+        type: data.type || "text",
+        sideClarificationCard: data.sideClarificationCard,
+        clinics: data.clinics || undefined,
+        showClinicCards: data.showClinicCards,
+        privacyNoticeUrl: data.privacyNoticeUrl,
+        privacyNoticeLabel: data.privacyNoticeLabel,
+        consentStructured: data.consentStructured,
+        additionalEligibleClinicCount: data.additionalEligibleClinicCount,
+        conversionData: data.conversionData,
+      };
+      setAiMsgs((p) => [...p, replyMsg]);
+      if (data.sessionContext) setSessionCtx(data.sessionContext);
+    } catch (err) {
+      console.error("[CB-DEMO] ERROR:", err);
+      setAiMsgs((p) => [...p, {
+        role: "ai",
+        text: lang === "tr" ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin." : "We're experiencing a technical issue. Please try again."
+      }]);
+    } finally {
+      setAiTyping(false);
+    }
+  };
+
   const sendConsentAction = async (status: "accept" | "decline") => {
     if (aiTyping) return;
     setAiTyping(true);
@@ -462,6 +527,7 @@ export default function FeelinHealthyLive() {
         role: "ai",
         text: data.reply || "Yanıt alınamadı.",
         type: data.type || "text",
+        sideClarificationCard: data.sideClarificationCard,
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
         privacyNoticeUrl: data.privacyNoticeUrl,
@@ -506,6 +572,7 @@ export default function FeelinHealthyLive() {
         role: "ai",
         text: data.reply || "Yanıt alınamadı.",
         type: data.type || "text",
+        sideClarificationCard: data.sideClarificationCard,
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
         privacyNoticeUrl: data.privacyNoticeUrl,
@@ -563,6 +630,7 @@ export default function FeelinHealthyLive() {
         role: "ai",
         text: data.reply || "Yanıt alınamadı.",
         type: data.type || "text",
+        sideClarificationCard: data.sideClarificationCard,
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
         privacyNoticeUrl: data.privacyNoticeUrl,
@@ -828,6 +896,32 @@ export default function FeelinHealthyLive() {
                           disabled={aiTyping}
                           onAccept={() => sendConsentAction("accept")}
                           onDecline={() => sendConsentAction("decline")}
+                          primaryColor={C.primary}
+                          navyColor={C.navy}
+                          borderColor={C.border}
+                        />
+                      </div>
+                    ) : m.type === "side_clarification" || m.type === "side_clarification_single" || m.type === "side_clarification_resolved" ? (
+                      <div style={{
+                        background: C.white,
+                        color: C.text,
+                        padding: "14px 18px",
+                        borderRadius: "4px 16px 16px 16px",
+                        border: `1px solid ${C.border}`,
+                        fontSize: 14,
+                        lineHeight: 1.6,
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.03)"
+                      }}>
+                        <IstanbulSideClarificationCard
+                          type={m.sideClarificationCard?.type || m.type}
+                          title={m.sideClarificationCard?.title}
+                          message={m.text || m.sideClarificationCard?.message}
+                          options={m.sideClarificationCard?.options || []}
+                          lang={lang}
+                          isResolved={m.type === "side_clarification_resolved"}
+                          selectedOptionId={m.selectedSideOptionId}
+                          disabled={aiTyping}
+                          onSelectSide={(side, optionId, act) => sendSideSelectionAction(side, optionId, act)}
                           primaryColor={C.primary}
                           navyColor={C.navy}
                           borderColor={C.border}
