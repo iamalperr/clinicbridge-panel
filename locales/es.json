@@ -15,6 +15,7 @@
     "systemStatus": "Estado del sistema",
     "customLabel": "Etiqueta personalizada",
     "exportCsv": "Exportar CSV",
+    "refresh": "Actualizar",
     "addClinic": "Añadir clínica",
     "save": "Guardar",
     "cancel": "Cancelar",

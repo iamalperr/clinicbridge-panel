@@ -15,6 +15,7 @@
     "systemStatus": "Sistem Durumu",
     "customLabel": "Özel Etiket",
     "exportCsv": "CSV İndir",
+    "refresh": "Yenile",
     "addClinic": "Klinik Ekle",
     "save": "Kaydet",
     "cancel": "İptal",

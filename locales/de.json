@@ -15,6 +15,7 @@
     "systemStatus": "Systemstatus",
     "customLabel": "Benutzerdefiniertes Label",
     "exportCsv": "CSV exportieren",
+    "refresh": "Aktualisieren",
     "addClinic": "Klinik hinzufügen",
     "save": "Speichern",
     "cancel": "Abbrechen",

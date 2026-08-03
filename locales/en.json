@@ -15,6 +15,7 @@
     "systemStatus": "System Status",
     "customLabel": "Custom Label",
     "exportCsv": "Export CSV",
+    "refresh": "Refresh",
     "addClinic": "Add Clinic",
     "save": "Save",
     "cancel": "Cancel",

@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect, useRef, useMemo } from "react";
-import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { collection, onSnapshot, query, orderBy, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import type { Clinic } from "@/lib/types";
@@ -17,7 +17,7 @@ import { formatNumber } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n-context";
 import {
   BarChart3, Activity, MessageSquare, Users,
-  CalendarCheck, PhoneCall, AlertCircle, TrendingUp, Loader2,
+  CalendarCheck, PhoneCall, AlertCircle, TrendingUp, Loader2, RefreshCw,
 } from "lucide-react";
 import {
   type DateRange,
@@ -179,7 +179,6 @@ export default function AnalyticsPage() {
   // logs per clinic: clinicId → ConversationLogDoc[]
   const [logsMap, setLogsMap] = useState<Record<string, ConversationLogDoc[]>>({});
   const [logsLoading, setLogsLoading] = useState(true);
-  const logUnsubsRef = useRef<Record<string, () => void>>({});
 
   // ── Subscribe to clinics list ──
   useEffect(() => {
@@ -200,59 +199,52 @@ export default function AnalyticsPage() {
    
   }, [isClinicUser, profile?.clinicId]);
 
-  // ── Subscribe to conversationLogs for each clinic ──
-  useEffect(() => {
-    if (clinics.length === 0) return;
+  // ── Read conversationLogs for each clinic (one-shot) ──
+  // Realtime dinleyiciler klinik başına tüm koleksiyonu açık tutuyor ve her
+  // yazmada yeniden okuma faturalandırıyordu; burada tek seferlik okunur.
+  const loadLogs = useCallback(async (clinicIds: string[]) => {
+    if (clinicIds.length === 0) {
+      setLogsMap({});
+      setLogsLoading(false);
+      return;
+    }
 
-    const currentUnsubs = logUnsubsRef.current;
-    const currentIds = new Set(Object.keys(currentUnsubs));
-    const newIds = new Set(clinics.map((c) => c.id));
-    let pending = clinics.length;
-
-    clinics.forEach((clinic) => {
-      if (currentIds.has(clinic.id)) {
-        pending--;
-        if (pending === 0) setLogsLoading(false);
-        return;
-      }
-      const q = query(
-        collection(db, "clinics", clinic.id, "conversationLogs"),
-        orderBy("updatedAt", "desc")
+    setLogsLoading(true);
+    try {
+      const results = await Promise.all(
+        clinicIds.map(async (clinicId) => {
+          try {
+            const snap = await getDocs(
+              query(
+                collection(db, "clinics", clinicId, "conversationLogs"),
+                orderBy("updatedAt", "desc")
+              )
+            );
+            return [
+              clinicId,
+              snap.docs.map((d) => ({ id: d.id, ...d.data() } as ConversationLogDoc)),
+            ] as const;
+          } catch (err) {
+            console.error(`[AnalyticsPage] Logs failed for ${clinicId}:`, err);
+            return [clinicId, [] as ConversationLogDoc[]] as const;
+          }
+        })
       );
-      const unsub = onSnapshot(
-        q,
-        (snap) => {
-          const docs = snap.docs.map((d) => ({
-            id: d.id,
-            ...d.data(),
-          } as ConversationLogDoc));
-          setLogsMap((prev) => ({ ...prev, [clinic.id]: docs }));
-          pending--;
-          if (pending <= 0) setLogsLoading(false);
-        },
-        () => {
-          setLogsMap((prev) => ({ ...prev, [clinic.id]: [] }));
-          pending--;
-          if (pending <= 0) setLogsLoading(false);
-        }
-      );
-      logUnsubsRef.current[clinic.id] = unsub;
-    });
-
-    // Remove stale
-    currentIds.forEach((id) => {
-      if (!newIds.has(id)) {
-        currentUnsubs[id]?.();
-        delete logUnsubsRef.current[id];
-        setLogsMap((prev) => { const n = { ...prev }; delete n[id]; return n; });
-      }
-    });
-  }, [clinics]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => { Object.values(logUnsubsRef.current).forEach((u) => u()); };
+      setLogsMap(Object.fromEntries(results));
+    } finally {
+      setLogsLoading(false);
+    }
   }, []);
+
+  // Sadece klinik kimlik listesi değiştiğinde yeniden oku.
+  const clinicIdsKey = useMemo(
+    () => clinics.map((c) => c.id).sort().join(","),
+    [clinics]
+  );
+
+  useEffect(() => {
+    loadLogs(clinicIdsKey ? clinicIdsKey.split(",") : []);
+  }, [clinicIdsKey, loadLogs]);
 
   // ── Compute analytics ──
   const rangeStart = useMemo(() => getDateRangeStart(dateRange), [dateRange]);
@@ -334,6 +326,31 @@ export default function AnalyticsPage() {
                 options={DATE_OPTIONS}
               />
             </div>
+            <button
+              type="button"
+              onClick={() => loadLogs(clinics.map((c) => c.id))}
+              disabled={logsLoading || clinics.length === 0}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "9px 14px",
+                borderRadius: 10,
+                border: `1px solid ${UI_COLORS.border}`,
+                background: UI_COLORS.bgCard,
+                color: UI_COLORS.textSecondary,
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: logsLoading ? "wait" : "pointer",
+              }}
+            >
+              <RefreshCw
+                size={14}
+                style={logsLoading ? { animation: "spin 1s linear infinite" } : undefined}
+              />
+              {t("common.refresh") || "Yenile"}
+            </button>
+            <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
           </div>
         </div>
       </div>

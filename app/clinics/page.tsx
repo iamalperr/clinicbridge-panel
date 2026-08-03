@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { collection, onSnapshot, doc, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
@@ -15,9 +15,9 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 import { formatNumber } from "@/lib/utils";
-import { CheckCircle2, Loader2, Sparkles, Layout, Mic } from "lucide-react";
+import { CheckCircle2, Loader2, Sparkles, Layout, Mic, RefreshCw } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
-import { subscribeToClinicMetrics, type ClinicMetrics, EMPTY_METRICS } from "@/lib/services/clinicMetricsService";
+import { fetchClinicMetrics, type ClinicMetrics, EMPTY_METRICS } from "@/lib/services/clinicMetricsService";
 
 export default function ClinicsPage() {
   const { profile } = useAuth();
@@ -30,9 +30,9 @@ export default function ClinicsPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Gerçek zamanlı metrikler: clinicId → ClinicMetrics
+  // Metrikler: clinicId → ClinicMetrics (tek seferlik okuma, manuel yenilenir)
   const [metricsMap, setMetricsMap] = useState<Record<string, ClinicMetrics>>({});
-  const metricsUnsubsRef = useRef<Record<string, () => void>>({});
+  const [metricsLoading, setMetricsLoading] = useState(false);
   
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -88,42 +88,43 @@ export default function ClinicsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isClinicUser, profile?.clinicId]);
 
-  // Her klinik için conversationLogs'dan gerçek zamanlı metrik subscriptions
-  useEffect(() => {
-    const currentUnsubs = metricsUnsubsRef.current;
-    const currentIds = new Set(Object.keys(currentUnsubs));
-    const newIds = new Set(clinics.map((c) => c.id));
+  // Klinik metrikleri tek seferlik okunur. Realtime dinleyici her klinik için
+  // conversationLogs ve appointments koleksiyonlarını açık tutuyordu; oradaki
+  // her yazma tüm dinleyicilere yeniden faturalandırılıyordu.
+  const loadMetrics = useCallback(async (clinicIds: string[]) => {
+    if (clinicIds.length === 0) {
+      setMetricsMap({});
+      return;
+    }
 
-    // Yeni klinikler için subscribe et
-    clinics.forEach((clinic) => {
-      if (!currentIds.has(clinic.id)) {
-        const unsub = subscribeToClinicMetrics(clinic.id, (metrics) => {
-          setMetricsMap((prev) => ({ ...prev, [clinic.id]: metrics }));
-        });
-        metricsUnsubsRef.current[clinic.id] = unsub;
-      }
-    });
-
-    // Listeden kaldırılan klinikler için unsubscribe et
-    currentIds.forEach((id) => {
-      if (!newIds.has(id)) {
-        currentUnsubs[id]?.();
-        delete metricsUnsubsRef.current[id];
-        setMetricsMap((prev) => {
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-      }
-    });
-  }, [clinics]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      Object.values(metricsUnsubsRef.current).forEach((unsub) => unsub());
-    };
+    setMetricsLoading(true);
+    try {
+      const results = await Promise.all(
+        clinicIds.map(async (id) => {
+          try {
+            return [id, await fetchClinicMetrics(id)] as const;
+          } catch (err) {
+            console.error(`[ClinicsPage] Metrics failed for ${id}:`, err);
+            return [id, EMPTY_METRICS] as const;
+          }
+        })
+      );
+      setMetricsMap(Object.fromEntries(results));
+    } finally {
+      setMetricsLoading(false);
+    }
   }, []);
+
+  // Klinik kimlikleri değiştiğinde yeniden oku; sadece isim/plan gibi alanlar
+  // değiştiğinde tekrar okumamak için kimlik listesi anahtar olarak kullanılır.
+  const clinicIdsKey = useMemo(
+    () => clinics.map((c) => c.id).sort().join(","),
+    [clinics]
+  );
+
+  useEffect(() => {
+    loadMetrics(clinicIdsKey ? clinicIdsKey.split(",") : []);
+  }, [clinicIdsKey, loadMetrics]);
 
   const filteredClinics = useMemo(() => {
     return clinics.filter(c =>
@@ -183,11 +184,26 @@ export default function ClinicsPage() {
           <h1 style={{ fontSize: 24, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.5px" }}>{t("dashboard.title")}</h1>
           <p style={{ color: UI_COLORS.textSecondary, marginTop: 4, fontSize: 14 }}>{t("dashboard.subtitle")}</p>
         </div>
-        {!isClinicUser && (
-          <Button onClick={() => setIsAddModalOpen(true)}>
-            + {t("common.addClinic")}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <Button
+            variant="secondary"
+            onClick={() => loadMetrics(clinics.map((c) => c.id))}
+            disabled={metricsLoading || clinics.length === 0}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+          >
+            <RefreshCw
+              size={14}
+              style={metricsLoading ? { animation: "spin 0.8s linear infinite" } : undefined}
+            />
+            {t("common.refresh") || "Yenile"}
           </Button>
-        )}
+          {!isClinicUser && (
+            <Button onClick={() => setIsAddModalOpen(true)}>
+              + {t("common.addClinic")}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Summary stats */}
