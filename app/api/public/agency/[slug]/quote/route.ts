@@ -46,17 +46,50 @@ export async function POST(
       return NextResponse.json({ error: "leadId required" }, { status: 400, headers: CORS });
     }
 
+    const selectedClinicIds: string[] = Array.from(
+      new Set((Array.isArray(body.selectedClinicIds) ? body.selectedClinicIds : []).filter(Boolean))
+    );
+
+    // Official clinic names from backend — do not trust frontend names alone.
+    let selectedClinicNames: string[] = Array.isArray(body.selectedClinicNames)
+      ? body.selectedClinicNames.filter(Boolean)
+      : [];
+    if (selectedClinicIds.length > 0) {
+      const { pickOfficialClinicName } = await import("@/lib/services/agencyQuoteNotificationContent");
+      const names: string[] = [];
+      for (const clinicId of selectedClinicIds) {
+        const agencyClinic = await adminDb
+          .collection("agencies")
+          .doc(agencyId)
+          .collection("clinics")
+          .doc(clinicId)
+          .get();
+        if (agencyClinic.exists) {
+          names.push(pickOfficialClinicName(agencyClinic.data(), clinicId));
+          continue;
+        }
+        const top = await adminDb.collection("clinics").doc(clinicId).get();
+        names.push(pickOfficialClinicName(top.exists ? top.data() : null, clinicId));
+      }
+      selectedClinicNames = names;
+    }
+
     const quote = {
       agencyId,
       leadId: body.leadId,
       patientName: body.patientName || null,
       patientEmail: body.patientEmail || null,
+      patientPhone: body.patientPhone || null,
       patientCountry: body.patientCountry || null,
       treatmentCategory: body.treatmentCategory || "other",
       treatmentName: body.treatmentName || "",
       subTreatment: body.subTreatment || null,
-      selectedClinicIds: body.selectedClinicIds || [],
-      selectedClinicNames: body.selectedClinicNames || [],
+      selectedClinicIds,
+      selectedClinicNames,
+      selectedCity: body.selectedCity || null,
+      istanbul_side: body.istanbulSide || body.istanbul_side || null,
+      travelDate: body.travelDate || null,
+      conversationId: body.conversationId || null,
       intakeAnswers: body.intakeAnswers || {},
       consentStatus: body.consentStatus || "accepted",
       status: "requested",

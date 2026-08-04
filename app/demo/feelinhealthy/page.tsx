@@ -316,27 +316,27 @@ export default function FeelinHealthyLive() {
     };
   });
 
-  /** Persist quote request (lead) after matching-chat signals readiness. Soft-fails — never blocks UX. */
+  /** Persist quote request (lead + quotes) after matching-chat signals readiness. */
   const persistQuoteRequestLead = useCallback(async (opts: {
     ctx: any;
     clinicIds?: string[];
     history?: Array<{ role: string; content: string }>;
-  }) => {
+  }): Promise<{ ok: boolean; leadId?: string; quoteId?: string; error?: string }> => {
     const ctx = opts.ctx || {};
     const clinicIds = Array.from(
       new Set(
         (opts.clinicIds && opts.clinicIds.length > 0
           ? opts.clinicIds
-          : ctx.selectedClinicIds || []
+          : ctx.selectedClinicIds || (ctx.selectedClinicId ? [ctx.selectedClinicId] : [])
         ).filter(Boolean)
       )
     );
     if (!ctx.patientEmail || !ctx.sessionId || clinicIds.length === 0) {
       console.warn("[CB-DEMO] skip lead persist — missing email, sessionId, or clinicIds");
-      return;
+      return { ok: false, error: "MISSING_FIELDS" };
     }
     try {
-      await fetch(`/api/public/agency/${SLUG}/lead`, {
+      const leadRes = await fetch(`/api/public/agency/${SLUG}/lead`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -361,8 +361,38 @@ export default function FeelinHealthyLive() {
           sourceUrl: typeof window !== "undefined" ? window.location.href : undefined,
         }),
       });
+      const leadData = await leadRes.json().catch(() => ({}));
+      if (!leadRes.ok || !leadData.leadId) {
+        console.error("[CB-DEMO] lead persist failed", leadData);
+        return { ok: false, error: leadData.error || "LEAD_FAILED" };
+      }
+
+      const quoteRes = await fetch(`/api/public/agency/${SLUG}/quote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leadId: leadData.leadId,
+          patientName: ctx.patientName,
+          patientEmail: ctx.patientEmail,
+          patientCountry: ctx.patientCountry,
+          treatmentCategory: ctx.lastTreatmentCategory || matchedCategory || "other",
+          treatmentName: ctx.lastTreatmentCategory || matchedCategory || "",
+          subTreatment: ctx.lastSubTreatment || "",
+          selectedClinicIds: clinicIds,
+          selectedClinicNames: [],
+          consentStatus: "accepted",
+        }),
+      });
+      const quoteData = await quoteRes.json().catch(() => ({}));
+      if (!quoteRes.ok || !quoteData.quoteId) {
+        console.error("[CB-DEMO] quote persist failed", quoteData);
+        // Lead+email may still exist; report partial success for observability
+        return { ok: true, leadId: leadData.leadId, error: "QUOTE_DOC_FAILED" };
+      }
+      return { ok: true, leadId: leadData.leadId, quoteId: quoteData.quoteId };
     } catch (e) {
-      console.error("[CB-DEMO] lead persist failed (quote request kept in chat only):", e);
+      console.error("[CB-DEMO] lead/quote persist failed:", e);
+      return { ok: false, error: "NETWORK_ERROR" };
     }
   }, [lang, matchedCategory]);
 

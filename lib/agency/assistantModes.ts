@@ -178,6 +178,7 @@ ${params.customPrompt || "(none)"}
 5. Only if the patient explicitly asks for another clinic / alternatives / different city or treatment, set intent to "network_rediscovery".
 6. Language: follow the patient (${params.languageMode || "user_lang"}).
 7. No medical diagnosis. No result guarantees.
+8. NEVER claim that a quote request was sent/created/forwarded unless the backend already confirmed it. Do not invent success.
 
 JSON FORMAT:
 {

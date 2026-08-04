@@ -137,6 +137,8 @@ interface SessionContext {
   firstName?: string;
   lastName?: string;
   age?: number;
+  leadId?: string;
+  quoteId?: string;
   gender?: string;
 
   // FeelinHealthy specific session fields
@@ -1848,8 +1850,88 @@ export async function POST(
         }, { headers: CORS });
       }
 
+      const clinicIdsForQuote = Array.from(
+        new Set(
+          [
+            newCtx.selectedClinicId,
+            ...(newCtx.selectedClinicIds || []),
+            newCtx.lastFocusedClinicId,
+          ].filter(Boolean) as string[]
+        )
+      );
+
+      // Ensure consent record exists when session already accepted (covers race / missing write).
+      if (newCtx.quoteConsent === true && newCtx.sessionId) {
+        try {
+          const { saveConsentRecord } = await import("@/lib/services/agencyConsentService");
+          await saveConsentRecord(
+            agencyId,
+            newCtx.sessionId,
+            "accepted",
+            privacySettings.version || "v1.0",
+            currentLang,
+            "agency_widget"
+          );
+        } catch (consentErr) {
+          console.warn(
+            "[matching-chat] consent ensure failed",
+            consentErr instanceof Error ? consentErr.message : "unknown"
+          );
+        }
+      }
+
+      const { persistAgencyQuoteRequest } = await import("@/lib/services/agencyQuoteRequestService");
+      const persistResult = await persistAgencyQuoteRequest({
+        agencyId,
+        conversationId: String(newCtx.sessionId || ctx.sessionId || ""),
+        clinicIds: clinicIdsForQuote,
+        patientEmail: String(newCtx.patientEmail),
+        patientName: newCtx.patientName,
+        patientPhone: newCtx.patientPhone,
+        patientAge: typeof newCtx.patientAge === "number" ? newCtx.patientAge : undefined,
+        patientGender: newCtx.patientGender,
+        country: newCtx.patientCountry,
+        language: currentLang,
+        treatmentCategory: newCtx.lastTreatmentCategory || parsed.treatmentCategory,
+        treatmentSubcategory: newCtx.lastSubTreatment || parsed.subTreatment,
+        treatmentName: newCtx.lastTreatmentCategory || parsed.treatmentCategory || "",
+        selectedCity: newCtx.selectedCity,
+        istanbulSide: newCtx.istanbul_side,
+        travelDate: newCtx.travelDate,
+        conversationSummary: Array.isArray(history)
+          ? history
+              .slice(-12)
+              .map((m: any) => `${m.role}: ${m.content || m.text || ""}`)
+              .join("\n")
+          : "",
+        source: "widget",
+      });
+
+      if (!persistResult.ok) {
+        console.error("[matching-chat] quote persist failed", {
+          agencyId,
+          errorCode: persistResult.errorCode,
+          clinicCount: clinicIdsForQuote.length,
+        });
+        return jsonResponse({
+          reply:
+            currentLang === "en"
+              ? "I confirmed your clinic choice, but could not save the quote request yet. Please try again in a moment."
+              : "Klinik seçiminizi aldım ancak teklif talebini henüz kaydedemedim. Lütfen kısa süre sonra tekrar deneyin.",
+          type: "text",
+          sessionContext: newCtx,
+          showClinicCards: false,
+          leadStatus: newCtx.leadStage,
+          shouldCreateNewLead: false,
+          shouldUpdateLead: false,
+          quotePersistError: persistResult.errorCode,
+        }, { headers: CORS });
+      }
+
       newCtx.leadStage = "quote_request_created";
       newCtx.clinicSelectionStatus = "completed";
+      newCtx.leadId = persistResult.leadId;
+      newCtx.quoteId = persistResult.quoteId;
       return jsonResponse({
         reply:
           currentLang === "en"
@@ -1859,8 +1941,10 @@ export async function POST(
         sessionContext: newCtx,
         showClinicCards: false,
         leadStatus: newCtx.leadStage,
-        shouldCreateNewLead: true,
+        shouldCreateNewLead: false, // already persisted server-side
         shouldUpdateLead: false,
+        leadId: persistResult.leadId,
+        quoteId: persistResult.quoteId,
       }, { headers: CORS });
     }
 
@@ -2168,6 +2252,69 @@ export async function POST(
              shouldCreateNewLead: false,
              shouldUpdateLead: false
            }, { headers: CORS });
+        }
+
+        if (isFeelinHealthy) {
+          const clinicIdsForQuote = Array.from(
+            new Set(
+              [
+                newCtx.selectedClinicId,
+                ...(newCtx.selectedClinicIds || []),
+                newCtx.lastFocusedClinicId,
+              ].filter(Boolean) as string[]
+            )
+          );
+          const { persistAgencyQuoteRequest } = await import("@/lib/services/agencyQuoteRequestService");
+          const persistResult = await persistAgencyQuoteRequest({
+            agencyId,
+            conversationId: String(newCtx.sessionId || ctx.sessionId || ""),
+            clinicIds: clinicIdsForQuote,
+            patientEmail: String(newCtx.patientEmail),
+            patientName: newCtx.patientName,
+            patientPhone: newCtx.patientPhone,
+            patientAge: typeof newCtx.patientAge === "number" ? newCtx.patientAge : undefined,
+            patientGender: newCtx.patientGender,
+            country: newCtx.patientCountry,
+            language: parsed.language || "tr",
+            treatmentCategory: newCtx.lastTreatmentCategory || parsed.treatmentCategory,
+            treatmentSubcategory: newCtx.lastSubTreatment || parsed.subTreatment,
+            treatmentName: newCtx.lastTreatmentCategory || "",
+            selectedCity: newCtx.selectedCity,
+            istanbulSide: newCtx.istanbul_side,
+            travelDate: newCtx.travelDate,
+            source: "widget",
+          });
+          if (!persistResult.ok) {
+            return jsonResponse({
+              reply:
+                parsed.language === "en"
+                  ? "I could not save your quote request yet. Please try again."
+                  : "Teklif talebinizi henüz kaydedemedim. Lütfen tekrar deneyin.",
+              type: "text",
+              sessionContext: newCtx,
+              showClinicCards: false,
+              shouldCreateNewLead: false,
+              quotePersistError: persistResult.errorCode,
+            }, { headers: CORS });
+          }
+          newCtx.leadStage = "quote_request_created";
+          newCtx.leadId = persistResult.leadId;
+          newCtx.quoteId = persistResult.quoteId;
+          return jsonResponse({
+            reply:
+              parsed.replyText ||
+              (parsed.language === "en"
+                ? "Your quote request has been created successfully."
+                : "Teklif talebiniz başarıyla oluşturuldu."),
+            type: "text",
+            sessionContext: newCtx,
+            showClinicCards: false,
+            leadStatus: newCtx.leadStage,
+            shouldCreateNewLead: false,
+            shouldUpdateLead: false,
+            leadId: persistResult.leadId,
+            quoteId: persistResult.quoteId,
+          }, { headers: CORS });
         }
 
         newCtx.leadStage = "quote_request_created";
@@ -2478,6 +2625,21 @@ export async function POST(
     }
 
     // --- GENERAL / FALLBACK ---
+    // Never let the model claim a quote was sent unless backend already persisted it.
+    if (
+      isFeelinHealthy &&
+      newCtx.leadStage !== "quote_request_created" &&
+      typeof parsed.replyText === "string" &&
+      /\b(teklif talebinizi ilettim|talebinizi ilettim|quote request (has been )?(sent|created|forwarded)|i('ve| have) (sent|forwarded|created) your quote)\b/i.test(
+        parsed.replyText
+      )
+    ) {
+      parsed.replyText =
+        (parsed.language || "tr").toLowerCase().startsWith("en")
+          ? "I've noted your preference. To finalize the quote request I still need any missing details, then I'll confirm once it is saved."
+          : "Tercihinizi not ettim. Teklif talebini kaydetmeden önce eksik bilgileri tamamlayıp size onay mesajı ileteceğim.";
+    }
+
     return jsonResponse({
       reply: parsed.replyText || (parsed.language === "tr"
         ? (isFeelinHealthy ? "Size nasıl yardımcı olabilirim? Hangi tedaviyi aradığınızı veya tercih ettiğiniz lokasyonu paylaşabilirsiniz." : "Size nasıl yardımcı olabilirim? Hangi tedaviyi aradığınızı, lokasyonunuzu veya bütçenizi paylaşabilirsiniz.")
