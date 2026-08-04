@@ -94,12 +94,18 @@ export interface AgencySettings {
   maxClinicsPerTreatmentRequest?: number;
   documentUploadEnabled?: boolean;
   documentUploadAllowedContexts?: string[];
-  
+
   // Extended Clinic Request Settings
   extendedClinicRequestEnabled?: boolean;
   extendedClinicRequestMode?: "internal_registration" | "external_verified_url" | "disabled";
   extendedClinicRequestUrl?: string | null;
   extendedClinicRequestExpirationHours?: number;
+
+  /** Agency ops email for new quote/lead notifications (single address). */
+  notificationEmail?: string;
+  /** Preferred multi-recipient list for quote request notifications. */
+  quoteNotificationEmails?: string[];
+  defaultLocale?: string;
 }
 
 export interface Agency {

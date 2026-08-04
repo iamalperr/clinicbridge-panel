@@ -316,6 +316,56 @@ export default function FeelinHealthyLive() {
     };
   });
 
+  /** Persist quote request (lead) after matching-chat signals readiness. Soft-fails — never blocks UX. */
+  const persistQuoteRequestLead = useCallback(async (opts: {
+    ctx: any;
+    clinicIds?: string[];
+    history?: Array<{ role: string; content: string }>;
+  }) => {
+    const ctx = opts.ctx || {};
+    const clinicIds = Array.from(
+      new Set(
+        (opts.clinicIds && opts.clinicIds.length > 0
+          ? opts.clinicIds
+          : ctx.selectedClinicIds || []
+        ).filter(Boolean)
+      )
+    );
+    if (!ctx.patientEmail || !ctx.sessionId || clinicIds.length === 0) {
+      console.warn("[CB-DEMO] skip lead persist — missing email, sessionId, or clinicIds");
+      return;
+    }
+    try {
+      await fetch(`/api/public/agency/${SLUG}/lead`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patientName: ctx.patientName,
+          patientEmail: ctx.patientEmail,
+          patientPhone: ctx.patientPhone,
+          patientAge: ctx.patientAge,
+          patientGender: ctx.patientGender,
+          country: ctx.patientCountry,
+          language: lang,
+          treatmentCategory: ctx.lastTreatmentCategory || matchedCategory || "other",
+          treatmentSubcategory: ctx.lastSubTreatment || "",
+          clinicIds,
+          conversationId: ctx.sessionId,
+          conversationSummary: (opts.history || [])
+            .map((m) => `${m.role}: ${m.content}`)
+            .join("\n"),
+          selectedCity: ctx.selectedCity,
+          istanbulSide: ctx.istanbul_side || ctx.istanbulSide,
+          travelDate: ctx.travelDate,
+          source: "widget",
+          sourceUrl: typeof window !== "undefined" ? window.location.href : undefined,
+        }),
+      });
+    } catch (e) {
+      console.error("[CB-DEMO] lead persist failed (quote request kept in chat only):", e);
+    }
+  }, [lang, matchedCategory]);
+
   // Lead Modal
   const [leadModal, setLeadModal] = useState(false);
   const [leadClinic, setLeadClinic] = useState<ClinicData | null>(null);
@@ -496,6 +546,19 @@ export default function FeelinHealthyLive() {
       };
       setAiMsgs((p) => [...p, replyMsg]);
       if (data.sessionContext) setSessionCtx(data.sessionContext);
+
+      const nextCtx = data.sessionContext || sessionCtx;
+      const hist = aiMsgs.slice(-10).map((m) => ({
+        role: m.role === "ai" ? "assistant" : "user",
+        content: m.text,
+      }));
+      if (data.shouldCreateNewLead || payload?.type === "lead_capture") {
+        const clinicIds =
+          payload?.type === "lead_capture" && payload.clinicId
+            ? [payload.clinicId, ...(nextCtx.selectedClinicIds || [])]
+            : nextCtx.selectedClinicIds || [];
+        void persistQuoteRequestLead({ ctx: nextCtx, clinicIds, history: hist });
+      }
     } catch (err) {
       console.error("[CB-DEMO] ERROR:", err);
       setAiMsgs((p) => [...p, {
@@ -779,6 +842,14 @@ export default function FeelinHealthyLive() {
       };
       setAiMsgs((p) => [...p, replyMsg]);
       if (data.sessionContext) setSessionCtx(data.sessionContext);
+      if (data.shouldCreateNewLead) {
+        const nextCtx = data.sessionContext || sessionCtx;
+        const hist = aiMsgs.slice(-10).map((m) => ({
+          role: m.role === "ai" ? "assistant" : "user",
+          content: m.text,
+        }));
+        void persistQuoteRequestLead({ ctx: nextCtx, history: hist });
+      }
     } catch (err) {
       console.error("[CB-DEMO] ERROR:", err);
       setAiMsgs((p) => [...p, {
@@ -810,6 +881,7 @@ export default function FeelinHealthyLive() {
     setLeadSending(true);
     const form = new FormData(e.currentTarget);
     const base = `/api/public/agency/${SLUG}`;
+    const clinicId = leadClinic?.id;
 
     try {
       const leadRes = await fetch(`${base}/lead`, {
@@ -824,7 +896,12 @@ export default function FeelinHealthyLive() {
           patientAge: sessionCtx.patientAge,
           patientGender: sessionCtx.patientGender,
           treatmentCategory: matchedCategory || sessionCtx.lastTreatmentCategory || "other",
+          clinicIds: clinicId ? [clinicId] : sessionCtx.selectedClinicIds || [],
+          conversationId: sessionCtx.sessionId,
           conversationSummary: aiMsgs.map((m) => `${m.role}: ${m.text}`).join("\n"),
+          selectedCity: sessionCtx.selectedCity,
+          istanbulSide: sessionCtx.istanbul_side || sessionCtx.istanbulSide,
+          travelDate: sessionCtx.travelDate,
           consentStatus: "accepted",
           source: "widget",
           sourceUrl: window.location.href,
@@ -833,7 +910,7 @@ export default function FeelinHealthyLive() {
 
       const leadData = await leadRes.json();
 
-      if (leadData.leadId && leadClinic) {
+      if (leadData.leadId && clinicId) {
         await fetch(`${base}/quote`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -844,8 +921,8 @@ export default function FeelinHealthyLive() {
             patientCountry: form.get("country"),
             treatmentCategory: matchedCategory || "other",
             treatmentName: matchedCategory ? t(`cat.${matchedCategory}`) : "",
-            selectedClinicIds: [leadClinic.id],
-            selectedClinicNames: [leadClinic.clinicName],
+            selectedClinicIds: [clinicId],
+            selectedClinicNames: [leadClinic?.clinicName].filter(Boolean),
             consentStatus: "accepted",
           }),
         });
@@ -853,7 +930,7 @@ export default function FeelinHealthyLive() {
 
       setLeadDone(true);
     } catch {
-      setLeadDone(true); // Still show success in demo
+      setLeadDone(true); // Still show success in demo — quote persist failure must not block UX
     }
     setLeadSending(false);
   };

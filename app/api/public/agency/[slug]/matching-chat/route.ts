@@ -2,7 +2,6 @@ import { saveConversationStateAsync } from "@/lib/services/conversationHelper";
 import { NextResponse } from "next/server";
 import { trackableAIRequest } from "@/lib/services/aiGateway";
 import { getAdminDb } from "@/lib/firebase-admin";
-import { sendAgencyLeadNotification } from "@/lib/services/emailService";
 import { getCached, setCached } from "@/lib/services/agencyCache";
 import {
   IntentRouter,

@@ -22,6 +22,9 @@ export interface SubmitLeadInput {
   aiExtractedNotes?: string;
   source?: string;
   sourceUrl?: string;
+  selectedCity?: string;
+  istanbulSide?: string;
+  travelDate?: string;
 }
 
 export async function submitAgencyLead(input: SubmitLeadInput) {
@@ -48,6 +51,9 @@ export async function submitAgencyLead(input: SubmitLeadInput) {
     aiExtractedNotes,
     source,
     sourceUrl,
+    selectedCity,
+    istanbulSide,
+    travelDate,
   } = input;
 
   if (!conversationId) throw new Error("CONVERSATION_ID_REQUIRED");
@@ -125,6 +131,12 @@ export async function submitAgencyLead(input: SubmitLeadInput) {
       ],
       source: source || "widget",
       sourceUrl: sourceUrl || null,
+      selectedCity: selectedCity || null,
+      istanbul_side: istanbulSide || null,
+      istanbulSide: istanbulSide || null,
+      travelDate: travelDate || null,
+      notificationStatus: "pending",
+      notificationAttempts: 0,
       createdAt: now,
       updatedAt: now,
       submittedAt: now,

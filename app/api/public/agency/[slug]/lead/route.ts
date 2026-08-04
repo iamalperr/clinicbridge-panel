@@ -40,7 +40,6 @@ export async function POST(
     }
 
     const agencyId = agencySnap.docs[0].id;
-    const now = new Date().toISOString();
 
     const { submitAgencyLead } = await import("@/lib/services/leadSubmissionService");
     
@@ -63,6 +62,9 @@ export async function POST(
         aiExtractedNotes: body.aiExtractedNotes,
         source: body.source,
         sourceUrl: body.sourceUrl,
+        selectedCity: body.selectedCity || body.preferredCity || body.city,
+        istanbulSide: body.istanbulSide || body.istanbul_side,
+        travelDate: body.travelDate,
       });
       return NextResponse.json({ ok: true, leadId: result.leadId, agencyId, status: result.status }, { headers: CORS });
     } catch (submitError: any) {
