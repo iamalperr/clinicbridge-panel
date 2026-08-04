@@ -60,12 +60,14 @@ describe("FeelinHealthy Group 1 intake regression", () => {
 
     it("never fills an intake field from the replayed request in the route", () => {
       expect(routeSource).toContain("isReplayedTreatmentRequest = true");
-      expect(routeSource).toContain("if (!isReplayedTreatmentRequest) {");
+      expect(routeSource).toContain("if (!isReplayedTreatmentRequest && !structuredLocationAction) {");
       expect(routeSource).toContain("!looksLikeRequestPhrase(parsed.patientName)");
     });
 
     it("still resolves treatment and location from the replayed request", () => {
-      const guardStart = routeSource.indexOf("if (!isReplayedTreatmentRequest) {");
+      const guardStart = routeSource.indexOf(
+        "if (!isReplayedTreatmentRequest && !structuredLocationAction) {"
+      );
       const treatmentAssign = routeSource.indexOf("ctx.lastTreatmentCategory =");
       expect(treatmentAssign).toBeGreaterThan(-1);
       expect(treatmentAssign).toBeLessThan(guardStart);

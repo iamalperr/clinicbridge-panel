@@ -43,6 +43,16 @@ import {
   buildAuthoritativeSystemPrompt,
   logPolicyConflicts,
 } from "@/lib/agency/assistantPolicy";
+import {
+  resolveAssistantRole,
+  isExplicitReturnToNetworkDiscovery,
+  exitToNetworkAdvisor,
+  enterClinicCoordinator,
+  getCoordinatorClinicId,
+  buildPatientProfileSummary,
+  buildClinicCoordinatorSystemPrompt,
+  estimatePromptSize,
+} from "@/lib/agency/assistantModes";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -465,14 +475,37 @@ export async function POST(
     // Handle system actions
     if (action) {
       if (action.type === "clinic_selected") {
-        finalMessage = `[SİSTEM AKSİYONU: Kullanıcı arayüzden 'Bu Klinikle Devam Et' butonuna tıklayarak '${action.clinicName}' kliniğini seçti. Lütfen bu seçimi doğal ve profesyonel bir şekilde onayla, klinik hakkında çok kısa bilgi ver ve ardından HEMEN lead toplama aşamasının İLK sorusu olan Ad Soyad bilgisini iste.]`;
+        Object.assign(
+          sessionContext,
+          enterClinicCoordinator(sessionContext, {
+            id: String(action.clinicId || ""),
+            name: String(action.clinicName || "Selected clinic"),
+          })
+        );
+        finalMessage =
+          slug === "feelinhealthy"
+            ? `[SİSTEM AKSİYONU: Hasta '${action.clinicName}' kliniğini seçti. Backend state: clinic_selected. Artık Clinic Patient Coordinator rolündesin. Keşif/matching/intake/şehir/yaka SORMA. Kısa ve sıcak bir onay ver; yalnızca bu klinik bağlamında yardımcı ol.]`
+            : `[SİSTEM AKSİYONU: Kullanıcı arayüzden 'Bu Klinikle Devam Et' butonuna tıklayarak '${action.clinicName}' kliniğini seçti. Lütfen bu seçimi doğal ve profesyonel bir şekilde onayla, klinik hakkında çok kısa bilgi ver ve ardından HEMEN lead toplama aşamasının İLK sorusu olan Ad Soyad bilgisini iste.]`;
       } else if (action.type === "clinic_info") {
+        sessionContext.lastFocusedClinicId = action.clinicId;
+        sessionContext.lastFocusedClinicName = action.clinicName;
+        // Soft focus only — coordinator role requires explicit clinic_selected / leadStage.
         finalMessage = `[SİSTEM AKSİYONU: Kullanıcı arayüzden 'Daha Fazla Bilgi' butonuna tıklayarak '${action.clinicName}' hakkında bilgi istedi. Lütfen klinik hakkında genel bilgi ver, öne çıkan özelliklerini veya doktorlarını sırala. En sonda bu klinikle devam etmek isteyip istemediğini sor. (Henüz lead toplamaya başlama)]`;
       } else if (action.type === "lead_capture") {
         const currentSelected = new Set<string>(sessionContext.selectedClinicIds || []);
         currentSelected.add(action.clinicId);
         sessionContext.selectedClinicIds = Array.from(currentSelected);
-        finalMessage = `[SİSTEM AKSİYONU: Kullanıcı arayüzden 'Teklif İste' butonuna tıklayarak '${action.clinicName}' kliniği için teklif almak istediğini belirtti. Lütfen HEMEN lead toplama aşamasının İLK sorusu olan Ad Soyad bilgisini iste.]`;
+        Object.assign(
+          sessionContext,
+          enterClinicCoordinator(sessionContext, {
+            id: String(action.clinicId || ""),
+            name: String(action.clinicName || "Selected clinic"),
+          })
+        );
+        finalMessage =
+          slug === "feelinhealthy" && sessionContext.patientName && sessionContext.patientEmail
+            ? `[SİSTEM AKSİYONU: Hasta '${action.clinicName}' için teklif istedi. Backend state: clinic_selected. Clinic Patient Coordinator olarak onayla; intake tamamsa Ad/e-posta tekrar isteme. Röntgen, süre, transfer, fiyat açıklaması gibi klinik sorularına bu klinik bilgisiyle cevap ver.]`
+            : `[SİSTEM AKSİYONU: Kullanıcı arayüzden 'Teklif İste' butonuna tıklayarak '${action.clinicName}' kliniği için teklif almak istediğini belirtti. Lütfen HEMEN lead toplama aşamasının İLK sorusu olan Ad Soyad bilgisini iste.]`;
       } else if (action.type === "patient_email_submission") {
         const { normalizeEmail, isValidEmail } = await import("@/lib/utils/emailValidation");
         const normalized = normalizeEmail(action.email);
@@ -675,6 +708,15 @@ export async function POST(
 
     const isFeelinHealthy = slug === "feelinhealthy" || agencyData.slug === "feelinhealthy";
 
+    // Explicit patient request to leave Clinic Coordinator → Network Advisor.
+    // Entering coordinator is backend-state-only; exiting requires explicit rediscovery language.
+    if (
+      resolveAssistantRole(ctx) === "clinic_coordinator" &&
+      isExplicitReturnToNetworkDiscovery(finalMessage || message)
+    ) {
+      Object.assign(ctx, exitToNetworkAdvisor(ctx));
+    }
+
     // While Group 1 is open a bare full name is a legitimate answer, so the
     // extractor is told a name is expected. At every other point an unlabelled
     // phrase is left alone rather than guessed at as a name.
@@ -682,6 +724,7 @@ export async function POST(
       isFeelinHealthy &&
       !isReplayedTreatmentRequest &&
       !structuredLocationAction &&
+      resolveAssistantRole(ctx) !== "clinic_coordinator" &&
       !evaluateFeelinHealthyIntake(ctx).group1Complete
         ? "patientName"
         : undefined;
@@ -1176,30 +1219,35 @@ export async function POST(
 
     /* ── 2. Build clinic context for OpenAI ── */
     const promptBuildStart = performance.now();
-    const selectedIdsForContext = new Set<string>([
-      ...(Array.isArray(ctx.selectedClinicIds) ? ctx.selectedClinicIds.map(String) : []),
-      ctx.selectedClinicId,
-    ].filter(Boolean).map(String));
-    const isSelectedClinicMode =
-      ctx.leadStage === "clinic_selected" ||
-      ctx.clinicSelectionStatus === "completed" ||
-      selectedIdsForContext.size > 0;
+    const assistantRole = resolveAssistantRole(ctx);
+    const coordinatorClinicId = getCoordinatorClinicId(ctx);
     const clinicsForPrompt =
-      isSelectedClinicMode && selectedIdsForContext.size > 0
-        ? allClinics.filter((c: any) => selectedIdsForContext.has(String(c.id)))
+      assistantRole === "clinic_coordinator" && coordinatorClinicId
+        ? allClinics.filter((c: any) => String(c.id) === String(coordinatorClinicId))
         : allClinics;
+    const kbForPrompt =
+      assistantRole === "clinic_coordinator" && coordinatorClinicId
+        ? relevantKbRecords.filter(
+            (k: any) => !k.clinicId || String(k.clinicId) === String(coordinatorClinicId)
+          )
+        : relevantKbRecords;
+    const pricingForPrompt =
+      assistantRole === "clinic_coordinator" && coordinatorClinicId
+        ? filteredPricing.filter((p: any) => String(p.clinicId) === String(coordinatorClinicId))
+        : filteredPricing;
     const clinicContext = buildClinicContext(
       clinicsForPrompt.length > 0 ? clinicsForPrompt : allClinics,
-      filteredPricing,
-      relevantKbRecords,
+      pricingForPrompt,
+      kbForPrompt,
       [],
-      agencyKbRecords,
+      assistantRole === "clinic_coordinator" ? [] : agencyKbRecords,
       showPriceRange
     );
     promptBuildMs = performance.now() - promptBuildStart;
 
     /* ── 3. Build session context hint ── */
     let contextHint = `\nMEVCUT KONUŞMA DURUMU (SESSION CONTEXT):
+- assistantRole: ${assistantRole}
 - Aşama (leadStage): ${ctx.leadStage || "discovery"}
 - Seçilen Klinik (selectedClinicName): ${ctx.selectedClinicName || "Yok"}
 - Toplanan Bilgiler:
@@ -1232,21 +1280,44 @@ export async function POST(
     });
     logPolicyConflicts(assistantPolicy);
 
-    const requiredNextAction = assistantPolicy.conversationState.isSelectedClinicMode
-      ? "Seçili klinik modundasın. Keşfe/geri eşleşmeye dönme. Yalnızca seçilen klinik hakkında yanıt ver; showClinicCards=false."
-      : assistantPolicy.conversationState.treatmentKnown
+    let systemPrompt: string;
+    if (assistantRole === "clinic_coordinator" && coordinatorClinicId) {
+      const selectedClinic =
+        clinicsForPrompt[0] ||
+        allClinics.find((c: any) => String(c.id) === String(coordinatorClinicId));
+      systemPrompt = buildClinicCoordinatorSystemPrompt({
+        assistantName: assistantPolicy.communicationStyle.assistantName,
+        agencyName: isFeelinHealthy ? "FeelinHealthy" : agencyData.name || "ClinicBridge",
+        tone: assistantPolicy.communicationStyle.tone,
+        customPrompt: assistantPolicy.customPrompt,
+        selectedClinicId: String(coordinatorClinicId),
+        selectedClinicName: String(
+          ctx.selectedClinicName || selectedClinic?.clinicName || ctx.lastFocusedClinicName || "Selected clinic"
+        ),
+        selectedTreatment: ctx.lastTreatmentCategory || null,
+        selectedCity: ctx.selectedCity || null,
+        selectedIstanbulSide: ctx.istanbul_side || null,
+        patientProfileSummary: buildPatientProfileSummary(ctx),
+        clinicKnowledge: clinicContext,
+        communicationRules: assistantPolicy.communicationStyle.responseRules,
+        forbiddenClaims: assistantPolicy.communicationStyle.forbiddenClaims,
+        languageMode: assistantPolicy.languagePolicy.mode,
+      });
+    } else {
+      const requiredNextAction = assistantPolicy.conversationState.treatmentKnown
         ? "Tedavi biliniyor; tedavi sorusunu tekrarlama. Backend intake/lokasyon state’ine uy."
         : "Backend state sıradaki adımı belirler. Toplanmış alanları tekrar sorma.";
+      systemPrompt = buildAuthoritativeSystemPrompt({
+        policy: assistantPolicy,
+        clinicContext,
+        contextHint,
+        requiredNextAction,
+      });
+    }
 
-    const systemPrompt = buildAuthoritativeSystemPrompt({
-      policy: assistantPolicy,
-      clinicContext,
-      contextHint,
-      requiredNextAction,
-      selectedClinicKnowledge: assistantPolicy.conversationState.isSelectedClinicMode
-        ? "İlgili klinik bilgisi VERIFIED KNOWLEDGE bölümünde filtrelenmiştir. Başka klinik önerme."
-        : undefined,
-    });
+    console.log(
+      `[matching-chat] role=${assistantRole} promptChars=${estimatePromptSize(systemPrompt)} clinicsInContext=${clinicsForPrompt.length}`
+    );
 
     // --- Context Tracking ---
     const totalClinicsLoaded = allClinics.length;
@@ -1380,6 +1451,31 @@ export async function POST(
 
     if (parsed.selectedClinicId) newCtx.selectedClinicId = parsed.selectedClinicId;
     if (parsed.selectedClinicName) newCtx.selectedClinicName = parsed.selectedClinicName;
+
+    // Persist role transitions from structured LLM intents (backend validates exit).
+    if (parsed.intent === "clinic_selected" && (parsed.selectedClinicId || newCtx.selectedClinicId)) {
+      Object.assign(
+        newCtx,
+        enterClinicCoordinator(newCtx, {
+          id: String(parsed.selectedClinicId || newCtx.selectedClinicId),
+          name: String(parsed.selectedClinicName || newCtx.selectedClinicName || "Selected clinic"),
+        })
+      );
+    }
+    if (parsed.intent === "network_rediscovery") {
+      if (
+        resolveAssistantRole(newCtx) === "clinic_coordinator" &&
+        isExplicitReturnToNetworkDiscovery(finalMessage || message)
+      ) {
+        Object.assign(newCtx, exitToNetworkAdvisor(newCtx));
+        parsed.intent = "clinic_recommendation";
+        parsed.showClinicCards = true;
+      } else if (resolveAssistantRole(newCtx) === "clinic_coordinator") {
+        // Reject unsolicited rediscovery while coordinator mode is active.
+        parsed.intent = "clinic_question";
+        parsed.showClinicCards = false;
+      }
+    }
     // A name proposed by the model is rejected when it reads as a treatment
     // request, so the pending request can never land in the patient record.
     if (
@@ -1512,7 +1608,9 @@ export async function POST(
         Boolean(newCtx.lastTreatmentCategory);
 
       // Never re-ask intake once it is complete — including after city/side cards.
+      // Clinic Coordinator mode must never restart Group 1–3.
       if (
+        resolveAssistantRole(newCtx) !== "clinic_coordinator" &&
         (matchingLikeIntent || structuredLocationAction) &&
         !intakeStatus.allGroupsComplete
       ) {
@@ -1525,7 +1623,7 @@ export async function POST(
         }, { headers: CORS });
       }
 
-      if (intakeStatus.allGroupsComplete) {
+      if (intakeStatus.allGroupsComplete && resolveAssistantRole(newCtx) !== "clinic_coordinator") {
         const locationDecision = decideFeelinHealthyLocationNextStep(
           newCtx,
           fullAgencyClinics,
@@ -1641,8 +1739,11 @@ export async function POST(
 
         // Once consent + intake + location are ready, force clinic matching.
         // Do not let shouldCreateLead / followup short-circuit this step.
-        // Canonical gate only — never match on location alone.
-        if (isReadyForClinicMatching(newCtx).ready) {
+        // Never rematch while Clinic Patient Coordinator mode is active.
+        if (
+          isReadyForClinicMatching(newCtx).ready &&
+          resolveAssistantRole(newCtx) !== "clinic_coordinator"
+        ) {
           parsed.intent = "clinic_recommendation";
           parsed.shouldCreateLead = false;
           parsed.needsFollowUp = false;
@@ -1667,7 +1768,10 @@ export async function POST(
     }
 
     // --- CLINIC MATCHING OR RECOMMENDATION (before lead/followup for FeelinHealthy) ---
-    if (parsed.intent === "clinic_matching" || parsed.intent === "clinic_recommendation") {
+    if (
+      (parsed.intent === "clinic_matching" || parsed.intent === "clinic_recommendation") &&
+      resolveAssistantRole(newCtx) !== "clinic_coordinator"
+    ) {
       let recommendations: ClinicRecommendation[] = [];
       let additionalEligibleClinicCount = 0;
       let conversionData: any = undefined;
@@ -1919,9 +2023,25 @@ export async function POST(
       }
     }
 
+    // Coordinator: treat rematch intents as clinic Q&A instead.
+    if (
+      resolveAssistantRole(newCtx) === "clinic_coordinator" &&
+      (parsed.intent === "clinic_matching" || parsed.intent === "clinic_recommendation")
+    ) {
+      parsed.intent = "clinic_question";
+      parsed.showClinicCards = false;
+      if (!parsed.selectedClinicName) parsed.selectedClinicName = newCtx.selectedClinicName;
+      if (!parsed.clinicName) parsed.clinicName = newCtx.selectedClinicName;
+    }
+
     // --- SHOULD CREATE LEAD (only after clinic matching had its chance) ---
     if (parsed.shouldCreateLead && !leadAlreadyCreated) {
-      if (isFeelinHealthy && isReadyForClinicMatching(newCtx).ready && !newCtx.lastRecommendedClinicIds?.length) {
+      if (
+        isFeelinHealthy &&
+        isReadyForClinicMatching(newCtx).ready &&
+        !newCtx.lastRecommendedClinicIds?.length &&
+        resolveAssistantRole(newCtx) !== "clinic_coordinator"
+      ) {
         // Safety net: never create a lead before the first clinic recommendation.
         parsed.intent = "clinic_recommendation";
       } else {
@@ -1954,7 +2074,11 @@ export async function POST(
     }
 
     // --- FOLLOW-UP OR LEAD CAPTURE ---
-    if (parsed.intent === "followup" || parsed.needsFollowUp || parsed.intent === "lead_capture") {
+    // Clinic Coordinator: never rematch from followup; fall through to clinic Q&A handlers.
+    if (
+      resolveAssistantRole(newCtx) !== "clinic_coordinator" &&
+      (parsed.intent === "followup" || parsed.needsFollowUp || parsed.intent === "lead_capture")
+    ) {
       if (isFeelinHealthy && isReadyForClinicMatching(newCtx).ready) {
         // Fall through is not possible after return paths above; re-enter matching.
         parsed.intent = "clinic_recommendation";
@@ -1966,10 +2090,36 @@ export async function POST(
           showClinicCards: parsed.showClinicCards === true,
         }, { headers: CORS });
       }
+    } else if (
+      resolveAssistantRole(newCtx) === "clinic_coordinator" &&
+      (parsed.intent === "followup" || parsed.needsFollowUp)
+    ) {
+      parsed.intent = "clinic_question";
+      parsed.showClinicCards = false;
+    } else if (
+      resolveAssistantRole(newCtx) === "clinic_coordinator" &&
+      parsed.intent === "lead_capture"
+    ) {
+      return jsonResponse({
+        reply:
+          parsed.replyText ||
+          (parsed.language === "en"
+            ? "Your request is noted for this clinic. How else can I help with your visit?"
+            : "Talebiniz bu klinik için not edildi. Ziyaretinizle ilgili başka nasıl yardımcı olabilirim?"),
+        type: "text",
+        sessionContext: newCtx,
+        showClinicCards: false,
+        leadStatus: newCtx.leadStage,
+      }, { headers: CORS });
     }
 
     // If followup/lead path redirected into matching, run it once more here.
-    if (isFeelinHealthy && (parsed.intent === "clinic_matching" || parsed.intent === "clinic_recommendation")) {
+    // Never rematch while Clinic Patient Coordinator mode is active.
+    if (
+      isFeelinHealthy &&
+      resolveAssistantRole(newCtx) !== "clinic_coordinator" &&
+      (parsed.intent === "clinic_matching" || parsed.intent === "clinic_recommendation")
+    ) {
       const branchOrCat = parsed.treatmentCategory || newCtx.lastTreatmentCategory || agencySlotsExtracted.extracted.treatment;
       const locationDecision = decideFeelinHealthyLocationNextStep(newCtx, fullAgencyClinics, (parsed.language || "tr"));
       if (locationDecision.step === "ready") {
@@ -2021,9 +2171,15 @@ export async function POST(
 
     // --- CLINIC SELECTED OR CLINIC QUESTION ---
     if (parsed.intent === "clinic_question" || parsed.intent === "clinic_selected") {
-      const clinicName = parsed.selectedClinicName || parsed.clinicName || ctx.lastFocusedClinicName;
+      const clinicName =
+        parsed.selectedClinicName ||
+        parsed.clinicName ||
+        newCtx.selectedClinicName ||
+        ctx.lastFocusedClinicName;
       let clinic: any = null;
-      if (clinicName) {
+      if (resolveAssistantRole(newCtx) === "clinic_coordinator" && getCoordinatorClinicId(newCtx)) {
+        clinic = allClinics.find((c: any) => String(c.id) === String(getCoordinatorClinicId(newCtx)));
+      } else if (clinicName) {
         const nameLower = clinicName.toLowerCase();
         clinic = allClinics.find((c: any) =>
           c.clinicName?.toLowerCase().includes(nameLower) ||

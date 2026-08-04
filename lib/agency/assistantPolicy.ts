@@ -14,6 +14,7 @@
 
 import type { AgencyAIConfig, AIIntakeInstruction } from "../types/agency";
 import { FEELINHEALTHY_CONFIG } from "./feelinhealthyConfig";
+import { resolveAssistantRole, type AssistantRole } from "./assistantModes";
 
 export type PolicyWarningSeverity = "warning" | "error";
 
@@ -100,7 +101,9 @@ export interface AssistantPolicy {
     selectedClinicId: string | null;
     selectedClinicName: string | null;
     selectedClinicIds: string[];
+    /** @deprecated use assistantRole === "clinic_coordinator" */
     isSelectedClinicMode: boolean;
+    assistantRole: AssistantRole;
     leadStage: string | null;
   };
   warnings: PolicyWarning[];
@@ -507,11 +510,8 @@ export function compileAssistantPolicy(input: {
 
   const ctx = input.sessionContext || {};
   const selectedClinicIds = Array.isArray(ctx.selectedClinicIds) ? ctx.selectedClinicIds.map(String) : [];
-  const isSelectedClinicMode =
-    ctx.leadStage === "clinic_selected" ||
-    ctx.clinicSelectionStatus === "completed" ||
-    Boolean(ctx.selectedClinicId) ||
-    selectedClinicIds.length > 0;
+  const assistantRole = resolveAssistantRole(ctx);
+  const isSelectedClinicMode = assistantRole === "clinic_coordinator";
 
   const intakeFields: IntakeFieldPolicy[] = isFeelinHealthy
     ? FEELINHEALTHY_CANONICAL_INTAKE.map((f) => ({ ...f }))
@@ -591,6 +591,7 @@ export function compileAssistantPolicy(input: {
       selectedClinicName: ctx.selectedClinicName || ctx.lastFocusedClinicName || null,
       selectedClinicIds,
       isSelectedClinicMode,
+      assistantRole,
       leadStage: ctx.leadStage || null,
     },
     warnings,
