@@ -1226,6 +1226,32 @@ export function evaluateFeelinHealthyIntake(context: any): IntakeGroupStatus {
 
 // ─── Intake Prompt Generators ───────────────────────────────────────────────
 
+/**
+ * Static, international placeholder examples for intake helper text.
+ * These MUST never be derived from conversation state, slots, or patient data.
+ */
+const GROUP1_EXAMPLE_POOL = [
+  { tr: "John Smith, Erkek, 42", en: "John Smith, Male, 42" },
+  { tr: "Emma Johnson, Kadın, 35", en: "Emma Johnson, Female, 35" },
+] as const;
+
+const GROUP2_EXAMPLE = {
+  tr: "john.smith@email.com, +44 7700 900123, United Kingdom",
+  en: "john.smith@email.com, +44 7700 900123, United Kingdom",
+} as const;
+
+const GROUP3_EXAMPLE = {
+  tr: "Ekim 2026 veya 15 Ekim 2026",
+  en: "October 2026 or 15 October 2026",
+} as const;
+
+/** Picks a predefined Group 1 example. Never uses patient or session data. */
+export function pickStaticGroup1Example(locale: string = "tr"): string {
+  const isEn = locale.toLowerCase().startsWith("en");
+  const pick = GROUP1_EXAMPLE_POOL[Math.floor(Math.random() * GROUP1_EXAMPLE_POOL.length)];
+  return isEn ? pick.en : pick.tr;
+}
+
 export function getGroupIntakePrompt(
   status: IntakeGroupStatus,
   context: any,
@@ -1235,23 +1261,25 @@ export function getGroupIntakePrompt(
 
   if (status.currentGroup === 1) {
     // Group 1 is always asked as one combined question covering name, surname,
-    // gender and age. Asking only for the fields we believe are missing is what
-    // allowed the surname to be skipped, so the full set is always requested.
+    // gender and age. The example string is always a static international
+    // placeholder — never the patient's own name or any session value.
+    const example = pickStaticGroup1Example(locale);
     return isEn
-      ? 'Could you share your first name, surname, gender and age in a single message? For example: "Alper Özgül, Male, 27".'
-      : 'Lütfen adınızı, soyadınızı, cinsiyetinizi ve yaşınızı tek bir mesajda paylaşabilir misiniz? Örnek: "Alper Özgül, Erkek, 27".';
+      ? `Could you share your first name, surname, gender and age in a single message? For example: "${example}".`
+      : `Lütfen adınızı, soyadınızı, cinsiyetinizi ve yaşınızı tek bir mesajda paylaşabilir misiniz? Örnek: "${example}".`;
   }
 
   if (status.currentGroup === 2) {
     const name = context.patientName ? context.patientName.split(" ")[0] : "";
     const greetingTr = name ? `Teşekkür ederim ${name}. ` : "";
     const greetingEn = name ? `Thank you, ${name}. ` : "";
+    const example = isEn ? GROUP2_EXAMPLE.en : GROUP2_EXAMPLE.tr;
 
     const missing = status.missingFieldsInCurrentGroup;
     if (missing.length === 3) {
       return isEn
-        ? `${greetingEn}Could you also share your contact details—email, phone number and the country you live in?`
-        : `${greetingTr}İletişim bilgilerinizi de paylaşabilir misiniz? E-posta, telefon numarası ve yaşadığınız ülke yeterli.`;
+        ? `${greetingEn}Could you also share your contact details—email, phone number and the country you live in? Example: ${example}.`
+        : `${greetingTr}İletişim bilgilerinizi de paylaşabilir misiniz? E-posta, telefon numarası ve yaşadığınız ülke yeterli. Örnek: ${example}.`;
     }
     const partsTr: string[] = [];
     const partsEn: string[] = [];
@@ -1260,14 +1288,15 @@ export function getGroupIntakePrompt(
     if (missing.includes("patientCountry")) { partsTr.push("yaşadığınız ülkeyi"); partsEn.push("the country you live in"); }
 
     return isEn
-      ? `Could you also share ${partsEn.join(", ")}?`
-      : `Lütfen ${partsTr.join(", ")} de paylaşabilir misiniz?`;
+      ? `Could you also share ${partsEn.join(", ")}? Example: ${example}.`
+      : `Lütfen ${partsTr.join(", ")} de paylaşabilir misiniz? Örnek: ${example}.`;
   }
 
   if (status.currentGroup === 3) {
+    const example = isEn ? GROUP3_EXAMPLE.en : GROUP3_EXAMPLE.tr;
     return isEn
-      ? "When are you planning to travel for treatment?"
-      : "Seyahatinizi hangi tarih veya dönem için planlıyorsunuz?";
+      ? `When are you planning to travel for treatment? Example: ${example}.`
+      : `Seyahatinizi hangi tarih veya dönem için planlıyorsunuz? Örnek: ${example}.`;
   }
 
   return isEn

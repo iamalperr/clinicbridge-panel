@@ -650,7 +650,7 @@ export async function POST(
 
     const isFeelinHealthy = slug === "feelinhealthy" || agencyData.slug === "feelinhealthy";
 
-    // While Group 1 is open a bare "Alper Özgül" is a legitimate answer, so the
+    // While Group 1 is open a bare full name is a legitimate answer, so the
     // extractor is told a name is expected. At every other point an unlabelled
     // phrase is left alone rather than guessed at as a name.
     const expectedIntakeSlot =
