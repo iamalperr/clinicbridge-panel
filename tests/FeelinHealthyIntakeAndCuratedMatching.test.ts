@@ -115,7 +115,10 @@ describe("FeelinHealthy Deterministic Intake Flow (No Budget)", () => {
     expect(evalRes.allGroupsComplete).toBe(false);
 
     const promptTr = getGroupIntakePrompt(evalRes, ctx, "tr");
-    expect(promptTr).toContain("e-posta adresinizi, telefon/WhatsApp numaranızı ve ikamet ettiğiniz ülkeyi");
+    expect(promptTr).toContain("İletişim bilgilerinizi");
+    expect(promptTr.toLowerCase()).toContain("e-posta");
+    expect(promptTr.toLowerCase()).toContain("telefon");
+    expect(promptTr.toLowerCase()).not.toContain("whatsapp");
     expect(promptTr.toLowerCase()).not.toContain("bütçe");
   });
 
@@ -134,7 +137,7 @@ describe("FeelinHealthy Deterministic Intake Flow (No Budget)", () => {
     expect(evalRes.allGroupsComplete).toBe(false);
 
     const promptTr = getGroupIntakePrompt(evalRes, ctx, "tr");
-    expect(promptTr).toContain("planladığınız yaklaşık seyahat tarihini");
+    expect(promptTr).toContain("Seyahatinizi hangi tarih veya dönem için planlıyorsunuz");
     expect(promptTr.toLowerCase()).not.toContain("bütçe");
   });
 

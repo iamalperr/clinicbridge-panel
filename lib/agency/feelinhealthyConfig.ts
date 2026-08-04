@@ -6,16 +6,33 @@
  * 2. Curated lists per branch & location (Section 6 matrix).
  * 3. Never ask for budget anywhere.
  * 4. Deterministic 3-group intake progression (Group 1 -> Group 2 -> Group 3).
- * 5. Istanbul side clarification before clinic matching:
- *    - Istanbul has European and Anatolian sides.
- *    - If user only mentions "İstanbul" or says "fark etmez" / "emin değilim", clarify or guide.
+ * 5. Location decision order (never skip city for Istanbul side):
+ *    - Derive available cities from curated branch rules / connected clinics.
+ *    - Ask city when unknown; never assume Istanbul.
+ *    - Istanbul side clarification only when city is Istanbul and side is unknown.
  *    - Branch-specific side availability:
  *      * Dental: Both European & Anatolian
  *      * IVF, Cardiology, Check-up: Anatolian Side only
  *      * Eye Treatments: European Side only
- *    - Structured state: istanbul_side saved as "european" | "anatolian".
+ *    - Structured state: selectedCity + istanbul_side ("european" | "anatolian").
  *    - Clinic cards display exact side ("İstanbul, Avrupa Yakası" / "İstanbul, Anadolu Yakası").
  */
+
+const CITY_DISPLAY_NAMES: Record<string, { tr: string; en: string }> = {
+  istanbul: { tr: "İstanbul", en: "Istanbul" },
+  izmir: { tr: "İzmir", en: "Izmir" },
+  antalya: { tr: "Antalya", en: "Antalya" },
+  ankara: { tr: "Ankara", en: "Ankara" },
+  kocaeli: { tr: "Kocaeli / Gebze", en: "Kocaeli / Gebze" },
+};
+
+export function getCityDisplayName(city: string | null | undefined, locale: string = "tr"): string {
+  if (!city) return "";
+  const key = city.toLowerCase();
+  const names = CITY_DISPLAY_NAMES[key];
+  if (!names) return city.charAt(0).toUpperCase() + city.slice(1);
+  return locale.toLowerCase().startsWith("en") ? names.en : names.tr;
+}
 
 export interface CuratedClinicTarget {
   name: string;
@@ -490,6 +507,261 @@ export function resolveCityAndSide(rawLocation?: string | null): {
   return { city: res.city, side: res.side };
 }
 
+// ─── Available Cities (derived from curated / connected clinic data) ─────────
+
+export interface AvailableCityOption {
+  city: string;
+  displayName: string;
+  displayNameTr: string;
+  displayNameEn: string;
+  eligibleClinicCount: number;
+  requiresSideSelection: boolean;
+}
+
+/**
+ * Unique cities that currently have curated FeelinHealthy providers for a branch.
+ * When `availableClinics` is supplied, only cities with at least one matching
+ * connected clinic remain. Duplicates such as "Istanbul" / "İstanbul" collapse
+ * into one canonical option.
+ */
+export function getAvailableCitiesForTreatment(
+  rawBranch?: string | null,
+  availableClinics: any[] = [],
+  locale: string = "tr"
+): AvailableCityOption[] {
+  const branchKey = normalizeTreatmentBranch(rawBranch);
+  const branchRule = FEELINHEALTHY_CURATED_RULES.find((b) => b.branchKey === branchKey);
+  if (!branchRule) return [];
+
+  const sideAvail = getBranchIstanbulSideAvailability(branchKey);
+  const byCity = new Map<string, AvailableCityOption>();
+
+  for (const loc of branchRule.locations) {
+    const cityKey = loc.city.toLowerCase();
+    const existing = byCity.get(cityKey);
+    const curatedCount = loc.curatedClinics.length;
+
+    let matchedCount = curatedCount;
+    if (availableClinics.length > 0) {
+      matchedCount = loc.curatedClinics.filter((target) =>
+        availableClinics.some((c) => {
+          const cName = (c.clinicName || "").toLowerCase();
+          const cSlug = (c.clinicSlug || c.id || "").toLowerCase();
+          if (cSlug === target.slugOrId.toLowerCase()) return true;
+          if (target.aliasPatterns?.some((p) => cName.includes(p.toLowerCase()) || cSlug.includes(p.toLowerCase()))) {
+            return true;
+          }
+          return cName.includes(target.name.toLowerCase());
+        })
+      ).length;
+      if (matchedCount === 0) continue;
+    }
+
+    if (existing) {
+      existing.eligibleClinicCount += matchedCount;
+      continue;
+    }
+
+    byCity.set(cityKey, {
+      city: cityKey,
+      displayName: getCityDisplayName(cityKey, locale),
+      displayNameTr: getCityDisplayName(cityKey, "tr"),
+      displayNameEn: getCityDisplayName(cityKey, "en"),
+      eligibleClinicCount: matchedCount,
+      requiresSideSelection:
+        cityKey === "istanbul" && sideAvail.sideAvailability === "both",
+    });
+  }
+
+  // Prefer a stable marketplace order: Istanbul first, then other TR hubs.
+  const preferredOrder = ["istanbul", "izmir", "antalya", "ankara", "kocaeli"];
+  return Array.from(byCity.values()).sort((a, b) => {
+    const ai = preferredOrder.indexOf(a.city);
+    const bi = preferredOrder.indexOf(b.city);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+}
+
+export function getCitySelectionPrompt(
+  rawBranch: string | null | undefined,
+  cities: AvailableCityOption[],
+  locale: string = "tr"
+): string {
+  const isEn = locale.toLowerCase().startsWith("en");
+  const branchKey = normalizeTreatmentBranch(rawBranch);
+  const branchRule = FEELINHEALTHY_CURATED_RULES.find((b) => b.branchKey === branchKey);
+  const treatmentLabel = isEn
+    ? branchRule?.categoryNameEn || "this treatment"
+    : branchRule?.categoryNameTr || "bu tedavi";
+
+  const cityNames = cities
+    .map((c) => (isEn ? c.displayNameEn : c.displayNameTr))
+    .join(isEn ? ", " : ", ")
+    .replace(/, ([^,]*)$/, isEn ? " and $1" : " ve $1");
+
+  if (cities.length === 0) {
+    return isEn
+      ? `I could not find an active FeelinHealthy partner city for ${treatmentLabel} right now. Could you share which city you had in mind?`
+      : `${treatmentLabel} için şu anda FeelinHealthy ağına bağlı aktif bir şehir seçeneği bulamadım. Hangi şehri düşündüğünüzü paylaşır mısınız?`;
+  }
+
+  return isEn
+    ? `For ${treatmentLabel.toLowerCase()}, suitable healthcare providers in the FeelinHealthy network are available in ${cityNames}. Which city would be most convenient for you?`
+    : `${treatmentLabel} için FeelinHealthy ağına bağlı uygun sağlık kuruluşlarımız ${cityNames}’da bulunuyor. Sizin için hangi şehir daha uygun olur?`;
+}
+
+export function getCitySelectionCard(
+  rawBranch: string | null | undefined,
+  cities: AvailableCityOption[],
+  locale: string = "tr"
+) {
+  const isEn = locale.toLowerCase().startsWith("en");
+  const message = getCitySelectionPrompt(rawBranch, cities, locale);
+
+  return {
+    type: "city_selection",
+    title: isEn ? "Preferred City" : "Tercih Edilen Şehir",
+    message,
+    options: [
+      ...cities.map((c) => ({
+        id: c.city,
+        city: c.city,
+        title: isEn ? c.displayNameEn : c.displayNameTr,
+        subtitle: isEn
+          ? "FeelinHealthy partner providers available"
+          : "FeelinHealthy anlaşmalı kuruluşlar mevcut",
+        badge: c.requiresSideSelection
+          ? isEn
+            ? "Side selection next"
+            : "Ardından yaka tercihi"
+          : undefined,
+      })),
+      {
+        id: "undecided",
+        city: "undecided",
+        title: isEn ? "I’m not sure yet" : "Henüz karar vermedim",
+        subtitle: isEn
+          ? "Help me based on travel and transfer plans"
+          : "Ulaşım ve seyahat planıma göre yardımcı olun",
+        badge: isEn ? "Guided" : "Rehberli",
+      },
+    ],
+  };
+}
+
+export type LocationDecisionStep =
+  | "ask_treatment"
+  | "ask_city"
+  | "ask_side"
+  | "ready";
+
+export interface LocationDecision {
+  step: LocationDecisionStep;
+  treatmentBranch: string | null;
+  city: string | null;
+  side: "anatolian" | "european" | "any" | "unsure" | null;
+  availableCities: AvailableCityOption[];
+}
+
+/**
+ * Deterministic location gate for FeelinHealthy.
+ * Never assumes Istanbul when the city is unknown.
+ */
+export function decideFeelinHealthyLocationNextStep(
+  context: {
+    lastTreatmentCategory?: string | null;
+    selectedCity?: string | null;
+    lastLocation?: string | null;
+    istanbul_side?: "anatolian" | "european" | "any" | "unsure" | null;
+    locationSelectionConfirmed?: boolean;
+  },
+  availableClinics: any[] = [],
+  locale: string = "tr"
+): LocationDecision {
+  const treatmentBranch = context.lastTreatmentCategory
+    ? normalizeTreatmentBranch(context.lastTreatmentCategory)
+    : null;
+
+  if (!treatmentBranch) {
+    return {
+      step: "ask_treatment",
+      treatmentBranch: null,
+      city: null,
+      side: null,
+      availableCities: [],
+    };
+  }
+
+  const availableCities = getAvailableCitiesForTreatment(
+    treatmentBranch,
+    availableClinics,
+    locale
+  );
+
+  const fromSelected = context.selectedCity
+    ? resolveCityAndSide(context.selectedCity)
+    : { city: null, side: null };
+  const fromLast = context.lastLocation
+    ? resolveCityAndSide(context.lastLocation)
+    : { city: null, side: null };
+
+  let city = fromSelected.city || fromLast.city;
+  const side =
+    (context.istanbul_side as LocationDecision["side"]) ||
+    fromSelected.side ||
+    fromLast.side ||
+    null;
+
+  // A single eligible city can be adopted without a choice screen.
+  if (!city && availableCities.length === 1) {
+    city = availableCities[0].city;
+  }
+
+  if (!city) {
+    return {
+      step: "ask_city",
+      treatmentBranch,
+      city: null,
+      side: null,
+      availableCities,
+    };
+  }
+
+  if (city === "istanbul") {
+    const avail = getBranchIstanbulSideAvailability(treatmentBranch);
+    const sideKnown = side === "european" || side === "anatolian";
+    if (!sideKnown) {
+      // Single-side branches still need an affirmative confirmation card.
+      return {
+        step: "ask_side",
+        treatmentBranch,
+        city,
+        side: avail.sideAvailability === "anatolian_only"
+          ? "anatolian"
+          : avail.sideAvailability === "european_only"
+            ? "european"
+            : null,
+        availableCities,
+      };
+    }
+  }
+
+  return {
+    step: "ready",
+    treatmentBranch,
+    city,
+    side: side || "any",
+    availableCities,
+  };
+}
+
+export function getTreatmentClarificationPrompt(locale: string = "tr"): string {
+  const isEn = locale.toLowerCase().startsWith("en");
+  return isEn
+    ? "Which treatment or medical service are you looking for? For example dental implant, IVF, cardiology, eye treatment or a check-up."
+    : "Hangi tedavi veya sağlık hizmeti için destek arıyorsunuz? Örneğin diş implantı, tüp bebek, kardiyoloji, göz tedavisi veya check-up.";
+}
+
 // ─── Branch Istanbul Side Availability & Clarification Helper ────────────────
 
 export interface BranchSideAvailability {
@@ -802,33 +1074,37 @@ export function getCuratedClinicsForFeelinHealthy(
     };
   }
 
-  // Find location rule matching city and side
-  let matchedLocRule: CuratedLocationRule | null = null;
-  if (city) {
-    const cityLower = city.toLowerCase();
-    matchedLocRule = branchRule.locations.find(l => {
+  // Find location rule matching city and side. Never invent a city — callers must
+  // ask for a city selection when none is known.
+  if (!city) {
+    return {
+      matchingCuratedClinics: [],
+      allEligibleClinics: [],
+      locationRule: null,
+      isUnsupportedLocation: false,
+      supportedLocationsForBranch: branchRule.locations,
+    };
+  }
+
+  const cityLower = city.toLowerCase();
+  const matchedLocRule: CuratedLocationRule | null =
+    branchRule.locations.find((l) => {
       if (l.city !== cityLower) return false;
       if (side && side !== "any" && side !== "unsure" && l.side && l.side !== "any") {
         return l.side === side;
       }
       return true;
     }) || null;
-  }
 
-  // If no specific city or unmatched in Istanbul, pick first available location rule
   if (!matchedLocRule) {
-    if (!city) {
-      matchedLocRule = branchRule.locations[0];
-    } else {
-      // User specified a city where this branch has no curated clinics
-      return {
-        matchingCuratedClinics: [],
-        allEligibleClinics: [],
-        locationRule: null,
-        isUnsupportedLocation: true,
-        supportedLocationsForBranch: branchRule.locations,
-      };
-    }
+    // User specified a city where this branch has no curated clinics
+    return {
+      matchingCuratedClinics: [],
+      allEligibleClinics: [],
+      locationRule: null,
+      isUnsupportedLocation: true,
+      supportedLocationsForBranch: branchRule.locations,
+    };
   }
 
   // Match available database clinics against curated rule
@@ -962,36 +1238,36 @@ export function getGroupIntakePrompt(
     // gender and age. Asking only for the fields we believe are missing is what
     // allowed the surname to be skipped, so the full set is always requested.
     return isEn
-      ? 'To prepare the most suitable clinic options and personalized quotes for you, could you please share your first name, surname, gender and age in a single message? For example: "Alper Özgül, Male, 27".'
-      : 'Size en uygun klinik seçeneklerini ve teklifleri hazırlayabilmemiz için lütfen adınızı, soyadınızı, cinsiyetinizi ve yaşınızı tek bir mesajda paylaşabilir misiniz? Örnek: "Alper Özgül, Erkek, 27".';
+      ? 'Could you share your first name, surname, gender and age in a single message? For example: "Alper Özgül, Male, 27".'
+      : 'Lütfen adınızı, soyadınızı, cinsiyetinizi ve yaşınızı tek bir mesajda paylaşabilir misiniz? Örnek: "Alper Özgül, Erkek, 27".';
   }
 
   if (status.currentGroup === 2) {
     const name = context.patientName ? context.patientName.split(" ")[0] : "";
-    const greetingTr = name ? `Teşekkürler ${name}. ` : "Harika. ";
-    const greetingEn = name ? `Thank you ${name}. ` : "Great. ";
+    const greetingTr = name ? `Teşekkür ederim ${name}. ` : "";
+    const greetingEn = name ? `Thank you, ${name}. ` : "";
 
     const missing = status.missingFieldsInCurrentGroup;
     if (missing.length === 3) {
       return isEn
-        ? `${greetingEn}To send you quote details and coordinate with our specialists, could you please provide your email address, phone/WhatsApp number, and the country you reside in?`
-        : `${greetingTr}Teklif detaylarını iletebilmemiz ve uzman hekimlerimizle paylaşabilmemiz için e-posta adresinizi, telefon/WhatsApp numaranızı ve ikamet ettiğiniz ülkeyi paylaşabilir misiniz?`;
+        ? `${greetingEn}Could you also share your contact details—email, phone number and the country you live in?`
+        : `${greetingTr}İletişim bilgilerinizi de paylaşabilir misiniz? E-posta, telefon numarası ve yaşadığınız ülke yeterli.`;
     }
     const partsTr: string[] = [];
     const partsEn: string[] = [];
     if (missing.includes("patientEmail")) { partsTr.push("e-posta adresinizi"); partsEn.push("your email address"); }
-    if (missing.includes("patientPhone")) { partsTr.push("telefon veya WhatsApp numaranızı"); partsEn.push("your phone or WhatsApp number"); }
-    if (missing.includes("patientCountry")) { partsTr.push("yaşadığınız ülkeyi"); partsEn.push("the country you reside in"); }
+    if (missing.includes("patientPhone")) { partsTr.push("telefon numaranızı"); partsEn.push("your phone number"); }
+    if (missing.includes("patientCountry")) { partsTr.push("yaşadığınız ülkeyi"); partsEn.push("the country you live in"); }
 
     return isEn
-      ? `Could you also provide ${partsEn.join(", ")} so we can reach you with the quotes?`
-      : `Teklifleri size ulaştırabilmemiz için lütfen ${partsTr.join(", ")} de paylaşabilir misiniz?`;
+      ? `Could you also share ${partsEn.join(", ")}?`
+      : `Lütfen ${partsTr.join(", ")} de paylaşabilir misiniz?`;
   }
 
   if (status.currentGroup === 3) {
     return isEn
-      ? "Could you share your approximate travel dates or preferred timeframe for treatment (e.g. next month, early July, or specific dates)?"
-      : "Tedavi için planladığınız yaklaşık seyahat tarihini veya dönemi (örn. önümüzdeki ay, Temmuz başı veya belirli bir tarih aralığı) öğrenebilir miyiz?";
+      ? "When are you planning to travel for treatment?"
+      : "Seyahatinizi hangi tarih veya dönem için planlıyorsunuz?";
   }
 
   return isEn

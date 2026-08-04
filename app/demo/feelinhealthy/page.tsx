@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { PrivacyConsentCard } from "@/components/chat/PrivacyConsentCard";
 import { IstanbulSideClarificationCard } from "@/components/chat/IstanbulSideClarificationCard";
+import { CitySelectionCard } from "@/components/chat/CitySelectionCard";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -292,7 +293,9 @@ export default function FeelinHealthyLive() {
     privacyNoticeLabel?: string;
     consentStructured?: any;
     sideClarificationCard?: any;
+    citySelectionCard?: any;
     selectedSideOptionId?: string;
+    selectedCityOptionId?: string;
     additionalEligibleClinicCount?: number;
     conversionData?: any;
   }[]>([]);
@@ -504,6 +507,67 @@ export default function FeelinHealthyLive() {
     }
   };
 
+  const sendCitySelectionAction = async (city: string, optionId: string) => {
+    if (aiTyping) return;
+    setAiTyping(true);
+
+    const userDisplay =
+      city === "undecided"
+        ? (lang === "tr" ? "Henüz karar vermedim" : "I’m not sure yet")
+        : (lang === "tr"
+          ? `${city === "istanbul" ? "İstanbul" : city === "izmir" ? "İzmir" : city.charAt(0).toUpperCase() + city.slice(1)} tercih ediyorum`
+          : `I prefer ${city.charAt(0).toUpperCase() + city.slice(1)}`);
+
+    setAiMsgs((p) => [
+      ...p.map((m) =>
+        m.type === "city_selection"
+          ? { ...m, type: "city_selection_resolved", selectedCityOptionId: optionId }
+          : m
+      ),
+      { role: "user", text: userDisplay },
+    ]);
+
+    try {
+      const res = await fetch(`/api/public/agency/${SLUG}/matching-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: { type: "select_treatment_city", city, value: city, optionId, locale: lang },
+          history: aiMsgs.slice(-10).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text })),
+          sessionContext: sessionCtx,
+        }),
+      });
+
+      if (!res.ok) throw new Error(`API error ${res.status}`);
+      const data = await res.json();
+
+      const replyMsg: any = {
+        role: "ai",
+        text: data.reply || "Yanıt alınamadı.",
+        type: data.type || "text",
+        sideClarificationCard: data.sideClarificationCard,
+        citySelectionCard: data.citySelectionCard,
+        clinics: data.clinics || undefined,
+        showClinicCards: data.showClinicCards,
+        privacyNoticeUrl: data.privacyNoticeUrl,
+        privacyNoticeLabel: data.privacyNoticeLabel,
+        consentStructured: data.consentStructured,
+        additionalEligibleClinicCount: data.additionalEligibleClinicCount,
+        conversionData: data.conversionData,
+      };
+      setAiMsgs((p) => [...p, replyMsg]);
+      if (data.sessionContext) setSessionCtx(data.sessionContext);
+    } catch (err) {
+      console.error("[CB-DEMO] ERROR:", err);
+      setAiMsgs((p) => [...p, {
+        role: "ai",
+        text: lang === "tr" ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin." : "We're experiencing a technical issue. Please try again."
+      }]);
+    } finally {
+      setAiTyping(false);
+    }
+  };
+
   const sendSideSelectionAction = async (side: string, optionId: string, actionType?: "confirm" | "reject") => {
     if (aiTyping) return;
     setAiTyping(true);
@@ -516,7 +580,7 @@ export default function FeelinHealthyLive() {
     else userDisplay = lang === "tr" ? "Farklı şehir seçeneklerini değerlendirmek istiyorum" : "I want to explore other cities";
 
     setAiMsgs((p) => [
-      ...p.map((m) => (m.type === "side_clarification" || m.type === "side_clarification_single")
+      ...p.map((m) => (m.type === "side_clarification" || m.type === "side_clarification_single" || m.type === "branch_side_confirm")
         ? { ...m, type: "side_clarification_resolved", selectedSideOptionId: optionId }
         : m),
       { role: "user", text: userDisplay }
@@ -545,6 +609,7 @@ export default function FeelinHealthyLive() {
         text: data.reply || "Yanıt alınamadı.",
         type: data.type || "text",
         sideClarificationCard: data.sideClarificationCard,
+        citySelectionCard: data.citySelectionCard,
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
         privacyNoticeUrl: data.privacyNoticeUrl,
@@ -598,6 +663,7 @@ export default function FeelinHealthyLive() {
         text: data.reply || "Yanıt alınamadı.",
         type: data.type || "text",
         sideClarificationCard: data.sideClarificationCard,
+        citySelectionCard: data.citySelectionCard,
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
         privacyNoticeUrl: data.privacyNoticeUrl,
@@ -643,6 +709,7 @@ export default function FeelinHealthyLive() {
         text: data.reply || "Yanıt alınamadı.",
         type: data.type || "text",
         sideClarificationCard: data.sideClarificationCard,
+        citySelectionCard: data.citySelectionCard,
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
         privacyNoticeUrl: data.privacyNoticeUrl,
@@ -701,6 +768,7 @@ export default function FeelinHealthyLive() {
         text: data.reply || "Yanıt alınamadı.",
         type: data.type || "text",
         sideClarificationCard: data.sideClarificationCard,
+        citySelectionCard: data.citySelectionCard,
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
         privacyNoticeUrl: data.privacyNoticeUrl,
@@ -971,7 +1039,32 @@ export default function FeelinHealthyLive() {
                           borderColor={C.border}
                         />
                       </div>
-                    ) : m.type === "side_clarification" || m.type === "side_clarification_single" || m.type === "side_clarification_resolved" ? (
+                    ) : m.type === "city_selection" || m.type === "city_selection_resolved" ? (
+                      <div style={{
+                        background: C.white,
+                        color: C.text,
+                        padding: "14px 18px",
+                        borderRadius: "4px 16px 16px 16px",
+                        border: `1px solid ${C.border}`,
+                        fontSize: 14,
+                        lineHeight: 1.6,
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.03)"
+                      }}>
+                        <CitySelectionCard
+                          title={m.citySelectionCard?.title}
+                          message={m.text || m.citySelectionCard?.message}
+                          options={m.citySelectionCard?.options || []}
+                          lang={lang}
+                          isResolved={m.type === "city_selection_resolved"}
+                          selectedOptionId={m.selectedCityOptionId}
+                          disabled={aiTyping}
+                          onSelectCity={(city, optionId) => sendCitySelectionAction(city, optionId)}
+                          primaryColor={C.primary}
+                          navyColor={C.navy}
+                          borderColor={C.border}
+                        />
+                      </div>
+                    ) : m.type === "side_clarification" || m.type === "side_clarification_single" || m.type === "side_clarification_resolved" || m.type === "branch_side_confirm" ? (
                       <div style={{
                         background: C.white,
                         color: C.text,
