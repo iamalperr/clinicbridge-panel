@@ -1,28 +1,23 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAgencyWorkspace } from "@/components/agency/AgencyWorkspaceContext";
 import { useI18n } from "@/lib/i18n-context";
-import { subscribeToAgencyAIConfig, updateAgencyAIConfig } from "@/lib/services/agencyService";
+import { subscribeToAgencyAIConfig, updateAgencyAIConfig, subscribeToAgency } from "@/lib/services/agencyService";
 import type { AgencyAIConfig } from "@/lib/types/agency";
-import { Brain, Save, Plus, X, MessageSquare } from "lucide-react";
+import { Brain, Save, Plus, X, MessageSquare, AlertTriangle } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { UI_COLORS } from "@/components/ui/ui-shared";
 import type { AIIntakeInstruction } from "@/lib/types/agency";
+import {
+  FEELINHEALTHY_PROMPT_STUDIO_DEFAULTS,
+  validateAgencyAIConfigConflicts,
+} from "@/lib/agency/assistantPolicy";
 
-const DEFAULT_INTAKE_INSTRUCTIONS: AIIntakeInstruction[] = [
-  { key: "treatmentNeed", labelTR: "Tedavi veya Şikayet", labelEN: "Treatment or Concern", questionTR: "Hangi tedavi veya şikayet için destek istiyorsunuz?", questionEN: "What treatment or concern would you like help with?", required: true, type: "text", usage: "Hastanın ne aradığını anlamak için" },
-  { key: "patientAge", labelTR: "Yaş", labelEN: "Age", questionTR: "Size daha doğru bir yönlendirme yapabilmem için yaşınızı öğrenebilir miyim?", questionEN: "To provide more accurate guidance, may I know your age?", required: false, type: "number", usage: "Ön değerlendirme kalitesini artırmak için" },
-  { key: "patientGender", labelTR: "Cinsiyet", labelEN: "Gender", questionTR: "Dilerseniz cinsiyetinizi de paylaşabilir misiniz?", questionEN: "If you feel comfortable, could you please share your gender?", required: false, type: "select", usage: "Destekleyici hasta profili bilgisi" },
-  { key: "patientLocation", labelTR: "Bulunduğu Ülke/Şehir", labelEN: "Current Location", questionTR: "Hangi ülkeden veya şehirden yazıyorsunuz?", questionEN: "Which country or city are you contacting us from?", required: true, type: "text", usage: "Lokasyon bazlı yönlendirme" },
-  { key: "preferredLocation", labelTR: "Tercih Edilen Lokasyon", labelEN: "Preferred Location", questionTR: "Tedavi için tercih ettiğiniz şehir veya lokasyon var mı?", questionEN: "Do you have a preferred city or location for treatment?", required: false, type: "text", usage: "Doğru klinik lokasyonunu belirlemek için" },
-  { key: "budget", labelTR: "Bütçe", labelEN: "Budget", questionTR: "Yaklaşık bir bütçeniz var mı?", questionEN: "Do you have an approximate budget?", required: false, type: "text", usage: "Fiyat/Bütçe eşleşmesi için" },
-  { key: "hasXrayOrDiagnosis", labelTR: "Röntgen/Teşhis Durumu", labelEN: "X-ray / Diagnosis", questionTR: "Daha önce röntgen, muayene veya teşhis aldınız mı?", questionEN: "Have you had an X-ray, examination, or diagnosis before?", required: false, type: "text", usage: "Tıbbi durumu anlamak için" },
-  { key: "travelDate", labelTR: "Seyahat Tarihi", labelEN: "Travel Date", questionTR: "Tedavi için ne zaman seyahat etmeyi planlıyorsunuz?", questionEN: "When are you planning to travel for treatment?", required: false, type: "text", usage: "Randevu ve planlama için" },
-  { key: "supportNeeds", labelTR: "Destek İhtiyaçları", labelEN: "Support Needs", questionTR: "Transfer, konaklama veya yabancı dil desteği sizin için önemli mi?", questionEN: "Do you need support with transfer, accommodation, or language assistance?", required: false, type: "text", usage: "Paket teklifleri hazırlamak için" }
-];
+const DEFAULT_INTAKE_INSTRUCTIONS: AIIntakeInstruction[] =
+  (FEELINHEALTHY_PROMPT_STUDIO_DEFAULTS.intakeInstructions as AIIntakeInstruction[]) || [];
 
 function SectionTitle({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (
@@ -37,47 +32,26 @@ function SectionTitle({ icon, title }: { icon: React.ReactNode; title: string })
     </div>
   );
 }
-const DEFAULT_RESPONSE_RULES = [
-  "Hastanın tedavi ihtiyacını anlamadan klinik önermeye çalışma.",
-  "Hasta yeterli bilgi verdiyse klinik önerilerini sohbet içinde kartlarla göster.",
-  "Klinik kartlarında backend fiyatlarını kullan.",
-  "Hasta bir klinik seçtiğinde aynı kartı sürekli tekrar gösterme.",
-  "Klinik seçildikten sonra klinik hakkında kısa ve güven veren bilgi ver.",
-  "Klinik bilgi havuzunda bilgi varsa o bilgiyi kullan.",
-  "Bilgi varsa 'detaylı bilgi için iletişime geçin' gibi zayıf cevap verme.",
-  "Her yanıtı lead toplama hedefiyle doğal şekilde ilerlet.",
-  "Lead için minimum bilgiler: ad soyad, telefon, ülke/şehir, yaş, cinsiyet, tedavi, tercih edilen klinik, bütçe, seyahat tarihi.",
-  "Eksik bilgi varsa her seferinde yalnızca 1-2 kritik soru sor.",
-  "Hasta teşekkür edip konuşmayı kapatıyorsa ve yeterli lead bilgisi varsa konuşmayı tekrar tekrar uzatma.",
-  "Kesin teşhis, kesin tedavi garantisi, kesin sonuç veya kesin fiyat garantisi verme."
-];
 
-const DEFAULT_FORBIDDEN_CLAIMS = [
-  "Kesin teşhis koyma.",
-  "Tedavi sonucu garantisi verme.",
-  "Fiyatın kesin olduğunu söyleme.",
-  "Doktor muayenesi olmadan kesin tedavi planı çıkarma.",
-  "Klinik adına tıbbi taahhüt verme.",
-  "Bilgi yoksa uydurma."
-];
-
-const DEFAULT_SYSTEM_PROMPT = `Bu asistan FeelinHealthy acentasına bağlı klinikler arasında hasta yönlendirmesi yapar. Yanıt üretirken sırasıyla agency prompt ayarlarını, klinik profillerini, tedavi kataloglarını, fiyatlandırma kayıtlarını, doktor bilgilerini, AI bilgi havuzunu, SSS ve lokasyon bilgilerini kullan. Klinik önerilerini yalnızca acentaya bağlı ve aktif klinikler arasından yap. Fiyatları yalnızca backend’de kayıtlı pricing verilerinden çek. Eğer fiyat yoksa “teklif alarak öğrenin” de. Hasta bir klinik seçtiğinde bu kliniği conversation state’e kaydet ve sonraki sorularda bu klinik bağlamını koru. Kartları yalnızca öneri veya klinik seçimi anında göster; her yanıtta tekrar etme.`;
-
-const DEFAULT_PERSONA = `Sen FeelinHealthy adına çalışan, sağlık turizmi hastalarına doğru klinik ve tedavi yönlendirmesi yapan profesyonel bir AI asistansın. Hastanın tedavi ihtiyacını, lokasyonunu, bütçesini, yaşını, cinsiyetini, seyahat planını ve beklentilerini anlayarak en uygun klinikleri önerirsin. Kesin teşhis koymaz, tedavi garantisi vermez ve kesin fiyat taahhüdünde bulunmazsın. Fiyat bilgisi paylaşırken bunun tahmini veya sistemde kayıtlı fiyat aralığı olduğunu, nihai fiyatın klinik değerlendirmesi sonrası netleşeceğini belirtirsin. Konuşma tarzın güven veren, sade, profesyonel, çözüm odaklı ve sağlık turizmi hastalarının anlayabileceği kadar net olmalıdır.`;
+const DEFAULT_RESPONSE_RULES = FEELINHEALTHY_PROMPT_STUDIO_DEFAULTS.responseRules || [];
+const DEFAULT_FORBIDDEN_CLAIMS = FEELINHEALTHY_PROMPT_STUDIO_DEFAULTS.forbiddenClaims || [];
+const DEFAULT_SYSTEM_PROMPT = FEELINHEALTHY_PROMPT_STUDIO_DEFAULTS.customSystemPrompt || "";
+const DEFAULT_PERSONA = FEELINHEALTHY_PROMPT_STUDIO_DEFAULTS.persona || "";
 
 export default function AgencyAIPromptPage() {
   const { agencyId } = useAgencyWorkspace();
   const { t } = useI18n();
+  const [agencySlug, setAgencySlug] = useState<string>("");
   const [config, setConfig] = useState<Partial<AgencyAIConfig>>({
-    assistantName: "FeelinHealthy AI Assistant",
+    assistantName: FEELINHEALTHY_PROMPT_STUDIO_DEFAULTS.assistantName,
     persona: DEFAULT_PERSONA,
     tone: "Professional",
-    greetingMessageTR: "Merhaba 👋 Ben FeelinHealthy AI asistanınızım. Tedavi ihtiyacınızı, tercih ettiğiniz lokasyonu, bütçenizi ve beklentilerinizi paylaşın; size en uygun klinikleri ve tedavi seçeneklerini birlikte bulalım.",
-    greetingMessageEN: "Hello 👋 I’m your FeelinHealthy AI assistant. Tell me about your treatment need, preferred location, budget, and expectations, and I’ll help you find the most suitable clinics and treatment options.",
+    greetingMessageTR: FEELINHEALTHY_PROMPT_STUDIO_DEFAULTS.greetingMessageTR,
+    greetingMessageEN: FEELINHEALTHY_PROMPT_STUDIO_DEFAULTS.greetingMessageEN,
     responseRules: DEFAULT_RESPONSE_RULES,
     forbiddenClaims: DEFAULT_FORBIDDEN_CLAIMS,
     leadCollectionMode: "moderate",
-    pricingBehavior: "show_exact",
+    pricingBehavior: "show_range",
     recommendationBehavior: "direct_recommend",
     languageBehavior: "user_lang",
     intakeInstructions: DEFAULT_INTAKE_INSTRUCTIONS,
@@ -88,16 +62,33 @@ export default function AgencyAIPromptPage() {
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   useEffect(() => {
-    return subscribeToAgencyAIConfig(agencyId, (cfg) => {
-      if (cfg) {
-        setConfig(prev => ({
-          ...prev, // Keep defaults for missing fields
-          ...cfg,
-          intakeInstructions: cfg.intakeInstructions?.length ? cfg.intakeInstructions : DEFAULT_INTAKE_INSTRUCTIONS,
-        }));
-      }
-    });
+    const unsubs = [
+      subscribeToAgency(agencyId, (a) => {
+        if (a?.slug) setAgencySlug(a.slug);
+      }),
+      subscribeToAgencyAIConfig(agencyId, (cfg) => {
+        if (cfg) {
+          setConfig(prev => ({
+            ...prev,
+            ...cfg,
+            intakeInstructions: cfg.intakeInstructions?.length ? cfg.intakeInstructions : DEFAULT_INTAKE_INSTRUCTIONS,
+          }));
+        }
+      }),
+    ];
+    return () => unsubs.forEach((u) => u());
   }, [agencyId]);
+
+  const isFeelinHealthy = agencySlug === "feelinhealthy" || agencyId === "feelinhealthy";
+
+  const policyWarnings = useMemo(
+    () =>
+      validateAgencyAIConfigConflicts(config, {
+        isFeelinHealthy,
+        clinicLimit: isFeelinHealthy ? 2 : undefined,
+      }),
+    [config, isFeelinHealthy]
+  );
 
   const showToast = (type: "success" | "error", message: string) => {
     setToast({ type, message });
@@ -156,8 +147,43 @@ export default function AgencyAIPromptPage() {
         </h1>
         <p style={{ fontSize: 14, color: UI_COLORS.textSecondary, marginTop: 8 }}>
           Acenta adına hastalarla konuşacak AI asistanın karakterini, tonunu ve yönlendirme davranışını buradan yönetin.
+          Backend konuşma state’i, zorunlu intake ve klinik limiti özel prompt’tan önce gelir.
         </p>
       </div>
+
+      {policyWarnings.length > 0 && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 14,
+            borderRadius: 10,
+            border: `1px solid ${policyWarnings.some((w) => w.severity === "error") ? "#FCA5A5" : "#FCD34D"}`,
+            background: policyWarnings.some((w) => w.severity === "error") ? "#FEF2F2" : "#FFFBEB",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <AlertTriangle size={16} color={policyWarnings.some((w) => w.severity === "error") ? "#DC2626" : "#D97706"} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: UI_COLORS.textPrimary }}>
+              Yapılandırma uyarıları ({policyWarnings.length})
+            </span>
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 6 }}>
+            {policyWarnings.map((w) => (
+              <li key={w.code} style={{ fontSize: 12, color: UI_COLORS.textSecondary, lineHeight: 1.45 }}>
+                <strong style={{ color: w.severity === "error" ? "#B91C1C" : "#B45309" }}>
+                  {w.severity === "error" ? "Kritik" : "Uyarı"}:
+                </strong>{" "}
+                {w.messageTr}
+              </li>
+            ))}
+          </ul>
+          {isFeelinHealthy && (
+            <p style={{ margin: "10px 0 0", fontSize: 11, color: UI_COLORS.textMuted }}>
+              FeelinHealthy’de bütçe kapalıdır; yaş, cinsiyet, ülke ve seyahat tarihi zorunludur. Kayıt engellenmez ancak üretimde backend kuralları geçerlidir.
+            </p>
+          )}
+        </div>
+      )}
 
       <div style={{ background: "var(--bg-app)", borderRadius: 12, padding: 24, border: `1px solid ${UI_COLORS.border}` }}>
         <SectionTitle icon={<Brain size={18} />} title="Asistan Kimliği ve Üslubu" />

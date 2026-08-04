@@ -38,6 +38,11 @@ import {
   getStructuredConsentData,
   validatePrivacyNoticeUrl
 } from "@/lib/utils/privacyNotice";
+import {
+  compileAssistantPolicy,
+  buildAuthoritativeSystemPrompt,
+  logPolicyConflicts,
+} from "@/lib/agency/assistantPolicy";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -847,9 +852,23 @@ export async function POST(
     if (isPureGreeting) {
       const isEn = /^(hello|hi|hey|good morning|good afternoon|good evening|howdy|greetings)/i.test(rawMsg) ||
         ((agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") && !/^(merhaba|selam|günaydın|gunaydin|iyi)/i.test(rawMsg));
+
+      // Load Prompt Studio greetings from aiConfig/main (not the agency root doc).
+      const cacheKeyAiConfigEarly = `agency-aiConfig:${agencyId}`;
+      let greetingAiConfig = getCached<any>(cacheKeyAiConfigEarly);
+      if (!greetingAiConfig && adminDb) {
+        try {
+          const aiSnap = await adminDb.collection("agencies").doc(agencyId).collection("aiConfig").doc("main").get();
+          greetingAiConfig = aiSnap.exists ? aiSnap.data() : null;
+          setCached(cacheKeyAiConfigEarly, greetingAiConfig);
+        } catch {
+          greetingAiConfig = null;
+        }
+      }
+
       const greetingReply = isEn
-        ? ((agencyData as any)?.aiConfig?.greetingMessageEN || "Hello! How can I help you today? What treatment or clinic information are you looking for?")
-        : ((agencyData as any)?.aiConfig?.greetingMessageTR || "Merhaba! Size nasıl yardımcı olabilirim? Hangi tedavi veya klinik hakkında bilgi almak istersiniz?");
+        ? (greetingAiConfig?.greetingMessageEN || "Hello! How can I help you today? What treatment or clinic information are you looking for?")
+        : (greetingAiConfig?.greetingMessageTR || "Merhaba! Size nasıl yardımcı olabilirim? Hangi tedavi veya klinik hakkında bilgi almak istersiniz?");
       
       return jsonResponse({
         reply: greetingReply,
@@ -1157,7 +1176,26 @@ export async function POST(
 
     /* ── 2. Build clinic context for OpenAI ── */
     const promptBuildStart = performance.now();
-    const clinicContext = buildClinicContext(allClinics, filteredPricing, relevantKbRecords, [], agencyKbRecords, showPriceRange);
+    const selectedIdsForContext = new Set<string>([
+      ...(Array.isArray(ctx.selectedClinicIds) ? ctx.selectedClinicIds.map(String) : []),
+      ctx.selectedClinicId,
+    ].filter(Boolean).map(String));
+    const isSelectedClinicMode =
+      ctx.leadStage === "clinic_selected" ||
+      ctx.clinicSelectionStatus === "completed" ||
+      selectedIdsForContext.size > 0;
+    const clinicsForPrompt =
+      isSelectedClinicMode && selectedIdsForContext.size > 0
+        ? allClinics.filter((c: any) => selectedIdsForContext.has(String(c.id)))
+        : allClinics;
+    const clinicContext = buildClinicContext(
+      clinicsForPrompt.length > 0 ? clinicsForPrompt : allClinics,
+      filteredPricing,
+      relevantKbRecords,
+      [],
+      agencyKbRecords,
+      showPriceRange
+    );
     promptBuildMs = performance.now() - promptBuildStart;
 
     /* ── 3. Build session context hint ── */
@@ -1181,119 +1219,34 @@ export async function POST(
     }
 
     /* ── 4. OpenAI Call: Intent Extraction + Response ── */
-    /* ── 4. OpenAI Call: Intent Extraction + Response ── */
-    const asstName = agencyAiConfig?.assistantName || "AI Asistan";
-    const persona = agencyAiConfig?.persona || "Sen bir sağlık turizmi AI asistanısın. Görevin hastaların doğru kliniği bulmasına yardımcı olmak.";
-    const tone = agencyAiConfig?.tone || "Professional";
-    const rules = (agencyAiConfig?.responseRules || []).map((r: string, i: number) => `${i + 1}. ${r}`).join("\n");
-    const forbidden = (agencyAiConfig?.forbiddenClaims || []).map((c: string) => `- ${c}`).join("\n");
-    const customPrompt = agencyAiConfig?.customSystemPrompt ? `\nÖZEL KURALLAR:\n${agencyAiConfig.customSystemPrompt}\n` : "";
-    
-    // Build Intake Instructions Context
-    const intakeInstructions = agencyAiConfig?.intakeInstructions || [];
-    const intakeText = intakeInstructions.map((inst: any, idx: number) => {
-      return `${idx + 1}. Bilgi: ${inst.labelTR} (Zorunlu mu: ${inst.required ? 'Evet' : 'Hayır'})\n   - Neden toplanıyor: ${inst.usage}\n   - Örnek soru: "${inst.questionTR}"`;
-    }).join("\n\n");
+    const assistantPolicy = compileAssistantPolicy({
+      agencyId,
+      agencySlug: slug,
+      aiConfig: agencyAiConfig,
+      matchingConfig: {
+        maxClinicsToShow: maxClinics,
+        showPriceRange,
+      },
+      sessionContext: ctx,
+      privacyNoticeUrl: isFeelinHealthy ? "https://feelinhealthy.com/kvkk" : undefined,
+    });
+    logPolicyConflicts(assistantPolicy);
 
-    const systemPrompt = `Senin adın: ${asstName}.
-Karakterin ve Rolün: ${persona}
-Üslubun: ${tone}
+    const requiredNextAction = assistantPolicy.conversationState.isSelectedClinicMode
+      ? "Seçili klinik modundasın. Keşfe/geri eşleşmeye dönme. Yalnızca seçilen klinik hakkında yanıt ver; showClinicCards=false."
+      : assistantPolicy.conversationState.treatmentKnown
+        ? "Tedavi biliniyor; tedavi sorusunu tekrarlama. Backend intake/lokasyon state’ine uy."
+        : "Backend state sıradaki adımı belirler. Toplanmış alanları tekrar sorma.";
 
-STANDART KURALLAR:
-1. Hastanın mesajını analiz et ve aşağıdaki JSON formatında yanıt ver.
-2. PASİF KAPANIS YAPMA. "Daha fazla bilgi isterseniz buradayım" gibi zayıf kapanışlar yerine, hastayı daima bir sonraki lead (kayıt) adımına yönlendir.
-3. KLİNİK SEÇİMİ: Eğer hasta "Hospitadent ile devam edelim", "Bu klinik iyi", "[Klinik Adı] hakkında bilgi ver", "İlk klinik olsun" gibi sözler söylerse intent: "clinic_selected" yap ve o kliniğin adını "selectedClinicName", ID'sini "selectedClinicId" olarak set et. 
-4. LEAD TOPLAMA KURALLARI:
-${isFeelinHealthy ? `   * BU ACENTEDE BÜTÇE KESİNLİKLE SORULMAZ. Bütçe alanı tamamen kaldırılmıştır.
-   * Bilgiler 3 grup halinde toplanır:
-     - Grup 1: Ad Soyad, Yaş, Cinsiyet (Eksikse bu gruptaki eksiklerin hepsini tek bir kibar soruda iste).
-     - Grup 2: E-posta, Telefon/WhatsApp, Ülke (Grup 1 tamamsa bu gruptaki eksikleri tek soruda iste).
-     - Grup 3: Seyahat Tarihi (Grup 1 ve Grup 2 tamamsa seyahat veya tercih edilen tedavi tarihini sor).
-   * Kullanıcı tek bir mesajda birden fazla bilgi vermişse hepsini çıkar ve eksik kalan sıradaki grubu sor.` : `   * Hasta bir klinik seçtiğinde veya tavsiye istediğinde yavaş yavaş "lead_capture" aşamasına geç. Bilgileri asla aynı anda sorma. Sırasıyla SADECE 1 eksik bilgiyi sor.
-   Sıra KESİNLİKLE şöyle olmalı: 
-   1. Ad Soyad (patientName)
-   2. E-posta (patientEmail)
-   3. Telefon / WhatsApp (patientPhone)
-   4. Ülke (patientCountry)
-   5. Yaş (patientAge)
-   6. Cinsiyet (patientGender)
-   7. Tedavi Detayı (treatmentCategory / subTreatment)
-   8. Bütçe (budgetAmount)
-   9. Seyahat Tarihi (travelDate)
-   10. KVKK/GDPR Onayı (quoteConsent)`}
-5. "missingLeadField" alanına sıradaki sorman gereken alanı yaz. Eğer E-posta toplanacaksa leadStage = 'collecting_email' yap.
-6. HASTA BİLGİ VERDİKÇE JSON içinde ilgili alanı (patientName, patientPhone, patientEmail, patientAge, patientGender, patientCountry, travelDate vb.) doldur.
-7. Tüm lead bilgileri tamamsa ve KVKK onayı alındıysa "shouldCreateLead": true dön.
-8. FİYATLARI ASLA UYDURMA. Aşağıdaki verilerden çek.
-9. Türkçe mesaja Türkçe, İngilizce mesaja İngilizce yanıt ver. (Dil davranışı: ${agencyAiConfig?.languageBehavior || "user_lang"})
-10. Tıbbi teşhis koyma.
-11. KVKK ONAYI: Eğer hastadan kişisel veya sağlıkla ilgili detaylı bir veri isteyeceksen VEYA hasta sana kendi inisiyatifiyle kişisel/sağlık verisi (örn. "yaşım 45", "diyabetim var", "dişim ağrıyor") veriyorsa, 'requiresConsent': true yap. Ancak genel sorulara (örn. "İmplant nedir?") requiresConsent: false yap.
-12. KAPANIŞ (COMPLETED): Eğer kullanıcı teşekkür, tamam, görüşürüz gibi kapanış mesajı verirse ve lead/quote request zaten tamamlanmışsa (leadStage === 'quote_request_created' veya 'completed'), yeni öneri veya lead toplama akışı başlatma. Sadece kibar kapanış cevabı ver ve intent olarak "conversation_completed" dön.
-13. E-POSTA KURALLARI: 
-    - Accepted consent bulunmadan e-posta isteme.
-    - Kişiselleştirilmiş talep tamamlanmadan önce geçerli e-posta al.
-    - E-posta daha önce geçerli olarak alındıysa ("verified_format") tekrar isteme.
-    - E-postayı asla tahmin etme veya ad/soyad bilgilerinden üretme.
-    - Geçersiz e-postayı kabul edilmiş gibi gösterme.
-    - Kullanıcı e-posta vermek istemezse zorlama, genel bilgi ver ancak kişisel teklif sürecini tamamlatma.
-    - Toplanan e-postayı sohbet özetinde açık şekilde yazma (örn. p***@example.com şeklinde maskele).
-14. KLİNİK SEÇİM KURALLARI:
-    - Klinik önerdikten sonra kullanıcıya seçim modlarını sun ("Tüm uygun kliniklerden teklif al" veya "Klinikleri tek tek seç").
-    - Kullanıcının aynı talep için en fazla ${isFeelinHealthy ? 2 : maxClinics} klinik seçebileceğini belirt. Aynı anda en fazla ${isFeelinHealthy ? 2 : maxClinics} klinik önerebilirsin. Asla daha fazlasını listeleme.
-    - "Tüm uygun klinikler" seçeneğini sınırsız klinik olarak yorumlama. En fazla ${isFeelinHealthy ? 2 : maxClinics} uygun klinik seçilecektir.
-    - Sistemde olmayan clinic ID veya clinic adı uydurma. Kullanıcı seçmeden klinik seçilmiş gibi davranma.
-    - Limit aşıldığında kullanıcıyı nazikçe bilgilendir. Seçimlerini değiştirmesine izin ver.
-    - Klinik seçiminden sonra henüz teklif gönderilmiş gibi konuşma ("Talebiniz kliniklere iletildi" DEME). Yalnızca "seçiminiz kaydedildi" veya "talebiniz için klinikler seçildi" de.
-    ${!showPriceRange ? "- DİKKAT: Fiyat bilgisi KESİNLİKLE PAYLAŞMA. Sistemde fiyat aralığı gösterimi kapalı." : ""}
-    ${!showProfileLinks ? "- DİKKAT: Klinik profil linklerini KESİNLİKLE PAYLAŞMA." : ""}
-GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
-1. EĞİTİCİ GENEL BİLGİ (Global Dental Knowledge): Hasta genel bir diş/sağlık sorusu sorarsa (Örn: "Vidasız implant nedir?", "Kanal tedavisi ne kadar sürer?"), soruyu ÖNCE genel tıbbi bilgi havuzunla eğitici bir dille açıkla. Kesinlikle teşhis koyma ve tedavi önerme.
-2. KLİNİK BİLGİSİ DOĞRULAMA (Clinic Knowledge Base): Genel bilgiyi verdikten sonra kliniğin Bilgi Havuzuna bak. Eğer klinikte bu işlem/marka varsa "Kliniğimizde bu tedavi uygulanmaktadır" gibi doğal bir şekilde onayla.
-3. BİLİNMEYEN DURUM (Safety & Natural Fallback): Eğer klinikte yapıldığına dair net bir bilgi yoksa, ASLA sadece "Bu bilgiyi doğrulayamıyorum" deyip sohbeti sonlandırma. Bunun yerine "Genel olarak bu işlem böyledir ancak kliniğimizde özel olarak bu tekniğin/markanın kullanılıp kullanılmadığını şu anki bilgilerimden kesin doğrulayamıyorum." şeklinde dürüst ve doğal bir geçiş yap.
-4. YARDIMCI DEVAM (Helpful Continuation): Bilgi eksikliği durumunda bile sohbeti çıkmaza sokma (dead-end yapma). Daima "Dilerseniz kliniğimizde uygulanan implant seçenekleri hakkında bilgi verebilirim" veya "Bu detayı sizin için klinik ekibimize iletebilirim" diyerek hastayı yönlendir.
-
-HASTA BİLGİSİ TOPLAMA YÖNERGESİ (INTAKE INSTRUCTIONS):
-${intakeText || "Belirtilmedi."}
-
-ACENTA ÖZEL YANIT KURALLARI:
-${rules || "Belirtilmedi."}
-SÖYLENMEMESİ GEREKENLER (YASAKLI İFADELER):
-${forbidden || "Belirtilmedi."}
-${customPrompt}
-
-MEVCUT KLİNİKLER VE FİYATLAR:
-${clinicContext}
-
-${contextHint}
-
-JSON FORMATI:
-{
-  "intent": "clinic_recommendation" | "clinic_selected" | "clinic_question" | "pricing_question" | "doctor_question" | "lead_capture" | "conversation_completed" | "general",
-  "language": "tr" | "en",
-  "treatmentCategory": string | null,
-  "subTreatment": string | null,
-  "location": string | null,
-  "budgetAmount": number | null,
-  "budgetCurrency": string | null,
-  "clinicName": string | null,
-  "selectedClinicId": string | null,
-  "selectedClinicName": string | null,
-  "patientName": string | null,
-  "patientEmail": string | null,
-  "patientPhone": string | null,
-  "patientCountry": string | null,
-  "patientAge": number | null,
-  "patientGender": "Kadın" | "Erkek" | "Belirtmek istemiyorum" | "Diğer" | null,
-  "travelDate": string | null,
-  "quoteConsent": boolean | null,
-  "missingLeadField": "patientName" | "patientEmail" | "patientPhone" | "patientCountry" | "patientAge" | "patientGender" | "travelDate" | "quoteConsent" | null,
-  "requiresConsent": boolean,
-  "shouldCreateLead": boolean,
-  "showClinicCards": boolean,
-  "replyText": string
-}
-- intent: Hasta sadece belirli bir doktordan veya o kliniğin doktorlarından bahsediyorsa "doctor_question" seç.
-- showClinicCards: Sadece "clinic_recommendation" veya kullanıcının "klinikleri tekrar göster" demesi durumunda true yap. "clinic_selected", "lead_capture", "clinic_question", "doctor_question" gibi durumlarda KESİNLİKLE false yap ki kartlar ekranda gereksiz tekrar etmesin.`;
+    const systemPrompt = buildAuthoritativeSystemPrompt({
+      policy: assistantPolicy,
+      clinicContext,
+      contextHint,
+      requiredNextAction,
+      selectedClinicKnowledge: assistantPolicy.conversationState.isSelectedClinicMode
+        ? "İlgili klinik bilgisi VERIFIED KNOWLEDGE bölümünde filtrelenmiştir. Başka klinik önerme."
+        : undefined,
+    });
 
     // --- Context Tracking ---
     const totalClinicsLoaded = allClinics.length;
