@@ -62,6 +62,7 @@ export default function AgencySettingsPage() {
       setLoading(false);
       return;
     }
+    setLoading(true);
     const unsub = subscribeToAgency(agencyId, (a) => {
       setAgency(a);
       if (a) {
@@ -72,6 +73,7 @@ export default function AgencySettingsPage() {
         setLanguages(a.supportedLanguages || []);
         setCategories(a.treatmentCategories || []);
       }
+      setLoading(false);
     });
     return unsub;
   }, [agencyId]);
@@ -79,18 +81,23 @@ export default function AgencySettingsPage() {
   useEffect(() => {
     if (!agencyId) return;
     const ref = doc(db, "agencies", agencyId, "config", "settings");
-    const unsub = onSnapshot(ref, (snap) => {
-      const data = snap.exists() ? snap.data() : {};
-      const fromConfig = data?.quoteNotificationSettings;
-      const fromAgency = agency?.settings?.quoteNotificationSettings;
-      const normalized = normalizeQuoteNotificationSettings(fromConfig || fromAgency || {});
-      setNotifEnabled(normalized.enabled);
-      setNotifRecipientsText(emailsToTextarea(normalized.recipients));
-      setNotifCcText(emailsToTextarea(normalized.cc));
-      setNotifReplyTo(normalized.replyTo || "");
-    });
+    const unsub = onSnapshot(
+      ref,
+      (snap) => {
+        const data = snap.exists() ? snap.data() : {};
+        const fromConfig = data?.quoteNotificationSettings;
+        const normalized = normalizeQuoteNotificationSettings(fromConfig || {});
+        setNotifEnabled(normalized.enabled);
+        setNotifRecipientsText(emailsToTextarea(normalized.recipients));
+        setNotifCcText(emailsToTextarea(normalized.cc));
+        setNotifReplyTo(normalized.replyTo || "");
+      },
+      (err) => {
+        console.warn("[agency settings] quoteNotificationSettings listen failed:", err?.message || err);
+      }
+    );
     return unsub;
-  }, [agencyId, agency?.settings?.quoteNotificationSettings]);
+  }, [agencyId]);
 
   const notifValidation = useMemo(() => {
     return validateQuoteNotificationSettingsInput({
