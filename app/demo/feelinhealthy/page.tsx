@@ -220,6 +220,47 @@ const CATEGORY_ICONS: Record<string, any> = {
 const SLUG = "feelinhealthy";
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// CLINIC CARD SAFETY
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Clinic recommendations arrive from several endpoints and older sessions can
+ * replay a payload from a previous deployment. These helpers keep a single
+ * malformed record from taking the whole page down: the list is always an
+ * array, a record with no identity is skipped, and optional fields fall back to
+ * nothing rather than being invented.
+ */
+function normalizeClinicRecommendations(value: unknown): any[] {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") return [value];
+  return [];
+}
+
+/** A card needs an id to act on and a name to show. Anything else is optional. */
+function isRenderableClinic(rec: any): boolean {
+  if (!rec || typeof rec !== "object") return false;
+  const id = rec.clinicId ?? rec.id;
+  const name = rec.clinicName ?? rec.name;
+  return Boolean(id) && typeof name === "string" && name.trim().length > 0;
+}
+
+/** Doctors that cannot be labelled are dropped rather than rendered blank. */
+function getRenderableDoctors(rec: any): any[] {
+  const match = rec?.doctorMatch;
+  if (!match?.hasRelevantDoctors || !Array.isArray(match.doctors)) return [];
+
+  const named = match.doctors.filter(
+    (doc: any) => typeof doc?.fullName === "string" && doc.fullName.trim().length > 0
+  );
+  const limit =
+    typeof match.displayedDoctorCount === "number" && match.displayedDoctorCount > 0
+      ? match.displayedDoctorCount
+      : named.length;
+
+  return named.slice(0, limit);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -280,6 +321,35 @@ export default function FeelinHealthyLive() {
 
   const chatEnd = useRef<HTMLDivElement>(null);
   const t = (k: string) => TX[lang][k] || k;
+
+  // Ids already reported, so a dropped card is logged once instead of on every render.
+  const reportedInvalidClinics = useRef<Set<string>>(new Set());
+
+  const renderableClinicsFor = (msg: { clinics?: unknown }) => {
+    const all = normalizeClinicRecommendations(msg.clinics);
+    const renderable = all.filter(isRenderableClinic);
+
+    if (renderable.length !== all.length) {
+      const dropped = all.filter((rec) => !isRenderableClinic(rec));
+      for (const rec of dropped) {
+        const key = String(rec?.clinicId ?? rec?.id ?? rec?.clinicName ?? "unknown");
+        if (reportedInvalidClinics.current.has(key)) continue;
+        reportedInvalidClinics.current.add(key);
+        console.warn(
+          "[feelinhealthy] skipped malformed clinic recommendation",
+          JSON.stringify({
+            route: "/demo/feelinhealthy",
+            clinicId: rec?.clinicId ?? rec?.id ?? null,
+            hasName: Boolean(rec?.clinicName ?? rec?.name),
+            received: all.length,
+            rendered: renderable.length,
+          })
+        );
+      }
+    }
+
+    return renderable;
+  };
 
   const renderMessageContent = (text: string, isUser: boolean) => {
     if (!text) return null;
@@ -933,15 +1003,17 @@ export default function FeelinHealthyLive() {
                       </div>
                     )}
                     {/* Inline clinic cards */}
-                    {m.clinics && m.clinics.length > 0 && m.showClinicCards !== false && (
+                    {renderableClinicsFor(m).length > 0 && m.showClinicCards !== false && (
                       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                        {m.clinics.map((rec: any) => (
-                          <div key={rec.clinicId} style={{ background: C.white, borderRadius: 14, border: `1px solid ${C.border}`, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+                        {renderableClinicsFor(m).map((rec: any) => (
+                          <div key={rec.clinicId ?? rec.id} style={{ background: C.white, borderRadius: 14, border: `1px solid ${C.border}`, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
                             {/* Card header */}
                             <div style={{ padding: "12px 14px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                               <div>
-                                <p style={{ fontSize: 14, fontWeight: 700, color: C.navy }}>{rec.clinicName}</p>
-                                <span style={{ fontSize: 11, color: C.textSec, display: "flex", alignItems: "center", gap: 3, marginTop: 2 }}><MapPin size={10} /> {rec.location}</span>
+                                <p style={{ fontSize: 14, fontWeight: 700, color: C.navy }}>{rec.clinicName ?? rec.name}</p>
+                                {rec.location ? (
+                                  <span style={{ fontSize: 11, color: C.textSec, display: "flex", alignItems: "center", gap: 3, marginTop: 2 }}><MapPin size={10} /> {rec.location}</span>
+                                ) : null}
                               </div>
                               {rec.matchScore > 0 && (
                                 <div style={{ background: C.primaryBg, border: `1px solid ${C.primaryBorder}`, borderRadius: 8, padding: "3px 8px", textAlign: "center" }}>
@@ -951,7 +1023,7 @@ export default function FeelinHealthyLive() {
                               )}
                             </div>
                             {/* Prices */}
-                            {rec.matchedPrices && rec.matchedPrices.length > 0 && (
+                            {Array.isArray(rec.matchedPrices) && rec.matchedPrices.length > 0 && (
                               <div style={{ padding: "8px 14px", borderBottom: `1px solid ${C.border}` }}>
                                 <p style={{ fontSize: 10, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", marginBottom: 4, letterSpacing: 0.5 }}>{lang === "tr" ? "Tahmini Fiyatlar" : "Estimated Prices"}</p>
                                 {rec.matchedPrices.map((p: any, pi: number) => (
@@ -973,38 +1045,47 @@ export default function FeelinHealthyLive() {
                             )}
                             
                             {/* Doctors Preview */}
-                            {rec.doctorMatch?.hasRelevantDoctors && (
-                              <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, background: C.bg }}>
-                                <p style={{ fontSize: 11, fontWeight: 700, color: C.navy, marginBottom: 6 }}>
-                                  {lang === "tr" ? "İlgili Hekimler" : "Relevant Doctors"}
-                                </p>
-                                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                                  {rec.doctorMatch.doctors.slice(0, rec.doctorMatch.displayedDoctorCount).map((doc: any, di: number) => (
-                                    <div key={di} style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                                      {doc.photoUrl ? (
-                                        <img src={doc.photoUrl} alt={doc.fullName} style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", flexShrink: 0, border: `1px solid ${C.border}` }} />
-                                      ) : (
-                                        <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.primaryBg, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 12, fontWeight: 700 }}>
-                                          {doc.fullName.charAt(0)}
-                                        </div>
-                                      )}
-                                      <div>
-                                        <p style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{doc.title ? `${doc.title} ` : ""}{doc.fullName}</p>
-                                        <p style={{ fontSize: 10, color: C.textSec }}>
-                                          {doc.specialty}
-                                          {doc.experienceYears ? (lang === "tr" ? ` • ${doc.experienceYears} yıl deneyim` : ` • ${doc.experienceYears} yrs exp`) : ""}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                                {rec.doctorMatch.relevantDoctorCount > rec.doctorMatch.displayedDoctorCount && (
-                                  <p style={{ fontSize: 10, color: C.primary, marginTop: 6, fontWeight: 600, cursor: "pointer" }}>
-                                    {lang === "tr" ? `+${rec.doctorMatch.relevantDoctorCount - rec.doctorMatch.displayedDoctorCount} hekim daha...` : `+${rec.doctorMatch.relevantDoctorCount - rec.doctorMatch.displayedDoctorCount} more doctors...`}
+                            {(() => {
+                              const doctors = getRenderableDoctors(rec);
+                              if (doctors.length === 0) return null;
+
+                              const shown = doctors.length;
+                              const total = Number(rec.doctorMatch?.relevantDoctorCount) || shown;
+                              const remaining = total - shown;
+
+                              return (
+                                <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, background: C.bg }}>
+                                  <p style={{ fontSize: 11, fontWeight: 700, color: C.navy, marginBottom: 6 }}>
+                                    {lang === "tr" ? "İlgili Hekimler" : "Relevant Doctors"}
                                   </p>
-                                )}
-                              </div>
-                            )}
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                    {doctors.map((doc: any, di: number) => (
+                                      <div key={doc.id ?? di} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                                        {doc.photoUrl ? (
+                                          <img src={doc.photoUrl} alt={doc.fullName} style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", flexShrink: 0, border: `1px solid ${C.border}` }} />
+                                        ) : (
+                                          <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.primaryBg, color: C.primary, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 12, fontWeight: 700 }}>
+                                            {doc.fullName.trim().charAt(0)}
+                                          </div>
+                                        )}
+                                        <div>
+                                          <p style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{doc.title ? `${doc.title} ` : ""}{doc.fullName}</p>
+                                          <p style={{ fontSize: 10, color: C.textSec }}>
+                                            {doc.specialty}
+                                            {doc.experienceYears ? (lang === "tr" ? ` • ${doc.experienceYears} yıl deneyim` : ` • ${doc.experienceYears} yrs exp`) : ""}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  {remaining > 0 && (
+                                    <p style={{ fontSize: 10, color: C.primary, marginTop: 6, fontWeight: 600, cursor: "pointer" }}>
+                                      {lang === "tr" ? `+${remaining} hekim daha...` : `+${remaining} more doctors...`}
+                                    </p>
+                                  )}
+                                </div>
+                              );
+                            })()}
                             {/* Actions */}
                             <div style={{ padding: "8px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
                               {sessionCtx.clinicSelectionMode === "manual" && sessionCtx.clinicSelectionStatus !== "completed" ? (

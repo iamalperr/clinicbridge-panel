@@ -133,6 +133,19 @@ interface SessionContext {
    HELPERS
 ═══════════════════════════════════════════════════════════════════════════ */
 
+/**
+ * Resolves a doctor's display name across record shapes.
+ *
+ * `ClinicDoctor` stores the canonical value in `full_name`; `doctorName` is an
+ * optional denormalised alias that migrated records may not carry. Reading only
+ * the alias produced an undefined name in the clinic card payload.
+ */
+function resolveDoctorFullName(doctor: any): string {
+  const candidate =
+    doctor?.doctorName || doctor?.full_name || doctor?.fullName || doctor?.name;
+  return typeof candidate === "string" ? candidate.trim() : "";
+}
+
 function buildClinicContext(clinics: any[], pricing: any[], knowledgeRecords: any[] = [], aiConfigs: any[] = [], agencyKnowledge: any[] = [], showPriceRange: boolean = true): string {
   const lines: string[] = [];
   
@@ -1613,7 +1626,7 @@ JSON FORMATI:
               matchBasis: relevantDocs.length > 0 ? "treatment" : "clinic_default",
               doctors: (relevantDocs.length > 0 ? relevantDocs : cDocs).map(d => ({
                 id: d.id,
-                fullName: d.doctorName,
+                fullName: resolveDoctorFullName(d),
                 title: d.title || "",
                 specialty: d.specialty || (d.expertiseAreas && d.expertiseAreas.length > 0 ? d.expertiseAreas[0] : ""),
                 languages: d.supportedLanguages || [],
@@ -1678,7 +1691,7 @@ JSON FORMATI:
               matchBasis: relevantDocs.length > 0 ? "treatment" : "clinic_default",
               doctors: (relevantDocs.length > 0 ? relevantDocs : cDocs).map(d => ({
                 id: d.id,
-                fullName: d.doctorName,
+                fullName: resolveDoctorFullName(d),
                 title: d.title || "",
                 specialty: d.specialty || (d.expertiseAreas && d.expertiseAreas.length > 0 ? d.expertiseAreas[0] : ""),
                 languages: d.supportedLanguages || [],
@@ -1756,7 +1769,7 @@ JSON FORMATI:
               matchBasis: "clinic_default",
               doctors: cDocs.map(d => ({
                 id: d.id,
-                fullName: d.doctorName,
+                fullName: resolveDoctorFullName(d),
                 title: d.title || "",
                 specialty: d.specialty || (d.expertiseAreas && d.expertiseAreas.length > 0 ? d.expertiseAreas[0] : ""),
                 languages: d.supportedLanguages || [],
