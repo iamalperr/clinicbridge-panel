@@ -955,7 +955,22 @@ export class SlotExtractor {
    * Parse travel date preference or fuzzy timeframe (e.g. "önümüzdeki ay", "temmuz başı", "next month", "early july")
    */
   public static parseTravelDate(raw: string, lower: string): string | null {
-    // 1. Fuzzy month expressions
+    // 1. Specific date range or date format (before fuzzy month-only matches)
+    const rangeMatch = raw.match(
+      /\b\d{1,2}(?:\s*[-–—]\s*|\s+ila\s+|\s+to\s+)\d{1,2}\s+[a-zA-ZçğıöşüÇĞİÖŞÜ]+\b/i
+    );
+    if (rangeMatch) {
+      return rangeMatch[0].trim();
+    }
+
+    const dayMonthMatch = raw.match(
+      /\b\d{1,2}\s+[a-zA-ZçğıöşüÇĞİÖŞÜ]+(?:\s+\d{4})?\b/i
+    );
+    if (dayMonthMatch && /(ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık|january|february|march|april|may|june|july|august|september|october|november|december)/i.test(dayMonthMatch[0])) {
+      return dayMonthMatch[0].trim();
+    }
+
+    // 2. Fuzzy month expressions
     const fuzzyPatterns = [
       /\b(önümüzdeki ay|onumuzdeki ay|next month)\b/i,
       /\b(haftaya|gelecek hafta|next week)\b/i,
@@ -972,12 +987,6 @@ export class SlotExtractor {
       if (match) {
         return match[0].trim();
       }
-    }
-
-    // 2. Specific date range or date format
-    const rangeMatch = raw.match(/\b\d{1,2}(?:\s*-\s*|\s+ila\s+|\s+to\s+)\d{1,2}\s+[a-zA-ZçğıöşüÇĞİÖŞÜ]+\b/i);
-    if (rangeMatch) {
-      return rangeMatch[0].trim();
     }
 
     return null;

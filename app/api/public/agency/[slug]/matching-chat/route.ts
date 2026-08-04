@@ -537,7 +537,7 @@ export async function POST(
       } else if (action.type === "clinic_selection_update") {
         sessionContext.clinicSelectionMode = "manual";
         sessionContext.clinicSelectionStatus = "in_progress";
-        const currentSelected = new Set<string>(sessionContext.selectedClinicIds);
+        const currentSelected = new Set<string>(sessionContext.selectedClinicIds || []);
         
         if (action.action === "select") {
           if (currentSelected.size >= maxClinics) {
@@ -552,7 +552,20 @@ export async function POST(
           }
           currentSelected.add(action.clinicId);
           sessionContext.selectedClinicIds = Array.from(currentSelected);
-          finalMessage = `[SİSTEM AKSİYONU: Kullanıcı ${action.clinicName} kliniğini seçti. Toplam seçilen klinik sayısı: ${currentSelected.size}/${maxClinics}. Sadece 'Seçiminiz kaydedildi, başka klinik seçebilir veya devam edebilirsiniz' diyerek kısa bir yanıt ver.]`;
+          // FeelinHealthy "Bu Klinikle Devam Et" is a firm clinic choice → enter coordinator.
+          if (slug === "feelinhealthy" && action.clinicId) {
+            Object.assign(
+              sessionContext,
+              enterClinicCoordinator(sessionContext, {
+                id: String(action.clinicId),
+                name: String(action.clinicName || "Selected clinic"),
+              })
+            );
+            finalMessage =
+              `[SİSTEM AKSİYONU: Hasta '${action.clinicName}' kliniğini seçti. Backend state: clinic_selected. Clinic Patient Coordinator rolündesin. Keşif/matching/şehir/yaka/tedavi tekrar SORMA. Eksikse yalnızca seyahat tarihini sor; intake tamsa teklif talebini onayla ve tamamla.]`;
+          } else {
+            finalMessage = `[SİSTEM AKSİYONU: Kullanıcı ${action.clinicName} kliniğini seçti. Toplam seçilen klinik sayısı: ${currentSelected.size}/${maxClinics}. Sadece 'Seçiminiz kaydedildi, başka klinik seçebilir veya devam edebilirsiniz' diyerek kısa bir yanıt ver.]`;
+          }
         } else if (action.action === "deselect") {
           currentSelected.delete(action.clinicId);
           sessionContext.selectedClinicIds = Array.from(currentSelected);
@@ -560,7 +573,20 @@ export async function POST(
         }
       } else if (action.type === "clinic_selection_complete") {
         sessionContext.clinicSelectionStatus = "completed";
-        finalMessage = `[SİSTEM AKSİYONU: Kullanıcı klinik seçimini tamamladı. Seçilen toplam klinik sayısı: ${sessionContext.selectedClinicIds?.length || 0}. Artık lead toplama sürecine (Ad Soyad vb.) geçebilirsin.]`;
+        const primaryId = sessionContext.selectedClinicIds?.[0];
+        if (slug === "feelinhealthy" && primaryId) {
+          Object.assign(
+            sessionContext,
+            enterClinicCoordinator(sessionContext, {
+              id: String(primaryId),
+              name: String(sessionContext.selectedClinicName || sessionContext.lastFocusedClinicName || "Selected clinic"),
+            })
+          );
+          finalMessage =
+            `[SİSTEM AKSİYONU: Klinik seçimi tamamlandı (${sessionContext.selectedClinicIds?.length || 0} klinik). Backend state: clinic_selected. Matching yeniden başlatma. Eksikse seyahat tarihini sor; aksi halde teklif talebini tamamla.]`;
+        } else {
+          finalMessage = `[SİSTEM AKSİYONU: Kullanıcı klinik seçimini tamamladı. Seçilen toplam klinik sayısı: ${sessionContext.selectedClinicIds?.length || 0}. Artık lead toplama sürecine (Ad Soyad vb.) geçebilirsin.]`;
+        }
       } else if (action.type === "privacy_consent_response") {
         const { saveConsentRecord } = await import("@/lib/services/agencyConsentService");
         const consentLang = action.locale || "tr";
@@ -1489,12 +1515,35 @@ export async function POST(
     if (parsed.patientAge !== undefined && parsed.patientAge !== null) newCtx.patientAge = parsed.patientAge;
     if (parsed.patientGender) newCtx.patientGender = parsed.patientGender;
     if (parsed.travelDate) newCtx.travelDate = parsed.travelDate;
+    // Free-text travel answers (e.g. "10-19 Eylül") must stick even if the model omits the field.
+    if (!newCtx.travelDate && agencySlotsExtracted.extracted.travelDate) {
+      newCtx.travelDate = agencySlotsExtracted.extracted.travelDate;
+    }
+    if (!newCtx.travelDate && agencySlotsExtracted.extracted.travelDateText) {
+      newCtx.travelDate = agencySlotsExtracted.extracted.travelDateText;
+    }
     if (parsed.quoteConsent !== undefined && parsed.quoteConsent !== null) newCtx.quoteConsent = parsed.quoteConsent;
     if (parsed.missingLeadField) newCtx.missingLeadField = parsed.missingLeadField;
     
-    if (parsed.intent === "clinic_recommendation" || parsed.intent === "clinic_matching") newCtx.leadStage = "recommendation";
+    // Never downgrade Clinic Coordinator / completed quote stages via LLM rematch intents.
+    const lockedLeadStages = new Set([
+      "clinic_selected",
+      "quote_request_created",
+      "completed",
+      "lead_capture",
+      "collecting_email",
+    ]);
+    if (
+      (parsed.intent === "clinic_recommendation" || parsed.intent === "clinic_matching") &&
+      !lockedLeadStages.has(String(newCtx.leadStage || "")) &&
+      resolveAssistantRole(newCtx) !== "clinic_coordinator"
+    ) {
+      newCtx.leadStage = "recommendation";
+    }
     if (parsed.intent === "clinic_selected") newCtx.leadStage = "clinic_selected";
-    if (parsed.intent === "lead_capture") newCtx.leadStage = "lead_capture";
+    if (parsed.intent === "lead_capture" && newCtx.leadStage !== "quote_request_created") {
+      newCtx.leadStage = "lead_capture";
+    }
     if (parsed.intent === "conversation_completed") newCtx.leadStage = "completed";
     
     if (parsed.shouldCreateLead && !ctx.quoteConsent && parsed.quoteConsent) {
@@ -1736,12 +1785,12 @@ export async function POST(
           }
         }
 
-        // Once consent + intake + location are ready, force clinic matching.
-        // Do not let shouldCreateLead / followup short-circuit this step.
-        // Never rematch while Clinic Patient Coordinator mode is active.
+        // Once consent + intake + location are ready, force clinic matching ONCE.
+        // Never rematch after clinics were already recommended, and never while coordinator is active.
         if (
           isReadyForClinicMatching(newCtx).ready &&
-          resolveAssistantRole(newCtx) !== "clinic_coordinator"
+          resolveAssistantRole(newCtx) !== "clinic_coordinator" &&
+          !(newCtx.lastRecommendedClinicIds && newCtx.lastRecommendedClinicIds.length > 0)
         ) {
           parsed.intent = "clinic_recommendation";
           parsed.shouldCreateLead = false;
@@ -1752,6 +1801,68 @@ export async function POST(
     }
 
     /* ── 5. Handle each intent type ── */
+
+    // --- FEELINHEALTHY: Clinic Coordinator lead completion (deterministic) ---
+    // After clinic selection, never rematch. Collect only missing intake, then create quote.
+    if (isFeelinHealthy && resolveAssistantRole(newCtx) === "clinic_coordinator" && !leadAlreadyCreated) {
+      const currentLang =
+        (parsed.language || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en")
+          ? "en"
+          : "tr";
+      const intakeStatus = evaluateFeelinHealthyIntake(newCtx);
+
+      if (!intakeStatus.allGroupsComplete) {
+        const groupPrompt =
+          !intakeStatus.group3Complete && intakeStatus.group1Complete && intakeStatus.group2Complete
+            ? currentLang === "en"
+              ? `Noted — ${newCtx.selectedClinicName || "your selected clinic"} is confirmed. When are you planning to travel for treatment? For example: "10–19 September".`
+              : `Seçiminiz kaydedildi: ${newCtx.selectedClinicName || "klinik"}. Tedavi için planladığınız seyahat tarihini paylaşabilir misiniz? Örnek: "10-19 Eylül".`
+            : getGroupIntakePrompt(intakeStatus, newCtx, currentLang);
+        return jsonResponse({
+          reply: groupPrompt,
+          type: "text",
+          sessionContext: newCtx,
+          showClinicCards: false,
+          leadStatus: newCtx.leadStage,
+          shouldCreateNewLead: false,
+          shouldUpdateLead: false,
+        }, { headers: CORS });
+      }
+
+      if (
+        newCtx.patientEmailStatus !== "verified_format" &&
+        !String(newCtx.patientEmail || "").includes("@")
+      ) {
+        newCtx.leadStage = "collecting_email";
+        return jsonResponse({
+          reply:
+            currentLang === "en"
+              ? "To complete your quote request we need a valid email address."
+              : "Teklif talebinizi tamamlamak için geçerli bir e-posta adresine ihtiyacımız var.",
+          type: "email_request",
+          sessionContext: newCtx,
+          showClinicCards: false,
+          leadStatus: newCtx.leadStage,
+          shouldCreateNewLead: false,
+          shouldUpdateLead: false,
+        }, { headers: CORS });
+      }
+
+      newCtx.leadStage = "quote_request_created";
+      newCtx.clinicSelectionStatus = "completed";
+      return jsonResponse({
+        reply:
+          currentLang === "en"
+            ? `Your quote request for ${newCtx.selectedClinicName || "the selected clinic"} has been created successfully. The FeelinHealthy team will review it and contact you shortly.`
+            : `Teklif talebiniz başarıyla oluşturuldu (${newCtx.selectedClinicName || "seçilen klinik"}). FeelinHealthy ekibi talebinizi inceleyerek sizinle iletişime geçecektir.`,
+        type: "text",
+        sessionContext: newCtx,
+        showClinicCards: false,
+        leadStatus: newCtx.leadStage,
+        shouldCreateNewLead: true,
+        shouldUpdateLead: false,
+      }, { headers: CORS });
+    }
 
     // --- CONVERSATION COMPLETED ---
     if (parsed.intent === "conversation_completed") {

@@ -1278,7 +1278,7 @@ export default function FeelinHealthyLive() {
                                   )}
                                 </div>
                               ) : (
-                                <button onClick={() => sendSystemAction({ type: "clinic_selection_update", action: "select", clinicId: rec.clinicId || rec.id, clinicName: rec.clinicName, locale: lang })} style={{ width: "100%", padding: "8px 0", borderRadius: 6, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}>
+                                <button onClick={() => sendSystemAction({ type: "clinic_selected", clinicName: rec.clinicName, clinicId: rec.clinicId || rec.id, locale: lang })} style={{ width: "100%", padding: "8px 0", borderRadius: 6, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}>
                                   {lang === "tr" ? "Bu Klinikle Devam Et" : "Proceed with this Clinic"}
                                 </button>
                               )}
@@ -1411,7 +1411,10 @@ export default function FeelinHealthyLive() {
                 <textarea value={aiInput} onChange={(e) => setAiInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAi(); } }} placeholder={t("ai.placeholder")} rows={2}
                   style={{ flex: 1, padding: "12px 16px", borderRadius: 12, border: `1px solid ${C.border}`, fontSize: 14, resize: "none", outline: "none", fontFamily: "inherit", color: C.text, background: C.bg, lineHeight: 1.5 }} />
                 <button className="btn" onClick={sendAi} disabled={aiTyping} style={{ padding: "0 24px", borderRadius: 12, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 8, opacity: aiTyping ? 0.6 : 1, alignSelf: "flex-end", height: 48 }}>
-                  <Send size={16} /> {t("ai.send")}
+                  <Send size={16} />{" "}
+                  {sessionCtx.leadStage && sessionCtx.leadStage !== "discovery"
+                    ? (lang === "tr" ? "Gönder" : "Send")
+                    : t("ai.send")}
                 </button>
               </div>
               <p style={{ fontSize: 11, color: C.textMuted, marginTop: 8, textAlign: "center" }}><Sparkles size={10} style={{ display: "inline", verticalAlign: "middle" }} /> {t("ai.powered")}</p>
