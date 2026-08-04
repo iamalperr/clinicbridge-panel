@@ -1044,6 +1044,49 @@ export function normalizeTreatmentBranch(rawCategory?: string | null): string {
 
 // ─── Curated Clinics Filter & Rank ──────────────────────────────────────────
 
+function matchClinicByCuratedTarget(availableClinics: any[], target: CuratedClinicTarget): any | null {
+  const wantedId = target.slugOrId.toLowerCase();
+
+  // Prefer canonical id / slug — never loose name similarity when an ID exists.
+  const byId = availableClinics.find((c) => {
+    const cSlug = String(c.clinicSlug || "").toLowerCase();
+    const cId = String(c.id || "").toLowerCase();
+    return cSlug === wantedId || cId === wantedId;
+  });
+  if (byId) return byId;
+
+  const byAlias = availableClinics.find((c) => {
+    const cSlug = String(c.clinicSlug || c.id || "").toLowerCase();
+    return target.aliasPatterns?.some((p) => cSlug === p.toLowerCase());
+  });
+  if (byAlias) return byAlias;
+
+  // Last resort: exact clinic name only (not substring), for legacy records.
+  const wantedName = target.name.toLowerCase();
+  return (
+    availableClinics.find((c) => String(c.clinicName || "").toLowerCase() === wantedName) || null
+  );
+}
+
+function buildSyntheticCuratedClinic(
+  target: CuratedClinicTarget,
+  locationRule: CuratedLocationRule
+): any {
+  return {
+    id: target.slugOrId,
+    clinicSlug: target.slugOrId,
+    clinicName: target.name,
+    status: "active",
+    location: {
+      city: locationRule.displayNameTr,
+      district: target.district || "",
+      address: target.address || target.district || "",
+    },
+    supportedLanguages: ["tr", "en"],
+    _syntheticFromCuratedAllowlist: true,
+  };
+}
+
 export function getCuratedClinicsForFeelinHealthy(
   category: string,
   city?: string | null,
@@ -1060,14 +1103,9 @@ export function getCuratedClinicsForFeelinHealthy(
   const branchRule = FEELINHEALTHY_CURATED_RULES.find(b => b.branchKey === branchKey);
 
   if (!branchRule) {
-    // Fallback to active clinics matching category
-    const filtered = availableClinics.filter(c => {
-      const cats = (c.treatmentCategories || []).map((t: string) => t.toLowerCase());
-      return cats.includes(branchKey) || cats.includes(category.toLowerCase());
-    });
     return {
-      matchingCuratedClinics: filtered.slice(0, FEELINHEALTHY_CONFIG.maxGuestClinics),
-      allEligibleClinics: filtered,
+      matchingCuratedClinics: [],
+      allEligibleClinics: [],
       locationRule: null,
       isUnsupportedLocation: false,
       supportedLocationsForBranch: [],
@@ -1107,44 +1145,117 @@ export function getCuratedClinicsForFeelinHealthy(
     };
   }
 
-  // Match available database clinics against curated rule
+  // Visible recommendations = curated allowlist only, in configured order, max 2.
   const curatedTargets = matchedLocRule.curatedClinics;
-  const eligibleClinics: any[] = [];
+  const matchingCuratedClinics: any[] = [];
 
   for (const target of curatedTargets) {
-    const found = availableClinics.find(c => {
-      const cName = (c.clinicName || "").toLowerCase();
-      const cSlug = (c.clinicSlug || c.id || "").toLowerCase();
-      if (cSlug === target.slugOrId.toLowerCase()) return true;
-      if (target.aliasPatterns?.some(p => cName.includes(p.toLowerCase()) || cSlug.includes(p.toLowerCase()))) return true;
-      if (cName.includes(target.name.toLowerCase())) return true;
-      return false;
-    });
+    if (matchingCuratedClinics.length >= FEELINHEALTHY_CONFIG.maxGuestClinics) break;
 
-    if (found && !eligibleClinics.some(e => e.id === found.id)) {
-      eligibleClinics.push(found);
+    const found = matchClinicByCuratedTarget(availableClinics, target);
+    if (found) {
+      if (!matchingCuratedClinics.some((e) => e.id === found.id)) {
+        matchingCuratedClinics.push(found);
+      }
+      continue;
+    }
+
+    // When the agency clinic collection is unavailable/empty, still surface the
+    // canonical curated allowlist so the demo can complete the matching step.
+    if (availableClinics.length === 0) {
+      matchingCuratedClinics.push(buildSyntheticCuratedClinic(target, matchedLocRule));
     }
   }
 
-  // Also include other active clinics in that location that match the branch as additional eligible clinics
+  // Additional eligible clinics (for "more quotes" count only — never rendered for guests).
+  const allEligibleClinics = [...matchingCuratedClinics];
   for (const c of availableClinics) {
-    if (eligibleClinics.some(e => e.id === c.id)) continue;
+    if (allEligibleClinics.some((e) => e.id === c.id)) continue;
     const cCity = (c.location?.city || "").toLowerCase();
     const cCats = (c.treatmentCategories || []).map((t: string) => t.toLowerCase());
     if (cCats.includes(branchKey) && (!matchedLocRule.city || cCity.includes(matchedLocRule.city))) {
-      eligibleClinics.push(c);
+      allEligibleClinics.push(c);
     }
   }
 
-  const topCurated = eligibleClinics.slice(0, FEELINHEALTHY_CONFIG.maxGuestClinics);
-
   return {
-    matchingCuratedClinics: topCurated,
-    allEligibleClinics: eligibleClinics,
+    matchingCuratedClinics,
+    allEligibleClinics,
     locationRule: matchedLocRule,
     isUnsupportedLocation: false,
     supportedLocationsForBranch: branchRule.locations,
   };
+}
+
+/**
+ * Single readiness gate for FeelinHealthy clinic matching.
+ * Matching must not run until consent, intake, treatment and location are complete.
+ */
+export function isReadyForClinicMatching(context: {
+  quoteConsent?: boolean | null;
+  consentStatus?: string | null;
+  lastTreatmentCategory?: string | null;
+  treatmentId?: string | null;
+  patientName?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  patientGender?: string | null;
+  gender?: string | null;
+  patientAge?: number | string | null;
+  age?: number | string | null;
+  patientEmail?: string | null;
+  patientPhone?: string | null;
+  patientCountry?: string | null;
+  travelDate?: string | null;
+  travelDateStart?: string | null;
+  travelDateText?: string | null;
+  selectedCity?: string | null;
+  lastLocation?: string | null;
+  istanbul_side?: "anatolian" | "european" | "any" | "unsure" | null;
+  sideSelectionConfirmed?: boolean;
+  locationSelectionConfirmed?: boolean;
+}): { ready: boolean; missing: string[] } {
+  const missing: string[] = [];
+
+  const consentOk =
+    context.quoteConsent === true ||
+    context.consentStatus === "accepted" ||
+    context.consentStatus === "accept";
+  if (!consentOk) missing.push("consent");
+
+  const treatment = context.lastTreatmentCategory || context.treatmentId;
+  if (!treatment) missing.push("treatment");
+
+  const intake = evaluateFeelinHealthyIntake(context);
+  if (!intake.group1Complete) missing.push("intake_group1");
+  if (!intake.group2Complete) missing.push("intake_group2");
+  if (!intake.group3Complete) missing.push("intake_group3");
+
+  const location = decideFeelinHealthyLocationNextStep(context, [], "tr");
+  if (location.step === "ask_treatment") missing.push("treatment");
+  if (location.step === "ask_city") missing.push("city");
+  if (location.step === "ask_side") missing.push("istanbul_side");
+
+  // Deduplicate while preserving order.
+  const uniqueMissing = Array.from(new Set(missing));
+  return { ready: uniqueMissing.length === 0, missing: uniqueMissing };
+}
+
+export function getClinicMatchingReadyReply(locale: string = "tr", clinicCount: number = 2): string {
+  const isEn = locale.toLowerCase().startsWith("en");
+  if (clinicCount <= 0) {
+    return isEn
+      ? "Thank you. I could not find an active partner clinic for this preference right now."
+      : "Teşekkürler. Bu tercihler için şu anda aktif bir partner kuruluş bulamadım.";
+  }
+  if (clinicCount === 1) {
+    return isEn
+      ? "Thank you. I’ve prepared one healthcare provider that matches your preferences."
+      : "Teşekkürler. Tercihlerinize uygun bir sağlık kuruluşunu hazırladım.";
+  }
+  return isEn
+    ? "Thank you. I’ve prepared two healthcare providers that match your preferences."
+    : "Teşekkürler. Tercihlerinize uygun iki sağlık kuruluşunu hazırladım.";
 }
 
 // ─── 3-Group Lead Intake State Evaluator ─────────────────────────────────────

@@ -24,6 +24,8 @@ import {
   getCitySelectionCard,
   getCityDisplayName,
   getTreatmentClarificationPrompt,
+  isReadyForClinicMatching,
+  getClinicMatchingReadyReply,
   getSideGuidancePrompt,
   formatClinicCardLocation,
   FEELINHEALTHY_CONFIG,
@@ -128,6 +130,7 @@ interface SessionContext {
   isGuestUser?: boolean;
   selectedCity?: string | null;
   locationSelectionConfirmed?: boolean;
+  sideSelectionConfirmed?: boolean;
   availableCities?: string[];
   pendingCitySelection?: boolean;
   istanbul_side?: "european" | "anatolian" | "unsure" | null;
@@ -379,6 +382,10 @@ export async function POST(
     // must not be mined for intake fields.
     let isReplayedTreatmentRequest = false;
 
+    // Structured city/side cards only update location state. They must never be
+    // treated as free-text intake answers and must not restart Group 1.
+    let structuredLocationAction = false;
+
     const adminDb = getAdminDb();
     if (!adminDb && slug !== "feelinhealthy") {
       return jsonResponse(
@@ -560,6 +567,7 @@ export async function POST(
             : "I have given my consent, I would like to provide information about my treatment needs.";
         }
       } else if (action.type === "select_treatment_city") {
+        structuredLocationAction = true;
         const cityLang = action.locale || "tr";
         const isEn = cityLang.toLowerCase().startsWith("en");
         const cityValue = String(action.city || action.value || "").toLowerCase();
@@ -572,6 +580,7 @@ export async function POST(
             ? "I’m not sure about the city yet. Could you help based on travel and transfer plans?"
             : "Henüz şehir konusunda karar vermedim. Ulaşım ve seyahat planıma göre yardımcı olur musunuz?";
         } else if (cityValue) {
+          // Location only — never clear intake, consent, or treatment.
           sessionContext.selectedCity = cityValue;
           sessionContext.locationSelectionConfirmed = true;
           sessionContext.lastLocation = getCityDisplayName(cityValue, cityLang);
@@ -581,12 +590,14 @@ export async function POST(
             delete sessionContext.istanbul_side;
             delete sessionContext.istanbul_side_source;
             delete sessionContext.pendingSideClarification;
+            delete sessionContext.sideSelectionConfirmed;
           }
           finalMessage = isEn
             ? `I prefer ${getCityDisplayName(cityValue, "en")}. Please continue with suitable clinics there.`
             : `${getCityDisplayName(cityValue, "tr")} tercih ediyorum. Uygun kuruluşlarla devam edelim.`;
         }
       } else if (action.type === "side_selection") {
+        structuredLocationAction = true;
         const sideLang = action.locale || "tr";
         const isEn = sideLang.toLowerCase().startsWith("en");
         if (action.side === "european" || action.side === "anatolian") {
@@ -594,6 +605,7 @@ export async function POST(
           sessionContext.istanbul_side_source = "structured_card";
           sessionContext.selectedCity = "istanbul";
           sessionContext.locationSelectionConfirmed = true;
+          sessionContext.sideSelectionConfirmed = true;
           sessionContext.lastLocation = action.side === "anatolian" ? "İstanbul Anadolu Yakası" : "İstanbul Avrupa Yakası";
           delete sessionContext.pendingSideClarification;
           delete sessionContext.pendingSideGuidance;
@@ -604,12 +616,15 @@ export async function POST(
           sessionContext.istanbul_side = "unsure";
           sessionContext.istanbul_side_source = "structured_card";
           sessionContext.selectedCity = "istanbul";
+          sessionContext.locationSelectionConfirmed = true;
+          sessionContext.sideSelectionConfirmed = false;
           sessionContext.pendingSideGuidance = true;
           finalMessage = isEn
             ? "I am not sure between the European and Anatolian sides. Could you help guide me based on my arrival airport or hotel area?"
             : "İstanbul'un iki yakası arasında emin değilim. Havaalanı veya otel bölgesine göre bana yardımcı olabilir misiniz?";
         }
       } else if (action.type === "branch_side_confirm") {
+        structuredLocationAction = true;
         const sideLang = action.locale || "tr";
         const isEn = sideLang.toLowerCase().startsWith("en");
         if (action.action === "confirm" && (action.side === "anatolian" || action.side === "european")) {
@@ -617,6 +632,7 @@ export async function POST(
           sessionContext.istanbul_side_source = "structured_card";
           sessionContext.selectedCity = "istanbul";
           sessionContext.locationSelectionConfirmed = true;
+          sessionContext.sideSelectionConfirmed = true;
           sessionContext.lastLocation = action.side === "anatolian" ? "İstanbul Anadolu Yakası" : "İstanbul Avrupa Yakası";
           delete sessionContext.pendingSideClarification;
           delete sessionContext.pendingSideGuidance;
@@ -625,6 +641,7 @@ export async function POST(
             : (isEn ? "Yes, please show options on the European Side." : "Evet, Avrupa Yakası'ndaki seçenekleri değerlendirmek istiyorum.");
         } else {
           delete sessionContext.istanbul_side;
+          delete sessionContext.sideSelectionConfirmed;
           delete sessionContext.selectedCity;
           delete sessionContext.locationSelectionConfirmed;
           delete sessionContext.pendingSideClarification;
@@ -656,6 +673,7 @@ export async function POST(
     const expectedIntakeSlot =
       isFeelinHealthy &&
       !isReplayedTreatmentRequest &&
+      !structuredLocationAction &&
       !evaluateFeelinHealthyIntake(ctx).group1Complete
         ? "patientName"
         : undefined;
@@ -703,7 +721,11 @@ export async function POST(
       }, { headers: CORS });
     }
 
-    if (agencyIntentResult.clarificationNeeded && agencyIntentResult.clarificationPrompt) {
+    if (
+      !structuredLocationAction &&
+      agencyIntentResult.clarificationNeeded &&
+      agencyIntentResult.clarificationPrompt
+    ) {
       return NextResponse.json({
         responseType: "chat_message",
         reply: agencyIntentResult.clarificationPrompt,
@@ -716,10 +738,9 @@ export async function POST(
       ctx.lastTreatmentCategory = agencySlotsExtracted.extracted.treatment;
     }
 
-    // The replayed treatment request states what the patient wants, not who
-    // they are. It stays the treatment request and fills no intake field;
-    // treatment and location above are resolved from it as before.
-    if (!isReplayedTreatmentRequest) {
+    // The replayed treatment request and structured city/side actions must never
+    // write intake fields. City/side cards only update location state.
+    if (!isReplayedTreatmentRequest && !structuredLocationAction) {
       if (agencySlotsExtracted.extracted.fullName && !ctx.patientName) {
         ctx.patientName = agencySlotsExtracted.extracted.fullName;
       }
@@ -780,11 +801,14 @@ export async function POST(
         ctx.istanbul_side = sideRes.side;
         ctx.istanbul_side_source = sideRes.source;
         ctx.selectedCity = "istanbul";
+        ctx.locationSelectionConfirmed = true;
+        ctx.sideSelectionConfirmed = true;
         ctx.lastLocation = sideRes.side === "anatolian" ? "İstanbul Anadolu Yakası" : "İstanbul Avrupa Yakası";
         delete ctx.pendingSideClarification;
         delete ctx.pendingSideGuidance;
       }
     }
+
 
     // Handle user affirmative response to location negotiation
     if (ctx.pendingLocationExpansion) {
@@ -877,9 +901,11 @@ export async function POST(
           }, { headers: CORS });
         }
 
-        // Save original health request message so it can be re-processed upon consent acceptance
-        ctx.pendingUserMessage = finalMessage || message;
-        ctx.pendingHealthRequest = finalMessage || message;
+        // Save original health request — never overwrite with a city/side card action.
+        if (!structuredLocationAction) {
+          ctx.pendingUserMessage = finalMessage || message;
+          ctx.pendingHealthRequest = finalMessage || message;
+        }
         const consentLang = isEn ? "en" : "tr";
         const structuredData = getStructuredConsentData(agencyData, consentLang);
         const noticeUrl = isFeelinHealthy ? "https://feelinhealthy.com/kvkk" : (structuredData.privacyNoticeUrl || "https://feelinhealthy.com/kvkk");
@@ -913,7 +939,11 @@ export async function POST(
       }, { headers: CORS });
     }
 
-    if (agencyIntentResult.clarificationNeeded && agencyIntentResult.clarificationPrompt) {
+    if (
+      !structuredLocationAction &&
+      agencyIntentResult.clarificationNeeded &&
+      agencyIntentResult.clarificationPrompt
+    ) {
       return NextResponse.json({
         responseType: "chat_message",
         reply: agencyIntentResult.clarificationPrompt,
@@ -1525,7 +1555,11 @@ JSON FORMATI:
         newCtx.pendingSideGuidance ||
         Boolean(newCtx.lastTreatmentCategory);
 
-      if (matchingLikeIntent && !intakeStatus.allGroupsComplete) {
+      // Never re-ask intake once it is complete — including after city/side cards.
+      if (
+        (matchingLikeIntent || structuredLocationAction) &&
+        !intakeStatus.allGroupsComplete
+      ) {
         const groupPrompt = getGroupIntakePrompt(intakeStatus, newCtx, currentLang);
         return jsonResponse({
           reply: groupPrompt,
@@ -1536,8 +1570,6 @@ JSON FORMATI:
       }
 
       if (intakeStatus.allGroupsComplete) {
-        parsed.shouldCreateLead = true;
-
         const locationDecision = decideFeelinHealthyLocationNextStep(
           newCtx,
           fullAgencyClinics,
@@ -1650,6 +1682,16 @@ JSON FORMATI:
             }, { headers: CORS });
           }
         }
+
+        // Once consent + intake + location are ready, force clinic matching.
+        // Do not let shouldCreateLead / followup short-circuit this step.
+        // Canonical gate only — never match on location alone.
+        if (isReadyForClinicMatching(newCtx).ready) {
+          parsed.intent = "clinic_recommendation";
+          parsed.shouldCreateLead = false;
+          parsed.needsFollowUp = false;
+          if (!parsed.language) parsed.language = currentLang;
+        }
       }
     }
 
@@ -1668,52 +1710,15 @@ JSON FORMATI:
       }, { headers: CORS });
     }
 
-    // --- SHOULD CREATE LEAD ---
-    if (parsed.shouldCreateLead && !leadAlreadyCreated) {
-      if (newCtx.patientEmailStatus !== "verified_format") {
-         newCtx.leadStage = "collecting_email";
-         return jsonResponse({
-           reply: parsed.language === "tr" 
-             ? "Talebinizi tamamlayabilmemiz ve süreçle ilgili sizi bilgilendirebilmemiz için geçerli bir e-posta adresine ihtiyacımız bulunuyor."
-             : "To complete your request and keep you informed about the process, we need a valid email address.",
-           type: "email_request",
-           sessionContext: newCtx,
-           showClinicCards: false,
-           leadStatus: newCtx.leadStage,
-           shouldCreateNewLead: false,
-           shouldUpdateLead: false
-         }, { headers: CORS });
-      }
-
-      newCtx.leadStage = "quote_request_created";
-      return jsonResponse({
-        reply: parsed.replyText || "Harika, talebinizi başarıyla oluşturdum.",
-        type: "text",
-        sessionContext: newCtx,
-        showClinicCards: false,
-        leadStatus: newCtx.leadStage,
-        shouldCreateNewLead: true, // Frontend will call /lead API
-        shouldUpdateLead: false
-      }, { headers: CORS });
-    }
-
-    // --- FOLLOW-UP OR LEAD CAPTURE ---
-    if (parsed.intent === "followup" || parsed.needsFollowUp || parsed.intent === "lead_capture") {
-      return jsonResponse({
-        reply: parsed.replyText || "Lütfen gerekli bilgileri paylaşır mısınız?",
-        type: "text",
-        sessionContext: newCtx,
-        showClinicCards: parsed.showClinicCards === true,
-      }, { headers: CORS });
-    }
-
-    // --- CLINIC MATCHING OR RECOMMENDATION ---
+    // --- CLINIC MATCHING OR RECOMMENDATION (before lead/followup for FeelinHealthy) ---
     if (parsed.intent === "clinic_matching" || parsed.intent === "clinic_recommendation") {
       let recommendations: ClinicRecommendation[] = [];
       let additionalEligibleClinicCount = 0;
       let conversionData: any = undefined;
 
-      if (isFeelinHealthy) {
+      const feelinHealthyReady = isFeelinHealthy ? isReadyForClinicMatching(newCtx).ready : false;
+
+      if (isFeelinHealthy && feelinHealthyReady) {
         const branchOrCat = parsed.treatmentCategory || newCtx.lastTreatmentCategory || agencySlotsExtracted.extracted.treatment;
         const locationDecision = decideFeelinHealthyLocationNextStep(newCtx, fullAgencyClinics, (parsed.language || "tr"));
         // Hard gate: never render clinics until city (and Istanbul side when needed) are known.
@@ -1754,7 +1759,7 @@ JSON FORMATI:
         const curatedResult = getCuratedClinicsForFeelinHealthy(branchOrCat, effectiveCity, effectiveSide, fullAgencyClinics);
         
         const isGuest = newCtx.isGuestUser !== false;
-        const displayLimit = isGuest ? 2 : maxClinics;
+        const displayLimit = isGuest ? FEELINHEALTHY_CONFIG.maxGuestClinics : maxClinics;
         const displayedClinics = curatedResult.matchingCuratedClinics.slice(0, displayLimit);
         
         const currentLang = (parsed.language || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
@@ -1784,8 +1789,8 @@ JSON FORMATI:
             clinicSlug: clinic.clinicSlug || clinic.clinicName?.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+$/g, "") || clinic.id,
             clinicType: clinic.category || clinic.clinicType || "",
             location: formatClinicCardLocation(clinic, currentLang),
-            rating: clinic.rating || 4.9,
-            reviews: clinic.reviewCount || 120,
+            rating: clinic.rating || undefined,
+            reviews: clinic.reviewCount || undefined,
             matchScore: 98,
             matchedPrices,
             supportedLanguages: (clinic.supportedLanguages || []).map((l: string) => l.toUpperCase()),
@@ -1815,7 +1820,7 @@ JSON FORMATI:
             }
           };
         });
-      } else {
+      } else if (!isFeelinHealthy) {
         const scored = allClinics
           .map((clinic: any) => {
             const { score, reason, matchedPrices } = scoreClinic(clinic, allPricing, parsed);
@@ -1882,23 +1887,141 @@ JSON FORMATI:
         }));
       }
 
-      if (recommendations.length > 0) {
-        newCtx.lastRecommendedClinicIds = recommendations.map((r) => r.clinicId);
-        newCtx.lastFocusedClinicId = recommendations[0].clinicId;
-        newCtx.lastFocusedClinicName = recommendations[0].clinicName;
-      }
+      // FeelinHealthy without readiness must not emit an empty clinic_recommendations payload.
+      const shouldEmitRecommendations = !isFeelinHealthy || feelinHealthyReady;
 
-      return jsonResponse({
-        reply: parsed.replyText || (parsed.language === "tr"
-          ? `${parsed.subTreatment || "Tedaviniz"} için ${recommendations.length} uygun klinik buldum.`
-          : `I found ${recommendations.length} suitable clinic(s) for ${parsed.subTreatment || "your treatment"}.`),
-        type: "clinic_recommendations",
-        clinics: recommendations,
-        additionalEligibleClinicCount,
-        conversionData,
-        sessionContext: newCtx,
-        showClinicCards: true, // always true for recommendations unless AI explicitly says false, but let's enforce true.
-      }, { headers: CORS });
+      if (shouldEmitRecommendations) {
+        // Guest FeelinHealthy responses must never contain more than 2 clinics.
+        if (isFeelinHealthy) {
+          recommendations = recommendations.slice(0, FEELINHEALTHY_CONFIG.maxGuestClinics);
+        }
+
+        if (recommendations.length > 0) {
+          newCtx.lastRecommendedClinicIds = recommendations.map((r) => r.clinicId);
+          newCtx.lastFocusedClinicId = recommendations[0].clinicId;
+          newCtx.lastFocusedClinicName = recommendations[0].clinicName;
+          newCtx.leadStage = "recommendation";
+        }
+
+        const replyLang = (parsed.language || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
+        const readyReply = isFeelinHealthy
+          ? getClinicMatchingReadyReply(replyLang, recommendations.length)
+          : (parsed.replyText || (replyLang === "tr"
+            ? `${parsed.subTreatment || "Tedaviniz"} için ${recommendations.length} uygun klinik buldum.`
+            : `I found ${recommendations.length} suitable clinic(s) for ${parsed.subTreatment || "your treatment"}.`));
+
+        return jsonResponse({
+          reply: readyReply,
+          type: "clinic_recommendations",
+          clinics: recommendations,
+          additionalEligibleClinicCount,
+          conversionData,
+          sessionContext: newCtx,
+          showClinicCards: true,
+          shouldCreateNewLead: false,
+          shouldUpdateLead: false,
+        }, { headers: CORS });
+      }
+    }
+
+    // --- SHOULD CREATE LEAD (only after clinic matching had its chance) ---
+    if (parsed.shouldCreateLead && !leadAlreadyCreated) {
+      if (isFeelinHealthy && isReadyForClinicMatching(newCtx).ready && !newCtx.lastRecommendedClinicIds?.length) {
+        // Safety net: never create a lead before the first clinic recommendation.
+        parsed.intent = "clinic_recommendation";
+      } else {
+        if (newCtx.patientEmailStatus !== "verified_format" && !newCtx.patientEmail?.includes("@")) {
+           newCtx.leadStage = "collecting_email";
+           return jsonResponse({
+             reply: parsed.language === "tr" 
+               ? "Talebinizi tamamlayabilmemiz ve süreçle ilgili sizi bilgilendirebilmemiz için geçerli bir e-posta adresine ihtiyacımız bulunuyor."
+               : "To complete your request and keep you informed about the process, we need a valid email address.",
+             type: "email_request",
+             sessionContext: newCtx,
+             showClinicCards: false,
+             leadStatus: newCtx.leadStage,
+             shouldCreateNewLead: false,
+             shouldUpdateLead: false
+           }, { headers: CORS });
+        }
+
+        newCtx.leadStage = "quote_request_created";
+        return jsonResponse({
+          reply: parsed.replyText || "Harika, talebinizi başarıyla oluşturdum.",
+          type: "text",
+          sessionContext: newCtx,
+          showClinicCards: false,
+          leadStatus: newCtx.leadStage,
+          shouldCreateNewLead: true,
+          shouldUpdateLead: false
+        }, { headers: CORS });
+      }
+    }
+
+    // --- FOLLOW-UP OR LEAD CAPTURE ---
+    if (parsed.intent === "followup" || parsed.needsFollowUp || parsed.intent === "lead_capture") {
+      if (isFeelinHealthy && isReadyForClinicMatching(newCtx).ready) {
+        // Fall through is not possible after return paths above; re-enter matching.
+        parsed.intent = "clinic_recommendation";
+      } else {
+        return jsonResponse({
+          reply: parsed.replyText || "Lütfen gerekli bilgileri paylaşır mısınız?",
+          type: "text",
+          sessionContext: newCtx,
+          showClinicCards: parsed.showClinicCards === true,
+        }, { headers: CORS });
+      }
+    }
+
+    // If followup/lead path redirected into matching, run it once more here.
+    if (isFeelinHealthy && (parsed.intent === "clinic_matching" || parsed.intent === "clinic_recommendation")) {
+      const branchOrCat = parsed.treatmentCategory || newCtx.lastTreatmentCategory || agencySlotsExtracted.extracted.treatment;
+      const locationDecision = decideFeelinHealthyLocationNextStep(newCtx, fullAgencyClinics, (parsed.language || "tr"));
+      if (locationDecision.step === "ready") {
+        const effectiveCity = locationDecision.city;
+        const effectiveSide = newCtx.istanbul_side || locationDecision.side;
+        const curatedResult = getCuratedClinicsForFeelinHealthy(branchOrCat, effectiveCity, effectiveSide, fullAgencyClinics);
+        const displayedClinics = curatedResult.matchingCuratedClinics.slice(0, FEELINHEALTHY_CONFIG.maxGuestClinics);
+        const currentLang = (parsed.language || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
+        const conv = calculateAdditionalCountAndConversion(curatedResult.allEligibleClinics.length, displayedClinics.length, currentLang);
+        const recommendations = displayedClinics.map((clinic: any) => {
+          const { matchedPrices } = scoreClinic(clinic, allPricing, parsed);
+          return {
+            clinicId: clinic.id,
+            clinicName: clinic.clinicName,
+            clinicSlug: clinic.clinicSlug || clinic.id,
+            clinicType: clinic.category || clinic.clinicType || "",
+            location: formatClinicCardLocation(clinic, currentLang),
+            rating: clinic.rating || undefined,
+            reviews: clinic.reviewCount || undefined,
+            matchScore: 98,
+            matchedPrices,
+            supportedLanguages: (clinic.supportedLanguages || []).map((l: string) => l.toUpperCase()),
+            reason: currentLang === "tr" ? "Onaylı FeelinHealthy partner kliniği" : "Certified FeelinHealthy partner clinic",
+            profilePath: `/agency-demo/medicalcenter/${clinic.clinicSlug || clinic.id}`,
+            accommodation: clinic.accommodation !== false,
+            transfer: clinic.transfer !== false,
+            shortDescription: clinic.shortDescription || clinic.overview || "",
+          } as ClinicRecommendation;
+        });
+        if (recommendations.length > 0) {
+          newCtx.lastRecommendedClinicIds = recommendations.map((r) => r.clinicId);
+          newCtx.lastFocusedClinicId = recommendations[0].clinicId;
+          newCtx.lastFocusedClinicName = recommendations[0].clinicName;
+          newCtx.leadStage = "recommendation";
+        }
+        return jsonResponse({
+          reply: getClinicMatchingReadyReply(currentLang, recommendations.length),
+          type: "clinic_recommendations",
+          clinics: recommendations,
+          additionalEligibleClinicCount: conv.additionalCount,
+          conversionData: conv,
+          sessionContext: newCtx,
+          showClinicCards: true,
+          shouldCreateNewLead: false,
+          shouldUpdateLead: false,
+        }, { headers: CORS });
+      }
     }
 
     // --- CLINIC SELECTED OR CLINIC QUESTION ---
