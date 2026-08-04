@@ -153,6 +153,56 @@ export const CANONICAL_TREATMENTS: CanonicalTreatment[] = [
   }
 ];
 
+/**
+ * Endings that only ever appear on a conjugated verb, never on a Turkish name.
+ * These catch requests such as "implant yaptırmak istiyorum" without relying on
+ * an exhaustive vocabulary list.
+ */
+const CONJUGATED_VERB_SUFFIX =
+  /(?:yorum|yoruz|yorsun|yorsunuz|iyor|ıyor|uyor|üyor|acağım|eceğim|acagim|ecegim|malıyım|meliyim|maliyim|istiyor)$/;
+
+/**
+ * Words that describe an enquiry, a treatment or an attribute rather than a
+ * person. A bare phrase containing any of them is never accepted as a name.
+ */
+const NON_NAME_WORDS = new Set([
+  // Enquiry and conversational filler
+  "randevu", "fiyat", "fiyatı", "fiyati", "tarih", "saat", "doktor", "klinik", "bilgi",
+  "evet", "hayır", "hayir", "tamam", "merhaba", "selam", "hakkında", "hakkinda",
+  "yes", "no", "okay", "please", "speak", "switch", "about", "price", "cost",
+  // Language and question words
+  "english", "turkish", "türkçe", "turkce", "deutsch", "french",
+  "what", "who", "which", "where", "when", "how", "hangi", "nerede", "nasıl", "kim",
+  // Gender and age tokens
+  "erkek", "kadın", "kadin", "erkeğim", "erkeim", "kadınım", "kadinim",
+  "male", "female", "bayan", "bay",
+  "yaşındayım", "yasindayim", "yaşında", "yasinda",
+  // Treatment vocabulary
+  "implant", "implantı", "implanti", "tedavi", "tedavisi", "tedavim",
+  "diş", "dis", "dişçi", "disci", "saç", "sac", "ekimi", "ekim",
+  "estetik", "ameliyat", "operasyon", "burun", "protez", "dolgu", "kaplama",
+  "zirkonyum", "botoks", "lazer", "muayene", "konsültasyon", "konsultasyon",
+  "gülüş", "gulus", "tasarımı", "tasarimi",
+  "treatment", "surgery", "dental", "hair", "transplant", "veneer", "crown",
+  // Intent verbs that are not caught by the suffix rule
+  "olmak", "yaptırmak", "yaptirmak", "almak", "yaptırmayı", "yaptirmayi",
+  "want", "need", "looking", "would", "like",
+]);
+
+/**
+ * True when a phrase reads as a request or description instead of a name.
+ * Exported so callers that receive a name from a model can reject text such as
+ * "implant yaptırmak istiyorum" before storing it as patient information.
+ */
+export function looksLikeRequestPhrase(segment: string): boolean {
+  if (!segment) return false;
+  return segment
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .some((token) => NON_NAME_WORDS.has(token) || CONJUGATED_VERB_SUFFIX.test(token));
+}
+
 export class SlotExtractor {
   /**
    * Extract all identifiable slots and entities from a message, optionally in context of previous slots and expectedSlot
@@ -273,29 +323,43 @@ export class SlotExtractor {
       extracted.phone = phoneRes;
     }
 
-    // 11. Name Extraction
-    if (!extracted.fullName && !extracted.firstName) {
-      const nameRes = this.parseName(raw, lower, existingSlots, expectedSlot);
-      if (nameRes) {
-        extracted.fullName = nameRes.fullName;
-        extracted.firstName = nameRes.firstName;
-        extracted.lastName = nameRes.lastName;
-        extracted.patientName = nameRes.fullName;
-      }
-    }
-
-    // 12. Age Extraction
+    // 11. Age Extraction
     const ageRes = this.parseAge(raw, lower, expectedSlot);
     if (ageRes !== null) {
       extracted.age = ageRes;
       extracted.patientAge = ageRes;
     }
 
-    // 13. Gender Extraction
+    // 12. Gender Extraction
     const genderRes = this.parseGender(lower, expectedSlot);
     if (genderRes) {
       extracted.gender = genderRes;
       extracted.patientGender = genderRes;
+    }
+
+    // 13. Name Extraction
+    //
+    // Runs after age and gender so an unlabelled phrase is only read as a name
+    // when the message is genuinely about the patient's identity: either a name
+    // was asked for, or the same message also carries an age or a gender (the
+    // "Alper Özgül, Erkek, 27" form). A message that names a treatment is never
+    // mined for a name, so a request like "implant yaptırmak istiyorum" cannot
+    // become a patient name.
+    if (!extracted.fullName && !extracted.firstName) {
+      const expectsName =
+        expectedSlot === "fullName" || expectedSlot === "name" || expectedSlot === "patientName";
+      const hasIdentitySignal =
+        extracted.patientAge !== undefined || Boolean(extracted.patientGender);
+      const mentionsTreatment = Boolean(extracted.treatment || extracted.rawTreatmentText);
+      const allowBareName = (expectsName || hasIdentitySignal) && !mentionsTreatment;
+
+      const nameRes = this.parseName(raw, lower, existingSlots, expectedSlot, { allowBareName });
+      if (nameRes) {
+        extracted.fullName = nameRes.fullName;
+        extracted.firstName = nameRes.firstName;
+        extracted.lastName = nameRes.lastName;
+        extracted.patientName = nameRes.fullName;
+      }
     }
 
     // 14. Country Extraction
@@ -740,8 +804,13 @@ export class SlotExtractor {
     raw: string,
     lower: string = raw.toLowerCase(),
     existingSlots: Partial<ConversationSlots> = {},
-    expectedSlot?: string
+    expectedSlot?: string,
+    options: { allowBareName?: boolean } = {}
   ): { fullName: string; firstName: string; lastName: string } | null {
+    // An explicitly introduced name ("Adım ...") is always trusted. A bare
+    // phrase is only read as a name when the caller says the message is about
+    // the patient's identity.
+    const allowBareName = options.allowBareName !== false;
     // Pattern 1: "Adım Ahmet Yılmaz", "İsmim Ahmet Yılmaz", "My name is John Doe"
     const explicitNameMatch = raw.match(/(?:adım|adim|ismim|my name is|i am|i'm)\s+([A-Za-zÇĞİÖŞÜçğıöşü]{2,}\s+[A-Za-zÇĞİÖŞÜçğıöşü]{2,})/i);
     if (explicitNameMatch) {
@@ -754,6 +823,8 @@ export class SlotExtractor {
       };
     }
 
+    if (!allowBareName) return null;
+
     // Pattern 1b: Comma, hyphen or delimiter separated multi-field input like "Alper Özgül - 27 - Erkek" or "Alper Özgül, 27 yaşındayım, erkeğim."
     const segments = raw.split(/[-–—,;\/\n]+/);
     for (const seg of segments) {
@@ -761,12 +832,7 @@ export class SlotExtractor {
       if (!trimmedSeg) continue;
       const segParts = trimmedSeg.split(/\s+/);
       if (segParts.length >= 2 && segParts.length <= 4 && /^[A-Za-zÇĞİÖŞÜçğıöşü\s]+$/.test(trimmedSeg) && trimmedSeg.length <= 40) {
-        const badWords = [
-          "randevu", "fiyat", "tarih", "saat", "doktor", "klinik", "bilgi", "evet", "hayır", "hayir",
-          "tamam", "merhaba", "selam", "erkek", "kadın", "kadin", "erkeğim", "erkeim", "kadınım", "kadinim",
-          "male", "female", "bayan", "bay", "yaşındayım", "yasindayim", "yaşında", "yasinda"
-        ];
-        if (!segParts.some(p => badWords.includes(p.toLowerCase()))) {
+        if (!looksLikeRequestPhrase(trimmedSeg)) {
           return {
             fullName: trimmedSeg,
             firstName: segParts[0],
@@ -781,14 +847,7 @@ export class SlotExtractor {
       const clean = raw.trim();
       const parts = clean.split(/\s+/);
       if (parts.length >= 2 && parts.length <= 4 && /^[A-Za-zÇĞİÖŞÜçğıöşü\s]+$/.test(clean) && clean.length <= 40) {
-        // Exclude system, language, and question words
-        const badWords = [
-          "randevu", "fiyat", "tarih", "saat", "doktor", "klinik", "bilgi", "evet", "hayır", "hayir",
-          "tamam", "yes", "no", "okay", "english", "turkish", "türkçe", "turkce", "deutsch", "french",
-          "please", "speak", "switch", "what", "who", "which", "where", "when", "how", "hangi", "nerede", "nasıl", "kim"
-        ];
-        const hasBad = parts.some(p => badWords.includes(p.toLowerCase()));
-        if (!hasBad) {
+        if (!looksLikeRequestPhrase(clean)) {
           return {
             fullName: clean,
             firstName: parts[0],

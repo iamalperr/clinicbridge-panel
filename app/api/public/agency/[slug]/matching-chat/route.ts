@@ -8,7 +8,8 @@ import {
   IntentRouter,
   SlotExtractor,
   ConversationFeatureFlags,
-  ConversationLogger
+  ConversationLogger,
+  looksLikeRequestPhrase
 } from "@/lib/conversation";
 import {
   getCuratedClinicsForFeelinHealthy,
@@ -353,6 +354,11 @@ export async function POST(
 
     let finalMessage = message;
 
+    // True when finalMessage is the treatment request replayed after consent.
+    // That text describes what the patient wants, never who they are, so it
+    // must not be mined for intake fields.
+    let isReplayedTreatmentRequest = false;
+
     const adminDb = getAdminDb();
     if (!adminDb && slug !== "feelinhealthy") {
       return jsonResponse(
@@ -526,6 +532,7 @@ export async function POST(
         const pendingMsg = sessionContext.pendingUserMessage;
         if (pendingMsg) {
           finalMessage = pendingMsg;
+          isReplayedTreatmentRequest = true;
           delete sessionContext.pendingUserMessage;
         } else {
           finalMessage = consentLang === "tr"
@@ -586,6 +593,18 @@ export async function POST(
       ctx.sessionId = `sess_${Date.now()}`;
     }
 
+    const isFeelinHealthy = slug === "feelinhealthy" || agencyData.slug === "feelinhealthy";
+
+    // While Group 1 is open a bare "Alper Özgül" is a legitimate answer, so the
+    // extractor is told a name is expected. At every other point an unlabelled
+    // phrase is left alone rather than guessed at as a name.
+    const expectedIntakeSlot =
+      isFeelinHealthy &&
+      !isReplayedTreatmentRequest &&
+      !evaluateFeelinHealthyIntake(ctx).group1Complete
+        ? "patientName"
+        : undefined;
+
     // Intent Router & Slot Extractor Evaluation for Agency
     const agencySlotsExtracted = SlotExtractor.extractSlots(
       finalMessage || message || "",
@@ -595,7 +614,9 @@ export async function POST(
         email: ctx.patientEmail,
         treatment: ctx.lastTreatmentCategory
       },
-      agencyData.defaultLanguage || "tr"
+      agencyData.defaultLanguage || "tr",
+      "Europe/Istanbul",
+      expectedIntakeSlot
     );
 
     const agencyIntentResult = IntentRouter.classifyConversationIntent({
@@ -636,47 +657,51 @@ export async function POST(
       }, { headers: CORS });
     }
 
-    const isFeelinHealthy = slug === "feelinhealthy" || agencyData.slug === "feelinhealthy";
-
     if (agencySlotsExtracted.extracted.treatment && !ctx.lastTreatmentCategory) {
       ctx.lastTreatmentCategory = agencySlotsExtracted.extracted.treatment;
     }
-    if (agencySlotsExtracted.extracted.fullName && !ctx.patientName) {
-      ctx.patientName = agencySlotsExtracted.extracted.fullName;
-    }
-    if (agencySlotsExtracted.extracted.firstName) {
-      ctx.firstName = agencySlotsExtracted.extracted.firstName;
-    }
-    if (agencySlotsExtracted.extracted.lastName) {
-      ctx.lastName = agencySlotsExtracted.extracted.lastName;
-    }
-    if (agencySlotsExtracted.extracted.phone && !ctx.patientPhone) {
-      ctx.patientPhone = agencySlotsExtracted.extracted.phone;
-    }
-    if (agencySlotsExtracted.extracted.email && !ctx.patientEmail) {
-      ctx.patientEmail = agencySlotsExtracted.extracted.email;
-    }
-    if (agencySlotsExtracted.extracted.patientAge !== undefined && agencySlotsExtracted.extracted.patientAge !== null && ctx.patientAge === undefined) {
-      ctx.patientAge = agencySlotsExtracted.extracted.patientAge;
-      ctx.age = agencySlotsExtracted.extracted.patientAge;
-    }
-    if (agencySlotsExtracted.extracted.age !== undefined && agencySlotsExtracted.extracted.age !== null && ctx.age === undefined) {
-      ctx.age = agencySlotsExtracted.extracted.age;
-      if (ctx.patientAge === undefined) ctx.patientAge = agencySlotsExtracted.extracted.age;
-    }
-    if (agencySlotsExtracted.extracted.patientGender && !ctx.patientGender) {
-      ctx.patientGender = agencySlotsExtracted.extracted.patientGender;
-      ctx.gender = agencySlotsExtracted.extracted.patientGender;
-    }
-    if (agencySlotsExtracted.extracted.gender && !ctx.gender) {
-      ctx.gender = agencySlotsExtracted.extracted.gender;
-      if (!ctx.patientGender) ctx.patientGender = agencySlotsExtracted.extracted.gender;
-    }
-    if (agencySlotsExtracted.extracted.patientCountry && !ctx.patientCountry) {
-      ctx.patientCountry = agencySlotsExtracted.extracted.patientCountry;
-    }
-    if (agencySlotsExtracted.extracted.travelDate && !ctx.travelDate) {
-      ctx.travelDate = agencySlotsExtracted.extracted.travelDate;
+
+    // The replayed treatment request states what the patient wants, not who
+    // they are. It stays the treatment request and fills no intake field;
+    // treatment and location above are resolved from it as before.
+    if (!isReplayedTreatmentRequest) {
+      if (agencySlotsExtracted.extracted.fullName && !ctx.patientName) {
+        ctx.patientName = agencySlotsExtracted.extracted.fullName;
+      }
+      if (agencySlotsExtracted.extracted.firstName) {
+        ctx.firstName = agencySlotsExtracted.extracted.firstName;
+      }
+      if (agencySlotsExtracted.extracted.lastName) {
+        ctx.lastName = agencySlotsExtracted.extracted.lastName;
+      }
+      if (agencySlotsExtracted.extracted.phone && !ctx.patientPhone) {
+        ctx.patientPhone = agencySlotsExtracted.extracted.phone;
+      }
+      if (agencySlotsExtracted.extracted.email && !ctx.patientEmail) {
+        ctx.patientEmail = agencySlotsExtracted.extracted.email;
+      }
+      if (agencySlotsExtracted.extracted.patientAge !== undefined && agencySlotsExtracted.extracted.patientAge !== null && ctx.patientAge === undefined) {
+        ctx.patientAge = agencySlotsExtracted.extracted.patientAge;
+        ctx.age = agencySlotsExtracted.extracted.patientAge;
+      }
+      if (agencySlotsExtracted.extracted.age !== undefined && agencySlotsExtracted.extracted.age !== null && ctx.age === undefined) {
+        ctx.age = agencySlotsExtracted.extracted.age;
+        if (ctx.patientAge === undefined) ctx.patientAge = agencySlotsExtracted.extracted.age;
+      }
+      if (agencySlotsExtracted.extracted.patientGender && !ctx.patientGender) {
+        ctx.patientGender = agencySlotsExtracted.extracted.patientGender;
+        ctx.gender = agencySlotsExtracted.extracted.patientGender;
+      }
+      if (agencySlotsExtracted.extracted.gender && !ctx.gender) {
+        ctx.gender = agencySlotsExtracted.extracted.gender;
+        if (!ctx.patientGender) ctx.patientGender = agencySlotsExtracted.extracted.gender;
+      }
+      if (agencySlotsExtracted.extracted.patientCountry && !ctx.patientCountry) {
+        ctx.patientCountry = agencySlotsExtracted.extracted.patientCountry;
+      }
+      if (agencySlotsExtracted.extracted.travelDate && !ctx.travelDate) {
+        ctx.travelDate = agencySlotsExtracted.extracted.travelDate;
+      }
     }
     if (agencySlotsExtracted.extracted.city && !ctx.lastLocation) {
       ctx.lastLocation = agencySlotsExtracted.extracted.district
@@ -1304,7 +1329,15 @@ JSON FORMATI:
 
     if (parsed.selectedClinicId) newCtx.selectedClinicId = parsed.selectedClinicId;
     if (parsed.selectedClinicName) newCtx.selectedClinicName = parsed.selectedClinicName;
-    if (parsed.patientName) newCtx.patientName = parsed.patientName;
+    // A name proposed by the model is rejected when it reads as a treatment
+    // request, so the pending request can never land in the patient record.
+    if (
+      parsed.patientName &&
+      !isReplayedTreatmentRequest &&
+      !looksLikeRequestPhrase(parsed.patientName)
+    ) {
+      newCtx.patientName = parsed.patientName;
+    }
     if (parsed.patientPhone) newCtx.patientPhone = parsed.patientPhone;
     if (parsed.patientCountry) newCtx.patientCountry = parsed.patientCountry;
     if (parsed.patientAge !== undefined && parsed.patientAge !== null) newCtx.patientAge = parsed.patientAge;

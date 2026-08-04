@@ -79,7 +79,10 @@ describe("FeelinHealthy Deterministic Intake Flow (No Budget)", () => {
     expect(evalRes.allGroupsComplete).toBe(false);
 
     const promptTr = getGroupIntakePrompt(evalRes, ctx, "tr");
-    expect(promptTr).toContain("adınızı soyadınızı, yaşınızı ve cinsiyetinizi");
+    expect(promptTr).toContain("adınızı");
+    expect(promptTr).toContain("soyadınızı");
+    expect(promptTr).toContain("yaşınızı");
+    expect(promptTr).toContain("cinsiyetinizi");
     expect(promptTr.toLowerCase()).not.toContain("bütçe");
     expect(promptTr.toLowerCase()).not.toContain("budget");
   });
@@ -91,7 +94,11 @@ describe("FeelinHealthy Deterministic Intake Flow (No Budget)", () => {
     expect(evalRes.missingFieldsInCurrentGroup).toEqual(["patientAge", "patientGender"]);
     expect(evalRes.allGroupsComplete).toBe(false);
 
+    // The surname is asked for again rather than assumed, so it can never be
+    // skipped when part of Group 1 is already known.
     const promptTr = getGroupIntakePrompt(evalRes, ctx, "tr");
+    expect(promptTr).toContain("adınızı");
+    expect(promptTr).toContain("soyadınızı");
     expect(promptTr).toContain("yaşınızı");
     expect(promptTr).toContain("cinsiyetinizi");
   });

@@ -885,8 +885,14 @@ export interface IntakeGroupStatus {
 }
 
 export function evaluateFeelinHealthyIntake(context: any): IntakeGroupStatus {
-  // Group 1 (Personal): patientName (or firstName & lastName), patientAge (or age), patientGender (or gender)
-  const hasName = Boolean(context.patientName || context.fullName || (context.firstName && context.lastName));
+  // Group 1 (Personal): first name AND surname, age, gender.
+  // A single token is not enough — the surname must never be skipped.
+  const nameParts = String(context.patientName || context.fullName || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const hasName =
+    nameParts.length >= 2 || Boolean(context.firstName && context.lastName);
   const hasAge = (context.patientAge !== undefined && context.patientAge !== null && Number(context.patientAge) > 0) ||
                  (context.age !== undefined && context.age !== null && Number(context.age) > 0);
   const hasGender = Boolean(context.patientGender || context.gender);
@@ -952,22 +958,12 @@ export function getGroupIntakePrompt(
   const isEn = locale.toLowerCase().startsWith("en");
 
   if (status.currentGroup === 1) {
-    const missing = status.missingFieldsInCurrentGroup;
-    if (missing.length === 3) {
-      return isEn
-        ? "To prepare the most suitable clinic options and personalized quotes for you, could you please share your full name, age, and gender?"
-        : "Size en uygun klinik seçeneklerini ve teklifleri hazırlayabilmemiz için lütfen adınızı soyadınızı, yaşınızı ve cinsiyetinizi paylaşabilir misiniz?";
-    }
-    // Partial missing in Group 1
-    const partsTr: string[] = [];
-    const partsEn: string[] = [];
-    if (missing.includes("patientName")) { partsTr.push("adınızı ve soyadınızı"); partsEn.push("your full name"); }
-    if (missing.includes("patientAge")) { partsTr.push("yaşınızı"); partsEn.push("your age"); }
-    if (missing.includes("patientGender")) { partsTr.push("cinsiyetinizi"); partsEn.push("your gender"); }
-
+    // Group 1 is always asked as one combined question covering name, surname,
+    // gender and age. Asking only for the fields we believe are missing is what
+    // allowed the surname to be skipped, so the full set is always requested.
     return isEn
-      ? `Thank you. Could you also please share ${partsEn.join(", ")}?`
-      : `Teşekkürler. Lütfen devam edebilmemiz için ${partsTr.join(", ")} de belirtebilir misiniz?`;
+      ? 'To prepare the most suitable clinic options and personalized quotes for you, could you please share your first name, surname, gender and age in a single message? For example: "Alper Özgül, Male, 27".'
+      : 'Size en uygun klinik seçeneklerini ve teklifleri hazırlayabilmemiz için lütfen adınızı, soyadınızı, cinsiyetinizi ve yaşınızı tek bir mesajda paylaşabilir misiniz? Örnek: "Alper Özgül, Erkek, 27".';
   }
 
   if (status.currentGroup === 2) {
