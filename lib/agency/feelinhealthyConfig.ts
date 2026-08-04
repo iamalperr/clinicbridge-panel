@@ -34,8 +34,31 @@ export function getCityDisplayName(city: string | null | undefined, locale: stri
   return locale.toLowerCase().startsWith("en") ? names.en : names.tr;
 }
 
+/**
+ * Canonical FeelinHealthy agency clinic document IDs from production Firestore
+ * (`agencies/{agencyDocId}/clinics/{id}`). Prefer these over marketing slugs —
+ * production document IDs are opaque Firestore IDs, not kebab-case slug strings.
+ */
+export const FEELINHEALTHY_PRODUCTION_CLINIC_IDS = {
+  hospitadentMecidiyekoy: "HXMlMPZ74AXkXoR4sEnH",
+  bhtClinicIstanbulTema: "Ab1OHdC020XOG4TWpR2r",
+  istanbulDisAkademisi: "9lYESxsLYFM1w4oebubu",
+  hospitadentCamlica: "SUEtM1vwxLkidYvH0cLR",
+  westdentClinic: "7MUCIEtOjjpq3dfcQG3W",
+  beyazisikIzmir: "2LOt5XJVC6R5u7MhZdG7",
+  hospitadentAntalya: "jOfAk5EVmhPHzpfT0HX1",
+  memorialAntalya: "VOu7zswvfDlZtj6dDd6I",
+  hospitadentAnkara: "insjxdoE2Rpss5EFzP3h",
+  lokmanHekimAnkara: "iSrE4eQsTIbmRzjBMChK",
+  lokmanHekimIstanbul: "tAPXLkbjTRTE0PX96ZNs",
+  anadoluMedicalCenter: "CnjF1vlliz4vM7IRRWKr",
+  dunyagozAtakoy: "KY7x141fXMg5oIWHjBnQ",
+  dunyagozAntalya: "l5zwxhtDlxSqqCu8AArk",
+} as const;
+
 export interface CuratedClinicTarget {
   name: string;
+  /** Prefer production Firestore document ID. Legacy slugs remain in aliasPatterns. */
   slugOrId: string;
   aliasPatterns?: string[];
   district?: string;
@@ -71,14 +94,30 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         curatedClinics: [
           {
             name: "İstanbul Diş Akademisi",
-            slugOrId: "istanbul-dis-akademisi",
-            aliasPatterns: ["istanbul diş akademisi", "istanbul dis akademisi", "istanbul dental academy", "dis akademisi", "diş akademisi"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.istanbulDisAkademisi,
+            aliasPatterns: [
+              "istanbul-dis-akademisi",
+              "istanbul diş akademisi",
+              "istanbul dis akademisi",
+              "istanbul dental academy",
+              "dis akademisi",
+              "diş akademisi",
+            ],
             district: "Kadıköy / Ataşehir",
           },
           {
             name: "Hospitadent Çamlıca",
-            slugOrId: "hospitadent-camlica",
-            aliasPatterns: ["hospitadent çamlıca", "hospitadent camlica", "çamlıca hospitadent", "camlica hospitadent"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.hospitadentCamlica,
+            aliasPatterns: [
+              "hospitadent-dental-group-camlica",
+              "hospitadent-camlica",
+              "hospitadent çamlıca",
+              "hospitadent camlica",
+              "hospitadent dental group çamlıca",
+              "hospitadent dental group camlica",
+              "çamlıca hospitadent",
+              "camlica hospitadent",
+            ],
             district: "Çamlıca, Üsküdar",
           },
         ],
@@ -91,14 +130,32 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         curatedClinics: [
           {
             name: "Hospitadent Mecidiyeköy",
-            slugOrId: "hospitadent-mecidiyekoy",
-            aliasPatterns: ["hospitadent mecidiyeköy", "hospitadent mecidiyekoy", "mecidiyeköy hospitadent", "mecidiyekoy hospitadent"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.hospitadentMecidiyekoy,
+            aliasPatterns: [
+              "hospitadent-dental-group-mecidiyekoy",
+              "hospitadent-mecidiyekoy",
+              "hospitadent mecidiyeköy",
+              "hospitadent mecidiyekoy",
+              "hospitadent dental group mecidiyeköy",
+              "hospitadent dental group mecidiyekoy",
+              "mecidiyeköy hospitadent",
+              "mecidiyekoy hospitadent",
+            ],
             district: "Mecidiyeköy, Şişli",
           },
           {
             name: "BHT Clinic İstanbul TEMA Hospital",
-            slugOrId: "bht-clinic-istanbul-tema",
-            aliasPatterns: ["bht clinic", "bht tema", "bht clinic istanbul tema hospital", "bht clinic istanbul tema", "bht"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.bhtClinicIstanbulTema,
+            aliasPatterns: [
+              "bht-clinic-istanbul-tema-hastanesi",
+              "bht-clinic-istanbul-tema",
+              "bht clinic",
+              "bht tema",
+              "bht clinic istanbul tema hospital",
+              "bht clinic istanbul tema hastanesi",
+              "bht clinic istanbul tema",
+              "bht",
+            ],
             district: "Halkalı / Küçükçekmece",
           },
         ],
@@ -111,14 +168,23 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         curatedClinics: [
           {
             name: "Westdent Clinic",
-            slugOrId: "westdent-clinic",
-            aliasPatterns: ["westdent", "westdent clinic", "westdent izmir"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.westdentClinic,
+            aliasPatterns: ["westdent-clinic", "westdent", "westdent clinic", "westdent izmir"],
             district: "Bayraklı, İzmir",
           },
           {
             name: "Beyaz Işık İzmir Dental Group",
-            slugOrId: "beyazisik-izmir-dental-group",
-            aliasPatterns: ["beyaz ışık izmir", "beyazisik izmir", "beyaz ışık izmir dental group", "beyazisik-izmir", "beyaz isik izmir"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.beyazisikIzmir,
+            aliasPatterns: [
+              "beyazisik-izmir-dental-group",
+              "beyaz ışık izmir",
+              "beyazışık izmir",
+              "beyazisik izmir",
+              "beyaz ışık izmir dental group",
+              "beyazışık izmir dental group",
+              "beyazisik-izmir",
+              "beyaz isik izmir",
+            ],
             district: "Alsancak, İzmir",
           },
         ],
@@ -131,14 +197,26 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         curatedClinics: [
           {
             name: "Hospitadent Antalya",
-            slugOrId: "hospitadent-antalya",
-            aliasPatterns: ["hospitadent antalya", "antalya hospitadent"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.hospitadentAntalya,
+            aliasPatterns: [
+              "hospitadent-dental-group-antalya",
+              "hospitadent-antalya",
+              "hospitadent antalya",
+              "hospitadent dental group antalya",
+              "antalya hospitadent",
+            ],
             district: "Muratpaşa, Antalya",
           },
           {
             name: "Memorial Antalya",
-            slugOrId: "memorial-hospital",
-            aliasPatterns: ["memorial antalya", "memorial hospital antalya", "memorial"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.memorialAntalya,
+            aliasPatterns: [
+              "memorial-hospital",
+              "memorial antalya",
+              "memorial hospital antalya",
+              "memorial hospital",
+              "memorial",
+            ],
             district: "Kepez, Antalya",
           },
         ],
@@ -151,14 +229,29 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         curatedClinics: [
           {
             name: "Hospitadent Ankara",
-            slugOrId: "hospitadent-ankara",
-            aliasPatterns: ["hospitadent ankara", "ankara hospitadent", "hospitadent"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.hospitadentAnkara,
+            aliasPatterns: [
+              "hospitadent-dental-group-ankara",
+              "hospitadent-ankara",
+              "hospitadent ankara",
+              "hospitadent dental group ankara",
+              "ankara hospitadent",
+              "hospitadent",
+            ],
             district: "Çankaya, Ankara",
           },
           {
             name: "Lokman Hekim Ankara",
-            slugOrId: "lokman-hekim-university-ankara-hospital",
-            aliasPatterns: ["lokman hekim ankara", "lokman hekim university ankara hospital", "lokman hekim akay", "lokman hekim akay hospital", "lokman hekim üniversite hastanesi ankara", "lokman hekim"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.lokmanHekimAnkara,
+            aliasPatterns: [
+              "lokman-hekim-university-ankara-hospital",
+              "lokman hekim ankara",
+              "lokman hekim university ankara hospital",
+              "lokman hekim akay",
+              "lokman hekim akay hospital",
+              "lokman hekim üniversite hastanesi ankara",
+              "lokman hekim",
+            ],
             district: "Söğütözü, Ankara",
           },
         ],
@@ -178,14 +271,14 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         curatedClinics: [
           {
             name: "Lokman Hekim",
-            slugOrId: "lokman-hekim-istanbul-hospital",
-            aliasPatterns: ["lokman hekim", "lokman hekim istanbul", "lokman hekim istanbul hospital", "lokman hekim kurtköy", "lokman hekim pendik", "lokman hekim sağlık grubu"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.lokmanHekimIstanbul,
+            aliasPatterns: ["lokman-hekim-istanbul-hospital", "lokman hekim", "lokman hekim istanbul", "lokman hekim istanbul hospital", "lokman hekim kurtköy", "lokman hekim pendik", "lokman hekim sağlık grubu"],
             district: "Kurtköy, Pendik",
           },
           {
             name: "Anadolu Medical Center",
-            slugOrId: "anadolu-medical-center",
-            aliasPatterns: ["anadolu medical center", "anadolu sağlık merkezi", "anadolu saglik merkezi", "anadolu"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.anadoluMedicalCenter,
+            aliasPatterns: ["anadolu-medical-center", "anadolu medical center", "anadolu sağlık merkezi", "anadolu saglik merkezi", "anadolu"],
             district: "Gebze / Anadolu Yakası",
           },
         ],
@@ -205,14 +298,14 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         curatedClinics: [
           {
             name: "Lokman Hekim",
-            slugOrId: "lokman-hekim-istanbul-hospital",
-            aliasPatterns: ["lokman hekim", "lokman hekim istanbul", "lokman hekim istanbul hospital", "lokman hekim kurtköy", "lokman hekim pendik", "lokman hekim sağlık grubu"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.lokmanHekimIstanbul,
+            aliasPatterns: ["lokman-hekim-istanbul-hospital", "lokman hekim", "lokman hekim istanbul", "lokman hekim istanbul hospital", "lokman hekim kurtköy", "lokman hekim pendik", "lokman hekim sağlık grubu"],
             district: "Kurtköy, Pendik",
           },
           {
             name: "Anadolu Medical Center",
-            slugOrId: "anadolu-medical-center",
-            aliasPatterns: ["anadolu medical center", "anadolu sağlık merkezi", "anadolu saglik merkezi", "anadolu"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.anadoluMedicalCenter,
+            aliasPatterns: ["anadolu-medical-center", "anadolu medical center", "anadolu sağlık merkezi", "anadolu saglik merkezi", "anadolu"],
             district: "Gebze / Anadolu Yakası",
           },
         ],
@@ -225,8 +318,8 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         curatedClinics: [
           {
             name: "Anadolu Medical Center",
-            slugOrId: "anadolu-medical-center",
-            aliasPatterns: ["anadolu medical center", "anadolu sağlık merkezi", "anadolu saglik merkezi", "anadolu"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.anadoluMedicalCenter,
+            aliasPatterns: ["anadolu-medical-center", "anadolu medical center", "anadolu sağlık merkezi", "anadolu saglik merkezi", "anadolu"],
             district: "Gebze, Kocaeli",
           },
         ],
@@ -246,14 +339,14 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         curatedClinics: [
           {
             name: "Lokman Hekim",
-            slugOrId: "lokman-hekim-istanbul-hospital",
-            aliasPatterns: ["lokman hekim", "lokman hekim istanbul", "lokman hekim istanbul hospital", "lokman hekim kurtköy", "lokman hekim pendik", "lokman hekim sağlık grubu"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.lokmanHekimIstanbul,
+            aliasPatterns: ["lokman-hekim-istanbul-hospital", "lokman hekim", "lokman hekim istanbul", "lokman hekim istanbul hospital", "lokman hekim kurtköy", "lokman hekim pendik", "lokman hekim sağlık grubu"],
             district: "Kurtköy, Pendik",
           },
           {
             name: "Anadolu Medical Center",
-            slugOrId: "anadolu-medical-center",
-            aliasPatterns: ["anadolu medical center", "anadolu sağlık merkezi", "anadolu saglik merkezi", "anadolu"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.anadoluMedicalCenter,
+            aliasPatterns: ["anadolu-medical-center", "anadolu medical center", "anadolu sağlık merkezi", "anadolu saglik merkezi", "anadolu"],
             district: "Gebze / Anadolu Yakası",
           },
         ],
@@ -266,8 +359,8 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         curatedClinics: [
           {
             name: "Anadolu Medical Center",
-            slugOrId: "anadolu-medical-center",
-            aliasPatterns: ["anadolu medical center", "anadolu sağlık merkezi", "anadolu saglik merkezi"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.anadoluMedicalCenter,
+            aliasPatterns: ["anadolu-medical-center", "anadolu medical center", "anadolu sağlık merkezi", "anadolu saglik merkezi"],
             district: "Gebze, Kocaeli",
           },
         ],
@@ -287,8 +380,8 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         curatedClinics: [
           {
             name: "Lokman Hekim",
-            slugOrId: "lokman-istanbul",
-            aliasPatterns: ["lokman hekim", "lokman hekim istanbul"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.lokmanHekimIstanbul,
+            aliasPatterns: ["lokman-hekim-istanbul-hospital", "lokman-istanbul", "lokman hekim", "lokman hekim istanbul"],
             district: "Kurtköy, Pendik",
           },
         ],
@@ -301,8 +394,8 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         curatedClinics: [
           {
             name: "BHT Clinic İstanbul TEMA Hospital",
-            slugOrId: "bht-tema",
-            aliasPatterns: ["bht clinic", "bht tema"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.bhtClinicIstanbulTema,
+            aliasPatterns: ["bht-clinic-istanbul-tema-hastanesi", "bht-tema", "bht clinic", "bht tema"],
             district: "Halkalı / Küçükçekmece",
           },
         ],
@@ -322,14 +415,22 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         curatedClinics: [
           {
             name: "Dünyagöz Ataköy",
-            slugOrId: "dunyagoz-atakoy",
-            aliasPatterns: ["dunyagoz ataköy", "dünyagöz atakoy", "dunyagoz atakoy", "dünyagöz ataköy", "dunyagoz"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.dunyagozAtakoy,
+            aliasPatterns: ["dunyagoz-atakoy", "dunyagoz ataköy", "dünyagöz atakoy", "dunyagoz atakoy", "dünyagöz ataköy", "dunyagoz"],
             district: "Ataköy, Bakırköy",
           },
           {
             name: "BHT Clinic İstanbul TEMA Hospital",
-            slugOrId: "bht-clinic-istanbul-tema",
-            aliasPatterns: ["bht clinic", "bht tema", "bht clinic istanbul tema hospital", "bht clinic istanbul tema", "bht"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.bhtClinicIstanbulTema,
+            aliasPatterns: [
+              "bht-clinic-istanbul-tema-hastanesi",
+              "bht-clinic-istanbul-tema",
+              "bht clinic",
+              "bht tema",
+              "bht clinic istanbul tema hospital",
+              "bht clinic istanbul tema",
+              "bht",
+            ],
             district: "Halkalı / Küçükçekmece",
           },
         ],
@@ -342,8 +443,8 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
         curatedClinics: [
           {
             name: "Dünyagöz Antalya",
-            slugOrId: "dunyagoz-antalya",
-            aliasPatterns: ["dunyagoz antalya", "dünyagöz antalya"],
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.dunyagozAntalya,
+            aliasPatterns: ["dunyagoz-antalya", "dunyagoz antalya", "dünyagöz antalya"],
             district: "Muratpaşa, Antalya",
           },
         ],
@@ -361,7 +462,7 @@ export const FEELINHEALTHY_CONFIG = {
   privacyNoticeLabelEn: "privacy notice",
   placeholderTr: "İstanbul’da implant tedavisi yaptırmak istiyorum. Avrupa Yakası ve İngilizce destek benim için önemli.",
   placeholderEn: "I want dental implants in Istanbul. European Side and English support are important to me.",
-  registrationUrl: "/demo/feelinhealthy/register",
+  registrationUrl: "https://www.feelinhealthy.com/register",
   askBudget: false,
 };
 
@@ -1044,27 +1145,39 @@ export function normalizeTreatmentBranch(rawCategory?: string | null): string {
 
 // ─── Curated Clinics Filter & Rank ──────────────────────────────────────────
 
+function clinicIdentityKeys(clinic: any): string[] {
+  return [
+    clinic?.id,
+    clinic?.clinicId,
+    clinic?.clinicSlug,
+    clinic?.slug,
+    clinic?.stableKey,
+  ]
+    .map((v) => String(v || "").toLowerCase().trim())
+    .filter(Boolean);
+}
+
 function matchClinicByCuratedTarget(availableClinics: any[], target: CuratedClinicTarget): any | null {
   const wantedId = target.slugOrId.toLowerCase();
+  const aliasSet = new Set((target.aliasPatterns || []).map((p) => p.toLowerCase().trim()));
 
   // Prefer canonical id / slug — never loose name similarity when an ID exists.
-  const byId = availableClinics.find((c) => {
-    const cSlug = String(c.clinicSlug || "").toLowerCase();
-    const cId = String(c.id || "").toLowerCase();
-    return cSlug === wantedId || cId === wantedId;
-  });
+  const byId = availableClinics.find((c) => clinicIdentityKeys(c).includes(wantedId));
   if (byId) return byId;
 
-  const byAlias = availableClinics.find((c) => {
-    const cSlug = String(c.clinicSlug || c.id || "").toLowerCase();
-    return target.aliasPatterns?.some((p) => cSlug === p.toLowerCase());
-  });
+  const byAlias = availableClinics.find((c) =>
+    clinicIdentityKeys(c).some((key) => aliasSet.has(key))
+  );
   if (byAlias) return byAlias;
 
   // Last resort: exact clinic name only (not substring), for legacy records.
   const wantedName = target.name.toLowerCase();
+  const wantedAliases = new Set([wantedName, ...aliasSet]);
   return (
-    availableClinics.find((c) => String(c.clinicName || "").toLowerCase() === wantedName) || null
+    availableClinics.find((c) => {
+      const name = String(c.clinicName || c.displayNameTr || c.displayNameEn || "").toLowerCase().trim();
+      return name && wantedAliases.has(name);
+    }) || null
   );
 }
 
@@ -1245,8 +1358,8 @@ export function getClinicMatchingReadyReply(locale: string = "tr", clinicCount: 
   const isEn = locale.toLowerCase().startsWith("en");
   if (clinicCount <= 0) {
     return isEn
-      ? "Thank you. I could not find an active partner clinic for this preference right now."
-      : "Teşekkürler. Bu tercihler için şu anda aktif bir partner kuruluş bulamadım.";
+      ? "There is no healthcare provider we can show directly for these criteria. If you like, we can review a nearby area together."
+      : "Bu kriterlerde doğrudan gösterebileceğimiz bir sağlık kuruluşu bulunmuyor. Dilerseniz yakın bir bölgeyi birlikte değerlendirebiliriz.";
   }
   if (clinicCount === 1) {
     return isEn
@@ -1256,6 +1369,54 @@ export function getClinicMatchingReadyReply(locale: string = "tr", clinicCount: 
   return isEn
     ? "Thank you. I’ve prepared two healthcare providers that match your preferences."
     : "Teşekkürler. Tercihlerinize uygun iki sağlık kuruluşunu hazırladım.";
+}
+
+/**
+ * Production-safe matching diagnostics — IDs and counts only, never patient PII.
+ */
+export function buildFeelinHealthyMatchingDiagnostics(input: {
+  agencyId?: string;
+  treatmentBranch?: string | null;
+  treatmentId?: string | null;
+  city?: string | null;
+  istanbulSide?: string | null;
+  linkedClinicIds?: string[];
+  activeClinicIds?: string[];
+  treatmentMatchedIds?: string[];
+  cityMatchedIds?: string[];
+  sideMatchedIds?: string[];
+  curatedMatchedIds?: string[];
+  finalIds?: string[];
+}): Record<string, unknown> {
+  const ids = (arr?: string[]) => (arr || []).filter(Boolean);
+  return {
+    agencyId: input.agencyId || "feelinhealthy",
+    treatmentBranch: input.treatmentBranch || null,
+    treatmentId: input.treatmentId || null,
+    city: input.city || null,
+    istanbulSide: input.istanbulSide || null,
+    linkedCount: ids(input.linkedClinicIds).length,
+    activeCount: ids(input.activeClinicIds).length,
+    treatmentCount: ids(input.treatmentMatchedIds).length,
+    cityCount: ids(input.cityMatchedIds).length,
+    sideCount: ids(input.sideMatchedIds).length,
+    curatedCount: ids(input.curatedMatchedIds).length,
+    linkedClinicIds: ids(input.linkedClinicIds),
+    activeClinicIds: ids(input.activeClinicIds),
+    treatmentMatchedIds: ids(input.treatmentMatchedIds),
+    cityMatchedIds: ids(input.cityMatchedIds),
+    sideMatchedIds: ids(input.sideMatchedIds),
+    curatedMatchedIds: ids(input.curatedMatchedIds),
+    finalClinicIds: ids(input.finalIds),
+  };
+}
+
+export function logFeelinHealthyMatchingDiagnostics(payload: Record<string, unknown>): void {
+  try {
+    console.info("[feelinhealthy-matching]", JSON.stringify(payload));
+  } catch {
+    // never throw from diagnostics
+  }
 }
 
 // ─── 3-Group Lead Intake State Evaluator ─────────────────────────────────────
@@ -1454,14 +1615,19 @@ export function calculateAdditionalCountAndConversion(
 } {
   const additionalCount = Math.max(0, totalEligible - displayedCount);
   const isEn = locale.toLowerCase().startsWith("en");
+  const singular = additionalCount === 1;
 
   return {
     additionalCount,
     hasConversionOffer: additionalCount > 0,
     conversionMessage: isEn
-      ? `There are ${additionalCount} more clinics matching your request. Sign up to receive more quotes and compare all options.`
-      : `Talebinize uygun ${additionalCount} klinik daha bulunuyor. Daha fazla teklif alıp seçenekleri karşılaştırabilmek için üye olabilirsiniz.`,
-    ctaText: isEn ? "Register Free & View All Quotes" : "Ücretsiz Kayıt Ol & Tüm Teklifleri Gör",
+      ? singular
+        ? `There is ${additionalCount} more healthcare provider matching your preferences. Create a free account to receive more quotes and compare your options.`
+        : `There are ${additionalCount} more healthcare providers matching your preferences. Create a free account to receive more quotes and compare your options.`
+      : singular
+        ? `Tercihlerinize uygun ${additionalCount} sağlık kuruluşu daha bulunuyor. Daha fazla teklif alıp seçenekleri karşılaştırmak için ücretsiz üye olabilirsiniz.`
+        : `Tercihlerinize uygun ${additionalCount} sağlık kuruluşu daha bulunuyor. Daha fazla teklif alıp seçenekleri karşılaştırmak için ücretsiz üye olabilirsiniz.`,
+    ctaText: isEn ? "Get More Quotes" : "Daha Fazla Teklif Al",
     registrationUrl: FEELINHEALTHY_CONFIG.registrationUrl,
   };
 }

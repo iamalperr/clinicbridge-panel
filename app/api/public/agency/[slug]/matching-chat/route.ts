@@ -29,6 +29,9 @@ import {
   getSideGuidancePrompt,
   formatClinicCardLocation,
   FEELINHEALTHY_CONFIG,
+  buildFeelinHealthyMatchingDiagnostics,
+  logFeelinHealthyMatchingDiagnostics,
+  normalizeTreatmentBranch,
   type IntakeGroupNumber,
 } from "@/lib/agency/feelinhealthyConfig";
 import {
@@ -1757,10 +1760,49 @@ JSON FORMATI:
         const effectiveCity = locationDecision.city;
         const effectiveSide = newCtx.istanbul_side || locationDecision.side;
         const curatedResult = getCuratedClinicsForFeelinHealthy(branchOrCat, effectiveCity, effectiveSide, fullAgencyClinics);
-        
+
+        const linkedIds = fullAgencyClinics.map((c: any) => String(c.id));
+        const activeIds = fullAgencyClinics
+          .filter((c: any) => c.status === "active")
+          .map((c: any) => String(c.id));
+        const branchKey = String(normalizeTreatmentBranch(branchOrCat));
+        const treatmentMatchedIds = fullAgencyClinics
+          .filter((c: any) => {
+            const cats = (c.treatmentCategories || []).map((t: string) => String(t).toLowerCase());
+            return cats.includes(branchKey) || String(c.category || "").toLowerCase().includes(branchKey);
+          })
+          .map((c: any) => String(c.id));
+        const cityMatchedIds = fullAgencyClinics
+          .filter((c: any) => {
+            const city = String(c.location?.city || "").toLowerCase();
+            const want = String(effectiveCity || "").toLowerCase();
+            if (!want) return false;
+            if (want === "istanbul") return city.includes("istanbul") || city.includes("i̇stanbul");
+            return city.includes(want);
+          })
+          .map((c: any) => String(c.id));
+        const sideMatchedIds = curatedResult.matchingCuratedClinics.map((c: any) => String(c.id));
+
         const isGuest = newCtx.isGuestUser !== false;
         const displayLimit = isGuest ? FEELINHEALTHY_CONFIG.maxGuestClinics : maxClinics;
         const displayedClinics = curatedResult.matchingCuratedClinics.slice(0, displayLimit);
+
+        logFeelinHealthyMatchingDiagnostics(
+          buildFeelinHealthyMatchingDiagnostics({
+            agencyId: "feelinhealthy",
+            treatmentBranch: branchKey,
+            treatmentId: branchOrCat || null,
+            city: effectiveCity,
+            istanbulSide: effectiveSide || null,
+            linkedClinicIds: linkedIds,
+            activeClinicIds: activeIds,
+            treatmentMatchedIds,
+            cityMatchedIds,
+            sideMatchedIds,
+            curatedMatchedIds: curatedResult.matchingCuratedClinics.map((c: any) => String(c.id)),
+            finalIds: displayedClinics.map((c: any) => String(c.id)),
+          })
+        );
         
         const currentLang = (parsed.language || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
         const conv = calculateAdditionalCountAndConversion(curatedResult.allEligibleClinics.length, displayedClinics.length, currentLang);

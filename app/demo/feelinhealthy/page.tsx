@@ -1262,23 +1262,18 @@ export default function FeelinHealthyLive() {
                           </div>
                         )}
                         {/* Guest Conversion / Additional Clinics Banner */}
-                        {((m.additionalEligibleClinicCount && m.additionalEligibleClinicCount > 0) || m.conversionData) && (
+                        {((m.additionalEligibleClinicCount && m.additionalEligibleClinicCount > 0) || (m.conversionData?.additionalCount > 0)) && (
                           <div style={{ marginTop: 12, padding: "14px 16px", background: "linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%)", borderRadius: 12, border: "1px solid #86EFAC", display: "flex", flexDirection: "column", gap: 8 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               <Sparkles size={16} color="#16A34A" />
                               <span style={{ fontSize: 13, fontWeight: 700, color: "#166534" }}>
-                                {lang === "tr"
-                                  ? `Kriterlerinize uygun +${m.additionalEligibleClinicCount || 1} klinik daha var!`
-                                  : `+${m.additionalEligibleClinicCount || 1} more clinics match your criteria!`}
+                                {m.conversionData?.conversionMessage || (lang === "tr"
+                                  ? `Tercihlerinize uygun ${m.additionalEligibleClinicCount || 1} sağlık kuruluşu daha bulunuyor.`
+                                  : `There are ${m.additionalEligibleClinicCount || 1} more healthcare providers matching your preferences.`)}
                               </span>
                             </div>
-                            <p style={{ fontSize: 12, color: "#14532D", lineHeight: 1.5 }}>
-                              {m.conversionData?.conversionMessage || (lang === "tr"
-                                ? "Tüm onaylı partner klinik seçeneklerini görmek ve birden fazla klinikten karşılaştırmalı teklif almak için hemen ücretsiz kayıt olun."
-                                : "Register for free to view all certified partner clinics and receive comparative quotes from multiple providers.")}
-                            </p>
                             <a
-                              href={m.conversionData?.registrationUrl || "https://feelinhealthy.com/register"}
+                              href={m.conversionData?.registrationUrl || "https://www.feelinhealthy.com/register"}
                               target="_blank"
                               rel="noreferrer"
                               style={{
@@ -1297,7 +1292,7 @@ export default function FeelinHealthyLive() {
                                 marginTop: 2
                               }}
                             >
-                              {m.conversionData?.ctaText || (lang === "tr" ? "Ücretsiz Kayıt Ol & Tüm Teklifleri Gör" : "Register Free & View All Quotes")} <ChevronRight size={14} />
+                              {m.conversionData?.ctaText || (lang === "tr" ? "Daha Fazla Teklif Al" : "Get More Quotes")} <ChevronRight size={14} />
                             </a>
                           </div>
                         )}
