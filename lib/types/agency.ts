@@ -90,6 +90,13 @@ export interface AgencyPrivacySettings {
   requiredBeforePersonalData: boolean;
 }
 
+export interface QuoteNotificationSettings {
+  enabled: boolean;
+  recipients: string[];
+  cc: string[];
+  replyTo?: string;
+}
+
 export interface AgencySettings {
   maxClinicsPerTreatmentRequest?: number;
   documentUploadEnabled?: boolean;
@@ -105,6 +112,8 @@ export interface AgencySettings {
   notificationEmail?: string;
   /** Preferred multi-recipient list for quote request notifications. */
   quoteNotificationEmails?: string[];
+  /** Canonical quote-request notification configuration (Portal Settings). */
+  quoteNotificationSettings?: QuoteNotificationSettings;
   defaultLocale?: string;
 }
 

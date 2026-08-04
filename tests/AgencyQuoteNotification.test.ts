@@ -6,7 +6,10 @@ import {
   collectQuoteNotificationRecipients,
   computeNextRetryAt,
   isRetryableNotificationJob,
+  normalizeQuoteNotificationSettings,
   pickOfficialClinicName,
+  resolveQuoteNotificationDelivery,
+  validateQuoteNotificationSettingsInput,
 } from "../lib/services/agencyQuoteNotificationContent";
 
 describe("FeelinHealthy quote request email notifications", () => {
@@ -118,5 +121,67 @@ describe("FeelinHealthy quote request email notifications", () => {
     // Email scheduling uses leadId only after submitAgencyLead returns created/already_exists.
     const leadId = "persisted-lead-id";
     expect(buildAgencyLeadNotificationJobId(leadId)).toContain(leadId);
+  });
+
+  it("quoteNotificationSettings: disabled skips send", () => {
+    const delivery = resolveQuoteNotificationDelivery({
+      quoteNotificationSettings: {
+        enabled: false,
+        recipients: ["ops@feelinhealthy.com"],
+        cc: [],
+      },
+    });
+    expect(delivery.outcome).toBe("disabled");
+    expect(delivery.recipients).toEqual([]);
+  });
+
+  it("quoteNotificationSettings: enabled without recipients → config_missing", () => {
+    const delivery = resolveQuoteNotificationDelivery({
+      quoteNotificationSettings: {
+        enabled: true,
+        recipients: ["bad", "  ", "not-an-email"],
+        cc: ["also-bad"],
+      },
+    });
+    expect(delivery.outcome).toBe("config_missing");
+    expect(delivery.configError).toBe("NO_RECIPIENTS_CONFIGURED");
+  });
+
+  it("quoteNotificationSettings: validates, trims, dedupes recipients/cc/replyTo", () => {
+    const settings = normalizeQuoteNotificationSettings({
+      enabled: true,
+      recipients: [" Ops@FeelinHealthy.com ", "ops@feelinhealthy.com", "bad", ""],
+      cc: ["cc@feelinhealthy.com", "ops@feelinhealthy.com"],
+      replyTo: " Reply@FeelinHealthy.com ",
+    });
+    expect(settings.recipients).toEqual(["ops@feelinhealthy.com"]);
+    expect(settings.cc).toEqual(["cc@feelinhealthy.com"]);
+    expect(settings.replyTo).toBe("reply@feelinhealthy.com");
+
+    const delivery = resolveQuoteNotificationDelivery({
+      quoteNotificationSettings: settings,
+    });
+    expect(delivery.outcome).toBe("ready");
+    expect(delivery.recipients).toEqual(["ops@feelinhealthy.com"]);
+    expect(delivery.cc).toEqual(["cc@feelinhealthy.com"]);
+    expect(delivery.replyTo).toBe("reply@feelinhealthy.com");
+  });
+
+  it("warns when enabled without recipients", () => {
+    const result = validateQuoteNotificationSettingsInput({
+      enabled: true,
+      recipients: [],
+      cc: [],
+    });
+    expect(result.warnings).toContain("ENABLED_WITHOUT_RECIPIENTS");
+  });
+
+  it("does not retry skipped or config_missing jobs", () => {
+    expect(isRetryableNotificationJob({ status: "skipped", attemptCount: 0, maxAttempts: 3 })).toBe(
+      false
+    );
+    expect(
+      isRetryableNotificationJob({ status: "config_missing", attemptCount: 1, maxAttempts: 3 })
+    ).toBe(false);
   });
 });

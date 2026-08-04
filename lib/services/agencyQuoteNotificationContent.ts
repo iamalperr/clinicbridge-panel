@@ -5,9 +5,34 @@
 
 import { isValidEmail, normalizeEmail } from "../utils/emailValidation";
 
-export type AgencyNotificationStatus = "pending" | "sent" | "failed" | "retrying";
+export type AgencyNotificationStatus =
+  | "pending"
+  | "sent"
+  | "failed"
+  | "retrying"
+  | "skipped"
+  | "config_missing";
 
 export const AGENCY_LEAD_NOTIFICATION_EVENT = "agency_lead_submitted" as const;
+
+export interface QuoteNotificationSettingsNormalized {
+  enabled: boolean;
+  recipients: string[];
+  cc: string[];
+  replyTo?: string;
+}
+
+export type QuoteNotificationDeliveryOutcome = "ready" | "disabled" | "config_missing";
+
+export interface QuoteNotificationDelivery {
+  enabled: boolean;
+  recipients: string[];
+  cc: string[];
+  replyTo?: string;
+  source: string | null;
+  outcome: QuoteNotificationDeliveryOutcome;
+  configError?: string;
+}
 
 export function buildAgencyLeadNotificationJobId(leadId: string): string {
   return `job_${leadId}_${AGENCY_LEAD_NOTIFICATION_EVENT}`;
@@ -17,6 +42,142 @@ export function buildQuoteRequestPortalUrl(agencyId: string, leadId: string): st
   const base = (process.env.NEXT_PUBLIC_APP_URL || "https://app.clinicbridge-ai.com").replace(/\/$/, "");
   // Authenticated Portal lead detail — related conversation/quote request record.
   return `${base}/agency/agencies/${agencyId}/leads/${leadId}`;
+}
+
+/** Trim, validate, dedupe email lists. Drops empty / invalid entries. */
+export function normalizeRecipientList(value: unknown): string[] {
+  const raw = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/[\n,;]+/)
+      : value
+        ? [value]
+        : [];
+  const out: string[] = [];
+  for (const item of raw) {
+    const normalized = normalizeEmail(typeof item === "string" ? item : String(item || ""));
+    if (normalized && isValidEmail(normalized) && !out.includes(normalized)) {
+      out.push(normalized);
+    }
+  }
+  return out;
+}
+
+export function normalizeReplyTo(value: unknown): string | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  const normalized = normalizeEmail(typeof value === "string" ? value : String(value));
+  if (!normalized || !isValidEmail(normalized)) return undefined;
+  return normalized;
+}
+
+/**
+ * Normalize Portal-saved quoteNotificationSettings.
+ * Invalid emails are dropped; empty strings removed; lists deduped.
+ */
+export function normalizeQuoteNotificationSettings(
+  raw: unknown
+): QuoteNotificationSettingsNormalized {
+  const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const recipients = normalizeRecipientList(obj.recipients);
+  const cc = normalizeRecipientList(obj.cc).filter((email) => !recipients.includes(email));
+  const replyTo = normalizeReplyTo(obj.replyTo);
+  return {
+    enabled: obj.enabled === true,
+    recipients,
+    cc,
+    replyTo,
+  };
+}
+
+export function validateQuoteNotificationSettingsInput(raw: unknown): {
+  settings: QuoteNotificationSettingsNormalized;
+  errors: string[];
+  warnings: string[];
+} {
+  const settings = normalizeQuoteNotificationSettings(raw);
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+
+  // Surface invalid reply-to if user typed something that didn't validate
+  if (obj.replyTo && String(obj.replyTo).trim() && !settings.replyTo) {
+    errors.push("INVALID_REPLY_TO");
+  }
+
+  if (settings.enabled && settings.recipients.length === 0) {
+    warnings.push("ENABLED_WITHOUT_RECIPIENTS");
+  }
+
+  return { settings, errors, warnings };
+}
+
+/**
+ * Resolve delivery from canonical quoteNotificationSettings first,
+ * then legacy quoteNotificationEmails / notificationEmail.
+ * Never invents hard-coded personal addresses.
+ */
+export function resolveQuoteNotificationDelivery(params: {
+  quoteNotificationSettings?: unknown;
+  quoteNotificationEmails?: unknown;
+  notificationEmail?: unknown;
+}): QuoteNotificationDelivery {
+  if (params.quoteNotificationSettings != null) {
+    const settings = normalizeQuoteNotificationSettings(params.quoteNotificationSettings);
+    if (!settings.enabled) {
+      return {
+        enabled: false,
+        recipients: [],
+        cc: [],
+        replyTo: undefined,
+        source: "quoteNotificationSettings",
+        outcome: "disabled",
+      };
+    }
+    if (settings.recipients.length === 0) {
+      return {
+        enabled: true,
+        recipients: [],
+        cc: settings.cc,
+        replyTo: settings.replyTo,
+        source: "quoteNotificationSettings",
+        outcome: "config_missing",
+        configError: "NO_RECIPIENTS_CONFIGURED",
+      };
+    }
+    return {
+      enabled: true,
+      recipients: settings.recipients,
+      cc: settings.cc,
+      replyTo: settings.replyTo,
+      source: "quoteNotificationSettings",
+      outcome: "ready",
+    };
+  }
+
+  // Legacy fallback for agencies that have not migrated to quoteNotificationSettings yet.
+  const legacy = collectQuoteNotificationRecipients({
+    quoteNotificationEmails: params.quoteNotificationEmails,
+    notificationEmail: params.notificationEmail,
+  });
+  if (legacy.recipients.length === 0) {
+    return {
+      enabled: true,
+      recipients: [],
+      cc: [],
+      replyTo: undefined,
+      source: null,
+      outcome: "config_missing",
+      configError: legacy.configError || "NO_RECIPIENTS_CONFIGURED",
+    };
+  }
+  return {
+    enabled: true,
+    recipients: legacy.recipients,
+    cc: [],
+    replyTo: undefined,
+    source: legacy.source,
+    outcome: "ready",
+  };
 }
 
 /** Collect and validate notification recipients from agency config (no invented addresses). */
@@ -30,9 +191,6 @@ export function collectQuoteNotificationRecipients(params: {
   const buckets: Array<{ source: string; values: unknown }> = [
     { source: "quoteNotificationEmails", values: params.quoteNotificationEmails },
     { source: "settings.notificationEmail", values: params.notificationEmail },
-    { source: "ownerEmail", values: params.ownerEmail },
-    { source: "agency.email", values: params.agencyEmail },
-    { source: "agency_admins", values: params.adminEmails },
   ];
 
   for (const bucket of buckets) {
@@ -47,18 +205,6 @@ export function collectQuoteNotificationRecipients(params: {
     source: null,
     configError: "NO_RECIPIENTS_CONFIGURED",
   };
-}
-
-export function normalizeRecipientList(value: unknown): string[] {
-  const raw = Array.isArray(value) ? value : value ? [value] : [];
-  const out: string[] = [];
-  for (const item of raw) {
-    const normalized = normalizeEmail(typeof item === "string" ? item : String(item || ""));
-    if (normalized && isValidEmail(normalized) && !out.includes(normalized)) {
-      out.push(normalized);
-    }
-  }
-  return out;
 }
 
 export function formatIstanbulSideLabel(side?: string | null, lang: "tr" | "en" = "tr"): string | null {
@@ -223,6 +369,7 @@ export function isRetryableNotificationJob(job: {
 }, nowMs = Date.now()): boolean {
   if (!job) return false;
   if (job.status === "sent" || job.status === "processing") return false;
+  if (job.status === "skipped" || job.status === "config_missing") return false;
   const attempts = Number(job.attemptCount || 0);
   const max = Number(job.maxAttempts || 3);
   if (attempts >= max) return false;
