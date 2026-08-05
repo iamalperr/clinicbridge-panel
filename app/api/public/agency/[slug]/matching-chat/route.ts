@@ -1143,9 +1143,9 @@ export async function POST(
           ctx.lastLocation = target;
           const resolved = resolveCityAndSide(target);
           if (resolved.city) ctx.selectedCity = resolved.city;
-          if (resolved.side) {
+          if (resolved.side === "european" || resolved.side === "anatolian") {
             ctx.istanbul_side = resolved.side;
-            ctx.istanbul_side_source = "user_text";
+            ctx.istanbul_side_source = "explicit_text";
             ctx.sideSelectionConfirmed = true;
           }
           ctx.locationSelectionConfirmed = Boolean(resolved.city);
@@ -2452,22 +2452,38 @@ export async function POST(
 
         // Empty match: advance with alternatives instead of looping the same dead-end line.
         if (isFeelinHealthy && recommendations.length === 0) {
-          const supportLabels = (curatedResult.supportedLocationsForBranch || []).map((l: any) =>
+          const emptyBranchRaw =
+            parsed.treatmentCategory || newCtx.lastTreatmentCategory || agencySlotsExtracted.extracted.treatment;
+          const emptyBranchKey = String(normalizeTreatmentBranch(emptyBranchRaw));
+          const emptyLocation = decideFeelinHealthyLocationNextStep(
+            newCtx,
+            fullAgencyClinics,
+            replyLang
+          );
+          const emptyCity = emptyLocation.city;
+          const emptySide = newCtx.istanbul_side || emptyLocation.side;
+          const emptyCurated = getCuratedClinicsForFeelinHealthy(
+            emptyBranchRaw || emptyBranchKey,
+            emptyCity,
+            emptySide,
+            fullAgencyClinics
+          );
+          const supportLabels = (emptyCurated.supportedLocationsForBranch || []).map((l: any) =>
             replyLang === "en" ? l.displayNameEn : l.displayNameTr
           );
           readyReply = getEmptyMatchProcessReply({
             locale: replyLang,
-            branchKey,
-            city: effectiveCity,
-            side: effectiveSide,
+            branchKey: emptyBranchKey,
+            city: emptyCity,
+            side: emptySide,
             supportedLocationLabels: supportLabels,
           });
-          const alt = curatedResult.supportedLocationsForBranch?.[0];
+          const alt = emptyCurated.supportedLocationsForBranch?.[0];
           if (alt) {
             newCtx.pendingLocationExpansion = true;
             newCtx.pendingLocationExpansionTarget =
               replyLang === "en" ? alt.displayNameEn : alt.displayNameTr;
-            newCtx.pendingLocationBranch = branchKey;
+            newCtx.pendingLocationBranch = emptyBranchKey;
           }
           return jsonResponse({
             reply: readyReply,
