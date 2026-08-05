@@ -25,6 +25,7 @@ import {
   getTreatmentClarificationPrompt,
   isReadyForClinicMatching,
   getClinicMatchingReadyReply,
+  getEmptyMatchProcessReply,
   getSideGuidancePrompt,
   formatClinicCardLocation,
   FEELINHEALTHY_CONFIG,
@@ -1129,14 +1130,28 @@ export async function POST(
     }
 
 
-    // Handle user affirmative response to location negotiation
+    // Handle user affirmative response to location negotiation / empty-match offer
     if (ctx.pendingLocationExpansion) {
-      const isAffirmative = /\b(evet|olur|uygun|fark etmez|tamam|yes|sure|okay|ok|why not|neden olmasın|tabi|tabii|kabul)\b/i.test(finalMessage || message || "");
+      const msg = finalMessage || message || "";
+      const isAffirmative =
+        /\b(evet|olur|olsun|uygun|fark etmez|tamam|değerlendir|degerlendir|yes|sure|okay|ok|why not|neden olmasın|tabi|tabii|kabul|isterim|istiyorum)\b/i.test(
+          msg
+        );
       if (isAffirmative) {
-        ctx.lastLocation = ctx.pendingLocationExpansionTarget || "İstanbul Anadolu Yakası";
+        const target = ctx.pendingLocationExpansionTarget || "İstanbul";
+        ctx.lastLocation = target;
+        const resolved = resolveCityAndSide(target);
+        if (resolved.city) ctx.selectedCity = resolved.city;
+        if (resolved.side) {
+          ctx.istanbul_side = resolved.side;
+          ctx.istanbul_side_source = "user_text";
+          ctx.sideSelectionConfirmed = true;
+        }
+        ctx.locationSelectionConfirmed = true;
         delete ctx.pendingLocationExpansion;
         delete ctx.pendingLocationExpansionTarget;
         delete ctx.pendingLocationBranch;
+        (ctx as any).__forceClinicMatching = true;
       }
     }
 
@@ -2427,11 +2442,40 @@ export async function POST(
         }
 
         const replyLang = (parsed.language || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
-        const readyReply = isFeelinHealthy
+        let readyReply = isFeelinHealthy
           ? getClinicMatchingReadyReply(replyLang, recommendations.length)
           : (parsed.replyText || (replyLang === "tr"
             ? `${parsed.subTreatment || "Tedaviniz"} için ${recommendations.length} uygun klinik buldum.`
             : `I found ${recommendations.length} suitable clinic(s) for ${parsed.subTreatment || "your treatment"}.`));
+
+        // Empty match: advance with alternatives instead of looping the same dead-end line.
+        if (isFeelinHealthy && recommendations.length === 0) {
+          const supportLabels = (curatedResult.supportedLocationsForBranch || []).map((l: any) =>
+            replyLang === "en" ? l.displayNameEn : l.displayNameTr
+          );
+          readyReply = getEmptyMatchProcessReply({
+            locale: replyLang,
+            branchKey,
+            city: effectiveCity,
+            side: effectiveSide,
+            supportedLocationLabels: supportLabels,
+          });
+          const alt = curatedResult.supportedLocationsForBranch?.[0];
+          if (alt) {
+            newCtx.pendingLocationExpansion = true;
+            newCtx.pendingLocationExpansionTarget =
+              replyLang === "en" ? alt.displayNameEn : alt.displayNameTr;
+            newCtx.pendingLocationBranch = branchKey;
+          }
+          return jsonResponse({
+            reply: readyReply,
+            type: "location_negotiation",
+            sessionContext: newCtx,
+            showClinicCards: false,
+            shouldCreateNewLead: false,
+            shouldUpdateLead: false,
+          }, { headers: CORS });
+        }
 
         return jsonResponse({
           reply: readyReply,

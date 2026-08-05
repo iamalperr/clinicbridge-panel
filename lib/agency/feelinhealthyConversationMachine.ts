@@ -669,15 +669,21 @@ export function isHardGateAction(action: NextConversationAction): boolean {
 }
 
 /**
- * Intake hard-gate may yield to the LLM when the patient already answered in
- * natural language and SlotExtractor may have missed fuzzy fields. Consent,
- * city/side cards, and location negotiation stay hard.
+ * Intake / treatment / location-negotiation hard-gates may yield to the LLM when
+ * the patient already answered in natural language. Consent and city/side cards
+ * stay hard (structured UI).
  */
 export function shouldAllowLlmAssistForIntakeGate(
   action: NextConversationAction,
   userMessage?: string | null
 ): boolean {
-  if (action.kind !== "intake") return false;
+  if (
+    action.kind !== "intake" &&
+    action.kind !== "ask_treatment" &&
+    action.kind !== "location_negotiation"
+  ) {
+    return false;
+  }
   const text = String(userMessage || "").trim();
   return text.length >= 2;
 }
@@ -695,12 +701,31 @@ export function inferTreatmentFromText(text?: string | null): string | null {
 
   const rules: Array<{ id: string; patterns: RegExp[] }> = [
     { id: "implant", patterns: [/\bimplant\b/, /diş implant/, /dis implant/, /dental implant/] },
+    { id: "hair_transplant", patterns: [/sa[cç]\s*ekim/, /hair\s*transplant/, /\bfue\b/, /\bdhi\b/] },
+    {
+      id: "aesthetic_surgery",
+      patterns: [
+        /estetik/,
+        /rinoplasti/,
+        /rhinoplasty/,
+        /botoks/,
+        /botox/,
+        /dolgu/,
+        /liposuction/,
+        /lipo/,
+        /meme\s*b[uü]y[uü]t/,
+        /g[oö]ğ[uü]s\s*b[uü]y[uü]t/,
+        /breast\s*(aug|enlarg)/,
+        /popo\s*b[uü]y[uü]t/,
+        /kal[cç]a\s*b[uü]y[uü]t/,
+        /\bbbl\b/,
+        /butt\s*(lift|aug)/,
+      ],
+    },
     { id: "dental", patterns: [/\b(zirkonyum|kaplama|veneers?|crowns?|diş|dis tedavi|dental)\b/] },
-    { id: "hair", patterns: [/\b(saç ekim|sac ekim|hair transplant|fue|dhi)\b/] },
-    { id: "aesthetic", patterns: [/\b(estetik|rinoplasti|rhinoplasty|botoks|dolgu|liposuction)\b/] },
     { id: "ivf", patterns: [/\b(tüp bebek|tup bebek|\bivf\b|fertility)\b/] },
-    { id: "eye", patterns: [/\b(göz|lasik|katarakt|\beye\b)\b/] },
-    { id: "obesity", patterns: [/\b(obezite|bariatrik|tüp mide)\b/] },
+    { id: "eye_treatments", patterns: [/\b(göz|goz|lasik|katarakt|\beye\b)\b/] },
+    { id: "obesity", patterns: [/\b(obezite|bariatrik|tüp mide|tup mide)\b/] },
   ];
 
   for (const rule of rules) {

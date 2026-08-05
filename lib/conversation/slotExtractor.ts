@@ -127,7 +127,21 @@ export const CANONICAL_TREATMENTS: CanonicalTreatment[] = [
     id: "hair_transplant",
     displayName: { tr: "Saç Ekimi", en: "Hair Transplant" },
     keywords: [
-      "saç ekimi", "sac ekimi", "hair transplant", "fue", "dhi"
+      "saç ekimi", "sac ekimi", "saç ekim", "sac ekim", "saçekimi", "sacekim",
+      "hair transplant", "hair transplantation", "fue", "dhi"
+    ]
+  },
+  {
+    id: "aesthetic_surgery",
+    displayName: { tr: "Estetik Cerrahi", en: "Aesthetic Surgery" },
+    keywords: [
+      "estetik", "aesthetic", "plastik cerrahi",
+      "meme büyütme", "meme buyutme", "göğüs büyütme", "gogus buyutme",
+      "breast augmentation", "breast enlargement", "breast implant",
+      "popo büyütme", "popo buyutme", "kalça büyütme", "kalca buyutme",
+      "bbl", "brazilian butt", "butt lift", "butt augmentation",
+      "liposuction", "lipo", "yağ aldırma", "yag aldirma",
+      "botoks", "botox", "dolgu", "filler"
     ]
   },
   {

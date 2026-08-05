@@ -864,8 +864,52 @@ export function decideFeelinHealthyLocationNextStep(
 export function getTreatmentClarificationPrompt(locale: string = "tr"): string {
   const isEn = locale.toLowerCase().startsWith("en");
   return isEn
-    ? "Which treatment or medical service are you looking for? For example dental implant, IVF, cardiology, eye treatment or a check-up."
-    : "Hangi tedavi veya sağlık hizmeti için destek arıyorsunuz? Örneğin diş implantı, tüp bebek, kardiyoloji, göz tedavisi veya check-up.";
+    ? "I've noted your details so far. Which treatment are you looking for? Natural wording is fine — e.g. dental implant, hair transplant, breast augmentation, IVF, or eye treatment. Once I know the treatment I'll match partner clinics for you."
+    : "Şu ana kadar verdiğiniz bilgileri kaydettim. Hangi tedavi için bakıyorsunuz? Nasıl yazarsanız yazın yeterli — örneğin diş implantı, saç ekimi, meme büyütme, tüp bebek veya göz tedavisi. Tedaviyi netleştirince size uygun partner klinikleri getireceğim.";
+}
+
+/**
+ * Empty match reply that advances the conversation instead of looping the same line.
+ */
+export function getEmptyMatchProcessReply(params: {
+  locale?: string;
+  branchKey?: string | null;
+  city?: string | null;
+  side?: string | null;
+  supportedLocationLabels?: string[];
+}): string {
+  const isEn = (params.locale || "tr").toLowerCase().startsWith("en");
+  const alts = (params.supportedLocationLabels || []).filter(Boolean).slice(0, 3);
+  const altText = alts.length
+    ? isEn
+      ? ` Available partner areas for this treatment: ${alts.join(", ")}.`
+      : ` Bu tedavi için anlaşmalı bölgeler: ${alts.join(", ")}.`
+    : "";
+
+  if (isEn) {
+    if (!alts.length) {
+      return (
+        `I've noted your treatment preference, but I can't show a partner clinic for this exact combination yet. ` +
+        `Our live partner network currently highlights dental, hair transplant, IVF, cardiology and eye care. ` +
+        `Tell me which of these you'd like to explore, or say "record my request" and I'll keep your details for the team.`
+      );
+    }
+    return (
+      `I couldn't show a partner clinic for this exact combination yet.${altText} ` +
+      `If you like, we can try a nearby area or another Istanbul side — just say which you prefer, or reply "let's evaluate".`
+    );
+  }
+  if (!alts.length) {
+    return (
+      `Tedavi tercihinizi not ettim; bu kombinasyon için henüz doğrudan gösterebileceğim bir partner klinik yok. ` +
+      `Canlı ağımızda öne çıkan alanlar: diş, saç ekimi, tüp bebek, kardiyoloji ve göz. ` +
+      `Bunlardan birini yazabilir veya "talebimi kaydet" diyerek ekibe iletmemi isteyebilirsiniz.`
+    );
+  }
+  return (
+    `Bu kombinasyon için henüz doğrudan gösterebileceğim bir partner klinik bulamadım.${altText} ` +
+    `Dilerseniz yakın bir bölgeyi veya diğer İstanbul yakasını deneyelim — tercihinizi yazmanız yeterli, "değerlendirelim" demeniz de olur.`
+  );
 }
 
 // ─── Branch Istanbul Side Availability & Clarification Helper ────────────────
@@ -1129,8 +1173,23 @@ export function formatClinicCardLocation(clinic: any, locale: string = "tr"): st
 
 export function normalizeTreatmentBranch(rawCategory?: string | null): string {
   if (!rawCategory) return "dental";
-  const lower = rawCategory.toLowerCase();
-  if (lower.includes("diş") || lower.includes("dental") || lower.includes("implant") || lower.includes("zirkon") || lower.includes("smile")) {
+  const lower = String(rawCategory)
+    .toLocaleLowerCase("tr-TR")
+    .replace(/\u0307/g, "")
+    .normalize("NFC");
+
+  if (
+    lower.includes("diş") ||
+    /\bdis\b/.test(lower) ||
+    lower.includes("dental") ||
+    lower.includes("implant") ||
+    lower.includes("zirkon") ||
+    lower.includes("smile") ||
+    lower === "crown" ||
+    lower === "veneers" ||
+    lower === "tooth_extraction" ||
+    lower === "denture"
+  ) {
     return "dental";
   }
   if (lower.includes("ivf") || lower.includes("tüp") || lower.includes("tup") || lower.includes("fertility")) {
@@ -1139,11 +1198,52 @@ export function normalizeTreatmentBranch(rawCategory?: string | null): string {
   if (lower.includes("kardiyo") || lower.includes("cardio") || lower.includes("kalp") || lower.includes("heart")) {
     return "cardiology";
   }
-  if (lower.includes("check") || lower.includes("sağlık tarama") || lower.includes("kontrol")) {
+  if (lower.includes("check") || lower.includes("sağlık tarama") || lower.includes("saglik tarama") || lower.includes("kontrol")) {
     return "check_up";
   }
-  if (lower.includes("göz") || lower.includes("goz") || lower.includes("eye") || lower.includes("lasik") || lower.includes("lazer") || lower.includes("katarakt")) {
+  if (
+    lower.includes("göz") ||
+    lower.includes("goz") ||
+    lower.includes("eye") ||
+    lower.includes("lasik") ||
+    lower.includes("lazer") ||
+    lower.includes("katarakt") ||
+    lower.includes("blepharo")
+  ) {
     return "eye_treatments";
+  }
+  if (
+    lower.includes("saç") ||
+    lower.includes("sac") ||
+    lower.includes("hair") ||
+    lower.includes("fue") ||
+    lower.includes("dhi")
+  ) {
+    return "hair_transplant";
+  }
+  if (
+    lower.includes("estetik") ||
+    lower.includes("aesthetic") ||
+    lower.includes("rino") ||
+    lower.includes("botoks") ||
+    lower.includes("botox") ||
+    lower.includes("dolgu") ||
+    lower.includes("lipo") ||
+    lower.includes("meme") ||
+    lower.includes("popo") ||
+    lower.includes("kalça") ||
+    lower.includes("kalca") ||
+    lower.includes("bbl") ||
+    lower.includes("breast") ||
+    lower.includes("butt") ||
+    lower.includes("augmentation") ||
+    lower.includes("göğüs") ||
+    lower.includes("gogus")
+  ) {
+    return "aesthetic_surgery";
+  }
+  if (lower.includes("obez") || lower.includes("bariatrik") || lower.includes("tüp mide") || lower.includes("tup mide")) {
+    return "obesity";
   }
   return lower;
 }
