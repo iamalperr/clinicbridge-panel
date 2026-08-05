@@ -1,0 +1,31 @@
+---
+description: Tool design, write safety, and truthful side-effect reporting
+globs: app/api/public/**/*.ts,app/api/agency/**/*.ts,lib/services/aiGateway.ts,lib/services/*lead*.ts,lib/services/*quote*.ts,lib/services/*Quote*.ts,lib/services/*appointment*.ts,lib/services/*email*.ts,lib/services/*Email*.ts,lib/agency/**/*.ts
+alwaysApply: false
+---
+
+# Tools and side effects
+
+1. Narrow, explicit tool/service responsibilities.
+2. Document: what it does, required inputs, side effects, failures, returned status.
+3. Typed I/O schemas; validate all model-generated tool arguments.
+4. Separate **read** tools from **write** tools.
+5. Writes: idempotent where practical; use idempotency keys for lead / quote / appointment / notification when duplicates are possible.
+6. Do not blindly retry non-idempotent writes.
+7. Timeout / ambiguous response ≠ success.
+8. UI success messages require **confirmed** backend results.
+9. Least privilege; never return secrets, stack traces, or other tenants’ data.
+
+## Target contracts (not existing guarantees)
+
+Inspect current code before assuming these shapes exist. Do not claim these states are implemented unless verified. Migrating existing models needs an **explicit implementation task**.
+
+When implementing or revising a **tool contract**, target outcomes:
+
+- `success` | `rejected` | `validation_failure` | `dependency_failure` | `timeout` | `unknown_outcome`
+
+When implementing or revising **email workflows**, distinguish:
+
+- `queued` → `provider_accepted` → `sent` → `delivered` (where supported) | `failed`
+
+Never claim “email sent” from an unverified application-level update.

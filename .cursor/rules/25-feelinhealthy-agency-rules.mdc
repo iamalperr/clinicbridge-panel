@@ -1,0 +1,30 @@
+---
+description: Apply only when working on the FeelinHealthy agency assistant, matching, clinic-card, intake, lead-selection or demo flows.
+globs: lib/agency/feelinhealthy*.ts,lib/agency/assistantPolicy.ts,lib/agency/leadClinicSelection.ts,app/api/public/agency/**/matching-chat/**/*.ts,app/demo/feelinhealthy/**/*.tsx,app/agency-demo/**/*.tsx
+alwaysApply: false
+---
+
+# FeelinHealthy agency rules
+
+**Scope:** FeelinHealthy agency assistant / matching / clinic-card / intake / lead-selection / demo flows only.
+
+**Does not apply automatically to:** single-clinic assistants, Clinic Portals, unrelated Agency Portals, or white-label deployments.
+
+Source of truth (prefer code over this summary):
+
+- `lib/agency/feelinhealthyConfig.ts`
+- `lib/agency/assistantPolicy.ts`
+- `lib/agency/feelinhealthyConversationMachine.ts`
+- `lib/agency/feelinhealthyClinicCardActions.ts`
+- `lib/agency/leadClinicSelection.ts`
+
+Unless code explicitly supersedes:
+
+- Guests: **at most 2** clinic recommendations.
+- Istanbul: do **not** show clinic cards while `istanbulSide` / `istanbul_side` is null.
+- Recommendations must pass the agency curated allowlist.
+- **Never** ask for budget in intake.
+- Do not re-ask already collected valid fields; preserve user language.
+- Never invent prices when pricing is missing.
+- More comparisons → steer toward registration.
+- Clinic card / panel actions → deterministic handlers (`feelinhealthyClinicCardActions.ts`), not free-text alone.

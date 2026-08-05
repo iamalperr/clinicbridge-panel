@@ -1,0 +1,23 @@
+---
+description: Product-global deterministic business rules (not agency-specific)
+alwaysApply: true
+---
+
+# Deterministic business rules (product-global)
+
+The LLM must **never** be the only enforcement for critical rules. Implement and validate in backend/domain logic:
+
+- KVKK / privacy consent
+- Authorization and tenant isolation
+- Clinic activation and agency-connection status where applicable
+- Treatment eligibility when defined by product policy
+- Pricing-source validation (never invent prices)
+- Deterministic recommendation / intake limits when defined by the **current** tenant or agency policy
+- Duplicate lead prevention; lead and quote lifecycle
+- Appointment status transitions; required intake fields
+- Whether side effects are allowed; confirmed side-effect truthfulness (see `40-tools-and-side-effects.mdc`)
+- Persisted records and audit state
+
+Agency-specific hard requirements (e.g. FeelinHealthy guest limits, Istanbul side, no-budget) live in scoped rules such as `25-feelinhealthy-agency-rules.mdc` — do **not** apply them to Clinic Portal or unrelated agencies.
+
+When changing rules: update domain modules + tests; do not “fix” only via Prompt Studio copy.

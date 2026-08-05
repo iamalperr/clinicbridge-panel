@@ -1,0 +1,19 @@
+---
+description: Definition of done and required final response structure
+alwaysApply: true
+---
+
+# Definition of done
+
+Complete only when applicable:
+
+- Root cause / requested behavior identified; follows existing architecture
+- Business rules enforced outside free-form prompts where required
+- Schemas/types valid; relevant tests added/updated
+- Lint / typecheck / targeted tests pass; build when appropriate
+- Side effects verified truthfully; risks and untested areas disclosed
+- No deploy or commit unless explicitly requested
+
+## Final response include
+
+Summary · rationale · files changed · checks run + results · risks · commit? · recommended next model

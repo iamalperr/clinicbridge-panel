@@ -1,0 +1,23 @@
+---
+description: Telemetry and measurable evals for AI gateway, public/agency APIs, and tests
+globs: lib/services/aiGateway.ts,app/api/public/**/*.ts,app/api/agency/**/*.ts,tests/**/*.ts
+alwaysApply: false
+---
+
+# Observability and evals
+
+For important agent runs, capture (privacy-safe) when extending telemetry:
+
+- correlation / conversation ID; agency or clinic tenant; environment
+- workflow; model; prompt/rule version
+- tool calls, durations, outcomes; validation failures; retries
+- latency; tokens; estimated cost when available
+- final structured state; recommendation rejection reasons; fallback usage
+
+Do **not** log secrets or unnecessary sensitive patient data. Prefer extending `aiGateway` usage records over ad-hoc logging.
+
+## Eval categories (automate where relevant)
+
+Language consistency; treatment/city extraction; location/side eligibility; allowlist / max recommendation count **when defined by policy**; repeated-question prevention; pricing hallucination; clinic selection; lead/quote creation; appointment updates; email truthfulness; tenant isolation; tool-failure recovery.
+
+A single demo conversation ≠ success. Prefer regression tests (`tests/**`, Vitest).

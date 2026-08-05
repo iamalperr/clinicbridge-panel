@@ -1,0 +1,18 @@
+---
+description: Safe change practices and regression discipline for Cursor
+alwaysApply: true
+---
+
+# Safe change and regression
+
+1. Inspect before editing; find the **source of truth** first.
+2. Do not create parallel implementations of an existing workflow.
+3. Do not UI-only-patch a backend-state bug; do not prompt-only-patch a deterministic rule.
+4. No unrelated refactoring during a targeted fix; keep diffs small.
+5. Preserve public interfaces unless migration is explicitly requested.
+6. Every production defect fix needs a regression test. Never delete tests to green a change.
+7. Do not weaken type safety; no unjustified `any`, unsafe casts, or swallowed errors.
+8. Do not report completion before relevant checks; never fabricate results. If a command cannot run, say so.
+9. Before editing shared/global code, identify affected agencies, clinics, and flows.
+10. **Product-global** changes: test at least one Agency Portal flow and one Clinic Portal / single-clinic flow when applicable (include FeelinHealthy when that surface is affected); guest and authenticated when applicable.
+11. Regression-sensitive: consent, intake, lead, quote, appointment, Prompt Studio, conversation records.

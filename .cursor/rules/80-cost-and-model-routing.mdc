@@ -1,0 +1,25 @@
+---
+description: Cursor engineering model routing and ClinicBridge runtime cost principles
+alwaysApply: true
+---
+
+# Cost and model routing
+
+Provider policy: see `00-clinicbridge-project-context.mdc`. Do not change the production provider or runtime model config unless explicitly instructed.
+
+## Cursor engineering (agent model choice)
+
+| Tier | Use for |
+| --- | --- |
+| Flash | Formatting, renames, small copy, simple isolated UI |
+| Pro Low | Bounded features, standard bugs, tests, known-pattern refactors |
+| Pro High | Architecture, uncertain RCA, cross-cutting state, security, tenant isolation, migrations, critical prod failures |
+
+## ClinicBridge runtime
+
+- Do not default to the most expensive model.
+- Use the lowest-cost model that meets **measured** quality; escalate only on confidence, complexity, or risk.
+- Deterministic validation is **identical** regardless of model.
+- Stronger models do **not** get broader business permissions.
+- Cache safe reusable reads; minimize prompt context; do not resend data already in structured state.
+- Measure cost per **successful task**, not only per request.

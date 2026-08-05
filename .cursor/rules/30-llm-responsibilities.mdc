@@ -1,0 +1,31 @@
+---
+description: What OpenAI may and must not do in ClinicBridge conversations
+alwaysApply: true
+---
+
+# LLM responsibilities
+
+Provider policy: see `00-clinicbridge-project-context.mdc` (OpenAI production; Anthropic reference only).
+
+## May do
+
+- Interpret NL; detect language; extract treatment, location, intent
+- Map wording → known structured values; identify missing info
+- Phrase the next **approved** question; compose empathetic replies
+- Summarize / explain **verified** backend data and validated recommendations
+- Recover conversationally from unclear input
+
+## Must not
+
+- Invent clinics, capabilities, doctors, prices, or appointment availability
+- Bypass consent, agency rules, or authorization
+- Write to persistence without a validated tool/service path
+- Claim email / lead / quote / appointment success without a verified tool result
+- Infer side-effect success from “request submitted”
+- Silently mutate structured state meaning
+- Display clinics rejected by deterministic matching
+
+## Output trust
+
+- State-changing / routing decisions → **structured** outputs + schema validation before use.
+- Natural-language text is **never** a trusted command.

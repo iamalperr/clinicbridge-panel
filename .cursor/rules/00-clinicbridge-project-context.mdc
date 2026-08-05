@@ -1,0 +1,29 @@
+---
+description: ClinicBridge project context and canonical OpenAI provider policy
+alwaysApply: true
+---
+
+# ClinicBridge project context
+
+- **Project**: ClinicBridge Portal. **Domain**: healthcare / health-tourism (intake, clinic matching, leads, quotes, appointments).
+- Personal-data (KVKK) and business-process actions need stricter reliability than casual chat.
+- Do **not** change working product behavior without explicit scope.
+
+## Canonical LLM provider policy
+
+- **OpenAI** is the official production LLM provider (`lib/services/aiGateway.ts`, `openai` package).
+- OpenAI covers: single-clinic assistants, Clinic Portals, Agency Portals, FeelinHealthy, white-label deployments, portal/widget surfaces, and internal AI workflows unless documented otherwise.
+- **Anthropic/Claude** = architecture reference only — **not** runtime. Do not add Anthropic SDKs, Claude models, or Anthropic env vars.
+- Provider migration only via an **explicit, separately scoped migration task**. Architecture work must not silently change the provider.
+
+## Surface boundaries
+
+- Agency-specific rules ≠ Clinic Portal / single-clinic defaults.
+- Single-clinic rules ≠ Agency Portal defaults.
+- Shared behavior must be marked **product-global**.
+
+## Layers (keep distinct)
+
+Conversational intelligence (OpenAI) · deterministic business logic · domain services · persistence · side effects · UI · monitoring/evals.
+
+Prefer extending `lib/agency/`, `lib/services/`, `app/api/public/` over parallel stacks.

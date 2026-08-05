@@ -1,0 +1,29 @@
+---
+description: Simple, measurable agent architecture principles
+alwaysApply: true
+---
+
+# Agent architecture
+
+1. Start with the **simplest** architecture that reliably solves the task.
+2. Prefer **one orchestrator** + explicit tools + deterministic workflows before multi-agent designs.
+3. Do **not** add subagents for show. Add one only for measurable gains: context isolation, domain specialization, parallel independent work, security boundaries, latency, or cost.
+4. Every agent/workflow needs: responsibility, inputs, typed outputs, allowed tools, stop conditions, error behavior, tests, success criteria.
+5. Bound iteration, retries, tokens, and wall-clock time. No uncontrolled/recursive loops.
+6. Use **explicit workflows** for predictable business processes; use probabilistic reasoning only for language interpretation.
+7. Keep business decisions **inspectable and reproducible**.
+
+## Target runtime flow
+
+```
+User message
+→ language & intent interpretation
+→ structured conversation state
+→ deterministic policy validation
+→ domain service / tool execution
+→ output validation
+→ natural-language response composition
+→ telemetry & evaluation
+```
+
+Inspect the active surface’s orchestrator and domain modules under `app/api/public/` and `lib/agency/` before adding new agent layers.

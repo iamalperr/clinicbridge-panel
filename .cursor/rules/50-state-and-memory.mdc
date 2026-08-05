@@ -1,0 +1,18 @@
+---
+description: Canonical conversation state and memory hygiene for public chat flows
+globs: lib/agency/**/*.ts,app/api/public/**/*.ts,app/demo/**/*.tsx,app/agency-demo/**/*.tsx
+alwaysApply: false
+---
+
+# State and memory
+
+- One **canonical structured** conversation state. Model prose is not source of truth.
+- Important fields should carry: value, validation status, source, timestamp when relevant, confidence when inferred, persistence status when relevant.
+- Distinguish: explicit user input | inferred | user-confirmed | backend-verified.
+- Confirm low-confidence location/treatment before irreversible actions.
+- Never overwrite a confirmed value with a weaker inference; do not re-ask already valid fields.
+- State transitions must be explicit and testable.
+- Do not mix agency, clinic, and patient state; enforce tenant/agency boundaries on reads and writes.
+- Avoid unnecessary sensitive data in prompts/logs; prefer compact validated state over full chat dumps when sufficient.
+
+Inspect the active surface’s state owner under `lib/agency/` or the relevant public chat route before changing state shape.
