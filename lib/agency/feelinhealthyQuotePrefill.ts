@@ -5,6 +5,13 @@
  * reliably share sessionStorage. Use localStorage + URL payload backup.
  */
 
+import {
+  getAgencyIstanbulSide,
+  getAgencyPatientName,
+  getAgencySelectedClinicIds,
+  getAgencySessionId,
+} from "./agencySessionState";
+
 export const FEELINHEALTHY_QUOTE_PREFILL_KEY = "feelinhealthy_agent_quote_prefill_v1";
 
 export interface FeelinHealthyQuotePrefill {
@@ -36,14 +43,13 @@ export function buildQuotePrefillFromSession(
   locale?: string
 ): FeelinHealthyQuotePrefill {
   const ctx = sessionContext || {};
-  const patientName =
-    ctx.patientName ||
-    [ctx.firstName, ctx.lastName].filter(Boolean).join(" ").trim() ||
-    undefined;
+  const patientName = getAgencyPatientName(ctx);
+  const sessionId = getAgencySessionId(ctx);
+  const istanbulSide = getAgencyIstanbulSide(ctx);
   return {
     version: 1,
     savedAt: new Date().toISOString(),
-    sessionId: ctx.sessionId ? String(ctx.sessionId) : undefined,
+    sessionId: sessionId ? String(sessionId) : undefined,
     agencySlug: "feelinhealthy",
     clinicId: clinic?.clinicId ? String(clinic.clinicId) : undefined,
     clinicName: clinic?.clinicName ? String(clinic.clinicName) : undefined,
@@ -57,7 +63,7 @@ export function buildQuotePrefillFromSession(
     treatmentCategory: ctx.lastTreatmentCategory || undefined,
     treatmentSubcategory: ctx.lastSubTreatment || undefined,
     selectedCity: ctx.selectedCity || undefined,
-    istanbulSide: ctx.istanbul_side || ctx.istanbulSide || undefined,
+    istanbulSide: istanbulSide || undefined,
     travelDate: ctx.travelDate || undefined,
     language: locale || ctx.language || "tr",
     message: undefined,
@@ -261,9 +267,7 @@ export function applyQuoteSubmittedSignalToSession(
   sessionContext: Record<string, any>,
   signal: FeelinHealthyQuoteSubmittedSignal
 ): Record<string, any> {
-  const existing = Array.isArray(sessionContext.selectedClinicIds)
-    ? sessionContext.selectedClinicIds.map(String)
-    : [];
+  const existing = getAgencySelectedClinicIds(sessionContext);
   const merged = Array.from(new Set([...existing, ...(signal.clinicIds || [])]));
   return {
     ...sessionContext,

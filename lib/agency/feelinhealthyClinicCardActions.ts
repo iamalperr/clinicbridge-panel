@@ -8,7 +8,11 @@
 import { enterClinicCoordinator } from "./assistantModes";
 import { FEELINHEALTHY_CONFIG } from "./feelinhealthyConfig";
 import type { AgencySessionState, AgencySessionStateInput } from "./agencySessionState";
-import { normalizeAgencySessionState } from "./agencySessionState";
+import {
+  getAgencySelectedClinicIds,
+  getAgencySessionId,
+  normalizeAgencySessionState,
+} from "./agencySessionState";
 
 export const CLINIC_CARD_ACTIONS = [
   "select_clinic",
@@ -317,9 +321,7 @@ export function prepareRequestQuote(params: {
     };
   }
 
-  const existing = Array.isArray(next.selectedClinicIds)
-    ? next.selectedClinicIds.map(String).filter(Boolean)
-    : [];
+  const existing = getAgencySelectedClinicIds(next);
   const merged = Array.from(new Set([...existing, params.clinicId]));
 
   if (merged.length > limit) {
@@ -456,9 +458,7 @@ export function handleClinicSelectionPanelAction(params: {
   if (params.type === "clinic_selection_update") {
     next.clinicSelectionMode = "manual";
     next.clinicSelectionStatus = "in_progress";
-    const current = new Set<string>(
-      (Array.isArray(next.selectedClinicIds) ? next.selectedClinicIds : []).map(String)
-    );
+    const current = new Set<string>(getAgencySelectedClinicIds(next));
     const clinicId = String(params.clinicId || "").trim();
     const clinicName = String(params.clinicName || "Klinik");
 
@@ -513,14 +513,8 @@ export function handleClinicSelectionPanelAction(params: {
     };
   }
 
-  // clinic_selection_complete
-  const selected = Array.from(
-    new Set(
-      (Array.isArray(next.selectedClinicIds) ? next.selectedClinicIds : [])
-        .map((id) => String(id || "").trim())
-        .filter(Boolean)
-    )
-  ).slice(0, limit);
+  // clinic_selection_complete — array is authoritative (incl. empty).
+  const selected = getAgencySelectedClinicIds(next).slice(0, limit);
 
   if (selected.length === 0) {
     const fallback = recommended.slice(0, limit);
@@ -640,9 +634,8 @@ export function routeClinicCardAction(params: {
   payload: ClinicCardActionPayload;
   sessionContext: AgencySessionStateInput;
 }): ClinicCardActionResult {
-  const conversationId = String(
-    params.sessionContext.sessionId || params.sessionContext.conversationId || "unknown"
-  );
+  // Canonical session id for idempotency only — not tenant/consent authorization.
+  const conversationId = String(getAgencySessionId(params.sessionContext) || "unknown");
   const key = buildClinicCardActionKey(
     conversationId,
     params.payload.clinicId,

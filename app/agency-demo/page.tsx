@@ -5,6 +5,12 @@ import { PrivacyConsentCard } from "@/components/chat/PrivacyConsentCard";
 import { IstanbulSideClarificationCard } from "@/components/chat/IstanbulSideClarificationCard";
 import { CitySelectionCard } from "@/components/chat/CitySelectionCard";
 import type { AgencySessionState } from "@/lib/agency/agencySessionState";
+import {
+  getAgencyIstanbulSide,
+  getAgencyPatientName,
+  getAgencySelectedClinicIds,
+  getAgencySessionId,
+} from "@/lib/agency/agencySessionState";
 
 /* ── Chat Message Types (inline — no external dependency) ── */
 interface MatchedPrice {
@@ -648,7 +654,7 @@ export default function AgencyDemoPage() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              patientName: ctx.patientName,
+              patientName: getAgencyPatientName(ctx),
               patientEmail: ctx.patientEmail,
               patientPhone: ctx.patientPhone,
               patientAge: ctx.patientAge,
@@ -657,11 +663,11 @@ export default function AgencyDemoPage() {
               language: lang,
               treatmentCategory: ctx.lastTreatmentCategory || "other",
               treatmentSubcategory: ctx.lastSubTreatment || "",
-              clinicIds: ctx.selectedClinicIds || [],
-              conversationId: ctx.sessionId,
+              clinicIds: getAgencySelectedClinicIds(ctx),
+              conversationId: getAgencySessionId(ctx),
               conversationSummary: hist.map((m: any) => `${m.role}: ${m.content}`).join("\n"),
               selectedCity: ctx.selectedCity,
-              istanbulSide: ctx.istanbul_side || ctx.istanbulSide,
+              istanbulSide: getAgencyIstanbulSide(ctx) || undefined,
               travelDate: ctx.travelDate,
               source: "widget",
               sourceUrl: window.location.href,
@@ -974,7 +980,7 @@ export default function AgencyDemoPage() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              patientName: ctx.patientName,
+              patientName: getAgencyPatientName(ctx),
               patientEmail: ctx.patientEmail,
               patientPhone: ctx.patientPhone,
               patientAge: ctx.patientAge,
@@ -983,11 +989,11 @@ export default function AgencyDemoPage() {
               language: lang,
               treatmentCategory: ctx.lastTreatmentCategory || "other",
               treatmentSubcategory: ctx.lastSubTreatment || "",
-              clinicIds: ctx.selectedClinicIds || [],
-              conversationId: ctx.sessionId,
+              clinicIds: getAgencySelectedClinicIds(ctx),
+              conversationId: getAgencySessionId(ctx),
               conversationSummary: newHistory.map((m: any) => `${m.role}: ${m.content}`).join("\n"),
               selectedCity: ctx.selectedCity,
-              istanbulSide: ctx.istanbul_side || ctx.istanbulSide,
+              istanbulSide: getAgencyIstanbulSide(ctx) || undefined,
               travelDate: ctx.travelDate,
               source: "widget",
               sourceUrl: window.location.href,
@@ -1039,11 +1045,11 @@ export default function AgencyDemoPage() {
           country: form.get("country"),
           language: lang,
           treatmentCategory: sessionCtx.lastTreatmentCategory || "other",
-          clinicIds: sessionCtx.selectedClinicIds || [],
-          conversationId: sessionCtx.sessionId,
+          clinicIds: getAgencySelectedClinicIds(sessionCtx),
+          conversationId: getAgencySessionId(sessionCtx),
           conversationSummary: chatHistory.map((m) => `${m.role}: ${m.content}`).join("\n"),
           selectedCity: sessionCtx.selectedCity,
-          istanbulSide: sessionCtx.istanbul_side || sessionCtx.istanbulSide,
+          istanbulSide: getAgencyIstanbulSide(sessionCtx) || undefined,
           travelDate: sessionCtx.travelDate,
           consentStatus: "accepted",
           source: "widget",

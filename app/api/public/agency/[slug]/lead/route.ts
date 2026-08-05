@@ -4,6 +4,11 @@ import {
   ensureAcceptedConsentForPersistence,
   resolveAgencyConsentVersion,
 } from "@/lib/services/agencyConsentService";
+import {
+  getAgencyIstanbulSide,
+  getAgencyPatientName,
+  getAgencySessionId,
+} from "@/lib/agency/agencySessionState";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -46,7 +51,8 @@ export async function POST(
 
     const agencyId = agencySnap.docs[0].id;
     const agencyData = agencySnap.docs[0].data();
-    const conversationId = String(body.conversationId || body.sessionId || "").trim();
+    // Canonical session identity for consent scope — not itself proof of consent.
+    const conversationId = String(getAgencySessionId(body) || "").trim();
     if (!conversationId) {
       return NextResponse.json(
         { error: "CONVERSATION_ID_REQUIRED" },
@@ -78,7 +84,7 @@ export async function POST(
         conversationId,
         clinicIds: Array.isArray(body.clinicIds) ? body.clinicIds : [],
         patientEmail: body.patientEmail,
-        patientName: body.patientName,
+        patientName: getAgencyPatientName(body),
         patientPhone: body.patientPhone,
         patientAge: body.patientAge,
         patientGender: body.patientGender,
@@ -92,7 +98,7 @@ export async function POST(
         source: body.source,
         sourceUrl: body.sourceUrl,
         selectedCity: body.selectedCity || body.preferredCity || body.city,
-        istanbulSide: body.istanbulSide || body.istanbul_side,
+        istanbulSide: getAgencyIstanbulSide(body) || undefined,
         travelDate: body.travelDate,
       });
       return NextResponse.json(

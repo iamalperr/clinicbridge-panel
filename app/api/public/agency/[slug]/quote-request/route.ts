@@ -5,6 +5,11 @@ import {
   resolveAgencyConsentVersion,
 } from "@/lib/services/agencyConsentService";
 import { persistAgencyQuoteRequest } from "@/lib/services/agencyQuoteRequestService";
+import {
+  getAgencyIstanbulSide,
+  getAgencyPatientName,
+  getAgencySessionId,
+} from "@/lib/agency/agencySessionState";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -53,7 +58,8 @@ export async function POST(
 
     const agencyId = agencySnap.docs[0].id;
     const agencyData = agencySnap.docs[0].data();
-    const conversationId = String(body.conversationId || body.sessionId || "").trim();
+    // Canonical session identity for consent scope — not itself proof of consent.
+    const conversationId = String(getAgencySessionId(body) || "").trim();
     const patientEmail = String(body.patientEmail || "").trim();
     const clinicIds: string[] = Array.from(
       new Set(
@@ -112,7 +118,7 @@ export async function POST(
       conversationId,
       clinicIds,
       patientEmail,
-      patientName: body.patientName || undefined,
+      patientName: getAgencyPatientName(body) || undefined,
       patientPhone: body.patientPhone || undefined,
       patientAge: typeof body.patientAge === "number" ? body.patientAge : undefined,
       patientGender: body.patientGender || undefined,
@@ -122,7 +128,7 @@ export async function POST(
       treatmentSubcategory: body.treatmentSubcategory || undefined,
       treatmentName: body.treatmentName || body.treatmentCategory || "",
       selectedCity: body.selectedCity || undefined,
-      istanbulSide: body.istanbulSide || body.istanbul_side || undefined,
+      istanbulSide: getAgencyIstanbulSide(body) || undefined,
       travelDate: body.travelDate || undefined,
       conversationSummary: body.conversationSummary || undefined,
       source: body.source || "widget",

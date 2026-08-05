@@ -39,6 +39,10 @@ import {
 import {
   normalizeAgencySessionState,
   serializeAgencySessionState,
+  getAgencySessionId,
+  getAgencyIstanbulSide,
+  getAgencySelectedClinicIds,
+  getAgencyPatientName,
   type AgencySessionState,
 } from "@/lib/agency/agencySessionState";
 import {
@@ -531,17 +535,20 @@ export async function POST(
               ? "en"
               : "tr";
           const quoteCtx = cardResult.sessionContext;
-          const clinicIdsForQuote = cardResult.clinicIdsForQuote || [cardPayload.clinicId];
+          const clinicIdsForQuote =
+            cardResult.clinicIdsForQuote || getAgencySelectedClinicIds(quoteCtx);
+          // Session id is correlation only — consent still verified in persistAgencyQuoteRequest.
+          const conversationId = String(getAgencySessionId(quoteCtx) || "");
 
           const { persistAgencyQuoteRequest } = await import(
             "@/lib/services/agencyQuoteRequestService"
           );
           const persistResult = await persistAgencyQuoteRequest({
             agencyId,
-            conversationId: String(quoteCtx.sessionId || ""),
+            conversationId,
             clinicIds: clinicIdsForQuote,
             patientEmail: String(quoteCtx.patientEmail || ""),
-            patientName: quoteCtx.patientName,
+            patientName: getAgencyPatientName(quoteCtx),
             patientPhone: quoteCtx.patientPhone,
             patientAge: typeof quoteCtx.patientAge === "number" ? quoteCtx.patientAge : undefined,
             patientGender: quoteCtx.patientGender,
@@ -551,7 +558,7 @@ export async function POST(
             treatmentSubcategory: quoteCtx.lastSubTreatment,
             treatmentName: quoteCtx.lastTreatmentCategory || "",
             selectedCity: quoteCtx.selectedCity,
-            istanbulSide: quoteCtx.istanbul_side,
+            istanbulSide: getAgencyIstanbulSide(quoteCtx) || undefined,
             travelDate: quoteCtx.travelDate,
             conversationSummary: Array.isArray(history)
               ? history
@@ -722,7 +729,10 @@ export async function POST(
         }
 
         const quoteCtx = panelResult.sessionContext;
-        const clinicIdsForQuote = panelResult.clinicIdsForQuote || quoteCtx.selectedClinicIds || [];
+        const clinicIdsForQuote =
+          panelResult.clinicIdsForQuote || getAgencySelectedClinicIds(quoteCtx);
+        // Session id is correlation only — consent still verified in persistAgencyQuoteRequest.
+        const conversationId = String(getAgencySessionId(quoteCtx) || "");
 
         // Never manufacture consent on clinic selection — require prior consent write.
         const { persistAgencyQuoteRequest } = await import(
@@ -730,10 +740,10 @@ export async function POST(
         );
         const persistResult = await persistAgencyQuoteRequest({
           agencyId,
-          conversationId: String(quoteCtx.sessionId || ""),
+          conversationId,
           clinicIds: clinicIdsForQuote,
           patientEmail: String(quoteCtx.patientEmail || ""),
-          patientName: quoteCtx.patientName,
+          patientName: getAgencyPatientName(quoteCtx),
           patientPhone: quoteCtx.patientPhone,
           patientAge: typeof quoteCtx.patientAge === "number" ? quoteCtx.patientAge : undefined,
           patientGender: quoteCtx.patientGender,
@@ -743,7 +753,7 @@ export async function POST(
           treatmentSubcategory: quoteCtx.lastSubTreatment,
           treatmentName: quoteCtx.lastTreatmentCategory || "",
           selectedCity: quoteCtx.selectedCity,
-          istanbulSide: quoteCtx.istanbul_side,
+          istanbulSide: getAgencyIstanbulSide(quoteCtx) || undefined,
           travelDate: quoteCtx.travelDate,
           conversationSummary: Array.isArray(history)
             ? history
@@ -871,7 +881,7 @@ export async function POST(
         // Soft focus only — coordinator role requires explicit clinic_selected / leadStage.
         finalMessage = `[SİSTEM AKSİYONU: Kullanıcı arayüzden 'Daha Fazla Bilgi' butonuna tıklayarak '${action.clinicName}' hakkında bilgi istedi. Lütfen klinik hakkında genel bilgi ver, öne çıkan özelliklerini veya doktorlarını sırala. En sonda bu klinikle devam etmek isteyip istemediğini sor. (Henüz lead toplamaya başlama)]`;
       } else if (action.type === "lead_capture") {
-        const currentSelected = new Set<string>(sessionContext.selectedClinicIds || []);
+        const currentSelected = new Set<string>(getAgencySelectedClinicIds(sessionContext));
         currentSelected.add(action.clinicId);
         sessionContext.selectedClinicIds = Array.from(currentSelected);
         Object.assign(
@@ -917,7 +927,7 @@ export async function POST(
       } else if (action.type === "clinic_selection_update") {
         sessionContext.clinicSelectionMode = "manual";
         sessionContext.clinicSelectionStatus = "in_progress";
-        const currentSelected = new Set<string>(sessionContext.selectedClinicIds || []);
+        const currentSelected = new Set<string>(getAgencySelectedClinicIds(sessionContext));
         
         if (action.action === "select") {
           if (currentSelected.size >= maxClinics) {
@@ -1846,7 +1856,7 @@ export async function POST(
   * Cinsiyet: ${ctx.patientGender || "Yok"}
   * KVKK/GDPR Onayı: ${ctx.quoteConsent ? "Evet" : "Yok"}
 - Klinik Seçimi (clinicSelectionMode): ${ctx.clinicSelectionMode || "Yok"} (Status: ${ctx.clinicSelectionStatus || "not_started"})
-- Seçili Klinik ID'leri: ${ctx.selectedClinicIds?.join(", ") || "Yok"} (Toplam ${ctx.selectedClinicIds?.length || 0} / Maks ${maxClinics})
+- Seçili Klinik ID'leri: ${getAgencySelectedClinicIds(ctx).join(", ") || "Yok"} (Toplam ${getAgencySelectedClinicIds(ctx).length} / Maks ${maxClinics})
 - İlgi Alanı: Tedavi: ${ctx.lastTreatmentCategory || "Bilinmiyor"}, Alt Tedavi: ${ctx.lastSubTreatment || "Bilinmiyor"}, Lokasyon: ${ctx.lastLocation || "Bilinmiyor"}
 `;
     if (ctx.lastFocusedClinicName) {
@@ -1883,7 +1893,7 @@ export async function POST(
         ),
         selectedTreatment: ctx.lastTreatmentCategory || null,
         selectedCity: ctx.selectedCity || null,
-        selectedIstanbulSide: ctx.istanbul_side || null,
+        selectedIstanbulSide: getAgencyIstanbulSide(ctx) || null,
         patientProfileSummary: buildPatientProfileSummary(ctx),
         clinicKnowledge: clinicContext,
         communicationRules: assistantPolicy.communicationStyle.responseRules,
@@ -2522,7 +2532,7 @@ export async function POST(
         }
 
         const effectiveCity = locationDecision.city;
-        const effectiveSide = newCtx.istanbul_side || locationDecision.side;
+        const effectiveSide = getAgencyIstanbulSide(newCtx) || locationDecision.side;
         const curatedResult = getCuratedClinicsForFeelinHealthy(branchOrCat, effectiveCity, effectiveSide, fullAgencyClinics);
 
         const linkedIds = fullAgencyClinics.map((c: any) => String(c.id));
@@ -2727,7 +2737,7 @@ export async function POST(
             replyLang
           );
           const emptyCity = emptyLocation.city;
-          const emptySide = newCtx.istanbul_side || emptyLocation.side;
+          const emptySide = getAgencyIstanbulSide(newCtx) || emptyLocation.side;
           const emptyCurated = getCuratedClinicsForFeelinHealthy(
             emptyBranchRaw || emptyBranchKey,
             emptyCity,
@@ -2832,26 +2842,10 @@ export async function POST(
 
         if (isFeelinHealthy) {
           const guestLimit = FEELINHEALTHY_CONFIG.guestQuoteClinicSelectionLimit;
-          const clinicIdsForQuote = Array.from(
-            new Set(
-              [
-                newCtx.selectedClinicId,
-                ...(newCtx.selectedClinicIds || []),
-                newCtx.lastFocusedClinicId,
-              ].filter(Boolean) as string[]
-            )
-          ).slice(0, guestLimit);
-          if (
-            Array.from(
-              new Set(
-                [
-                  newCtx.selectedClinicId,
-                  ...(newCtx.selectedClinicIds || []),
-                  newCtx.lastFocusedClinicId,
-                ].filter(Boolean) as string[]
-              )
-            ).length > guestLimit
-          ) {
+          // Canonical selected list is authoritative; do not expand via selectedClinicId.
+          const selectedClinicIdsCanonical = getAgencySelectedClinicIds(newCtx);
+          const clinicIdsForQuote = selectedClinicIdsCanonical.slice(0, guestLimit);
+          if (selectedClinicIdsCanonical.length > guestLimit) {
             return jsonResponse({
               reply:
                 parsed.language === "en"
@@ -2869,10 +2863,11 @@ export async function POST(
           const { persistAgencyQuoteRequest } = await import("@/lib/services/agencyQuoteRequestService");
           const persistResult = await persistAgencyQuoteRequest({
             agencyId,
-            conversationId: String(newCtx.sessionId || ctx.sessionId || ""),
+            // Correlation id only — persistAgencyQuoteRequest still verifies DB consent.
+            conversationId: String(getAgencySessionId(newCtx) || getAgencySessionId(ctx) || ""),
             clinicIds: clinicIdsForQuote,
             patientEmail: String(newCtx.patientEmail),
-            patientName: newCtx.patientName,
+            patientName: getAgencyPatientName(newCtx),
             patientPhone: newCtx.patientPhone,
             patientAge: typeof newCtx.patientAge === "number" ? newCtx.patientAge : undefined,
             patientGender: newCtx.patientGender,
@@ -2882,7 +2877,7 @@ export async function POST(
             treatmentSubcategory: newCtx.lastSubTreatment || parsed.subTreatment,
             treatmentName: newCtx.lastTreatmentCategory || "",
             selectedCity: newCtx.selectedCity,
-            istanbulSide: newCtx.istanbul_side,
+            istanbulSide: getAgencyIstanbulSide(newCtx) || undefined,
             travelDate: newCtx.travelDate,
             source: "widget",
           });
@@ -2959,7 +2954,10 @@ export async function POST(
         // Never return success / shouldCreateNewLead based on session quoteConsent alone.
         {
           const locale = (parsed.language || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
-          const conversationId = String(newCtx.sessionId || ctx.sessionId || "");
+          // Correlation id for consent lookup — not itself proof of consent.
+          const conversationId = String(
+            getAgencySessionId(newCtx) || getAgencySessionId(ctx) || ""
+          );
           const {
             resolveAgencyConsentVersion,
             verifyAcceptedAgencyConsent,
@@ -2998,15 +2996,7 @@ export async function POST(
             }, { headers: CORS });
           }
 
-          const clinicIdsForLead = Array.from(
-            new Set(
-              [
-                newCtx.selectedClinicId,
-                ...(newCtx.selectedClinicIds || []),
-                newCtx.lastFocusedClinicId,
-              ].filter(Boolean) as string[]
-            )
-          );
+          const clinicIdsForLead = getAgencySelectedClinicIds(newCtx);
           if (clinicIdsForLead.length === 0) {
             return jsonResponse({
               reply:
@@ -3027,7 +3017,7 @@ export async function POST(
               conversationId,
               clinicIds: clinicIdsForLead,
               patientEmail: String(newCtx.patientEmail || ""),
-              patientName: newCtx.patientName || undefined,
+              patientName: getAgencyPatientName(newCtx) || undefined,
               patientPhone: newCtx.patientPhone || undefined,
               patientAge: typeof newCtx.patientAge === "number" ? newCtx.patientAge : undefined,
               patientGender: newCtx.patientGender || undefined,
@@ -3036,7 +3026,7 @@ export async function POST(
               treatmentCategory: newCtx.lastTreatmentCategory || parsed.treatmentCategory || undefined,
               treatmentSubcategory: newCtx.lastSubTreatment || parsed.subTreatment || undefined,
               selectedCity: newCtx.selectedCity || undefined,
-              istanbulSide: newCtx.istanbul_side || undefined,
+              istanbulSide: getAgencyIstanbulSide(newCtx) || undefined,
               travelDate: newCtx.travelDate || undefined,
               source: "widget",
             });
@@ -3139,7 +3129,7 @@ export async function POST(
       const locationDecision = decideFeelinHealthyLocationNextStep(newCtx, fullAgencyClinics, (parsed.language || "tr"));
       if (locationDecision.step === "ready") {
         const effectiveCity = locationDecision.city;
-        const effectiveSide = newCtx.istanbul_side || locationDecision.side;
+        const effectiveSide = getAgencyIstanbulSide(newCtx) || locationDecision.side;
         const curatedResult = getCuratedClinicsForFeelinHealthy(branchOrCat, effectiveCity, effectiveSide, fullAgencyClinics);
         const displayedClinics = curatedResult.matchingCuratedClinics.slice(0, FEELINHEALTHY_CONFIG.maxGuestClinics);
         const currentLang = (parsed.language || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
@@ -3198,7 +3188,7 @@ export async function POST(
           ? fullAgencyClinics
           : allClinics;
       const coordinatorId = getCoordinatorClinicId(newCtx);
-      let clinic = resolveClinicFromPool(clinicPool, {
+      const clinic = resolveClinicFromPool(clinicPool, {
         clinicId:
           parsed.selectedClinicId ||
           coordinatorId ||

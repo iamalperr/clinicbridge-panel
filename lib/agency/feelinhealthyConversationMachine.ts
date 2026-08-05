@@ -26,7 +26,10 @@ import {
 } from "./feelinhealthyConfig";
 import { resolveAssistantRole, type AssistantRole } from "./assistantModes";
 import type { AgencySessionState, AgencySessionStateInput } from "./agencySessionState";
-import { normalizeAgencySessionState } from "./agencySessionState";
+import {
+  getAgencyIstanbulSide,
+  normalizeAgencySessionState,
+} from "./agencySessionState";
 
 // ─── Stages ──────────────────────────────────────────────────────────────────
 
@@ -143,12 +146,13 @@ export function deriveFeelinHealthyState(
 
   const treatmentBranch = c.lastTreatmentCategory || c.treatmentId || null;
   const city = c.selectedCity || null;
+  const sideRaw = getAgencyIstanbulSide(c);
   const side =
-    c.istanbul_side === "european" ||
-    c.istanbul_side === "anatolian" ||
-    c.istanbul_side === "any" ||
-    c.istanbul_side === "unsure"
-      ? c.istanbul_side
+    sideRaw === "european" ||
+    sideRaw === "anatolian" ||
+    sideRaw === "any" ||
+    sideRaw === "unsure"
+      ? sideRaw
       : null;
 
   const quoteCreated =

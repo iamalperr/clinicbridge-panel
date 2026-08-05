@@ -24,6 +24,10 @@ import {
 } from "@/lib/agency/feelinhealthyQuotePrefill";
 import {
   normalizeAgencySessionState,
+  getAgencySessionId,
+  getAgencyIstanbulSide,
+  getAgencySelectedClinicIds,
+  getAgencyPatientName,
   type AgencySessionState,
 } from "@/lib/agency/agencySessionState";
 
@@ -386,11 +390,12 @@ export default function FeelinHealthyLive() {
       new Set(
         (opts.clinicIds && opts.clinicIds.length > 0
           ? opts.clinicIds
-          : ctx.selectedClinicIds || (ctx.selectedClinicId ? [ctx.selectedClinicId] : [])
+          : getAgencySelectedClinicIds(ctx)
         ).filter(Boolean)
       )
     );
-    if (!ctx.patientEmail || !ctx.sessionId || clinicIds.length === 0) {
+    const sessionId = getAgencySessionId(ctx);
+    if (!ctx.patientEmail || !sessionId || clinicIds.length === 0) {
       console.warn("[CB-DEMO] skip lead persist — missing email, sessionId, or clinicIds");
       return { ok: false, error: "MISSING_FIELDS" };
     }
@@ -399,7 +404,7 @@ export default function FeelinHealthyLive() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          patientName: ctx.patientName,
+          patientName: getAgencyPatientName(ctx),
           patientEmail: ctx.patientEmail,
           patientPhone: ctx.patientPhone,
           patientAge: ctx.patientAge,
@@ -409,12 +414,12 @@ export default function FeelinHealthyLive() {
           treatmentCategory: ctx.lastTreatmentCategory || matchedCategory || "other",
           treatmentSubcategory: ctx.lastSubTreatment || "",
           clinicIds,
-          conversationId: ctx.sessionId,
+          conversationId: sessionId,
           conversationSummary: (opts.history || [])
             .map((m) => `${m.role}: ${m.content}`)
             .join("\n"),
           selectedCity: ctx.selectedCity,
-          istanbulSide: ctx.istanbul_side || ctx.istanbulSide,
+          istanbulSide: getAgencyIstanbulSide(ctx) || undefined,
           travelDate: ctx.travelDate,
           source: "widget",
           sourceUrl: typeof window !== "undefined" ? window.location.href : undefined,
@@ -431,7 +436,7 @@ export default function FeelinHealthyLive() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           leadId: leadData.leadId,
-          patientName: ctx.patientName,
+          patientName: getAgencyPatientName(ctx),
           patientEmail: ctx.patientEmail,
           patientCountry: ctx.patientCountry,
           treatmentCategory: ctx.lastTreatmentCategory || matchedCategory || "other",
@@ -736,17 +741,18 @@ export default function FeelinHealthyLive() {
       ) {
         const ctx = data.sessionContext || sessionCtxRef.current || {};
         const clinicId = String(payload?.clinicId || "").trim();
+        const sessionId = getAgencySessionId(ctx);
         try {
           const fallbackRes = await fetch(`/api/public/agency/${SLUG}/quote-request`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              conversationId: ctx.sessionId,
-              sessionId: ctx.sessionId,
+              conversationId: sessionId,
+              sessionId,
               clinicId,
-              clinicIds: clinicId ? [clinicId] : ctx.selectedClinicIds || [],
+              clinicIds: clinicId ? [clinicId] : getAgencySelectedClinicIds(ctx),
               patientEmail: ctx.patientEmail,
-              patientName: ctx.patientName,
+              patientName: getAgencyPatientName(ctx),
               patientPhone: ctx.patientPhone,
               patientCountry: ctx.patientCountry,
               country: ctx.patientCountry,
@@ -756,7 +762,7 @@ export default function FeelinHealthyLive() {
               treatmentCategory: ctx.lastTreatmentCategory,
               treatmentSubcategory: ctx.lastSubTreatment,
               selectedCity: ctx.selectedCity,
-              istanbulSide: ctx.istanbul_side || ctx.istanbulSide,
+              istanbulSide: getAgencyIstanbulSide(ctx) || undefined,
               travelDate: ctx.travelDate,
               source: "widget",
               sourceUrl: window.location.href,
@@ -782,10 +788,10 @@ export default function FeelinHealthyLive() {
                 },
               ];
             });
-            if (ctx.sessionId) {
+            if (getAgencySessionId(ctx)) {
               markAgentQuoteSubmitted({
-                sessionId: ctx.sessionId,
-                clinicIds: clinicId ? [clinicId] : ctx.selectedClinicIds || [],
+                sessionId: String(getAgencySessionId(ctx)),
+                clinicIds: clinicId ? [clinicId] : getAgencySelectedClinicIds(ctx),
                 leadId: fallbackData.leadId,
                 quoteId: fallbackData.quoteId,
               });
@@ -1161,11 +1167,11 @@ export default function FeelinHealthyLive() {
           patientAge: sessionCtx.patientAge,
           patientGender: sessionCtx.patientGender,
           treatmentCategory: matchedCategory || sessionCtx.lastTreatmentCategory || "other",
-          clinicIds: clinicId ? [clinicId] : sessionCtx.selectedClinicIds || [],
-          conversationId: sessionCtx.sessionId,
+          clinicIds: clinicId ? [clinicId] : getAgencySelectedClinicIds(sessionCtx),
+          conversationId: getAgencySessionId(sessionCtx),
           conversationSummary: aiMsgs.map((m) => `${m.role}: ${m.text}`).join("\n"),
           selectedCity: sessionCtx.selectedCity,
-          istanbulSide: sessionCtx.istanbul_side || sessionCtx.istanbulSide,
+          istanbulSide: getAgencyIstanbulSide(sessionCtx) || undefined,
           travelDate: sessionCtx.travelDate,
           consentStatus: "accepted",
           source: "widget",

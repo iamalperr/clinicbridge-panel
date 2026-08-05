@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
+import {
+  getAgencyIstanbulSide,
+  getAgencyPatientName,
+  getAgencySelectedClinicIds,
+  getAgencySessionId,
+} from "@/lib/agency/agencySessionState";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -46,9 +52,10 @@ export async function POST(
       return NextResponse.json({ error: "leadId required" }, { status: 400, headers: CORS });
     }
 
-    const selectedClinicIds: string[] = Array.from(
-      new Set((Array.isArray(body.selectedClinicIds) ? body.selectedClinicIds : []).filter(Boolean))
-    );
+    const selectedClinicIds: string[] = getAgencySelectedClinicIds({
+      selectedClinicIds: Array.isArray(body.selectedClinicIds) ? body.selectedClinicIds : undefined,
+      selectedClinicId: body.selectedClinicId,
+    });
 
     // Official clinic names from backend — do not trust frontend names alone.
     let selectedClinicNames: string[] = Array.isArray(body.selectedClinicNames)
@@ -77,7 +84,7 @@ export async function POST(
     const quote = {
       agencyId,
       leadId: body.leadId,
-      patientName: body.patientName || null,
+      patientName: getAgencyPatientName(body) || null,
       patientEmail: body.patientEmail || null,
       patientPhone: body.patientPhone || null,
       patientCountry: body.patientCountry || null,
@@ -87,7 +94,7 @@ export async function POST(
       selectedClinicIds,
       selectedClinicNames,
       selectedCity: body.selectedCity || null,
-      istanbul_side: body.istanbulSide || body.istanbul_side || null,
+      istanbul_side: getAgencyIstanbulSide(body) || null,
       travelDate: body.travelDate || null,
       conversationId: body.conversationId || null,
       intakeAnswers: body.intakeAnswers || {},
@@ -99,7 +106,8 @@ export async function POST(
       updatedAt: now,
     };
 
-    const conversationId = String(body.conversationId || body.sessionId || "").trim();
+    // Canonical session identity for consent scope — not itself proof of consent.
+    const conversationId = String(getAgencySessionId(body) || "").trim();
     if (!conversationId) {
       return NextResponse.json(
         { ok: false, error: "CONVERSATION_ID_REQUIRED" },

@@ -15,6 +15,10 @@
 import type { AgencyAIConfig, AIIntakeInstruction } from "../types/agency";
 import { FEELINHEALTHY_CONFIG } from "./feelinhealthyConfig";
 import { resolveAssistantRole, type AssistantRole } from "./assistantModes";
+import {
+  getAgencyIstanbulSide,
+  getAgencySelectedClinicIds,
+} from "./agencySessionState";
 
 export type PolicyWarningSeverity = "warning" | "error";
 
@@ -509,7 +513,8 @@ export function compileAssistantPolicy(input: {
       : merged.pricingBehavior !== "quote_only";
 
   const ctx = input.sessionContext || {};
-  const selectedClinicIds = Array.isArray(ctx.selectedClinicIds) ? ctx.selectedClinicIds.map(String) : [];
+  // Canonical selected-clinic list only — not clinic eligibility authorization.
+  const selectedClinicIds = getAgencySelectedClinicIds(ctx);
   const assistantRole = resolveAssistantRole(ctx);
   const isSelectedClinicMode = assistantRole === "clinic_coordinator";
 
@@ -586,7 +591,7 @@ export function compileAssistantPolicy(input: {
       treatmentCategory: ctx.lastTreatmentCategory || null,
       intakeGroup: ctx.intakeStage ?? null,
       selectedCity: ctx.selectedCity || null,
-      istanbulSide: ctx.istanbul_side || null,
+      istanbulSide: getAgencyIstanbulSide(ctx) ?? null,
       selectedClinicId: ctx.selectedClinicId || ctx.lastFocusedClinicId || null,
       selectedClinicName: ctx.selectedClinicName || ctx.lastFocusedClinicName || null,
       selectedClinicIds,
