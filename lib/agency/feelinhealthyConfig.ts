@@ -711,9 +711,55 @@ export function getCitySelectionPrompt(
       : `${treatmentLabel} için şu anda FeelinHealthy ağına bağlı aktif bir şehir seçeneği bulamadım. Hangi şehri düşündüğünüzü paylaşır mısınız?`;
   }
 
-  return isEn
-    ? `For ${treatmentLabel.toLowerCase()}, suitable healthcare providers in the FeelinHealthy network are available in ${cityNames}. Which city would be most convenient for you?`
-    : `${treatmentLabel} için FeelinHealthy ağına bağlı uygun sağlık kuruluşlarımız ${cityNames}’da bulunuyor. Sizin için hangi şehir daha uygun olur?`;
+  const hasIstanbul = cities.some((c) => c.city === "istanbul");
+  if (isEn) {
+    return (
+      `City choice decides which partner clinics I can show for ${treatmentLabel.toLowerCase()}. ` +
+      `Pick the city closest to your flight or stay — current options: ${cityNames}.` +
+      (hasIstanbul
+        ? ` If you choose Istanbul, the next step is European vs Anatolian side so transfers stay practical.`
+        : ` After you choose, I’ll prepare matching providers in that city.`)
+    );
+  }
+  return (
+    `Şehir seçimi, ${treatmentLabel} için göstereceğim partner klinikleri doğrudan belirler. ` +
+    `Uçuş veya konaklama planınıza en yakın şehri seçmeniz en pratik yol — güncel seçenekler: ${cityNames}.` +
+    (hasIstanbul
+      ? ` İstanbul’u seçerseniz bir sonraki adımda Avrupa / Anadolu yakasını netleştiririz; böylece transfer daha kolay olur.`
+      : ` Şehri seçtikten sonra o bölgedeki uygun kuruluşları hazırlayacağım.`)
+  );
+}
+
+/** Short travel-aware subtitle under each city option. */
+export function getCityGuidanceSubtitle(
+  city: string,
+  locale: string = "tr",
+  requiresSideSelection = false
+): string {
+  const isEn = locale.toLowerCase().startsWith("en");
+  const key = String(city || "").toLowerCase();
+  const mapTr: Record<string, string> = {
+    istanbul: requiresSideSelection
+      ? "En geniş partner ağı · Sonraki adım: Avrupa / Anadolu yakası"
+      : "En geniş partner ağı, iki havalimanı erişimi",
+    izmir: "Ege rotası · Rahat ulaşım ve iyileşme için pratik",
+    antalya: "Turizm + tedavi kombinesi · Havalimanı erişimi güçlü",
+    ankara: "Başkent · İç hat uçuş / karayolu ile kolay erişim",
+    kocaeli: "İstanbul Anadolu’ya yakın alternatif · Gebze hattı",
+  };
+  const mapEn: Record<string, string> = {
+    istanbul: requiresSideSelection
+      ? "Widest partner network · Next: European / Anatolian side"
+      : "Widest partner network, two-airport access",
+    izmir: "Aegean route · Practical for travel and recovery",
+    antalya: "Travel + treatment combo · Strong airport access",
+    ankara: "Capital city · Easy domestic flight / road access",
+    kocaeli: "Near Istanbul Anatolian side · Gebze corridor",
+  };
+  const fallback = isEn
+    ? "FeelinHealthy partner providers available"
+    : "FeelinHealthy anlaşmalı kuruluşlar mevcut";
+  return (isEn ? mapEn[key] : mapTr[key]) || fallback;
 }
 
 export function getCitySelectionCard(
@@ -728,30 +774,17 @@ export function getCitySelectionCard(
     type: "city_selection",
     title: isEn ? "Preferred City" : "Tercih Edilen Şehir",
     message,
-    options: [
-      ...cities.map((c) => ({
-        id: c.city,
-        city: c.city,
-        title: isEn ? c.displayNameEn : c.displayNameTr,
-        subtitle: isEn
-          ? "FeelinHealthy partner providers available"
-          : "FeelinHealthy anlaşmalı kuruluşlar mevcut",
-        badge: c.requiresSideSelection
-          ? isEn
-            ? "Side selection next"
-            : "Ardından yaka tercihi"
-          : undefined,
-      })),
-      {
-        id: "undecided",
-        city: "undecided",
-        title: isEn ? "I’m not sure yet" : "Henüz karar vermedim",
-        subtitle: isEn
-          ? "Help me based on travel and transfer plans"
-          : "Ulaşım ve seyahat planıma göre yardımcı olun",
-        badge: isEn ? "Guided" : "Rehberli",
-      },
-    ],
+    options: cities.map((c) => ({
+      id: c.city,
+      city: c.city,
+      title: isEn ? c.displayNameEn : c.displayNameTr,
+      subtitle: getCityGuidanceSubtitle(c.city, locale, c.requiresSideSelection),
+      badge: c.requiresSideSelection
+        ? isEn
+          ? "Side selection next"
+          : "Ardından yaka tercihi"
+        : undefined,
+    })),
   };
 }
 

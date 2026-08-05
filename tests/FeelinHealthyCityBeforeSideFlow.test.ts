@@ -36,12 +36,14 @@ describe("FeelinHealthy city-before-side flow", () => {
       const card = getCitySelectionCard("implant", decision.availableCities, "tr");
       expect(card.type).toBe("city_selection");
       expect(card.options.some((o) => o.city === "istanbul")).toBe(true);
-      expect(card.options.some((o) => o.city === "undecided")).toBe(true);
+      expect(card.options.some((o) => o.city === "undecided")).toBe(false);
+      expect(card.message).toMatch(/Şehir seçimi|partner klinik/i);
+      expect(card.options.find((o) => o.city === "istanbul")?.subtitle).toMatch(/yaka/i);
 
       const prompt = getCitySelectionPrompt("implant", decision.availableCities, "tr");
       expect(prompt).toContain("İstanbul");
       expect(prompt).toContain("İzmir");
-      expect(prompt.toLowerCase()).not.toContain("yaka");
+      expect(prompt).toMatch(/Uçuş veya konaklama|pratik yol/i);
     });
   });
 
@@ -158,9 +160,11 @@ describe("FeelinHealthy city-before-side flow", () => {
       const card = getCitySelectionCard("dental", cities, "en");
 
       expect(prompt).toMatch(/Istanbul|Izmir|Antalya|Ankara/);
+      expect(prompt).toMatch(/City choice decides|flight or stay/i);
       expect(prompt).not.toMatch(/hangi şehir|bulunuyor/);
       expect(card.title).toBe("Preferred City");
-      expect(card.options.find((o) => o.city === "undecided")?.title).toMatch(/not sure/i);
+      expect(card.options.some((o) => o.city === "undecided")).toBe(false);
+      expect(card.options.every((o) => o.city !== "undecided")).toBe(true);
     });
   });
 

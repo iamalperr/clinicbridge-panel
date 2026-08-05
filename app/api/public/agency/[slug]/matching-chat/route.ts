@@ -1138,16 +1138,18 @@ export async function POST(
           msg
         );
       if (isAffirmative) {
-        const target = ctx.pendingLocationExpansionTarget || "İstanbul";
-        ctx.lastLocation = target;
-        const resolved = resolveCityAndSide(target);
-        if (resolved.city) ctx.selectedCity = resolved.city;
-        if (resolved.side) {
-          ctx.istanbul_side = resolved.side;
-          ctx.istanbul_side_source = "user_text";
-          ctx.sideSelectionConfirmed = true;
+        const target = ctx.pendingLocationExpansionTarget;
+        if (target) {
+          ctx.lastLocation = target;
+          const resolved = resolveCityAndSide(target);
+          if (resolved.city) ctx.selectedCity = resolved.city;
+          if (resolved.side) {
+            ctx.istanbul_side = resolved.side;
+            ctx.istanbul_side_source = "user_text";
+            ctx.sideSelectionConfirmed = true;
+          }
+          ctx.locationSelectionConfirmed = Boolean(resolved.city);
         }
-        ctx.locationSelectionConfirmed = true;
         delete ctx.pendingLocationExpansion;
         delete ctx.pendingLocationExpansionTarget;
         delete ctx.pendingLocationBranch;

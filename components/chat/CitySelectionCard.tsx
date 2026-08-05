@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { MapPin, CheckCircle2, ChevronRight, HelpCircle } from "lucide-react";
+import { MapPin, CheckCircle2, ChevronRight } from "lucide-react";
 
 export interface CityOption {
   id: string;
@@ -85,7 +85,6 @@ export const CitySelectionCard: React.FC<CitySelectionCardProps> = ({
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {options.map((opt) => {
           const selected = isResolved && selectedOptionId === opt.id;
-          const isHelp = opt.city === "undecided" || opt.id === "undecided";
           return (
             <button
               key={opt.id}
@@ -113,7 +112,7 @@ export const CitySelectionCard: React.FC<CitySelectionCardProps> = ({
                   width: 28,
                   height: 28,
                   borderRadius: 8,
-                  background: isHelp ? "#F1F5F9" : "rgba(13, 148, 136, 0.1)",
+                  background: "rgba(13, 148, 136, 0.1)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -122,8 +121,6 @@ export const CitySelectionCard: React.FC<CitySelectionCardProps> = ({
               >
                 {selected ? (
                   <CheckCircle2 size={15} color={primaryColor} />
-                ) : isHelp ? (
-                  <HelpCircle size={15} color="#64748B" />
                 ) : (
                   <MapPin size={15} color={primaryColor} />
                 )}
