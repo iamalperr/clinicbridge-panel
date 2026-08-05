@@ -56,6 +56,7 @@ export function isClinicCardActionType(value: unknown): value is ClinicCardActio
  * Normalize action payload from either:
  * - { action: "select_clinic", clinicId, actionId }
  * - legacy { type: "clinic_selected" | "clinic_info" | "lead_capture", clinicId }
+ * - flattened body { action: "select_clinic", clinicId } when action is a string field
  */
 export function parseClinicCardAction(raw: any): ClinicCardActionPayload | null {
   if (!raw || typeof raw !== "object") return null;
@@ -63,17 +64,17 @@ export function parseClinicCardAction(raw: any): ClinicCardActionPayload | null 
   let action: ClinicCardActionType | null = null;
   if (isClinicCardActionType(raw.action)) {
     action = raw.action;
-  } else if (raw.type === "clinic_selected") {
+  } else if (raw.type === "clinic_selected" || raw.type === "select_clinic") {
     action = "select_clinic";
-  } else if (raw.type === "clinic_info") {
+  } else if (raw.type === "clinic_info" || raw.type === "view_clinic_details") {
     action = "view_clinic_details";
-  } else if (raw.type === "lead_capture") {
+  } else if (raw.type === "lead_capture" || raw.type === "request_quote") {
     action = "request_quote";
   }
 
   if (!action) return null;
 
-  const clinicId = String(raw.clinicId || "").trim();
+  const clinicId = String(raw.clinicId || raw.id || "").trim();
   if (!clinicId) return null;
 
   const actionId = String(
@@ -89,6 +90,35 @@ export function parseClinicCardAction(raw: any): ClinicCardActionPayload | null 
     locale: raw.locale ? String(raw.locale) : undefined,
     profilePath: raw.profilePath ? String(raw.profilePath) : undefined,
   };
+}
+
+/** Resolve a clinic from the full agency pool by id first, then name. */
+export function resolveClinicFromPool(
+  clinics: any[],
+  opts: { clinicId?: string | null; clinicName?: string | null }
+): any | null {
+  const pool = Array.isArray(clinics) ? clinics : [];
+  const id = String(opts.clinicId || "").trim();
+  if (id) {
+    const byId = pool.find(
+      (c) =>
+        String(c?.id || "") === id ||
+        String(c?.clinicId || "") === id ||
+        String(c?.clinicSlug || "") === id ||
+        String(c?.slug || "") === id
+    );
+    if (byId) return byId;
+  }
+
+  const name = String(opts.clinicName || "").trim().toLowerCase();
+  if (!name) return null;
+  return (
+    pool.find((c) => {
+      const clinicName = String(c?.clinicName || c?.name || "").toLowerCase();
+      if (!clinicName) return false;
+      return clinicName.includes(name) || name.includes(clinicName.split(" ")[0] || "___");
+    }) || null
+  );
 }
 
 export function buildClinicCardActionKey(

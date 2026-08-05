@@ -11,6 +11,7 @@ import {
   resolveGuestQuoteClinicLimit,
   requestQuoteSuccessCopy,
   requestQuoteFailureCopy,
+  resolveClinicFromPool,
 } from "../lib/agency/feelinhealthyClinicCardActions";
 import { resolveAssistantRole } from "../lib/agency/assistantModes";
 import { FEELINHEALTHY_CONFIG } from "../lib/agency/feelinhealthyConfig";
@@ -177,12 +178,44 @@ describe("FeelinHealthy clinic card action contracts", () => {
 
     expect(route).toContain("parseClinicCardAction");
     expect(route).toContain("routeClinicCardAction");
-    expect(route).not.toMatch(/Klinik seçiminizi aldım ancak teklif talebini henüz kaydedemedim/);
+    expect(route).toContain("resolveClinicFromPool");
+    expect(route).toContain("fullAgencyClinics");
+    // Coordinator path must not claim clinic-not-found when session has a selection.
+    expect(route).toContain('never claim "not found"');
 
     expect(config).toContain("guestVisibleClinicLimit: 2");
     expect(config).toContain("guestQuoteClinicSelectionLimit: 2");
     expect(FEELINHEALTHY_CONFIG.maxGuestClinics).toBe(2);
     expect(resolveGuestQuoteClinicLimit()).toBe(2);
+  });
+
+  it("resolves recommended clinic by id even when truncated name lookup would fail", () => {
+    const pool = [
+      { id: "other-1", clinicName: "Other Clinic" },
+      { id: "Ab1OHdC020XOG4TWpR2r", clinicName: "BHT Clinic İstanbul Tema Hastanesi" },
+    ];
+    const found = resolveClinicFromPool(pool, {
+      clinicId: "Ab1OHdC020XOG4TWpR2r",
+      clinicName: "BHT Clinic İstanbul Tema Hastanesi",
+    });
+    expect(found?.id).toBe("Ab1OHdC020XOG4TWpR2r");
+  });
+
+  it("select_clinic never depends on truncated clinic list / not-found copy", () => {
+    const result = routeClinicCardAction({
+      payload: {
+        action: "select_clinic",
+        clinicId: "Ab1OHdC020XOG4TWpR2r",
+        actionId: "act-bht-1",
+        clinicName: "BHT Clinic İstanbul Tema Hastanesi",
+        locale: "tr",
+      },
+      sessionContext: { ...baseCtx },
+    });
+    expect(result.kind).toBe("handled");
+    expect(result.shouldPersistQuote).toBe(false);
+    expect(result.reply).toMatch(/bu klinikle devam ediyoruz/i);
+    expect(result.reply).not.toMatch(/sistemde bulunamadı/i);
   });
 
   it("parses legacy action types into canonical contracts", () => {

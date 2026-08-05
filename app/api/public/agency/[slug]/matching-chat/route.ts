@@ -66,6 +66,7 @@ import {
   routeClinicCardAction,
   requestQuoteSuccessCopy,
   requestQuoteFailureCopy,
+  resolveClinicFromPool,
 } from "@/lib/agency/feelinhealthyClinicCardActions";
 
 const CORS = {
@@ -502,150 +503,180 @@ export async function POST(
     // ── FeelinHealthy clinic-card structured actions (early return, no LLM) ──
     // select_clinic / view_clinic_details / request_quote must not share a quote path.
     if (isFeelinHealthyEarly && action) {
-      const cardPayload = parseClinicCardAction(action);
-      if (cardPayload) {
-        if (!sessionContext.sessionId) {
-          sessionContext.sessionId = `sess_${Date.now()}`;
-        }
-        const cardResult = routeClinicCardAction({
-          payload: cardPayload,
-          sessionContext,
-        });
+      try {
+        const cardPayload = parseClinicCardAction(action);
+        if (cardPayload) {
+          if (!sessionContext.sessionId) {
+            sessionContext.sessionId = `sess_${Date.now()}`;
+          }
+          const cardResult = routeClinicCardAction({
+            payload: cardPayload,
+            sessionContext,
+          });
 
-        if (cardResult.kind === "noop") {
-          return jsonResponse(
-            {
-              type: "noop",
-              sessionContext: cardResult.sessionContext,
-              showClinicCards: false,
-              shouldCreateNewLead: false,
-              shouldUpdateLead: false,
-            },
-            { headers: CORS }
-          );
-        }
-
-        if (cardResult.kind === "error") {
-          return jsonResponse(
-            {
-              reply: cardResult.reply,
-              type: cardResult.type || "text",
-              sessionContext: cardResult.sessionContext,
-              showClinicCards: cardResult.showClinicCards !== false,
-              shouldCreateNewLead: false,
-              shouldUpdateLead: false,
-            },
-            { status: cardResult.httpStatus || 400, headers: CORS }
-          );
-        }
-
-        // select_clinic / view_clinic_details — never persist quote
-        if (!cardResult.shouldPersistQuote) {
-          return jsonResponse(
-            {
-              reply: cardResult.reply,
-              type: cardResult.type || "text",
-              sessionContext: cardResult.sessionContext,
-              showClinicCards: cardResult.showClinicCards === true,
-              shouldCreateNewLead: false,
-              shouldUpdateLead: false,
-              profileUrl: cardResult.profileUrl || undefined,
-              openProfileInNewTab: cardResult.openProfileInNewTab === true,
-            },
-            { headers: CORS }
-          );
-        }
-
-        // request_quote — persist before success copy; email is async after DB write
-        const locale =
-          (cardPayload.locale || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en")
-            ? "en"
-            : "tr";
-        const quoteCtx = cardResult.sessionContext;
-        const clinicIdsForQuote = cardResult.clinicIdsForQuote || [cardPayload.clinicId];
-
-        if (quoteCtx.quoteConsent === true && quoteCtx.sessionId) {
-          try {
-            const { saveConsentRecord } = await import("@/lib/services/agencyConsentService");
-            const privacyVersion = agencyData.privacySettings?.version || "v1.0";
-            await saveConsentRecord(
-              agencyId,
-              quoteCtx.sessionId,
-              "accepted",
-              privacyVersion,
-              locale,
-              "agency_widget"
-            );
-          } catch (consentErr) {
-            console.warn(
-              "[matching-chat] consent ensure failed (request_quote)",
-              consentErr instanceof Error ? consentErr.message : "unknown"
+          if (cardResult.kind === "noop") {
+            return jsonResponse(
+              {
+                type: "noop",
+                sessionContext: cardResult.sessionContext,
+                showClinicCards: false,
+                shouldCreateNewLead: false,
+                shouldUpdateLead: false,
+              },
+              { headers: CORS }
             );
           }
-        }
 
-        const { persistAgencyQuoteRequest } = await import(
-          "@/lib/services/agencyQuoteRequestService"
-        );
-        const persistResult = await persistAgencyQuoteRequest({
-          agencyId,
-          conversationId: String(quoteCtx.sessionId || ""),
-          clinicIds: clinicIdsForQuote,
-          patientEmail: String(quoteCtx.patientEmail || ""),
-          patientName: quoteCtx.patientName,
-          patientPhone: quoteCtx.patientPhone,
-          patientAge: typeof quoteCtx.patientAge === "number" ? quoteCtx.patientAge : undefined,
-          patientGender: quoteCtx.patientGender,
-          country: quoteCtx.patientCountry,
-          language: locale,
-          treatmentCategory: quoteCtx.lastTreatmentCategory,
-          treatmentSubcategory: quoteCtx.lastSubTreatment,
-          treatmentName: quoteCtx.lastTreatmentCategory || "",
-          selectedCity: quoteCtx.selectedCity,
-          istanbulSide: quoteCtx.istanbul_side,
-          travelDate: quoteCtx.travelDate,
-          conversationSummary: Array.isArray(history)
-            ? history
-                .slice(-12)
-                .map((m: any) => `${m.role}: ${m.content || m.text || ""}`)
-                .join("\n")
-            : "",
-          source: "widget",
-        });
+          if (cardResult.kind === "error") {
+            return jsonResponse(
+              {
+                reply: cardResult.reply,
+                type: cardResult.type || "text",
+                sessionContext: cardResult.sessionContext,
+                showClinicCards: cardResult.showClinicCards !== false,
+                shouldCreateNewLead: false,
+                shouldUpdateLead: false,
+              },
+              { status: cardResult.httpStatus || 400, headers: CORS }
+            );
+          }
 
-        if (!persistResult.ok) {
+          // select_clinic / view_clinic_details — never persist quote
+          if (!cardResult.shouldPersistQuote) {
+            return jsonResponse(
+              {
+                reply: cardResult.reply,
+                type: cardResult.type || "text",
+                sessionContext: cardResult.sessionContext,
+                showClinicCards: cardResult.showClinicCards === true,
+                shouldCreateNewLead: false,
+                shouldUpdateLead: false,
+                profileUrl: cardResult.profileUrl || undefined,
+                openProfileInNewTab: cardResult.openProfileInNewTab === true,
+              },
+              { headers: CORS }
+            );
+          }
+
+          // request_quote — persist before success copy; email is async after DB write
+          const locale =
+            (cardPayload.locale || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en")
+              ? "en"
+              : "tr";
+          const quoteCtx = cardResult.sessionContext;
+          const clinicIdsForQuote = cardResult.clinicIdsForQuote || [cardPayload.clinicId];
+
+          if (quoteCtx.quoteConsent === true && quoteCtx.sessionId) {
+            try {
+              const { saveConsentRecord } = await import("@/lib/services/agencyConsentService");
+              const privacyVersion = agencyData.privacySettings?.version || "v1.0";
+              await saveConsentRecord(
+                agencyId,
+                quoteCtx.sessionId,
+                "accepted",
+                privacyVersion,
+                locale,
+                "agency_widget"
+              );
+            } catch (consentErr) {
+              console.warn(
+                "[matching-chat] consent ensure failed (request_quote)",
+                consentErr instanceof Error ? consentErr.message : "unknown"
+              );
+            }
+          }
+
+          const { persistAgencyQuoteRequest } = await import(
+            "@/lib/services/agencyQuoteRequestService"
+          );
+          const persistResult = await persistAgencyQuoteRequest({
+            agencyId,
+            conversationId: String(quoteCtx.sessionId || ""),
+            clinicIds: clinicIdsForQuote,
+            patientEmail: String(quoteCtx.patientEmail || ""),
+            patientName: quoteCtx.patientName,
+            patientPhone: quoteCtx.patientPhone,
+            patientAge: typeof quoteCtx.patientAge === "number" ? quoteCtx.patientAge : undefined,
+            patientGender: quoteCtx.patientGender,
+            country: quoteCtx.patientCountry,
+            language: locale,
+            treatmentCategory: quoteCtx.lastTreatmentCategory,
+            treatmentSubcategory: quoteCtx.lastSubTreatment,
+            treatmentName: quoteCtx.lastTreatmentCategory || "",
+            selectedCity: quoteCtx.selectedCity,
+            istanbulSide: quoteCtx.istanbul_side,
+            travelDate: quoteCtx.travelDate,
+            conversationSummary: Array.isArray(history)
+              ? history
+                  .slice(-12)
+                  .map((m: any) => `${m.role}: ${m.content || m.text || ""}`)
+                  .join("\n")
+              : "",
+            source: "widget",
+          });
+
+          if (!persistResult.ok) {
+            return jsonResponse(
+              {
+                reply: requestQuoteFailureCopy(locale),
+                type: "text",
+                sessionContext: quoteCtx,
+                showClinicCards: false,
+                shouldCreateNewLead: false,
+                shouldUpdateLead: false,
+                quotePersistError: persistResult.errorCode,
+              },
+              { headers: CORS }
+            );
+          }
+
+          quoteCtx.leadStage = "quote_request_created";
+          quoteCtx.leadId = persistResult.leadId;
+          quoteCtx.quoteId = persistResult.quoteId;
+          delete quoteCtx.__fhQuoteRequestedByCardAction;
+
           return jsonResponse(
             {
-              reply: requestQuoteFailureCopy(locale),
+              reply: requestQuoteSuccessCopy(locale, cardPayload.clinicName),
               type: "text",
               sessionContext: quoteCtx,
               showClinicCards: false,
               shouldCreateNewLead: false,
               shouldUpdateLead: false,
-              quotePersistError: persistResult.errorCode,
+              leadId: persistResult.leadId,
+              quoteId: persistResult.quoteId,
             },
             { headers: CORS }
           );
         }
-
-        quoteCtx.leadStage = "quote_request_created";
-        quoteCtx.leadId = persistResult.leadId;
-        quoteCtx.quoteId = persistResult.quoteId;
-        delete quoteCtx.__fhQuoteRequestedByCardAction;
-
-        return jsonResponse(
-          {
-            reply: requestQuoteSuccessCopy(locale, cardPayload.clinicName),
-            type: "text",
-            sessionContext: quoteCtx,
-            showClinicCards: false,
-            shouldCreateNewLead: false,
-            shouldUpdateLead: false,
-            leadId: persistResult.leadId,
-            quoteId: persistResult.quoteId,
-          },
-          { headers: CORS }
+      } catch (cardErr) {
+        console.error(
+          "[matching-chat] clinic card action failed",
+          cardErr instanceof Error ? cardErr.message : cardErr
         );
+        // Fall through only for non-card actions; for known card types return safe reply.
+        const safePayload = parseClinicCardAction(action);
+        if (safePayload?.action === "select_clinic") {
+          const safeCtx = enterClinicCoordinator(sessionContext, {
+            id: String(safePayload.clinicId),
+            name: String(safePayload.clinicName || "Selected clinic"),
+          });
+          safeCtx.conversationStage = "selected_clinic";
+          return jsonResponse(
+            {
+              reply:
+                (safePayload.locale || "tr").toLowerCase().startsWith("en")
+                  ? "Great — we're continuing with this clinic. You can ask about the clinic, doctors, treatment process, pricing, or appointments."
+                  : "Harika, bu klinikle devam ediyoruz. Klinik, doktorlar, tedavi süreci, fiyatlandırma veya randevu hakkında merak ettiklerinizi sorabilirsiniz.",
+              type: "clinic_selected",
+              sessionContext: safeCtx,
+              showClinicCards: false,
+              shouldCreateNewLead: false,
+              shouldUpdateLead: false,
+            },
+            { headers: CORS }
+          );
+        }
       }
     }
 
@@ -655,14 +686,33 @@ export async function POST(
         Object.assign(
           sessionContext,
           enterClinicCoordinator(sessionContext, {
-            id: String(action.clinicId || ""),
-            name: String(action.clinicName || "Selected clinic"),
+            id: String(action.clinicId || sessionContext.lastFocusedClinicId || ""),
+            name: String(action.clinicName || sessionContext.lastFocusedClinicName || "Selected clinic"),
           })
         );
+        // FeelinHealthy: never send clinic selection through the LLM — deterministic reply.
+        if (slug === "feelinhealthy" || agencyData.slug === "feelinhealthy") {
+          sessionContext.conversationStage = "selected_clinic";
+          const locale = (action.locale || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en")
+            ? "en"
+            : "tr";
+          return jsonResponse(
+            {
+              reply:
+                locale === "en"
+                  ? "Great — we're continuing with this clinic. You can ask about the clinic, doctors, treatment process, pricing, or appointments."
+                  : "Harika, bu klinikle devam ediyoruz. Klinik, doktorlar, tedavi süreci, fiyatlandırma veya randevu hakkında merak ettiklerinizi sorabilirsiniz.",
+              type: "clinic_selected",
+              sessionContext,
+              showClinicCards: false,
+              shouldCreateNewLead: false,
+              shouldUpdateLead: false,
+            },
+            { headers: CORS }
+          );
+        }
         finalMessage =
-          slug === "feelinhealthy"
-            ? `[SİSTEM AKSİYONU: Hasta '${action.clinicName}' kliniğini seçti. Backend state: clinic_selected. Artık Clinic Patient Coordinator rolündesin. Keşif/matching/intake/şehir/yaka SORMA. Kısa ve sıcak bir onay ver; yalnızca bu klinik bağlamında yardımcı ol.]`
-            : `[SİSTEM AKSİYONU: Kullanıcı arayüzden 'Bu Klinikle Devam Et' butonuna tıklayarak '${action.clinicName}' kliniğini seçti. Lütfen bu seçimi doğal ve profesyonel bir şekilde onayla, klinik hakkında çok kısa bilgi ver ve ardından HEMEN lead toplama aşamasının İLK sorusu olan Ad Soyad bilgisini iste.]`;
+          `[SİSTEM AKSİYONU: Kullanıcı arayüzden 'Bu Klinikle Devam Et' butonuna tıklayarak '${action.clinicName}' kliniğini seçti. Lütfen bu seçimi doğal ve profesyonel bir şekilde onayla, klinik hakkında çok kısa bilgi ver ve ardından HEMEN lead toplama aşamasının İLK sorusu olan Ad Soyad bilgisini iste.]`;
       } else if (action.type === "clinic_info") {
         sessionContext.lastFocusedClinicId = action.clinicId;
         sessionContext.lastFocusedClinicName = action.clinicName;
@@ -2610,16 +2660,22 @@ export async function POST(
         parsed.clinicName ||
         newCtx.selectedClinicName ||
         ctx.lastFocusedClinicName;
-      let clinic: any = null;
-      if (resolveAssistantRole(newCtx) === "clinic_coordinator" && getCoordinatorClinicId(newCtx)) {
-        clinic = allClinics.find((c: any) => String(c.id) === String(getCoordinatorClinicId(newCtx)));
-      } else if (clinicName) {
-        const nameLower = clinicName.toLowerCase();
-        clinic = allClinics.find((c: any) =>
-          c.clinicName?.toLowerCase().includes(nameLower) ||
-          nameLower.includes(c.clinicName?.toLowerCase().split(" ")[0] || "___")
-        );
-      }
+      // IMPORTANT: use fullAgencyClinics — `allClinics` may be truncated to 10 for the LLM
+      // prompt and exclude the recommended clinic (e.g. BHT), causing false "not found".
+      const clinicPool =
+        Array.isArray(fullAgencyClinics) && fullAgencyClinics.length > 0
+          ? fullAgencyClinics
+          : allClinics;
+      const coordinatorId = getCoordinatorClinicId(newCtx);
+      let clinic = resolveClinicFromPool(clinicPool, {
+        clinicId:
+          parsed.selectedClinicId ||
+          coordinatorId ||
+          newCtx.selectedClinicId ||
+          newCtx.lastFocusedClinicId ||
+          null,
+        clinicName: clinicName || null,
+      });
 
       if (clinic) {
         const cPricing = allPricing.filter((p: any) => p.clinicId === clinic.id || (p.clinicName && clinic.clinicName && p.clinicName.toLowerCase() === clinic.clinicName.toLowerCase()));
@@ -2673,6 +2729,28 @@ export async function POST(
           clinics: [miniCard],
           sessionContext: newCtx,
           showClinicCards: false, // DO NOT REPEAT CLINIC CARD ON CLINIC QUESTIONS
+        }, { headers: CORS });
+      }
+
+      // Coordinator / selected clinic already known in session — never claim "not found".
+      if (
+        resolveAssistantRole(newCtx) === "clinic_coordinator" ||
+        newCtx.selectedClinicId ||
+        newCtx.selectedClinicName
+      ) {
+        const knownName =
+          newCtx.selectedClinicName ||
+          clinicName ||
+          (parsed.language === "en" ? "this clinic" : "bu klinik");
+        return jsonResponse({
+          reply:
+            parsed.replyText ||
+            (parsed.language === "en"
+              ? `We're continuing with ${knownName}. What would you like to know about the clinic, doctors, treatment process, or pricing?`
+              : `${knownName} ile devam ediyoruz. Klinik, doktorlar, tedavi süreci veya fiyatlandırma hakkında ne öğrenmek istersiniz?`),
+          type: "clinic_answer",
+          sessionContext: newCtx,
+          showClinicCards: false,
         }, { headers: CORS });
       }
 

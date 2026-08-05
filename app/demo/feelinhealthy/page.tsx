@@ -1390,15 +1390,20 @@ export default function FeelinHealthyLive() {
                               ) : (
                                 <button
                                   disabled={aiTyping}
-                                  onClick={() =>
+                                  onClick={() => {
+                                    const clinicId = String(rec.clinicId || rec.id || "").trim();
+                                    if (!clinicId) {
+                                      console.error("[CB-DEMO] select_clinic missing clinicId", rec);
+                                      return;
+                                    }
                                     sendSystemAction({
                                       action: "select_clinic",
-                                      clinicId: rec.clinicId || rec.id,
-                                      clinicName: rec.clinicName,
-                                      clinicSlug: rec.clinicSlug,
+                                      clinicId,
+                                      clinicName: rec.clinicName || rec.name,
+                                      clinicSlug: rec.clinicSlug || rec.slug,
                                       locale: lang,
-                                    })
-                                  }
+                                    });
+                                  }}
                                   style={{ width: "100%", padding: "8px 0", borderRadius: 6, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: aiTyping ? "not-allowed" : "pointer", opacity: aiTyping ? 0.6 : 1 }}
                                 >
                                   {lang === "tr" ? "Bu Klinikle Devam Et" : "Proceed with this Clinic"}
@@ -1407,31 +1412,35 @@ export default function FeelinHealthyLive() {
                               <div style={{ display: "flex", gap: 6 }}>
                                 <button
                                   disabled={aiTyping}
-                                  onClick={() =>
+                                  onClick={() => {
+                                    const clinicId = String(rec.clinicId || rec.id || "").trim();
+                                    if (!clinicId) return;
                                     sendSystemAction({
                                       action: "view_clinic_details",
-                                      clinicId: rec.clinicId || rec.id,
-                                      clinicName: rec.clinicName,
-                                      clinicSlug: rec.clinicSlug,
+                                      clinicId,
+                                      clinicName: rec.clinicName || rec.name,
+                                      clinicSlug: rec.clinicSlug || rec.slug,
                                       profilePath: rec.profilePath,
                                       locale: lang,
-                                    })
-                                  }
+                                    });
+                                  }}
                                   style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, textAlign: "center", background: C.primaryBg, color: C.primary, border: `1px solid ${C.primaryBorder}`, cursor: aiTyping ? "not-allowed" : "pointer", opacity: aiTyping ? 0.6 : 1 }}
                                 >
                                   {lang === "tr" ? "Daha Fazla Bilgi" : "More Info"}
                                 </button>
                                 <button
                                   disabled={aiTyping}
-                                  onClick={() =>
+                                  onClick={() => {
+                                    const clinicId = String(rec.clinicId || rec.id || "").trim();
+                                    if (!clinicId) return;
                                     sendSystemAction({
                                       action: "request_quote",
-                                      clinicId: rec.clinicId || rec.id,
-                                      clinicName: rec.clinicName,
-                                      clinicSlug: rec.clinicSlug,
+                                      clinicId,
+                                      clinicName: rec.clinicName || rec.name,
+                                      clinicSlug: rec.clinicSlug || rec.slug,
                                       locale: lang,
-                                    })
-                                  }
+                                    });
+                                  }}
                                   style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, background: C.white, color: C.navy, border: `1px solid ${C.border}`, cursor: aiTyping ? "not-allowed" : "pointer", opacity: aiTyping ? 0.6 : 1 }}
                                 >
                                   {lang === "tr" ? "Teklif İste" : "Request Quote"}
