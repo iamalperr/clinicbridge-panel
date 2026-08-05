@@ -91,7 +91,7 @@ export function subscribeToNotificationJobs(
   return onSnapshot(
     q,
     (snap) => {
-      const requests = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      const requests = snap.docs.map((docSnap) => ({ ...docSnap.data(), id: docSnap.id }));
       onData(requests);
     },
     () => onData([])

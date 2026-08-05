@@ -276,6 +276,12 @@ export async function processPatientNotificationJob(agencyId: string, jobId: str
          providerMessageId: "mock_patient_id",
          updatedAt: new Date().toISOString()
        });
+       await adminDb
+         .collection("agencies")
+         .doc(agencyId)
+         .collection("leads")
+         .doc(jobData.leadId)
+         .set({ patientEmailSent: true, updatedAt: new Date().toISOString() }, { merge: true });
        return;
     }
 
@@ -305,6 +311,19 @@ export async function processPatientNotificationJob(agencyId: string, jobId: str
       providerMessageId: result.data?.id || null,
       updatedAt: new Date().toISOString()
     });
+    // Legacy UI field on lead detail "E-posta Geçmişi".
+    await adminDb
+      .collection("agencies")
+      .doc(agencyId)
+      .collection("leads")
+      .doc(jobData.leadId)
+      .set(
+        {
+          patientEmailSent: true,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
     console.log(`[patientNotificationService] Successfully sent job ${jobId} to patient`);
 
   } catch (err: any) {

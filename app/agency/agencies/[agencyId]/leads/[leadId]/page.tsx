@@ -25,6 +25,11 @@ import {
 } from "lucide-react";
 import type { AgencyClinic, Lead, LeadStatus, TreatmentCategory } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES, LEAD_STATUSES, LEAD_URGENCIES } from "@/lib/types/agency";
+import {
+  leadEmailHistoryBadgeLabel,
+  leadEmailHistoryBadgeVariant,
+  resolveLeadEmailHistoryBadge,
+} from "@/lib/agency/leadEmailHistory";
 import LeadDocumentsCard from "@/components/agency/LeadDocumentsCard";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -526,24 +531,40 @@ export default function LeadDetailPage() {
         </SectionCard>
       </div>
 
-      {/* E-posta Durumu */}
+      {/* E-posta Durumu — derived from notification_jobs + lead notification fields */}
       <div style={{ marginBottom: 24 }}>
         <SectionCard title="E-posta Geçmişi" icon={<Mail size={16} color="#10b981" />}>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${UI_COLORS.border}` }}>
-              <span style={{ fontSize: 13, color: UI_COLORS.textSecondary }}>Acenta Bildirim E-postası</span>
-              {(lead as any).notificationEmailSent
-                ? <Badge label="Gönderildi" variant="success" />
-                : <Badge label="Gönderilmedi" variant="default" />
-              }
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0" }}>
-              <span style={{ fontSize: 13, color: UI_COLORS.textSecondary }}>Hasta Bilgilendirme E-postası</span>
-              {(lead as any).patientEmailSent
-                ? <Badge label="Gönderildi" variant="success" />
-                : <Badge label="Gönderilmedi" variant="default" />
-              }
-            </div>
+            {(() => {
+              const agencyBadge = resolveLeadEmailHistoryBadge({
+                kind: "agency",
+                jobs: notificationJobs,
+                lead,
+              });
+              const patientBadge = resolveLeadEmailHistoryBadge({
+                kind: "patient",
+                jobs: notificationJobs,
+                lead,
+              });
+              return (
+                <>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${UI_COLORS.border}` }}>
+                    <span style={{ fontSize: 13, color: UI_COLORS.textSecondary }}>Acenta Bildirim E-postası</span>
+                    <Badge
+                      label={leadEmailHistoryBadgeLabel(agencyBadge, language)}
+                      variant={leadEmailHistoryBadgeVariant(agencyBadge)}
+                    />
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0" }}>
+                    <span style={{ fontSize: 13, color: UI_COLORS.textSecondary }}>Hasta Bilgilendirme E-postası</span>
+                    <Badge
+                      label={leadEmailHistoryBadgeLabel(patientBadge, language)}
+                      variant={leadEmailHistoryBadgeVariant(patientBadge)}
+                    />
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </SectionCard>
       </div>

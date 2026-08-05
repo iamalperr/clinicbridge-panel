@@ -44,6 +44,8 @@ async function updateLeadNotificationState(
         notificationErrorCode: patch.notificationErrorCode ?? null,
         notificationErrorMessage: patch.notificationErrorMessage ?? null,
         nextRetryAt: patch.nextRetryAt ?? null,
+        // Legacy UI field on lead detail "E-posta Geçmişi".
+        ...(patch.notificationStatus === "sent" ? { notificationEmailSent: true } : {}),
         updatedAt: new Date().toISOString(),
       },
       { merge: true }
