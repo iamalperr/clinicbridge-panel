@@ -1,0 +1,669 @@
+/**
+ * Authoritative FeelinHealthy conversation state machine.
+ *
+ * Every text message and structured widget action must resolve its next
+ * response through `resolveNextConversationAction`. No UI / LLM branch may
+ * invent a competing stage order.
+ *
+ * Canonical journey:
+ *   greeting → treatment intent → consent → G1 → G2 → G3
+ *   → city (if unknown) → Istanbul side (if required) → matching
+ *   → clinic selection → selected_clinic → quote
+ */
+
+import {
+  decideFeelinHealthyLocationNextStep,
+  evaluateFeelinHealthyIntake,
+  getCitySelectionCard,
+  getGroupIntakePrompt,
+  getIstanbulSideClarificationCard,
+  getTreatmentClarificationPrompt,
+  getUnsupportedLocationPrompt,
+  getCuratedClinicsForFeelinHealthy,
+  type LocationDecision,
+} from "./feelinhealthyConfig";
+import { resolveAssistantRole, type AssistantRole } from "./assistantModes";
+
+// ─── Stages ──────────────────────────────────────────────────────────────────
+
+export type FeelinHealthyStage =
+  | "greeting"
+  | "consent"
+  | "intake_group_1"
+  | "intake_group_2"
+  | "intake_group_3"
+  | "ask_treatment"
+  | "city_selection"
+  | "istanbul_side_selection"
+  | "location_negotiation"
+  | "matching"
+  | "clinic_selection"
+  | "selected_clinic"
+  | "quote"
+  | "appointment"
+  | "idle";
+
+export type ConsentStatus = "not_requested" | "pending" | "accepted" | "rejected";
+
+export interface FeelinHealthyConversationState {
+  stage: FeelinHealthyStage;
+  consentStatus: ConsentStatus;
+  treatment: {
+    branch: string | null;
+    confirmed: boolean;
+  };
+  intake: {
+    group1Complete: boolean;
+    group2Complete: boolean;
+    group3Complete: boolean;
+    allComplete: boolean;
+    currentGroup: 1 | 2 | 3 | "completed";
+    missingFields: string[];
+  };
+  location: {
+    city: string | null;
+    cityConfirmed: boolean;
+    istanbulSide: "european" | "anatolian" | "any" | "unsure" | null;
+    sideConfirmed: boolean;
+  };
+  selectedClinicId: string | null;
+  selectedClinicName: string | null;
+  hasRecommendations: boolean;
+  leadStage: string | null;
+  assistantRole: AssistantRole;
+  pendingHealthRequest: string | null;
+  quoteCreated: boolean;
+}
+
+// ─── Next action ─────────────────────────────────────────────────────────────
+
+export type NextConversationAction =
+  | { kind: "greeting" }
+  | { kind: "consent" }
+  | {
+      kind: "intake";
+      group: 1 | 2 | 3;
+      missingFields: string[];
+      prompt: string;
+    }
+  | { kind: "ask_treatment"; prompt: string }
+  | {
+      kind: "ask_city";
+      card: ReturnType<typeof getCitySelectionCard>;
+      availableCities: string[];
+    }
+  | {
+      kind: "ask_side";
+      card: ReturnType<typeof getIstanbulSideClarificationCard>;
+    }
+  | {
+      kind: "location_negotiation";
+      prompt: string;
+      targetDisplayName: string;
+      treatmentBranch: string;
+    }
+  | { kind: "match_clinics" }
+  | { kind: "clinic_selection" }
+  | { kind: "selected_clinic" }
+  | { kind: "quote" }
+  | { kind: "idle" };
+
+export interface ResolveNextOptions {
+  availableClinics?: any[];
+  locale?: string;
+  /** Pure greeting with no health intent — never advances into consent/intake. */
+  isPureGreeting?: boolean;
+  /** When true, skip greeting short-circuit (e.g. structured action turn). */
+  isStructuredAction?: boolean;
+  /** Raw session context for intake prompt personalization (name greeting only). */
+  promptContext?: Record<string, any>;
+}
+
+// ─── Derive state from session context ───────────────────────────────────────
+
+export function deriveFeelinHealthyState(
+  ctx: Record<string, any> | null | undefined
+): FeelinHealthyConversationState {
+  const c = ctx || {};
+  const intake = evaluateFeelinHealthyIntake(c);
+  const assistantRole = resolveAssistantRole(c);
+
+  let consentStatus: ConsentStatus = "not_requested";
+  if (c.quoteConsent === true || c.consentStatus === "accepted" || c.consentStatus === "accept") {
+    consentStatus = "accepted";
+  } else if (c.quoteConsent === false || c.consentStatus === "declined" || c.consentStatus === "rejected") {
+    consentStatus = "rejected";
+  } else if (c.pendingUserMessage || c.pendingHealthRequest) {
+    consentStatus = "pending";
+  }
+
+  const treatmentBranch = c.lastTreatmentCategory || c.treatmentId || null;
+  const city = c.selectedCity || null;
+  const side =
+    c.istanbul_side === "european" ||
+    c.istanbul_side === "anatolian" ||
+    c.istanbul_side === "any" ||
+    c.istanbul_side === "unsure"
+      ? c.istanbul_side
+      : null;
+
+  const quoteCreated =
+    c.leadStage === "quote_request_created" || c.leadStage === "completed";
+
+  const hasRecommendations = Array.isArray(c.lastRecommendedClinicIds) && c.lastRecommendedClinicIds.length > 0;
+
+  const stage = deriveStage({
+    consentStatus,
+    intake,
+    treatmentBranch,
+    city,
+    side,
+    assistantRole,
+    hasRecommendations,
+    quoteCreated,
+    leadStage: c.leadStage || null,
+  });
+
+  return {
+    stage,
+    consentStatus,
+    treatment: {
+      branch: treatmentBranch ? String(treatmentBranch) : null,
+      confirmed: Boolean(treatmentBranch),
+    },
+    intake: {
+      group1Complete: intake.group1Complete,
+      group2Complete: intake.group2Complete,
+      group3Complete: intake.group3Complete,
+      allComplete: intake.allGroupsComplete,
+      currentGroup: intake.currentGroup,
+      missingFields: intake.missingFieldsInCurrentGroup,
+    },
+    location: {
+      city: city ? String(city).toLowerCase() : null,
+      cityConfirmed: Boolean(c.locationSelectionConfirmed || city),
+      istanbulSide: side,
+      sideConfirmed: Boolean(
+        c.sideSelectionConfirmed || side === "european" || side === "anatolian" || side === "any"
+      ),
+    },
+    selectedClinicId: c.selectedClinicId || c.lastFocusedClinicId || null,
+    selectedClinicName: c.selectedClinicName || c.lastFocusedClinicName || null,
+    hasRecommendations,
+    leadStage: c.leadStage || null,
+    assistantRole,
+    pendingHealthRequest: c.pendingHealthRequest || c.pendingUserMessage || null,
+    quoteCreated,
+  };
+}
+
+function deriveStage(input: {
+  consentStatus: ConsentStatus;
+  intake: ReturnType<typeof evaluateFeelinHealthyIntake>;
+  treatmentBranch: string | null;
+  city: string | null;
+  side: string | null;
+  assistantRole: AssistantRole;
+  hasRecommendations: boolean;
+  quoteCreated: boolean;
+  leadStage: string | null;
+}): FeelinHealthyStage {
+  if (input.quoteCreated) return "quote";
+  if (input.assistantRole === "clinic_coordinator") return "selected_clinic";
+  if (input.consentStatus === "rejected") return "idle";
+  if (input.consentStatus !== "accepted") {
+    return input.treatmentBranch || input.consentStatus === "pending" ? "consent" : "greeting";
+  }
+  if (!input.intake.group1Complete) return "intake_group_1";
+  if (!input.intake.group2Complete) return "intake_group_2";
+  if (!input.intake.group3Complete) return "intake_group_3";
+  if (!input.treatmentBranch) return "ask_treatment";
+  if (!input.city) return "city_selection";
+  if (
+    input.city === "istanbul" &&
+    input.side !== "european" &&
+    input.side !== "anatolian" &&
+    input.side !== "any"
+  ) {
+    return "istanbul_side_selection";
+  }
+  if (input.hasRecommendations) return "clinic_selection";
+  return "matching";
+}
+
+// ─── Authoritative next-action resolver ──────────────────────────────────────
+
+/**
+ * Single source of truth for "what comes next".
+ * Priority (release contract):
+ * 1. consent  2. G1  3. G2  4. G3  5. treatment
+ * 6. city  7. Istanbul side  8. matching  9. clinic selected  10. selected-clinic
+ */
+export function resolveNextConversationAction(
+  stateOrCtx: FeelinHealthyConversationState | Record<string, any>,
+  options: ResolveNextOptions = {}
+): NextConversationAction {
+  const state =
+    isConversationState(stateOrCtx) ? stateOrCtx : deriveFeelinHealthyState(stateOrCtx);
+  const locale = options.locale || "tr";
+  const clinics = options.availableClinics || [];
+
+  // Pure greeting never advances into the funnel.
+  if (options.isPureGreeting && state.consentStatus !== "accepted") {
+    return { kind: "greeting" };
+  }
+
+  // 1. Consent
+  if (state.consentStatus !== "accepted") {
+    if (state.consentStatus === "rejected") return { kind: "idle" };
+    // Greeting-only sessions stay on greeting until a health/treatment turn.
+    if (
+      !options.isStructuredAction &&
+      state.consentStatus === "not_requested" &&
+      !state.treatment.confirmed &&
+      !state.pendingHealthRequest
+    ) {
+      return { kind: "greeting" };
+    }
+    return { kind: "consent" };
+  }
+
+  const promptCtx = options.promptContext || {};
+
+  // Selected-clinic / quote terminal modes short-circuit discovery.
+  if (state.quoteCreated) return { kind: "quote" };
+  if (state.assistantRole === "clinic_coordinator") {
+    if (!state.intake.allComplete) {
+      return buildIntakeAction(
+        !state.intake.group1Complete ? 1 : !state.intake.group2Complete ? 2 : 3,
+        state,
+        locale,
+        promptCtx
+      );
+    }
+    return { kind: "selected_clinic" };
+  }
+
+  // 2–4. Intake groups (never restarted once complete)
+  if (!state.intake.group1Complete) {
+    return buildIntakeAction(1, state, locale, promptCtx);
+  }
+  if (!state.intake.group2Complete) {
+    return buildIntakeAction(2, state, locale, promptCtx);
+  }
+  if (!state.intake.group3Complete) {
+    return buildIntakeAction(3, state, locale, promptCtx);
+  }
+
+  // 5. Treatment
+  if (!state.treatment.confirmed) {
+    return { kind: "ask_treatment", prompt: getTreatmentClarificationPrompt(locale) };
+  }
+
+  // Location decision (city → side → ready)
+  const location: LocationDecision = decideFeelinHealthyLocationNextStep(
+    {
+      lastTreatmentCategory: state.treatment.branch,
+      selectedCity: state.location.city,
+      istanbul_side: state.location.istanbulSide,
+      locationSelectionConfirmed: state.location.cityConfirmed,
+    },
+    clinics,
+    locale
+  );
+
+  // 6. City
+  if (location.step === "ask_city") {
+    const card = getCitySelectionCard(
+      location.treatmentBranch,
+      location.availableCities,
+      locale
+    );
+    return {
+      kind: "ask_city",
+      card,
+      availableCities: location.availableCities.map((c) => c.city),
+    };
+  }
+
+  // 7. Istanbul side — only when city is Istanbul and side unknown
+  if (location.step === "ask_side" && location.city === "istanbul") {
+    return {
+      kind: "ask_side",
+      card: getIstanbulSideClarificationCard(location.treatmentBranch, locale),
+    };
+  }
+
+  // Unsupported city negotiation (non-Istanbul with no curated clinics)
+  if (
+    location.step === "ready" &&
+    location.city &&
+    location.city !== "istanbul"
+  ) {
+    const curated = getCuratedClinicsForFeelinHealthy(
+      location.treatmentBranch || "",
+      location.city,
+      location.side,
+      clinics
+    );
+    if (
+      curated.isUnsupportedLocation &&
+      curated.supportedLocationsForBranch &&
+      curated.supportedLocationsForBranch.length > 0
+    ) {
+      return {
+        kind: "location_negotiation",
+        prompt: getUnsupportedLocationPrompt(
+          location.treatmentBranch || "",
+          location.city,
+          curated.supportedLocationsForBranch,
+          locale
+        ),
+        targetDisplayName: curated.supportedLocationsForBranch[0].displayNameTr,
+        treatmentBranch: location.treatmentBranch || "",
+      };
+    }
+  }
+
+  // 8–9. Matching / clinic selection
+  if (state.hasRecommendations) {
+    return { kind: "clinic_selection" };
+  }
+
+  if (location.step === "ask_treatment") {
+    return { kind: "ask_treatment", prompt: getTreatmentClarificationPrompt(locale) };
+  }
+
+  if (location.step === "ready") {
+    return { kind: "match_clinics" };
+  }
+
+  return { kind: "match_clinics" };
+}
+
+function buildIntakeAction(
+  group: 1 | 2 | 3,
+  state: FeelinHealthyConversationState,
+  locale: string,
+  promptContext: Record<string, any>
+): NextConversationAction {
+  const intakeStatus = {
+    currentGroup: group as 1 | 2 | 3,
+    group1Complete: state.intake.group1Complete,
+    group2Complete: state.intake.group2Complete,
+    group3Complete: state.intake.group3Complete,
+    missingFieldsInCurrentGroup: state.intake.missingFields,
+    allGroupsComplete: false,
+  };
+  return {
+    kind: "intake",
+    group,
+    missingFields: state.intake.missingFields,
+    prompt: getGroupIntakePrompt(intakeStatus, promptContext, locale),
+  };
+}
+
+function isConversationState(value: unknown): value is FeelinHealthyConversationState {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "consentStatus" in value &&
+      "intake" in value &&
+      "treatment" in value &&
+      "location" in value &&
+      "stage" in value
+  );
+}
+
+// ─── Gating helpers ──────────────────────────────────────────────────────────
+
+export function canShowCityWidget(state: FeelinHealthyConversationState): boolean {
+  return (
+    state.consentStatus === "accepted" &&
+    state.intake.allComplete &&
+    state.treatment.confirmed &&
+    !state.location.city &&
+    state.assistantRole !== "clinic_coordinator" &&
+    !state.quoteCreated
+  );
+}
+
+export function canShowIstanbulSideWidget(state: FeelinHealthyConversationState): boolean {
+  return (
+    state.consentStatus === "accepted" &&
+    state.intake.allComplete &&
+    state.treatment.confirmed &&
+    state.location.city === "istanbul" &&
+    state.location.istanbulSide !== "european" &&
+    state.location.istanbulSide !== "anatolian" &&
+    state.location.istanbulSide !== "any" &&
+    state.assistantRole !== "clinic_coordinator" &&
+    !state.quoteCreated
+  );
+}
+
+// ─── Structured action application (idempotent, field-scoped) ────────────────
+
+export type StructuredActionType =
+  | "privacy_consent_response"
+  | "select_treatment_city"
+  | "side_selection"
+  | "branch_side_confirm"
+  | "select_clinic"
+  | "clinic_selected"
+  | "clinic_selection_update"
+  | "request_quote"
+  | "change_clinic";
+
+export interface ApplyStructuredActionResult {
+  ctx: Record<string, any>;
+  /** True when the action was a no-op because state already matched. */
+  idempotentSkip: boolean;
+  clearedFields: string[];
+}
+
+/**
+ * Apply a structured widget action. Updates ONLY the action's own fields.
+ * Never clears consent, intake, or treatment unless the action explicitly exits
+ * Istanbul side confirmation toward another city.
+ */
+export function applyStructuredLocationAction(
+  ctx: Record<string, any>,
+  action: {
+    type: string;
+    city?: string;
+    value?: string;
+    side?: string;
+    action?: string;
+    clinicId?: string;
+    clinicName?: string;
+    locale?: string;
+    actionId?: string;
+  }
+): ApplyStructuredActionResult {
+  const next = { ...ctx };
+  const clearedFields: string[] = [];
+
+  // Idempotency: same actionId already processed.
+  if (action.actionId && next.lastStructuredActionId === action.actionId) {
+    return { ctx: next, idempotentSkip: true, clearedFields };
+  }
+
+  if (action.type === "select_treatment_city") {
+    const cityValue = String(action.city || action.value || "").toLowerCase();
+    if (
+      cityValue &&
+      cityValue !== "undecided" &&
+      cityValue !== "travel_help" &&
+      next.selectedCity === cityValue &&
+      next.locationSelectionConfirmed === true
+    ) {
+      return { ctx: next, idempotentSkip: true, clearedFields };
+    }
+
+    if (cityValue === "undecided" || cityValue === "travel_help") {
+      delete next.selectedCity;
+      delete next.locationSelectionConfirmed;
+      next.pendingCitySelection = true;
+    } else if (cityValue) {
+      next.selectedCity = cityValue;
+      next.locationSelectionConfirmed = true;
+      next.pendingCitySelection = false;
+      if (cityValue !== "istanbul") {
+        if (next.istanbul_side !== undefined) clearedFields.push("istanbul_side");
+        delete next.istanbul_side;
+        delete next.istanbul_side_source;
+        delete next.pendingSideClarification;
+        delete next.sideSelectionConfirmed;
+      }
+    }
+  } else if (action.type === "side_selection" || action.type === "select_istanbul_side") {
+    if (
+      (action.side === "european" || action.side === "anatolian") &&
+      next.istanbul_side === action.side &&
+      next.sideSelectionConfirmed === true
+    ) {
+      return { ctx: next, idempotentSkip: true, clearedFields };
+    }
+    if (action.side === "european" || action.side === "anatolian") {
+      next.istanbul_side = action.side;
+      next.istanbul_side_source = "structured_card";
+      next.selectedCity = "istanbul";
+      next.locationSelectionConfirmed = true;
+      next.sideSelectionConfirmed = true;
+      delete next.pendingSideClarification;
+      delete next.pendingSideGuidance;
+    } else if (action.side === "unsure") {
+      next.istanbul_side = "unsure";
+      next.istanbul_side_source = "structured_card";
+      next.selectedCity = "istanbul";
+      next.locationSelectionConfirmed = true;
+      next.sideSelectionConfirmed = false;
+      next.pendingSideGuidance = true;
+    }
+  } else if (action.type === "branch_side_confirm") {
+    if (action.action === "confirm" && (action.side === "anatolian" || action.side === "european")) {
+      if (next.istanbul_side === action.side && next.sideSelectionConfirmed === true) {
+        return { ctx: next, idempotentSkip: true, clearedFields };
+      }
+      next.istanbul_side = action.side;
+      next.istanbul_side_source = "structured_card";
+      next.selectedCity = "istanbul";
+      next.locationSelectionConfirmed = true;
+      next.sideSelectionConfirmed = true;
+      delete next.pendingSideClarification;
+      delete next.pendingSideGuidance;
+    } else {
+      // Explicit reject of Istanbul-only branch → re-ask city, keep intake/consent/treatment.
+      delete next.istanbul_side;
+      delete next.sideSelectionConfirmed;
+      delete next.selectedCity;
+      delete next.locationSelectionConfirmed;
+      delete next.pendingSideClarification;
+      next.pendingCitySelection = true;
+      clearedFields.push("selectedCity", "istanbul_side");
+    }
+  }
+
+  if (action.actionId) {
+    next.lastStructuredActionId = action.actionId;
+  }
+
+  return { ctx: next, idempotentSkip: false, clearedFields };
+}
+
+/**
+ * Build a route-ready gate payload from the next action.
+ * Returns null when the route should continue into matching / LLM paths.
+ */
+export function buildGateResponseFromAction(
+  action: NextConversationAction,
+  sessionContext: Record<string, any>
+): {
+  reply: string;
+  type: string;
+  sessionContext: Record<string, any>;
+  showClinicCards: boolean;
+  citySelectionCard?: any;
+  sideClarificationCard?: any;
+  stage: FeelinHealthyStage;
+} | null {
+  const ctx = { ...sessionContext };
+
+  switch (action.kind) {
+    case "greeting":
+      return null; // greeting copy is owned by Prompt Studio / route
+    case "consent":
+      return null; // consent payload built by route (privacy settings)
+    case "intake":
+      ctx.intakeStage = action.group;
+      return {
+        reply: action.prompt,
+        type: "text",
+        sessionContext: ctx,
+        showClinicCards: false,
+        stage: action.group === 1 ? "intake_group_1" : action.group === 2 ? "intake_group_2" : "intake_group_3",
+      };
+    case "ask_treatment":
+      return {
+        reply: action.prompt,
+        type: "text",
+        sessionContext: ctx,
+        showClinicCards: false,
+        stage: "ask_treatment",
+      };
+    case "ask_city":
+      ctx.pendingCitySelection = true;
+      ctx.availableCities = action.availableCities;
+      return {
+        reply: action.card.message,
+        type: "city_selection",
+        citySelectionCard: action.card,
+        sessionContext: ctx,
+        showClinicCards: false,
+        stage: "city_selection",
+      };
+    case "ask_side":
+      ctx.pendingSideClarification = true;
+      if (ctx.selectedCity !== "istanbul") ctx.selectedCity = "istanbul";
+      return {
+        reply: action.card.message,
+        type: action.card.type,
+        sideClarificationCard: action.card,
+        sessionContext: ctx,
+        showClinicCards: false,
+        stage: "istanbul_side_selection",
+      };
+    case "location_negotiation":
+      ctx.pendingLocationExpansion = true;
+      ctx.pendingLocationExpansionTarget = action.targetDisplayName;
+      ctx.pendingLocationBranch = action.treatmentBranch;
+      return {
+        reply: action.prompt,
+        type: "location_negotiation",
+        sessionContext: ctx,
+        showClinicCards: false,
+        stage: "location_negotiation",
+      };
+    case "match_clinics":
+    case "clinic_selection":
+    case "selected_clinic":
+    case "quote":
+    case "idle":
+      return null;
+    default:
+      return null;
+  }
+}
+
+/** True when the next action is a hard UI gate that must not be overridden by the LLM. */
+export function isHardGateAction(action: NextConversationAction): boolean {
+  return (
+    action.kind === "consent" ||
+    action.kind === "intake" ||
+    action.kind === "ask_treatment" ||
+    action.kind === "ask_city" ||
+    action.kind === "ask_side" ||
+    action.kind === "location_negotiation"
+  );
+}

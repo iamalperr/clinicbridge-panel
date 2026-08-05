@@ -52,6 +52,13 @@ import {
   buildClinicCoordinatorSystemPrompt,
   estimatePromptSize,
 } from "@/lib/agency/assistantModes";
+import {
+  deriveFeelinHealthyState,
+  resolveNextConversationAction,
+  buildGateResponseFromAction,
+  isHardGateAction,
+  applyStructuredLocationAction,
+} from "@/lib/agency/feelinhealthyConversationMachine";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -143,6 +150,9 @@ interface SessionContext {
 
   // FeelinHealthy specific session fields
   intakeStage?: IntakeGroupNumber;
+  conversationStage?: string;
+  stateVersion?: number;
+  lastStructuredActionId?: string;
   pendingLocationExpansion?: boolean;
   pendingLocationExpansionTarget?: string;
   pendingLocationBranch?: string;
@@ -639,54 +649,43 @@ export async function POST(
         const cityLang = action.locale || "tr";
         const isEn = cityLang.toLowerCase().startsWith("en");
         const cityValue = String(action.city || action.value || "").toLowerCase();
-
+        const applied = applyStructuredLocationAction(sessionContext, {
+          type: "select_treatment_city",
+          city: cityValue,
+          value: cityValue,
+          actionId: action.actionId || action.idempotencyKey,
+        });
+        Object.assign(sessionContext, applied.ctx);
         if (cityValue === "undecided" || cityValue === "travel_help") {
-          delete sessionContext.selectedCity;
-          delete sessionContext.locationSelectionConfirmed;
-          sessionContext.pendingCitySelection = true;
           finalMessage = isEn
             ? "I’m not sure about the city yet. Could you help based on travel and transfer plans?"
             : "Henüz şehir konusunda karar vermedim. Ulaşım ve seyahat planıma göre yardımcı olur musunuz?";
         } else if (cityValue) {
-          // Location only — never clear intake, consent, or treatment.
-          sessionContext.selectedCity = cityValue;
-          sessionContext.locationSelectionConfirmed = true;
           sessionContext.lastLocation = getCityDisplayName(cityValue, cityLang);
-          sessionContext.pendingCitySelection = false;
-          // Choosing a non-Istanbul city must clear any leftover Istanbul side state.
-          if (cityValue !== "istanbul") {
-            delete sessionContext.istanbul_side;
-            delete sessionContext.istanbul_side_source;
-            delete sessionContext.pendingSideClarification;
-            delete sessionContext.sideSelectionConfirmed;
-          }
-          finalMessage = isEn
-            ? `I prefer ${getCityDisplayName(cityValue, "en")}. Please continue with suitable clinics there.`
-            : `${getCityDisplayName(cityValue, "tr")} tercih ediyorum. Uygun kuruluşlarla devam edelim.`;
+          finalMessage = applied.idempotentSkip
+            ? (isEn
+              ? `Continuing with ${getCityDisplayName(cityValue, "en")}.`
+              : `${getCityDisplayName(cityValue, "tr")} ile devam ediyoruz.`)
+            : (isEn
+              ? `I prefer ${getCityDisplayName(cityValue, "en")}. Please continue with suitable clinics there.`
+              : `${getCityDisplayName(cityValue, "tr")} tercih ediyorum. Uygun kuruluşlarla devam edelim.`);
         }
-      } else if (action.type === "side_selection") {
+      } else if (action.type === "side_selection" || action.type === "select_istanbul_side") {
         structuredLocationAction = true;
         const sideLang = action.locale || "tr";
         const isEn = sideLang.toLowerCase().startsWith("en");
+        const applied = applyStructuredLocationAction(sessionContext, {
+          type: "side_selection",
+          side: action.side,
+          actionId: action.actionId || action.idempotencyKey,
+        });
+        Object.assign(sessionContext, applied.ctx);
         if (action.side === "european" || action.side === "anatolian") {
-          sessionContext.istanbul_side = action.side;
-          sessionContext.istanbul_side_source = "structured_card";
-          sessionContext.selectedCity = "istanbul";
-          sessionContext.locationSelectionConfirmed = true;
-          sessionContext.sideSelectionConfirmed = true;
           sessionContext.lastLocation = action.side === "anatolian" ? "İstanbul Anadolu Yakası" : "İstanbul Avrupa Yakası";
-          delete sessionContext.pendingSideClarification;
-          delete sessionContext.pendingSideGuidance;
           finalMessage = action.side === "european"
             ? (isEn ? "I prefer Istanbul European Side. Please recommend suitable clinics." : "İstanbul Avrupa Yakası'nı tercih ediyorum. Uygun klinikleri listeleyebilir misiniz?")
             : (isEn ? "I prefer Istanbul Anatolian Side. Please recommend suitable clinics." : "İstanbul Anadolu Yakası'nı tercih ediyorum. Uygun klinikleri listeleyebilir misiniz?");
         } else if (action.side === "unsure") {
-          sessionContext.istanbul_side = "unsure";
-          sessionContext.istanbul_side_source = "structured_card";
-          sessionContext.selectedCity = "istanbul";
-          sessionContext.locationSelectionConfirmed = true;
-          sessionContext.sideSelectionConfirmed = false;
-          sessionContext.pendingSideGuidance = true;
           finalMessage = isEn
             ? "I am not sure between the European and Anatolian sides. Could you help guide me based on my arrival airport or hotel area?"
             : "İstanbul'un iki yakası arasında emin değilim. Havaalanı veya otel bölgesine göre bana yardımcı olabilir misiniz?";
@@ -695,25 +694,19 @@ export async function POST(
         structuredLocationAction = true;
         const sideLang = action.locale || "tr";
         const isEn = sideLang.toLowerCase().startsWith("en");
+        const applied = applyStructuredLocationAction(sessionContext, {
+          type: "branch_side_confirm",
+          side: action.side,
+          action: action.action,
+          actionId: action.actionId || action.idempotencyKey,
+        });
+        Object.assign(sessionContext, applied.ctx);
         if (action.action === "confirm" && (action.side === "anatolian" || action.side === "european")) {
-          sessionContext.istanbul_side = action.side;
-          sessionContext.istanbul_side_source = "structured_card";
-          sessionContext.selectedCity = "istanbul";
-          sessionContext.locationSelectionConfirmed = true;
-          sessionContext.sideSelectionConfirmed = true;
           sessionContext.lastLocation = action.side === "anatolian" ? "İstanbul Anadolu Yakası" : "İstanbul Avrupa Yakası";
-          delete sessionContext.pendingSideClarification;
-          delete sessionContext.pendingSideGuidance;
           finalMessage = action.side === "anatolian"
             ? (isEn ? "Yes, please show options on the Anatolian Side." : "Evet, Anadolu Yakası'ndaki seçenekleri değerlendirmek istiyorum.")
             : (isEn ? "Yes, please show options on the European Side." : "Evet, Avrupa Yakası'ndaki seçenekleri değerlendirmek istiyorum.");
         } else {
-          delete sessionContext.istanbul_side;
-          delete sessionContext.sideSelectionConfirmed;
-          delete sessionContext.selectedCity;
-          delete sessionContext.locationSelectionConfirmed;
-          delete sessionContext.pendingSideClarification;
-          sessionContext.pendingCitySelection = true;
           finalMessage = isEn
             ? "No, I would like to explore options in other cities."
             : "Hayır, İstanbul dışındaki diğer şehir seçeneklerini görmek istiyorum.";
@@ -1061,6 +1054,53 @@ export async function POST(
       setCached(cacheKeyClinics, allClinics);
     }
     const fullAgencyClinics = [...(allClinics || [])];
+
+    // ── FeelinHealthy authoritative state machine (pre-LLM) ──
+    // Every FH request resolves next action here before the model can invent stage order.
+    if (isFeelinHealthy) {
+      // Align session flag with persisted consent so the machine always sees acceptance.
+      if (ctx.quoteConsent !== true) {
+        const persistedConsent = await requireAcceptedAgencyConsent(
+          agencyId,
+          ctx.sessionId!,
+          privacySettings.version
+        );
+        if (persistedConsent) ctx.quoteConsent = true;
+      }
+
+      const fhStateEarly = deriveFeelinHealthyState(ctx);
+      if (fhStateEarly.consentStatus === "accepted") {
+        const gateLang = (agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
+        const nextAction = resolveNextConversationAction(ctx, {
+          availableClinics: fullAgencyClinics,
+          locale: gateLang,
+          isStructuredAction: structuredLocationAction,
+          promptContext: ctx,
+        });
+        ctx.conversationStage = fhStateEarly.stage;
+        ctx.stateVersion = (Number(ctx.stateVersion) || 0) + 1;
+
+        if (isHardGateAction(nextAction)) {
+          const gate = buildGateResponseFromAction(nextAction, ctx);
+          if (gate) {
+            return jsonResponse({
+              reply: gate.reply,
+              type: gate.type,
+              citySelectionCard: gate.citySelectionCard,
+              sideClarificationCard: gate.sideClarificationCard,
+              sessionContext: gate.sessionContext,
+              showClinicCards: false,
+              stage: gate.stage,
+              stateVersion: gate.sessionContext.stateVersion,
+            }, { headers: CORS });
+          }
+        }
+        // match_clinics / clinic_selection / selected_clinic continue into matching or LLM.
+        if (nextAction.kind === "match_clinics") {
+          (ctx as any).__forceClinicMatching = true;
+        }
+      }
+    }
 
     const prefilterStart = performance.now();
     ctx.clinicSelectionMode = matchingConfig?.routingMode || "manual"; // Save routing mode for leads
@@ -1613,9 +1653,8 @@ export async function POST(
       }
     }
 
-    // ── FeelinHealthy canonical post-consent order ──
-    // Intake → treatment clarification → city selection → Istanbul side → matching.
-    // Never assume Istanbul and never show the side card before city is known.
+    // ── FeelinHealthy authoritative post-LLM re-check ──
+    // Same resolver as the pre-LLM gate. LLM must never invent stage order.
     if (isFeelinHealthy && newCtx.quoteConsent === true) {
       const currentLang = (parsed.language || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
 
@@ -1641,164 +1680,67 @@ export async function POST(
         }
       }
 
-      const intakeStatus = evaluateFeelinHealthyIntake(newCtx);
-      newCtx.intakeStage = intakeStatus.currentGroup;
-
-      const matchingLikeIntent =
-        parsed.intent === "clinic_recommendation" ||
-        parsed.intent === "clinic_matching" ||
-        parsed.intent === "lead_capture" ||
-        parsed.intent === "followup" ||
-        parsed.needsFollowUp ||
-        newCtx.leadStage === "lead_capture" ||
-        newCtx.leadStage === "clinic_selected" ||
-        newCtx.pendingCitySelection ||
-        newCtx.pendingSideClarification ||
-        newCtx.pendingSideGuidance ||
-        Boolean(newCtx.lastTreatmentCategory);
-
-      // Never re-ask intake once it is complete — including after city/side cards.
-      // Clinic Coordinator mode must never restart Group 1–3.
+      // Side guidance ("emin değilim") only after Istanbul is already selected.
       if (
-        resolveAssistantRole(newCtx) !== "clinic_coordinator" &&
-        (matchingLikeIntent || structuredLocationAction) &&
-        !intakeStatus.allGroupsComplete
+        newCtx.selectedCity === "istanbul" &&
+        (newCtx.pendingSideGuidance ||
+          /\b(fark etmez|emin degilim|emin değilim|bilmiyorum|kararsizim|kararsızım|neresi uygun|hangisi daha iyi|yardım|not sure|any|unsure|dont know|help me choose)\b/i.test(
+            finalMessage || message || ""
+          ))
       ) {
-        const groupPrompt = getGroupIntakePrompt(intakeStatus, newCtx, currentLang);
+        const sideCues = resolveIstanbulSideFromText(finalMessage || message || "");
+        const guidanceText = getSideGuidancePrompt(sideCues.cueName, currentLang);
+        const cardData = getIstanbulSideClarificationCard(
+          newCtx.lastTreatmentCategory || null,
+          currentLang
+        );
+        delete newCtx.pendingSideGuidance;
+        newCtx.pendingSideClarification = true;
         return jsonResponse({
-          reply: groupPrompt,
-          type: "text",
+          reply: guidanceText,
+          type: cardData.type,
+          sideClarificationCard: cardData,
           sessionContext: newCtx,
           showClinicCards: false,
+          stage: "istanbul_side_selection",
         }, { headers: CORS });
       }
 
-      if (intakeStatus.allGroupsComplete && resolveAssistantRole(newCtx) !== "clinic_coordinator") {
-        const locationDecision = decideFeelinHealthyLocationNextStep(
-          newCtx,
-          fullAgencyClinics,
-          currentLang
-        );
+      const nextAction = resolveNextConversationAction(newCtx, {
+        availableClinics: fullAgencyClinics,
+        locale: currentLang,
+        isStructuredAction: structuredLocationAction,
+        promptContext: newCtx,
+      });
+      const fhState = deriveFeelinHealthyState(newCtx);
+      newCtx.conversationStage = fhState.stage;
+      newCtx.intakeStage = fhState.intake.currentGroup;
 
-        // Keep decision fields on the session for the next turn.
-        if (locationDecision.city && !newCtx.selectedCity) {
-          newCtx.selectedCity = locationDecision.city;
-        }
-        newCtx.availableCities = locationDecision.availableCities.map((c) => c.city);
-
-        if (locationDecision.step === "ask_treatment") {
+      if (isHardGateAction(nextAction)) {
+        const gate = buildGateResponseFromAction(nextAction, newCtx);
+        if (gate) {
           return jsonResponse({
-            reply: getTreatmentClarificationPrompt(currentLang),
-            type: "text",
-            sessionContext: newCtx,
+            reply: gate.reply,
+            type: gate.type,
+            citySelectionCard: gate.citySelectionCard,
+            sideClarificationCard: gate.sideClarificationCard,
+            sessionContext: gate.sessionContext,
             showClinicCards: false,
+            stage: gate.stage,
+            stateVersion: gate.sessionContext.stateVersion,
           }, { headers: CORS });
         }
+      }
 
-        if (locationDecision.step === "ask_city") {
-          const cityCard = getCitySelectionCard(
-            locationDecision.treatmentBranch,
-            locationDecision.availableCities,
-            currentLang
-          );
-          newCtx.pendingCitySelection = true;
-          return jsonResponse({
-            reply: cityCard.message,
-            type: "city_selection",
-            citySelectionCard: cityCard,
-            sessionContext: newCtx,
-            showClinicCards: false,
-          }, { headers: CORS });
-        }
-
-        // Side guidance ("emin değilim") only after Istanbul is already selected.
-        const isUnsureOrGuidance =
-          newCtx.selectedCity === "istanbul" &&
-          (newCtx.pendingSideGuidance ||
-            /\b(fark etmez|emin degilim|emin değilim|bilmiyorum|kararsizim|kararsızım|neresi uygun|hangisi daha iyi|yardım|not sure|any|unsure|dont know|help me choose)\b/i.test(
-              finalMessage || message || ""
-            ));
-        if (isUnsureOrGuidance) {
-          const sideCues = resolveIstanbulSideFromText(finalMessage || message || "");
-          const guidanceText = getSideGuidancePrompt(sideCues.cueName, currentLang);
-          const cardData = getIstanbulSideClarificationCard(
-            locationDecision.treatmentBranch,
-            currentLang
-          );
-          delete newCtx.pendingSideGuidance;
-          newCtx.pendingSideClarification = true;
-          return jsonResponse({
-            reply: guidanceText,
-            type: cardData.type,
-            sideClarificationCard: cardData,
-            sessionContext: newCtx,
-            showClinicCards: false,
-          }, { headers: CORS });
-        }
-
-        if (locationDecision.step === "ask_side" && newCtx.selectedCity === "istanbul") {
-          const cardData = getIstanbulSideClarificationCard(
-            locationDecision.treatmentBranch,
-            currentLang
-          );
-          newCtx.pendingSideClarification = true;
-          return jsonResponse({
-            reply: cardData.message,
-            type: cardData.type,
-            sideClarificationCard: cardData,
-            sessionContext: newCtx,
-            showClinicCards: false,
-          }, { headers: CORS });
-        }
-
-        // Unsupported non-Istanbul city for this branch → negotiate alternatives.
-        if (
-          locationDecision.step === "ready" &&
-          locationDecision.city &&
-          locationDecision.city !== "istanbul" &&
-          !newCtx.pendingLocationExpansion
-        ) {
-          const curatedCheck = getCuratedClinicsForFeelinHealthy(
-            locationDecision.treatmentBranch || "",
-            locationDecision.city,
-            locationDecision.side,
-            fullAgencyClinics
-          );
-          if (
-            curatedCheck.isUnsupportedLocation &&
-            curatedCheck.supportedLocationsForBranch &&
-            curatedCheck.supportedLocationsForBranch.length > 0
-          ) {
-            newCtx.pendingLocationExpansion = true;
-            newCtx.pendingLocationExpansionTarget =
-              curatedCheck.supportedLocationsForBranch[0].displayNameTr;
-            newCtx.pendingLocationBranch = locationDecision.treatmentBranch || undefined;
-            return jsonResponse({
-              reply: getUnsupportedLocationPrompt(
-                locationDecision.treatmentBranch || "",
-                locationDecision.city,
-                curatedCheck.supportedLocationsForBranch,
-                currentLang
-              ),
-              type: "location_negotiation",
-              sessionContext: newCtx,
-              showClinicCards: false,
-            }, { headers: CORS });
-          }
-        }
-
-        // Once consent + intake + location are ready, force clinic matching ONCE.
-        // Never rematch after clinics were already recommended, and never while coordinator is active.
-        if (
-          isReadyForClinicMatching(newCtx).ready &&
-          resolveAssistantRole(newCtx) !== "clinic_coordinator" &&
-          !(newCtx.lastRecommendedClinicIds && newCtx.lastRecommendedClinicIds.length > 0)
-        ) {
-          parsed.intent = "clinic_recommendation";
-          parsed.shouldCreateLead = false;
-          parsed.needsFollowUp = false;
-          if (!parsed.language) parsed.language = currentLang;
-        }
+      if (
+        (nextAction.kind === "match_clinics" || (ctx as any).__forceClinicMatching) &&
+        resolveAssistantRole(newCtx) !== "clinic_coordinator" &&
+        !(newCtx.lastRecommendedClinicIds && newCtx.lastRecommendedClinicIds.length > 0)
+      ) {
+        parsed.intent = "clinic_recommendation";
+        parsed.shouldCreateLead = false;
+        parsed.needsFollowUp = false;
+        if (!parsed.language) parsed.language = currentLang;
       }
     }
 
@@ -1963,7 +1905,7 @@ export async function POST(
 
     // --- CLINIC MATCHING OR RECOMMENDATION (before lead/followup for FeelinHealthy) ---
     if (
-      (parsed.intent === "clinic_matching" || parsed.intent === "clinic_recommendation") &&
+      (parsed.intent === "clinic_matching" || parsed.intent === "clinic_recommendation" || (ctx as any).__forceClinicMatching) &&
       resolveAssistantRole(newCtx) !== "clinic_coordinator"
     ) {
       let recommendations: ClinicRecommendation[] = [];
@@ -1972,7 +1914,32 @@ export async function POST(
 
       const feelinHealthyReady = isFeelinHealthy ? isReadyForClinicMatching(newCtx).ready : false;
 
-      if (isFeelinHealthy && feelinHealthyReady) {
+      let allowFeelinHealthyMatch = !isFeelinHealthy;
+      if (isFeelinHealthy) {
+        const currentLang = (parsed.language || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
+        const matchNext = resolveNextConversationAction(newCtx, {
+          availableClinics: fullAgencyClinics,
+          locale: currentLang,
+          promptContext: newCtx,
+        });
+        if (isHardGateAction(matchNext)) {
+          const gate = buildGateResponseFromAction(matchNext, newCtx);
+          if (gate) {
+            return jsonResponse({
+              reply: gate.reply,
+              type: gate.type,
+              citySelectionCard: gate.citySelectionCard,
+              sideClarificationCard: gate.sideClarificationCard,
+              sessionContext: gate.sessionContext,
+              showClinicCards: false,
+              stage: gate.stage,
+            }, { headers: CORS });
+          }
+        }
+        allowFeelinHealthyMatch = matchNext.kind === "match_clinics" && feelinHealthyReady;
+      }
+
+      if (isFeelinHealthy && allowFeelinHealthyMatch) {
         const branchOrCat = parsed.treatmentCategory || newCtx.lastTreatmentCategory || agencySlotsExtracted.extracted.treatment;
         const locationDecision = decideFeelinHealthyLocationNextStep(newCtx, fullAgencyClinics, (parsed.language || "tr"));
         // Hard gate: never render clinics until city (and Istanbul side when needed) are known.
