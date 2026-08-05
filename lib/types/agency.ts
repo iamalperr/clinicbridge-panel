@@ -421,6 +421,17 @@ export interface Lead {
   notificationSentAt?: string | null;
   notificationEmailSent?: boolean;
   patientEmailSent?: boolean;
+  patientOfferEmailSent?: boolean;
+  patientOfferEmailSentAt?: string | null;
+  draftOfferCount?: number;
+  draftOfferSummary?: Array<{
+    clinicId: string;
+    clinicName: string;
+    priceMin: number;
+    priceMax: number;
+    currency: string;
+    treatmentName: string;
+  }>;
   notificationErrorCode?: string | null;
   notificationErrorMessage?: string | null;
   nextRetryAt?: string | null;

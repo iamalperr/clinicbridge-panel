@@ -232,6 +232,67 @@ export async function updateLeadClinicSelection(
   };
 }
 
+/** Draft clinicOffers on the linked quote from uploaded clinic pricing. */
+export async function draftLeadOffers(
+  agencyId: string,
+  leadId: string,
+  authToken: string,
+  options?: { force?: boolean }
+): Promise<{
+  quoteId: string;
+  clinicOffers: any[];
+  skipped: boolean;
+  missingClinicIds: string[];
+}> {
+  const res = await fetch(`/api/agency/${agencyId}/leads/${leadId}/draft-offers`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${authToken}`,
+    },
+    body: JSON.stringify({ force: options?.force === true }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(payload?.message || payload?.error || `Draft offers failed (${res.status})`);
+  }
+  return {
+    quoteId: payload.quoteId,
+    clinicOffers: payload.clinicOffers || [],
+    skipped: Boolean(payload.skipped),
+    missingClinicIds: payload.missingClinicIds || [],
+  };
+}
+
+/** Draft (if needed) and send patient offer email with clinic prices. */
+export async function sendLeadPatientOffer(
+  agencyId: string,
+  leadId: string,
+  authToken: string,
+  options?: { customMessage?: string; locale?: string }
+): Promise<{ quoteId: string; offerCount: number; drafted: boolean }> {
+  const res = await fetch(`/api/agency/${agencyId}/leads/${leadId}/send-offer`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${authToken}`,
+    },
+    body: JSON.stringify({
+      customMessage: options?.customMessage,
+      locale: options?.locale,
+    }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(payload?.message || payload?.error || `Send offer failed (${res.status})`);
+  }
+  return {
+    quoteId: payload.quoteId,
+    offerCount: Number(payload.offerCount || 0),
+    drafted: Boolean(payload.drafted),
+  };
+}
+
 // ─── Clinic Assignment ──────────────────────────────────────────────────────
 
 export async function assignLeadToClinic(

@@ -8,9 +8,10 @@ import {
   LEAD_STATUS_ACTIONS,
   type LeadStatusActionKey,
 } from "@/lib/agency/leadStatusActions";
-import { subscribeToLead, updateLeadStatus, updateLeadClinicSelection, subscribeToClinicRequests, subscribeToNotificationJobs, subscribeToExtendedRequests } from "@/lib/services/leadService";
+import { subscribeToLead, updateLeadStatus, updateLeadClinicSelection, draftLeadOffers, sendLeadPatientOffer, subscribeToClinicRequests, subscribeToNotificationJobs, subscribeToExtendedRequests } from "@/lib/services/leadService";
 import { subscribeToAgencyClinics, getAgency } from "@/lib/services/agencyService";
 import { resolveAgencyClinicSelectionLimit } from "@/lib/agency/leadClinicSelection";
+import { formatOfferPriceRange } from "@/lib/agency/clinicOfferDraft";
 import { FEELINHEALTHY_CONFIG } from "@/lib/agency/feelinhealthyConfig";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n-context";
@@ -105,6 +106,9 @@ export default function LeadDetailPage() {
   const [draftClinicIds, setDraftClinicIds] = useState<string[]>([]);
   const [savingClinics, setSavingClinics] = useState(false);
   const [clinicSelectLimit, setClinicSelectLimit] = useState(3);
+  const [draftOffers, setDraftOffers] = useState<any[]>([]);
+  const [draftOffersLoading, setDraftOffersLoading] = useState(false);
+  const [draftOffersError, setDraftOffersError] = useState<string | null>(null);
 
   const catLabel = (cat: string) => TREATMENT_CATEGORIES[cat as TreatmentCategory]?.[language === "tr" ? "tr" : "en"] || cat;
   const statusLabel = (s: string) => LEAD_STATUSES[s as LeadStatus]?.[language === "tr" ? "tr" : "en"] || s;
@@ -145,6 +149,37 @@ export default function LeadDetailPage() {
       unsubClinics();
     };
   }, [agencyId, leadId]);
+
+  // Auto-draft patient offers from uploaded clinic pricing when a quote exists.
+  useEffect(() => {
+    if (!lead?.quoteId && !(lead?.clinicIds && lead.clinicIds.length > 0)) return;
+    if (lead.status === "lost") return;
+    let cancelled = false;
+    (async () => {
+      setDraftOffersLoading(true);
+      setDraftOffersError(null);
+      try {
+        const token = await getToken();
+        if (!token || cancelled) return;
+        const result = await draftLeadOffers(agencyId, leadId, token);
+        if (cancelled) return;
+        setDraftOffers(result.clinicOffers || []);
+        if (lead.draftOfferSummary?.length && result.skipped) {
+          setDraftOffers(result.clinicOffers?.length ? result.clinicOffers : lead.draftOfferSummary);
+        }
+      } catch (err: any) {
+        if (cancelled) return;
+        // Soft: show message but do not block the page.
+        setDraftOffers(Array.isArray(lead.draftOfferSummary) ? lead.draftOfferSummary : []);
+        setDraftOffersError(err?.message || null);
+      } finally {
+        if (!cancelled) setDraftOffersLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [agencyId, leadId, lead?.quoteId, lead?.status, getToken]);
 
   const openClinicModal = () => {
     if (!lead) return;
@@ -207,7 +242,34 @@ export default function LeadDetailPage() {
       if (!token) throw new Error("AUTH_REQUIRED");
 
       await updateLeadStatus(agencyId, leadId, action.status, token, historyNote);
-      showToast("success", "Durum güncellendi.");
+
+      // On approve: draft prices (if needed) and email patient offer — separate from status write.
+      if (actionKey === "converted") {
+        try {
+          const offerResult = await sendLeadPatientOffer(agencyId, leadId, token, {
+            locale: language,
+          });
+          setDraftOffers((prev) => (prev.length ? prev : []));
+          showToast(
+            "success",
+            language === "tr"
+              ? `Onaylandı. Hastaya teklif e-postası gönderildi (${offerResult.offerCount} klinik).`
+              : `Approved. Patient offer email sent (${offerResult.offerCount} clinic/s).`
+          );
+        } catch (offerErr: any) {
+          console.error("[lead offer email]", offerErr);
+          showToast(
+            "error",
+            offerErr?.message ||
+              (language === "tr"
+                ? "Durum güncellendi ancak teklif e-postası gönderilemedi. Klinik fiyatlarını kontrol edin."
+                : "Status updated but offer email could not be sent. Check clinic pricing.")
+          );
+          return;
+        }
+      } else {
+        showToast("success", "Durum güncellendi.");
+      }
     } catch (err) {
       console.error("[lead status update]", err);
       showToast("error", "Durum güncellenemedi.");
@@ -498,6 +560,69 @@ export default function LeadDetailPage() {
         </div>
       )}
 
+      {/* Auto-drafted patient offers from clinic pricing */}
+      <div style={{ marginBottom: 24 }}>
+        <SectionCard
+          title={language === "tr" ? "Hastaya Özel Teklif Taslağı" : "Patient Offer Draft"}
+          icon={<DollarSign size={16} color="#0d9488" />}
+        >
+          <p style={{ fontSize: 13, color: UI_COLORS.textSecondary, marginBottom: 12, lineHeight: 1.5 }}>
+            {language === "tr"
+              ? "Sistem, seçili kliniklerin yüklü fiyatlarından otomatik teklif taslağı oluşturur. Onaylandı dendiğinde bu taslak hastaya e-posta ile iletilir."
+              : "The system drafts an offer from uploaded clinic prices. When you approve, this draft is emailed to the patient."}
+          </p>
+          {draftOffersLoading ? (
+            <p style={{ fontSize: 13, color: UI_COLORS.textMuted }}>
+              <Loader2 size={14} style={{ display: "inline", marginRight: 6, animation: "spin 1s linear infinite" }} />
+              {language === "tr" ? "Fiyatlar eşleştiriliyor…" : "Matching prices…"}
+            </p>
+          ) : draftOffers.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {draftOffers.map((offer: any) => (
+                <div
+                  key={`${offer.clinicId}-${offer.treatmentName}`}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    border: `1px solid ${UI_COLORS.border}`,
+                    background: "rgba(13,148,136,0.04)",
+                  }}
+                >
+                  <div>
+                    <p style={{ fontSize: 13.5, fontWeight: 700, color: UI_COLORS.textPrimary }}>
+                      {offer.clinicName || offer.clinicId}
+                    </p>
+                    <p style={{ fontSize: 12, color: UI_COLORS.textMuted, marginTop: 2 }}>
+                      {offer.treatmentName || catLabel(lead.treatmentCategory)}
+                    </p>
+                  </div>
+                  <p style={{ fontSize: 14, fontWeight: 800, color: "#0d9488", whiteSpace: "nowrap" }}>
+                    {formatOfferPriceRange({
+                      priceMin: Number(offer.priceMin),
+                      priceMax: Number(offer.priceMax ?? offer.priceMin),
+                      currency: offer.currency || "EUR",
+                    })}
+                  </p>
+                </div>
+              ))}
+              {lead.patientOfferEmailSent ? (
+                <Badge label={language === "tr" ? "Hastaya gönderildi" : "Sent to patient"} variant="success" />
+              ) : null}
+            </div>
+          ) : (
+            <p style={{ fontSize: 13, color: UI_COLORS.textMuted }}>
+              {draftOffersError ||
+                (language === "tr"
+                  ? "Eşleşen klinik fiyatı bulunamadı. Klinik fiyatlarını kontrol edin."
+                  : "No matching clinic pricing found. Check clinic prices.")}
+            </p>
+          )}
+        </SectionCard>
+      </div>
+
       {/* Status History */}
       <div style={{ marginBottom: 24 }}>
         <SectionCard title="Durum Geçmişi" icon={<Clock size={16} color="#10b981" />}>
@@ -546,6 +671,7 @@ export default function LeadDetailPage() {
                 jobs: notificationJobs,
                 lead,
               });
+              const offerSent = Boolean(lead.patientOfferEmailSent);
               return (
                 <>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${UI_COLORS.border}` }}>
@@ -555,11 +681,28 @@ export default function LeadDetailPage() {
                       variant={leadEmailHistoryBadgeVariant(agencyBadge)}
                     />
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${UI_COLORS.border}` }}>
                     <span style={{ fontSize: 13, color: UI_COLORS.textSecondary }}>Hasta Bilgilendirme E-postası</span>
                     <Badge
                       label={leadEmailHistoryBadgeLabel(patientBadge, language)}
                       variant={leadEmailHistoryBadgeVariant(patientBadge)}
+                    />
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0" }}>
+                    <span style={{ fontSize: 13, color: UI_COLORS.textSecondary }}>
+                      {language === "tr" ? "Hasta Teklif E-postası" : "Patient Offer Email"}
+                    </span>
+                    <Badge
+                      label={
+                        offerSent
+                          ? language === "tr"
+                            ? "Gönderildi"
+                            : "Sent"
+                          : language === "tr"
+                            ? "Gönderilmedi"
+                            : "Not sent"
+                      }
+                      variant={offerSent ? "success" : "default"}
                     />
                   </div>
                 </>
