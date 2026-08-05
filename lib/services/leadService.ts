@@ -199,6 +199,39 @@ export async function updateLeadStatus(
   }
 }
 
+/** Update selected clinics on a lead (syncs quote + clinic_requests; status unchanged). */
+export async function updateLeadClinicSelection(
+  agencyId: string,
+  leadId: string,
+  clinicIds: string[],
+  authToken: string,
+  options?: { note?: string; locale?: string }
+): Promise<{ clinicIds: string[]; clinicNames: string[]; skipped: boolean }> {
+  const res = await fetch(`/api/agency/${agencyId}/leads/${leadId}/clinic-selection`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${authToken}`,
+    },
+    body: JSON.stringify({
+      clinicIds,
+      note: options?.note,
+      locale: options?.locale,
+    }),
+  });
+
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message = payload?.message || payload?.error || `Clinic selection update failed (${res.status})`;
+    throw new Error(message);
+  }
+  return {
+    clinicIds: payload.clinicIds || clinicIds,
+    clinicNames: payload.clinicNames || [],
+    skipped: Boolean(payload.skipped),
+  };
+}
+
 // ─── Clinic Assignment ──────────────────────────────────────────────────────
 
 export async function assignLeadToClinic(

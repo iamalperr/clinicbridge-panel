@@ -8,7 +8,10 @@ import {
   LEAD_STATUS_ACTIONS,
   type LeadStatusActionKey,
 } from "@/lib/agency/leadStatusActions";
-import { subscribeToLead, updateLeadStatus, subscribeToClinicRequests, subscribeToNotificationJobs, subscribeToExtendedRequests } from "@/lib/services/leadService";
+import { subscribeToLead, updateLeadStatus, updateLeadClinicSelection, subscribeToClinicRequests, subscribeToNotificationJobs, subscribeToExtendedRequests } from "@/lib/services/leadService";
+import { subscribeToAgencyClinics, getAgency } from "@/lib/services/agencyService";
+import { resolveAgencyClinicSelectionLimit } from "@/lib/agency/leadClinicSelection";
+import { FEELINHEALTHY_CONFIG } from "@/lib/agency/feelinhealthyConfig";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n-context";
 import { UI_COLORS } from "@/components/ui/ui-shared";
@@ -18,9 +21,9 @@ import Modal from "@/components/ui/Modal";
 import {
   ArrowLeft, Loader2, User, Phone, Mail, MapPin, Calendar,
   Stethoscope, Building2, DollarSign, MessageSquare, Send,
-  CheckCircle, XCircle, Clock, FileText, Globe, Bell, ExternalLink,
+  CheckCircle, XCircle, Clock, FileText, Globe, Bell, ExternalLink, Pencil,
 } from "lucide-react";
-import type { Lead, LeadStatus, TreatmentCategory } from "@/lib/types/agency";
+import type { AgencyClinic, Lead, LeadStatus, TreatmentCategory } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES, LEAD_STATUSES, LEAD_URGENCIES } from "@/lib/types/agency";
 import LeadDocumentsCard from "@/components/agency/LeadDocumentsCard";
 
@@ -91,8 +94,16 @@ export default function LeadDetailPage() {
   const [emailMessage, setEmailMessage] = useState("");
   const [sendingEmail, setSendingEmail] = useState(false);
 
+  // Clinic selection editor
+  const [showClinicModal, setShowClinicModal] = useState(false);
+  const [agencyClinics, setAgencyClinics] = useState<AgencyClinic[]>([]);
+  const [draftClinicIds, setDraftClinicIds] = useState<string[]>([]);
+  const [savingClinics, setSavingClinics] = useState(false);
+  const [clinicSelectLimit, setClinicSelectLimit] = useState(3);
+
   const catLabel = (cat: string) => TREATMENT_CATEGORIES[cat as TreatmentCategory]?.[language === "tr" ? "tr" : "en"] || cat;
   const statusLabel = (s: string) => LEAD_STATUSES[s as LeadStatus]?.[language === "tr" ? "tr" : "en"] || s;
+  const canEditClinics = Boolean(lead && lead.status !== "lost" && lead.status !== "converted");
 
   useEffect(() => {
     const unsub = subscribeToLead(agencyId, leadId, (data) => {
@@ -108,13 +119,68 @@ export default function LeadDetailPage() {
     const unsubExt = subscribeToExtendedRequests(agencyId, leadId, (data) => {
       setExtendedRequests(data);
     });
+    const unsubClinics = subscribeToAgencyClinics(agencyId, (clinics) => {
+      setAgencyClinics(clinics);
+    });
+    void getAgency(agencyId).then((agency) => {
+      if (!agency) return;
+      setClinicSelectLimit(
+        resolveAgencyClinicSelectionLimit({
+          agencySlug: agency.slug,
+          settingsMaxClinics: agency.settings?.maxClinicsPerTreatmentRequest,
+          guestQuoteLimit: FEELINHEALTHY_CONFIG.guestQuoteClinicSelectionLimit,
+        })
+      );
+    });
     return () => {
       unsub();
       unsubCR();
       unsubJobs();
       unsubExt();
+      unsubClinics();
     };
   }, [agencyId, leadId]);
+
+  const openClinicModal = () => {
+    if (!lead) return;
+    const current = Array.isArray(lead.clinicIds)
+      ? lead.clinicIds.map(String).filter(Boolean)
+      : [];
+    setDraftClinicIds(current);
+    setShowClinicModal(true);
+  };
+
+  const toggleDraftClinic = (clinicId: string) => {
+    setDraftClinicIds((prev) => {
+      if (prev.includes(clinicId)) return prev.filter((id) => id !== clinicId);
+      if (prev.length >= clinicSelectLimit) return prev;
+      return [...prev, clinicId];
+    });
+  };
+
+  const handleSaveClinicSelection = async () => {
+    if (!lead || draftClinicIds.length === 0) return;
+    setSavingClinics(true);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Auth required");
+      await updateLeadClinicSelection(agencyId, leadId, draftClinicIds, token, {
+        locale: language,
+      });
+      setShowClinicModal(false);
+      showToast(
+        "success",
+        language === "tr" ? "Seçilen klinikler güncellendi." : "Selected clinics updated."
+      );
+    } catch (err: any) {
+      showToast(
+        "error",
+        err?.message || (language === "tr" ? "Klinik seçimi güncellenemedi." : "Could not update clinic selection.")
+      );
+    } finally {
+      setSavingClinics(false);
+    }
+  };
 
   const showToast = (type: "success" | "error", message: string) => {
     setToast({ type, message });
@@ -261,15 +327,44 @@ export default function LeadDetailPage() {
         <SectionCard title={t("Treatment") || "Treatment"} icon={<Stethoscope size={18} color={UI_COLORS.brand} />}>
           <InfoRow icon={<Stethoscope size={14} />} label="Tedavi Kategorisi" value={catLabel(lead.treatmentCategory)} />
           <InfoRow icon={<Stethoscope size={14} />} label="Alt Tedavi" value={lead.treatmentSubcategory} />
-          <InfoRow
-            icon={<Building2 size={14} />}
-            label={t("portal.leads.selectedClinics")}
-            value={
-              lead.selectedClinicNames?.length
-                ? lead.selectedClinicNames.join(", ")
-                : lead.assignedClinicName
-            }
-          />
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 0", borderBottom: `1px solid ${UI_COLORS.border}` }}>
+            <div style={{ color: UI_COLORS.textMuted, marginTop: 2, flexShrink: 0 }}>
+              <Building2 size={14} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 2 }}>
+                <p style={{ fontSize: 11.5, fontWeight: 600, color: UI_COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                  {t("portal.leads.selectedClinics")}
+                </p>
+                {canEditClinics && (
+                  <button
+                    type="button"
+                    onClick={openClinicModal}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      border: "none",
+                      background: "transparent",
+                      color: "#0d9488",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      padding: 0,
+                    }}
+                  >
+                    <Pencil size={12} />
+                    {language === "tr" ? "Düzenle" : "Edit"}
+                  </button>
+                )}
+              </div>
+              <p style={{ fontSize: 14, fontWeight: 500, color: (lead.selectedClinicNames?.length || lead.assignedClinicName) ? UI_COLORS.textPrimary : UI_COLORS.textMuted }}>
+                {lead.selectedClinicNames?.length
+                  ? lead.selectedClinicNames.join(", ")
+                  : lead.assignedClinicName || "—"}
+              </p>
+            </div>
+          </div>
           <InfoRow icon={<DollarSign size={14} />} label="Bütçe" value={(lead as any).budget} />
           <InfoRow icon={<Calendar size={14} />} label="Seyahat Tarihi" value={lead.travelDate || (lead as any).travelDate} />
           <InfoRow icon={<MapPin size={14} />} label={t("portal.leads.city")} value={lead.selectedCity} />
@@ -512,6 +607,75 @@ export default function LeadDetailPage() {
             <Button variant="secondary" onClick={() => setShowEmailModal(false)}>İptal</Button>
             <Button onClick={handleSendPatientEmail} isLoading={sendingEmail} disabled={!lead.patientEmail}>
               <Send size={14} /> Gönder
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Clinic selection modal */}
+      <Modal
+        isOpen={showClinicModal}
+        onClose={() => setShowClinicModal(false)}
+        title={language === "tr" ? "Seçilen Klinikleri Düzenle" : "Edit Selected Clinics"}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <p style={{ fontSize: 13, color: UI_COLORS.textSecondary, lineHeight: 1.5 }}>
+            {language === "tr"
+              ? `En fazla ${clinicSelectLimit} klinik seçebilirsiniz. Değişiklik lead, teklif talebi ve klinik taleplerine yansır; lead durumu değişmez. Hastaya sebep bilgisini bilgilendirme mailinde yazabilirsiniz.`
+              : `You can select up to ${clinicSelectLimit} clinics. Changes sync to the lead, quote request, and clinic requests without changing lead status. Explain the reason in the patient notification email if needed.`}
+          </p>
+          <p style={{ fontSize: 12, fontWeight: 700, color: UI_COLORS.textMuted }}>
+            {language === "tr" ? "Seçilen" : "Selected"}: {draftClinicIds.length} / {clinicSelectLimit}
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 320, overflowY: "auto" }}>
+            {agencyClinics
+              .filter((c) => {
+                const st = String(c.status || "active").toLowerCase();
+                return st !== "inactive" && st !== "archived" && st !== "disabled";
+              })
+              .map((clinic) => {
+                const id = String(clinic.id || clinic.clinicId || "");
+                if (!id) return null;
+                const checked = draftClinicIds.includes(id);
+                const disabled = !checked && draftClinicIds.length >= clinicSelectLimit;
+                return (
+                  <label
+                    key={id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "10px 12px",
+                      borderRadius: 8,
+                      border: `1px solid ${checked ? "rgba(13,148,136,0.35)" : UI_COLORS.border}`,
+                      background: checked ? "rgba(13,148,136,0.06)" : UI_COLORS.bgCard,
+                      cursor: disabled ? "not-allowed" : "pointer",
+                      opacity: disabled ? 0.55 : 1,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={disabled}
+                      onChange={() => toggleDraftClinic(id)}
+                    />
+                    <span style={{ fontSize: 13.5, fontWeight: 600, color: UI_COLORS.textPrimary }}>
+                      {clinic.clinicName || id}
+                    </span>
+                  </label>
+                );
+              })}
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+            <Button variant="secondary" onClick={() => setShowClinicModal(false)}>
+              {language === "tr" ? "İptal" : "Cancel"}
+            </Button>
+            <Button
+              onClick={handleSaveClinicSelection}
+              isLoading={savingClinics}
+              disabled={draftClinicIds.length === 0 || savingClinics}
+            >
+              {language === "tr" ? "Kaydet" : "Save"}
             </Button>
           </div>
         </div>
