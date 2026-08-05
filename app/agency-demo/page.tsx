@@ -1387,8 +1387,8 @@ export default function AgencyDemoPage() {
                           <div style={{ marginTop: 16, padding: "16px", background: C.tealBg, borderRadius: 16, border: `1px solid ${C.tealBorder}` }}>
                             <p style={{ fontSize: 13, color: C.navy, fontWeight: 600, marginBottom: 12, textAlign: "center" }}>
                               {lang === "tr" 
-                                ? `Nasıl ilerlemek istersiniz? (En fazla 3 klinik seçebilirsiniz)` 
-                                : `How would you like to proceed? (Max 3 clinics allowed)`}
+                                ? `Nasıl ilerlemek istersiniz? (En fazla 2 klinik seçebilirsiniz)` 
+                                : `How would you like to proceed? (Max 2 clinics allowed)`}
                             </p>
                             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                               <button onClick={() => sendSystemAction({ type: "clinic_selection_mode", mode: "automatic" })} style={{ width: "100%", padding: "12px", borderRadius: 12, fontSize: 14, fontWeight: 700, background: sessionCtx.clinicSelectionMode === "automatic" ? `linear-gradient(135deg, ${C.teal}, ${C.navy})` : C.white, color: sessionCtx.clinicSelectionMode === "automatic" ? "#fff" : C.teal, border: `1px solid ${sessionCtx.clinicSelectionMode === "automatic" ? "transparent" : C.teal}`, cursor: "pointer", transition: "all 0.2s" }}>

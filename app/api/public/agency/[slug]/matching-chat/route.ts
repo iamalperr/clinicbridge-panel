@@ -61,6 +61,12 @@ import {
   ensureTreatmentFromPending,
   mergeFeelinHealthySession,
 } from "@/lib/agency/feelinhealthyConversationMachine";
+import {
+  parseClinicCardAction,
+  routeClinicCardAction,
+  requestQuoteSuccessCopy,
+  requestQuoteFailureCopy,
+} from "@/lib/agency/feelinhealthyClinicCardActions";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -454,9 +460,13 @@ export async function POST(
             name: "FeelinHealthy",
             slug: "feelinhealthy",
             privacyUrl: "https://feelinhealthy.com/kvkk",
-            settings: { maxClinicsPerTreatmentRequest: 3 }
+            settings: { maxClinicsPerTreatmentRequest: FEELINHEALTHY_CONFIG.guestQuoteClinicSelectionLimit }
           };
-          matchingConfig = { maxClinicsToShow: 3, showPriceRange: true, showProfileLinks: true };
+          matchingConfig = {
+            maxClinicsToShow: FEELINHEALTHY_CONFIG.guestQuoteClinicSelectionLimit,
+            showPriceRange: true,
+            showProfileLinks: true,
+          };
         } else {
           return jsonResponse({ error: "Agency not found" }, { status: 404, headers: CORS });
         }
@@ -477,12 +487,166 @@ export async function POST(
     }
     resolvedAgencyId = agencyId;
 
-    const maxClinics = matchingConfig?.maxClinicsToShow || agencyData.settings?.maxClinicsPerTreatmentRequest || 3;
+    const isFeelinHealthyEarly = slug === "feelinhealthy" || agencyData.slug === "feelinhealthy";
+    // Public guest FeelinHealthy: hard-cap selection/quote comparison at 2.
+    const maxClinics = isFeelinHealthyEarly
+      ? FEELINHEALTHY_CONFIG.guestQuoteClinicSelectionLimit
+      : matchingConfig?.maxClinicsToShow || agencyData.settings?.maxClinicsPerTreatmentRequest || 3;
     const showPriceRange = matchingConfig?.showPriceRange !== false;
     const showProfileLinks = matchingConfig?.showProfileLinks !== false;
     // Initialize selection arrays
     if (!sessionContext.selectedClinicIds) {
       sessionContext.selectedClinicIds = [];
+    }
+
+    // ── FeelinHealthy clinic-card structured actions (early return, no LLM) ──
+    // select_clinic / view_clinic_details / request_quote must not share a quote path.
+    if (isFeelinHealthyEarly && action) {
+      const cardPayload = parseClinicCardAction(action);
+      if (cardPayload) {
+        if (!sessionContext.sessionId) {
+          sessionContext.sessionId = `sess_${Date.now()}`;
+        }
+        const cardResult = routeClinicCardAction({
+          payload: cardPayload,
+          sessionContext,
+        });
+
+        if (cardResult.kind === "noop") {
+          return jsonResponse(
+            {
+              type: "noop",
+              sessionContext: cardResult.sessionContext,
+              showClinicCards: false,
+              shouldCreateNewLead: false,
+              shouldUpdateLead: false,
+            },
+            { headers: CORS }
+          );
+        }
+
+        if (cardResult.kind === "error") {
+          return jsonResponse(
+            {
+              reply: cardResult.reply,
+              type: cardResult.type || "text",
+              sessionContext: cardResult.sessionContext,
+              showClinicCards: cardResult.showClinicCards !== false,
+              shouldCreateNewLead: false,
+              shouldUpdateLead: false,
+            },
+            { status: cardResult.httpStatus || 400, headers: CORS }
+          );
+        }
+
+        // select_clinic / view_clinic_details — never persist quote
+        if (!cardResult.shouldPersistQuote) {
+          return jsonResponse(
+            {
+              reply: cardResult.reply,
+              type: cardResult.type || "text",
+              sessionContext: cardResult.sessionContext,
+              showClinicCards: cardResult.showClinicCards === true,
+              shouldCreateNewLead: false,
+              shouldUpdateLead: false,
+              profileUrl: cardResult.profileUrl || undefined,
+              openProfileInNewTab: cardResult.openProfileInNewTab === true,
+            },
+            { headers: CORS }
+          );
+        }
+
+        // request_quote — persist before success copy; email is async after DB write
+        const locale =
+          (cardPayload.locale || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en")
+            ? "en"
+            : "tr";
+        const quoteCtx = cardResult.sessionContext;
+        const clinicIdsForQuote = cardResult.clinicIdsForQuote || [cardPayload.clinicId];
+
+        if (quoteCtx.quoteConsent === true && quoteCtx.sessionId) {
+          try {
+            const { saveConsentRecord } = await import("@/lib/services/agencyConsentService");
+            const privacyVersion = agencyData.privacySettings?.version || "v1.0";
+            await saveConsentRecord(
+              agencyId,
+              quoteCtx.sessionId,
+              "accepted",
+              privacyVersion,
+              locale,
+              "agency_widget"
+            );
+          } catch (consentErr) {
+            console.warn(
+              "[matching-chat] consent ensure failed (request_quote)",
+              consentErr instanceof Error ? consentErr.message : "unknown"
+            );
+          }
+        }
+
+        const { persistAgencyQuoteRequest } = await import(
+          "@/lib/services/agencyQuoteRequestService"
+        );
+        const persistResult = await persistAgencyQuoteRequest({
+          agencyId,
+          conversationId: String(quoteCtx.sessionId || ""),
+          clinicIds: clinicIdsForQuote,
+          patientEmail: String(quoteCtx.patientEmail || ""),
+          patientName: quoteCtx.patientName,
+          patientPhone: quoteCtx.patientPhone,
+          patientAge: typeof quoteCtx.patientAge === "number" ? quoteCtx.patientAge : undefined,
+          patientGender: quoteCtx.patientGender,
+          country: quoteCtx.patientCountry,
+          language: locale,
+          treatmentCategory: quoteCtx.lastTreatmentCategory,
+          treatmentSubcategory: quoteCtx.lastSubTreatment,
+          treatmentName: quoteCtx.lastTreatmentCategory || "",
+          selectedCity: quoteCtx.selectedCity,
+          istanbulSide: quoteCtx.istanbul_side,
+          travelDate: quoteCtx.travelDate,
+          conversationSummary: Array.isArray(history)
+            ? history
+                .slice(-12)
+                .map((m: any) => `${m.role}: ${m.content || m.text || ""}`)
+                .join("\n")
+            : "",
+          source: "widget",
+        });
+
+        if (!persistResult.ok) {
+          return jsonResponse(
+            {
+              reply: requestQuoteFailureCopy(locale),
+              type: "text",
+              sessionContext: quoteCtx,
+              showClinicCards: false,
+              shouldCreateNewLead: false,
+              shouldUpdateLead: false,
+              quotePersistError: persistResult.errorCode,
+            },
+            { headers: CORS }
+          );
+        }
+
+        quoteCtx.leadStage = "quote_request_created";
+        quoteCtx.leadId = persistResult.leadId;
+        quoteCtx.quoteId = persistResult.quoteId;
+        delete quoteCtx.__fhQuoteRequestedByCardAction;
+
+        return jsonResponse(
+          {
+            reply: requestQuoteSuccessCopy(locale, cardPayload.clinicName),
+            type: "text",
+            sessionContext: quoteCtx,
+            showClinicCards: false,
+            shouldCreateNewLead: false,
+            shouldUpdateLead: false,
+            leadId: persistResult.leadId,
+            quoteId: persistResult.quoteId,
+          },
+          { headers: CORS }
+        );
+      }
     }
 
     // Handle system actions
@@ -1873,8 +2037,9 @@ export async function POST(
 
     /* ── 5. Handle each intent type ── */
 
-    // --- FEELINHEALTHY: Clinic Coordinator lead completion (deterministic) ---
-    // After clinic selection, never rematch. Collect only missing intake, then create quote.
+    // --- FEELINHEALTHY: Clinic Coordinator (no auto-quote) ---
+    // select_clinic enters coordinator; quote is created ONLY via request_quote
+    // structured action or an explicit chat shouldCreateLead later.
     if (isFeelinHealthy && resolveAssistantRole(newCtx) === "clinic_coordinator" && !leadAlreadyCreated) {
       const currentLang =
         (parsed.language || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en")
@@ -1900,121 +2065,13 @@ export async function POST(
         }, { headers: CORS });
       }
 
-      if (
-        newCtx.patientEmailStatus !== "verified_format" &&
-        !String(newCtx.patientEmail || "").includes("@")
-      ) {
-        newCtx.leadStage = "collecting_email";
-        return jsonResponse({
-          reply:
-            currentLang === "en"
-              ? "To complete your quote request we need a valid email address."
-              : "Teklif talebinizi tamamlamak için geçerli bir e-posta adresine ihtiyacımız var.",
-          type: "email_request",
-          sessionContext: newCtx,
-          showClinicCards: false,
-          leadStatus: newCtx.leadStage,
-          shouldCreateNewLead: false,
-          shouldUpdateLead: false,
-        }, { headers: CORS });
+      // Intake complete in coordinator mode: continue to clinic Q&A handlers.
+      // Do NOT auto-call persistAgencyQuoteRequest here — that was the P0 bug
+      // that made every clinic-card action look like a failed quote request.
+      if (!parsed.shouldCreateLead) {
+        parsed.intent = parsed.intent || "clinic_question";
+        parsed.showClinicCards = false;
       }
-
-      const clinicIdsForQuote = Array.from(
-        new Set(
-          [
-            newCtx.selectedClinicId,
-            ...(newCtx.selectedClinicIds || []),
-            newCtx.lastFocusedClinicId,
-          ].filter(Boolean) as string[]
-        )
-      );
-
-      // Ensure consent record exists when session already accepted (covers race / missing write).
-      if (newCtx.quoteConsent === true && newCtx.sessionId) {
-        try {
-          const { saveConsentRecord } = await import("@/lib/services/agencyConsentService");
-          await saveConsentRecord(
-            agencyId,
-            newCtx.sessionId,
-            "accepted",
-            privacySettings.version || "v1.0",
-            currentLang,
-            "agency_widget"
-          );
-        } catch (consentErr) {
-          console.warn(
-            "[matching-chat] consent ensure failed",
-            consentErr instanceof Error ? consentErr.message : "unknown"
-          );
-        }
-      }
-
-      const { persistAgencyQuoteRequest } = await import("@/lib/services/agencyQuoteRequestService");
-      const persistResult = await persistAgencyQuoteRequest({
-        agencyId,
-        conversationId: String(newCtx.sessionId || ctx.sessionId || ""),
-        clinicIds: clinicIdsForQuote,
-        patientEmail: String(newCtx.patientEmail),
-        patientName: newCtx.patientName,
-        patientPhone: newCtx.patientPhone,
-        patientAge: typeof newCtx.patientAge === "number" ? newCtx.patientAge : undefined,
-        patientGender: newCtx.patientGender,
-        country: newCtx.patientCountry,
-        language: currentLang,
-        treatmentCategory: newCtx.lastTreatmentCategory || parsed.treatmentCategory,
-        treatmentSubcategory: newCtx.lastSubTreatment || parsed.subTreatment,
-        treatmentName: newCtx.lastTreatmentCategory || parsed.treatmentCategory || "",
-        selectedCity: newCtx.selectedCity,
-        istanbulSide: newCtx.istanbul_side,
-        travelDate: newCtx.travelDate,
-        conversationSummary: Array.isArray(history)
-          ? history
-              .slice(-12)
-              .map((m: any) => `${m.role}: ${m.content || m.text || ""}`)
-              .join("\n")
-          : "",
-        source: "widget",
-      });
-
-      if (!persistResult.ok) {
-        console.error("[matching-chat] quote persist failed", {
-          agencyId,
-          errorCode: persistResult.errorCode,
-          clinicCount: clinicIdsForQuote.length,
-        });
-        return jsonResponse({
-          reply:
-            currentLang === "en"
-              ? "I confirmed your clinic choice, but could not save the quote request yet. Please try again in a moment."
-              : "Klinik seçiminizi aldım ancak teklif talebini henüz kaydedemedim. Lütfen kısa süre sonra tekrar deneyin.",
-          type: "text",
-          sessionContext: newCtx,
-          showClinicCards: false,
-          leadStatus: newCtx.leadStage,
-          shouldCreateNewLead: false,
-          shouldUpdateLead: false,
-          quotePersistError: persistResult.errorCode,
-        }, { headers: CORS });
-      }
-
-      newCtx.leadStage = "quote_request_created";
-      newCtx.clinicSelectionStatus = "completed";
-      newCtx.leadId = persistResult.leadId;
-      newCtx.quoteId = persistResult.quoteId;
-      return jsonResponse({
-        reply:
-          currentLang === "en"
-            ? `Your quote request for ${newCtx.selectedClinicName || "the selected clinic"} has been created successfully. The FeelinHealthy team will review it and contact you shortly.`
-            : `Teklif talebiniz başarıyla oluşturuldu (${newCtx.selectedClinicName || "seçilen klinik"}). FeelinHealthy ekibi talebinizi inceleyerek sizinle iletişime geçecektir.`,
-        type: "text",
-        sessionContext: newCtx,
-        showClinicCards: false,
-        leadStatus: newCtx.leadStage,
-        shouldCreateNewLead: false, // already persisted server-side
-        shouldUpdateLead: false,
-        leadId: persistResult.leadId,
-        quoteId: persistResult.quoteId,
-      }, { headers: CORS });
     }
 
     // --- CONVERSATION COMPLETED ---
@@ -2349,6 +2406,7 @@ export async function POST(
         }
 
         if (isFeelinHealthy) {
+          const guestLimit = FEELINHEALTHY_CONFIG.guestQuoteClinicSelectionLimit;
           const clinicIdsForQuote = Array.from(
             new Set(
               [
@@ -2357,7 +2415,32 @@ export async function POST(
                 newCtx.lastFocusedClinicId,
               ].filter(Boolean) as string[]
             )
-          );
+          ).slice(0, guestLimit);
+          if (
+            Array.from(
+              new Set(
+                [
+                  newCtx.selectedClinicId,
+                  ...(newCtx.selectedClinicIds || []),
+                  newCtx.lastFocusedClinicId,
+                ].filter(Boolean) as string[]
+              )
+            ).length > guestLimit
+          ) {
+            return jsonResponse({
+              reply:
+                parsed.language === "en"
+                  ? `You can select up to ${guestLimit} clinics for quote comparison.`
+                  : `Teklif karşılaştırması için en fazla ${guestLimit} klinik seçebilirsiniz.`,
+              type: "text",
+              sessionContext: {
+                ...newCtx,
+                selectedClinicIds: clinicIdsForQuote,
+              },
+              showClinicCards: true,
+              shouldCreateNewLead: false,
+            }, { status: 400, headers: CORS });
+          }
           const { persistAgencyQuoteRequest } = await import("@/lib/services/agencyQuoteRequestService");
           const persistResult = await persistAgencyQuoteRequest({
             agencyId,
@@ -2382,8 +2465,8 @@ export async function POST(
             return jsonResponse({
               reply:
                 parsed.language === "en"
-                  ? "I could not save your quote request yet. Please try again."
-                  : "Teklif talebinizi henüz kaydedemedim. Lütfen tekrar deneyin.",
+                  ? "We could not save your quote request right now. Please try again shortly."
+                  : "Teklif talebinizi şu anda kaydedemedik. Lütfen kısa süre sonra yeniden deneyin.",
               type: "text",
               sessionContext: newCtx,
               showClinicCards: false,
@@ -2398,8 +2481,8 @@ export async function POST(
             reply:
               parsed.replyText ||
               (parsed.language === "en"
-                ? "Your quote request has been created successfully."
-                : "Teklif talebiniz başarıyla oluşturuldu."),
+                ? "Your quote request has been created successfully. The FeelinHealthy team will review it and contact you shortly."
+                : "Teklif talebiniz başarıyla oluşturuldu. FeelinHealthy ekibi talebinizi inceleyerek sizinle iletişime geçecektir."),
             type: "text",
             sessionContext: newCtx,
             showClinicCards: false,

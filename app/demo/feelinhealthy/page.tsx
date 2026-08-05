@@ -10,6 +10,13 @@ import {
 import { PrivacyConsentCard } from "@/components/chat/PrivacyConsentCard";
 import { IstanbulSideClarificationCard } from "@/components/chat/IstanbulSideClarificationCard";
 import { CitySelectionCard } from "@/components/chat/CitySelectionCard";
+import { FEELINHEALTHY_CONFIG } from "@/lib/agency/feelinhealthyConfig";
+import type { ClinicCardActionType } from "@/lib/agency/feelinhealthyClinicCardActions";
+
+const GUEST_CLINIC_LIMIT =
+  FEELINHEALTHY_CONFIG.guestQuoteClinicSelectionLimit ||
+  FEELINHEALTHY_CONFIG.maxGuestClinics ||
+  2;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -303,6 +310,8 @@ export default function FeelinHealthyLive() {
 
   // Extended Request UX
   const [showMaxClinicsModal, setShowMaxClinicsModal] = useState(false);
+  const [pendingClinicActionKeys, setPendingClinicActionKeys] = useState<Record<string, boolean>>({});
+  const processedClinicActionIdsRef = useRef<Set<string>>(new Set());
   const [requestMoreLoading, setRequestMoreLoading] = useState(false);
 
   const [matchedClinics, setMatchedClinics] = useState<ClinicData[]>([]);
@@ -556,48 +565,102 @@ export default function FeelinHealthyLive() {
 
   const sendSystemAction = async (payload: any) => {
     if (aiTyping) return;
+
+    const actionId =
+      payload?.actionId ||
+      (typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `act_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+    const isClinicCardAction =
+      payload?.action === "select_clinic" ||
+      payload?.action === "view_clinic_details" ||
+      payload?.action === "request_quote";
+
+    if (isClinicCardAction) {
+      if (processedClinicActionIdsRef.current.has(actionId)) return;
+      if (pendingClinicActionKeys[actionId]) return;
+      setPendingClinicActionKeys((p) => ({ ...p, [actionId]: true }));
+    }
+
     setAiTyping(true);
 
     try {
+      const bodyAction = isClinicCardAction
+        ? {
+            action: payload.action as ClinicCardActionType,
+            clinicId: payload.clinicId,
+            actionId,
+            clinicName: payload.clinicName,
+            clinicSlug: payload.clinicSlug,
+            profilePath: payload.profilePath,
+            locale: payload.locale || lang,
+          }
+        : { ...payload, actionId: payload.actionId || actionId };
+
       const res = await fetch(`/api/public/agency/${SLUG}/matching-chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: payload,
+          action: bodyAction,
           history: aiMsgs.slice(-10).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text })),
           sessionContext: sessionCtxRef.current,
         }),
       });
 
-      if (!res.ok) throw new Error(`API error ${res.status}`);
+      if (!res.ok && res.status !== 400) throw new Error(`API error ${res.status}`);
       const data = await res.json();
 
-      const replyMsg: any = {
-        role: "ai",
-        text: data.reply || "Yanıt alınamadı.",
-        type: data.type || "text",
-        clinics: data.clinics || undefined,
-        showClinicCards: data.showClinicCards,
-        privacyNoticeUrl: data.privacyNoticeUrl,
-        privacyNoticeLabel: data.privacyNoticeLabel,
-        consentStructured: data.consentStructured,
-        additionalEligibleClinicCount: data.additionalEligibleClinicCount,
-        conversionData: data.conversionData,
-      };
-      setAiMsgs((p) => [...p, replyMsg]);
+      // Idempotent noop — do not append duplicate assistant messages.
+      if (data.type === "noop") {
+        if (data.sessionContext) commitSessionCtx(data.sessionContext);
+        if (isClinicCardAction) {
+          processedClinicActionIdsRef.current.add(actionId);
+        }
+        return;
+      }
+
+      if (data.openProfileInNewTab && data.profileUrl && typeof window !== "undefined") {
+        window.open(data.profileUrl, "_blank", "noopener,noreferrer");
+      }
+
+      // view_clinic_details may intentionally omit chat reply.
+      if (data.reply || data.type === "email_request" || data.type === "clinic_selected") {
+        const replyMsg: any = {
+          role: "ai",
+          text: data.reply || "",
+          type: data.type || "text",
+          clinics: data.clinics || undefined,
+          showClinicCards: data.showClinicCards,
+          privacyNoticeUrl: data.privacyNoticeUrl,
+          privacyNoticeLabel: data.privacyNoticeLabel,
+          consentStructured: data.consentStructured,
+          additionalEligibleClinicCount: data.additionalEligibleClinicCount,
+          conversionData: data.conversionData,
+        };
+        if (replyMsg.text || replyMsg.type === "email_request") {
+          setAiMsgs((p) => [...p, replyMsg]);
+        }
+      }
+
       if (data.sessionContext) commitSessionCtx(data.sessionContext);
 
-      const nextCtx = data.sessionContext || sessionCtxRef.current;
-      const hist = aiMsgs.slice(-10).map((m) => ({
-        role: m.role === "ai" ? "assistant" : "user",
-        content: m.text,
-      }));
-      if (data.shouldCreateNewLead || payload?.type === "lead_capture") {
-        const clinicIds =
-          payload?.type === "lead_capture" && payload.clinicId
-            ? [payload.clinicId, ...(nextCtx.selectedClinicIds || [])]
-            : nextCtx.selectedClinicIds || [];
-        void persistQuoteRequestLead({ ctx: nextCtx, clinicIds, history: hist });
+      if (isClinicCardAction) {
+        processedClinicActionIdsRef.current.add(actionId);
+      }
+
+      // Client-side persist only for non-FH legacy paths. FeelinHealthy request_quote
+      // is persisted server-side in matching-chat before success copy.
+      if (data.shouldCreateNewLead && !isClinicCardAction) {
+        const nextCtx = data.sessionContext || sessionCtxRef.current;
+        const hist = aiMsgs.slice(-10).map((m) => ({
+          role: m.role === "ai" ? "assistant" : "user",
+          content: m.text,
+        }));
+        void persistQuoteRequestLead({
+          ctx: nextCtx,
+          clinicIds: nextCtx.selectedClinicIds || [],
+          history: hist,
+        });
       }
     } catch (err) {
       console.error("[CB-DEMO] ERROR:", err);
@@ -606,6 +669,13 @@ export default function FeelinHealthyLive() {
         text: lang === "tr" ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin." : "We're experiencing a technical issue. Please try again."
       }]);
     } finally {
+      if (isClinicCardAction) {
+        setPendingClinicActionKeys((p) => {
+          const next = { ...p };
+          delete next[actionId];
+          return next;
+        });
+      }
       setAiTyping(false);
     }
   };
@@ -1306,27 +1376,64 @@ export default function FeelinHealthyLive() {
                                     </button>
                                   ) : (
                                     <button onClick={() => {
-                                      const max = agency?.settings?.maxClinicsPerTreatmentRequest || 3;
+                                      const max = GUEST_CLINIC_LIMIT;
                                       if (sessionCtx.selectedClinicIds && sessionCtx.selectedClinicIds.length >= max) {
                                         setShowMaxClinicsModal(true);
                                       } else {
                                         sendSystemAction({ type: "clinic_selection_update", action: "select", clinicId: rec.clinicId || rec.id, clinicName: rec.clinicName, locale: lang });
                                       }
-                                    }} style={{ flex: 1, padding: "8px 0", borderRadius: 6, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}>
+                                    }} disabled={aiTyping} style={{ flex: 1, padding: "8px 0", borderRadius: 6, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: aiTyping ? "not-allowed" : "pointer", opacity: aiTyping ? 0.6 : 1 }}>
                                       {lang === "tr" ? "Seç" : "Select"}
                                     </button>
                                   )}
                                 </div>
                               ) : (
-                                <button onClick={() => sendSystemAction({ type: "clinic_selected", clinicName: rec.clinicName, clinicId: rec.clinicId || rec.id, locale: lang })} style={{ width: "100%", padding: "8px 0", borderRadius: 6, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}>
+                                <button
+                                  disabled={aiTyping}
+                                  onClick={() =>
+                                    sendSystemAction({
+                                      action: "select_clinic",
+                                      clinicId: rec.clinicId || rec.id,
+                                      clinicName: rec.clinicName,
+                                      clinicSlug: rec.clinicSlug,
+                                      locale: lang,
+                                    })
+                                  }
+                                  style={{ width: "100%", padding: "8px 0", borderRadius: 6, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: aiTyping ? "not-allowed" : "pointer", opacity: aiTyping ? 0.6 : 1 }}
+                                >
                                   {lang === "tr" ? "Bu Klinikle Devam Et" : "Proceed with this Clinic"}
                                 </button>
                               )}
                               <div style={{ display: "flex", gap: 6 }}>
-                                <button onClick={() => sendSystemAction({ type: "clinic_info", clinicName: rec.clinicName, clinicId: rec.clinicId || rec.id })} style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, textAlign: "center", background: C.primaryBg, color: C.primary, border: `1px solid ${C.primaryBorder}`, cursor: "pointer" }}>
+                                <button
+                                  disabled={aiTyping}
+                                  onClick={() =>
+                                    sendSystemAction({
+                                      action: "view_clinic_details",
+                                      clinicId: rec.clinicId || rec.id,
+                                      clinicName: rec.clinicName,
+                                      clinicSlug: rec.clinicSlug,
+                                      profilePath: rec.profilePath,
+                                      locale: lang,
+                                    })
+                                  }
+                                  style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, textAlign: "center", background: C.primaryBg, color: C.primary, border: `1px solid ${C.primaryBorder}`, cursor: aiTyping ? "not-allowed" : "pointer", opacity: aiTyping ? 0.6 : 1 }}
+                                >
                                   {lang === "tr" ? "Daha Fazla Bilgi" : "More Info"}
                                 </button>
-                                <button onClick={() => sendSystemAction({ type: "lead_capture", clinicName: rec.clinicName, clinicId: rec.clinicId || rec.id })} style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, background: C.white, color: C.navy, border: `1px solid ${C.border}`, cursor: "pointer" }}>
+                                <button
+                                  disabled={aiTyping}
+                                  onClick={() =>
+                                    sendSystemAction({
+                                      action: "request_quote",
+                                      clinicId: rec.clinicId || rec.id,
+                                      clinicName: rec.clinicName,
+                                      clinicSlug: rec.clinicSlug,
+                                      locale: lang,
+                                    })
+                                  }
+                                  style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, background: C.white, color: C.navy, border: `1px solid ${C.border}`, cursor: aiTyping ? "not-allowed" : "pointer", opacity: aiTyping ? 0.6 : 1 }}
+                                >
                                   {lang === "tr" ? "Teklif İste" : "Request Quote"}
                                 </button>
                               </div>
@@ -1343,8 +1450,8 @@ export default function FeelinHealthyLive() {
                           <div style={{ marginTop: 12, padding: "12px", background: C.primaryBg, borderRadius: 12, border: `1px solid ${C.primaryBorder}` }}>
                             <p style={{ fontSize: 12, color: C.navy, fontWeight: 600, marginBottom: 8, textAlign: "center" }}>
                               {lang === "tr" 
-                                ? `Nasıl ilerlemek istersiniz? (En fazla ${agency?.settings?.maxClinicsPerTreatmentRequest || 3} klinik seçebilirsiniz)` 
-                                : `How would you like to proceed? (Max ${agency?.settings?.maxClinicsPerTreatmentRequest || 3} clinics allowed)`}
+                                ? `Nasıl ilerlemek istersiniz? (En fazla ${GUEST_CLINIC_LIMIT} klinik seçebilirsiniz)` 
+                                : `How would you like to proceed? (Max ${GUEST_CLINIC_LIMIT} clinics allowed)`}
                             </p>
                             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                               <button onClick={() => sendSystemAction({ type: "clinic_selection_mode", mode: "automatic" })} style={{ width: "100%", padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: sessionCtx.clinicSelectionMode === "automatic" ? `linear-gradient(135deg, ${C.primary}, ${C.navy})` : C.white, color: sessionCtx.clinicSelectionMode === "automatic" ? "#fff" : C.primary, border: `1px solid ${sessionCtx.clinicSelectionMode === "automatic" ? "transparent" : C.primary}`, cursor: "pointer" }}>
@@ -1359,7 +1466,7 @@ export default function FeelinHealthyLive() {
                               <div style={{ marginTop: 12, textAlign: "center" }}>
                                 <p style={{ fontSize: 13, color: C.text, fontWeight: 600, marginBottom: 8 }}>
                                   {lang === "tr" ? "Seçilen Klinikler: " : "Selected Clinics: "}
-                                  <span style={{ color: C.primary }}>{sessionCtx.selectedClinicIds?.length || 0} / {agency?.settings?.maxClinicsPerTreatmentRequest || 3}</span>
+                                  <span style={{ color: C.primary }}>{sessionCtx.selectedClinicIds?.length || 0} / {GUEST_CLINIC_LIMIT}</span>
                                 </p>
                                 {sessionCtx.selectedClinicIds && sessionCtx.selectedClinicIds.length > 0 && (
                                   <button onClick={() => sendSystemAction({ type: "clinic_selection_complete" })} style={{ width: "100%", padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}>
@@ -1601,8 +1708,8 @@ export default function FeelinHealthyLive() {
             </h3>
             <p style={{ fontSize: 14, color: C.textSec, lineHeight: 1.5, textAlign: "center", marginBottom: 24 }}>
               {lang === "tr" 
-                ? "Standart talep akışında aynı anda en fazla 3 klinik seçebilirsiniz. Daha fazla klinik seçeneğinin değerlendirilmesini isterseniz agency kayıt sayfası üzerinden genişletilmiş talep oluşturabilirsiniz." 
-                : "You can select up to 3 clinics in the standard request flow. To be considered by more clinics, you can create an extended request through the agency registration page."}
+                ? `Standart talep akışında aynı anda en fazla ${GUEST_CLINIC_LIMIT} klinik seçebilirsiniz. Daha fazla klinik seçeneğinin değerlendirilmesini isterseniz agency kayıt sayfası üzerinden genişletilmiş talep oluşturabilirsiniz.` 
+                : `You can select up to ${GUEST_CLINIC_LIMIT} clinics in the standard request flow. To be considered by more clinics, you can create an extended request through the agency registration page.`}
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <button 

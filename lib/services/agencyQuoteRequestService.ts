@@ -12,6 +12,9 @@ import {
 } from "@/lib/agency/leadQuoteArchitecture";
 import { submitAgencyLead } from "@/lib/services/leadSubmissionService";
 import { pickOfficialClinicName } from "@/lib/services/agencyQuoteNotificationContent";
+import { scheduleAndProcessAgencyLeadNotification } from "@/lib/services/agencyNotificationService";
+import { scheduleAndProcessPatientLeadNotification } from "@/lib/services/patientNotificationService";
+import { FEELINHEALTHY_CONFIG } from "@/lib/agency/feelinhealthyConfig";
 
 export interface PersistAgencyQuoteRequestInput {
   agencyId: string;
@@ -84,6 +87,15 @@ export async function persistAgencyQuoteRequest(
   if (clinicIds.length === 0) {
     return { ok: false, errorCode: "CLINIC_SELECTION_REQUIRED", errorMessage: "Missing clinic selection" };
   }
+  // Guest FeelinHealthy quote comparison hard-cap (backend enforcement).
+  const guestLimit = FEELINHEALTHY_CONFIG.guestQuoteClinicSelectionLimit || 2;
+  if (clinicIds.length > guestLimit) {
+    return {
+      ok: false,
+      errorCode: "CLINIC_SELECTION_LIMIT_EXCEEDED",
+      errorMessage: `Teklif karşılaştırması için en fazla ${guestLimit} klinik seçebilirsiniz.`,
+    };
+  }
 
   try {
     const leadResult = await submitAgencyLead({
@@ -105,6 +117,8 @@ export async function persistAgencyQuoteRequest(
       selectedCity: input.selectedCity || undefined,
       istanbulSide: input.istanbulSide || undefined,
       travelDate: input.travelDate || undefined,
+      // Persist quote doc before email; notifications start after quote write.
+      deferNotifications: true,
     });
 
     const leadId = leadResult.leadId;
@@ -210,6 +224,17 @@ export async function persistAgencyQuoteRequest(
       },
       { merge: true }
     );
+
+    // Notifications only after lead + quote are persisted. Email failure must not
+    // roll back the quote; retry jobs handle delivery later.
+    if (leadResult.status === "created") {
+      scheduleAndProcessAgencyLeadNotification(input.agencyId, leadId).catch((err) => {
+        console.error("[persistAgencyQuoteRequest] Agency notification error:", err);
+      });
+      scheduleAndProcessPatientLeadNotification(input.agencyId, leadId).catch((err) => {
+        console.error("[persistAgencyQuoteRequest] Patient notification error:", err);
+      });
+    }
 
     return {
       ok: true,

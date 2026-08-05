@@ -19,8 +19,9 @@ describe("FeelinHealthy quote request persistence wiring", () => {
   it("matching-chat persists lead+quote server-side before claiming success", () => {
     expect(routeSource).toContain("persistAgencyQuoteRequest");
     expect(routeSource).toContain("Teklif talebiniz başarıyla oluşturuldu");
-    expect(routeSource).toContain("shouldCreateNewLead: false, // already persisted server-side");
+    expect(routeSource).toContain("shouldCreateNewLead: false");
     expect(routeSource).toContain("quotePersistError");
+    expect(routeSource).toContain("request_quote");
   });
 
   it("blocks LLM fake quote-sent claims without backend confirmation", () => {
@@ -33,6 +34,7 @@ describe("FeelinHealthy quote request persistence wiring", () => {
     expect(serviceSource).toContain('.collection("quotes")');
     expect(serviceSource).toContain("selectedClinicNames");
     expect(serviceSource).toContain("travelDate");
+    expect(serviceSource).toContain("deferNotifications: true");
   });
 
   it("lead submission aligns consent version with matching-chat before persist", () => {
@@ -43,7 +45,10 @@ describe("FeelinHealthy quote request persistence wiring", () => {
     expect(leadSubmissionSource).toContain("resolveAgencyConsentVersion");
   });
 
-  it("demo also creates quote document when client-side persist runs", () => {
-    expect(demoSource).toContain(`/api/public/agency/${"${SLUG}"}/quote`);
+  it("demo uses structured clinic card actions (not shared lead_capture path)", () => {
+    expect(demoSource).toContain('action: "select_clinic"');
+    expect(demoSource).toContain('action: "view_clinic_details"');
+    expect(demoSource).toContain('action: "request_quote"');
+    expect(demoSource).not.toContain('type: "lead_capture"');
   });
 });

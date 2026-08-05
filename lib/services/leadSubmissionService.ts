@@ -28,6 +28,8 @@ export interface SubmitLeadInput {
   selectedCity?: string;
   istanbulSide?: string;
   travelDate?: string;
+  /** When true, caller schedules notifications after quote persistence. */
+  deferNotifications?: boolean;
 }
 
 export async function submitAgencyLead(input: SubmitLeadInput) {
@@ -72,7 +74,13 @@ export async function submitAgencyLead(input: SubmitLeadInput) {
   // Load Agency Matching Config
   const matchingSnap = await adminDb.collection("agencies").doc(agencyId).collection("config").doc("matching").get();
   const matchingConfig = matchingSnap.exists ? matchingSnap.data() : null;
-  const maxClinics = matchingConfig?.maxClinicsToShow || agencyData.settings?.maxClinicsPerTreatmentRequest || 3;
+  const isFeelinHealthyAgency =
+    agencyData.slug === "feelinhealthy" ||
+    String(agencyData.name || "").toLowerCase() === "feelinhealthy";
+  // Public guest FeelinHealthy: hard-cap at 2 clinics for quote comparison.
+  const maxClinics = isFeelinHealthyAgency
+    ? 2
+    : matchingConfig?.maxClinicsToShow || agencyData.settings?.maxClinicsPerTreatmentRequest || 3;
   const routingMode = matchingConfig?.routingMode || "manual";
 
   // Validate Consent — version must match matching-chat / saveConsentRecord default.
@@ -172,8 +180,8 @@ export async function submitAgencyLead(input: SubmitLeadInput) {
     return { leadId: leadRef.id, agencyId, status: "created" };
   });
 
-  // Post-commit: trigger notifications async
-  if (result.status === "created") {
+  // Post-commit: trigger notifications async (unless deferred until quote persist)
+  if (result.status === "created" && !input.deferNotifications) {
     // Fire and forget (don't await) so it doesn't block the frontend response
     scheduleAndProcessAgencyLeadNotification(result.agencyId, result.leadId).catch(err => {
       console.error("[submitAgencyLead] Agency notification error:", err);

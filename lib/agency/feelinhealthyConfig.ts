@@ -456,7 +456,12 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
 export const FEELINHEALTHY_CONFIG = {
   agencySlug: "feelinhealthy",
   agencyName: "FeelinHealthy",
+  /** Max clinics shown to public guest users in recommendation cards. */
   maxGuestClinics: 2,
+  /** Alias: guestVisibleClinicLimit === maxGuestClinics */
+  guestVisibleClinicLimit: 2,
+  /** Max clinics allowed in a single guest quote-comparison selection. */
+  guestQuoteClinicSelectionLimit: 2,
   privacyNoticeUrl: "https://feelinhealthy.com/kvkk",
   privacyNoticeLabelTr: "Aydınlatma metnini",
   privacyNoticeLabelEn: "privacy notice",
