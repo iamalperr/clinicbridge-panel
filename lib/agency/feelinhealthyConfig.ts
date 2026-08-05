@@ -811,7 +811,7 @@ export function decideFeelinHealthyLocationNextStep(
     lastTreatmentCategory?: string | null;
     selectedCity?: string | null;
     lastLocation?: string | null;
-    istanbul_side?: "anatolian" | "european" | "any" | "unsure" | null;
+    istanbul_side?: string | null;
     locationSelectionConfirmed?: boolean;
   },
   availableClinics: any[] = [],
@@ -1539,7 +1539,7 @@ export function isReadyForClinicMatching(context: {
   travelDateText?: string | null;
   selectedCity?: string | null;
   lastLocation?: string | null;
-  istanbul_side?: "anatolian" | "european" | "any" | "unsure" | null;
+  istanbul_side?: string | null;
   sideSelectionConfirmed?: boolean;
   locationSelectionConfirmed?: boolean;
 }): { ready: boolean; missing: string[] } {

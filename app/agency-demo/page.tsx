@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { PrivacyConsentCard } from "@/components/chat/PrivacyConsentCard";
 import { IstanbulSideClarificationCard } from "@/components/chat/IstanbulSideClarificationCard";
 import { CitySelectionCard } from "@/components/chat/CitySelectionCard";
+import type { AgencySessionState } from "@/lib/agency/agencySessionState";
 
 /* ── Chat Message Types (inline — no external dependency) ── */
 interface MatchedPrice {
@@ -47,17 +48,6 @@ interface ChatMessage {
   citySelectionCard?: any;
   selectedSideOptionId?: string;
   selectedCityOptionId?: string;
-}
-
-interface SessionContext {
-  lastTreatmentCategory?: string;
-  lastSubTreatment?: string;
-  lastLocation?: string;
-  lastRecommendedClinicIds?: string[];
-  lastFocusedClinicId?: string;
-  lastFocusedClinicName?: string;
-  patientAge?: number;
-  patientGender?: string;
 }
 
 let _msgId = 0;
@@ -495,10 +485,10 @@ export default function AgencyDemoPage() {
   const [matchedCategory, setMatchedCategory] = useState<string | null>(null);
   
   // Initialize with a unique session ID for consent tracking
-  const [sessionCtx, setSessionCtx] = useState<any>(() => {
+  const [sessionCtx, setSessionCtx] = useState<AgencySessionState>(() => {
     return {
       sessionId: typeof window !== 'undefined' ? crypto.randomUUID() : "",
-      leadStage: "discovery"
+      leadStage: "discovery",
     };
   });
 

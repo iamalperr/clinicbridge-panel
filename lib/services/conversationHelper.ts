@@ -1,13 +1,26 @@
 import { getAdminDb } from "@/lib/firebase-admin";
+import {
+  normalizeAgencySessionState,
+  serializeAgencySessionState,
+  type AgencySessionState,
+  type AgencySessionStateInputMaybe,
+} from "@/lib/agency/agencySessionState";
 
+/**
+ * Persist a derived conversation summary document.
+ * Full sessionContext is round-tripped via the client; this writes selected
+ * fields only. Input is normalized/serialized for structural safety — not for
+ * authorization (consent/lead/quote still require backend verification).
+ */
 export async function saveConversationStateAsync(
-  agencyId: string, 
-  ctx: any, 
-  history: any[], 
-  replyText: string, 
+  agencyId: string,
+  ctxInput: AgencySessionStateInputMaybe,
+  history: unknown[],
+  replyText: string,
   replyType: string
 ) {
-  if (!ctx || !ctx.sessionId || !agencyId) return;
+  const ctx = serializeAgencySessionState(normalizeAgencySessionState(ctxInput));
+  if (!ctx.sessionId || !agencyId) return;
   const adminDb = getAdminDb();
   if (!adminDb) return;
 
@@ -24,12 +37,12 @@ export async function saveConversationStateAsync(
     if (ctx.leadStage === "collecting_email" || ctx.leadStage === "collecting_consent") aiCompletionRate = 90;
     if (ctx.leadStage === "quote_request_created" || ctx.leadStage === "completed") aiCompletionRate = 100;
 
-    const fullHistory = [...(history || [])];
+    const fullHistory = [...(history || [])] as Array<Record<string, unknown>>;
     if (replyText) {
       fullHistory.push({ role: "assistant", content: replyText, type: replyType });
     }
 
-    await adminDb.collection("agencies").doc(agencyId).collection("conversations").doc(ctx.sessionId).set({
+    await adminDb.collection("agencies").doc(agencyId).collection("conversations").doc(String(ctx.sessionId)).set({
       agencyId,
       patientName: ctx.patientName || "",
       language: ctx.language || "tr",
@@ -52,3 +65,5 @@ export async function saveConversationStateAsync(
     console.error("[matching-chat] Failed to save conversation state:", err);
   }
 }
+
+export type { AgencySessionState };

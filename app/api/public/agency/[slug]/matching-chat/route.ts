@@ -35,8 +35,12 @@ import {
   logFeelinHealthyMatchingDiagnostics,
   normalizeTreatmentBranch,
   getAvailableCitiesForTreatment,
-  type IntakeGroupNumber,
 } from "@/lib/agency/feelinhealthyConfig";
+import {
+  normalizeAgencySessionState,
+  serializeAgencySessionState,
+  type AgencySessionState,
+} from "@/lib/agency/agencySessionState";
 import {
   getStructuredConsentData,
   validatePrivacyNoticeUrl
@@ -125,69 +129,8 @@ interface ClinicRecommendation {
   };
 }
 
-interface SessionContext {
-  sessionId?: string;
-  leadStage?: "discovery" | "recommendation" | "clinic_selected" | "lead_capture" | "collecting_email" | "collecting_consent" | "quote_request_created" | "completed";
-  selectedClinicId?: string;
-  selectedClinicName?: string;
-  patientName?: string;
-  patientEmail?: string;
-  patientEmailStatus?: "missing" | "collected" | "invalid" | "verified_format";
-  patientPhone?: string;
-  patientCountry?: string;
-  patientAge?: number;
-  patientGender?: string;
-  language?: string;
-  travelDate?: string;
-  quoteConsent?: boolean;
-  missingLeadField?: string;
-  emailValidationFails?: number;
-  consentVersion?: string;
-
-  lastTreatmentCategory?: string;
-  lastSubTreatment?: string;
-  lastLocation?: string;
-  lastRecommendedClinicIds?: string[];
-  lastFocusedClinicId?: string;
-  lastFocusedClinicName?: string;
-
-  clinicSelectionMode?: "automatic" | "manual" | "assisted" | null;
-  selectedClinicIds?: string[];
-  clinicSelectionStatus?: "not_started" | "in_progress" | "completed";
-  showProfileLinks?: boolean;
-  pendingUserMessage?: string;
-  pendingHealthRequest?: string;
-  processingMode?: "degraded" | "normal";
-  firstName?: string;
-  lastName?: string;
-  age?: number;
-  leadId?: string;
-  quoteId?: string;
-  /** Guest quote CTA locked after a successful quote (incl. profile-tab submit). */
-  quoteRequestLocked?: boolean;
-  gender?: string;
-
-  // FeelinHealthy specific session fields
-  intakeStage?: IntakeGroupNumber;
-  conversationStage?: string;
-  stateVersion?: number;
-  lastStructuredActionId?: string;
-  pendingLocationExpansion?: boolean;
-  pendingLocationExpansionTarget?: string;
-  pendingLocationBranch?: string;
-  /** Dedupes identical empty-match replies so the agent escalates instead of looping. */
-  lastEmptyMatchKey?: string;
-  isGuestUser?: boolean;
-  selectedCity?: string | null;
-  locationSelectionConfirmed?: boolean;
-  sideSelectionConfirmed?: boolean;
-  availableCities?: string[];
-  pendingCitySelection?: boolean;
-  istanbul_side?: "european" | "anatolian" | "unsure" | null;
-  istanbul_side_source?: "explicit_text" | "structured_card" | "district_cue" | "airport_cue" | "branch_implicit" | null;
-  pendingSideClarification?: boolean;
-  pendingSideGuidance?: boolean;
-}
+/** @deprecated Prefer AgencySessionState from lib/agency/agencySessionState. */
+type SessionContext = AgencySessionState;
 
 /* ═══════════════════════════════════════════════════════════════════════════
    HELPERS
@@ -388,6 +331,12 @@ export async function POST(
 
   const jsonResponse = (respBody: any, init?: any) => {
     try {
+      if (respBody && respBody.sessionContext) {
+        // Canonical serialize at the response/persistence boundary.
+        // sessionContext is client round-tripped and untrusted; serialize does
+        // not authorize consent/lead/quote writes.
+        respBody.sessionContext = serializeAgencySessionState(respBody.sessionContext);
+      }
       if (respBody && respBody.sessionContext && resolvedAgencyId) {
         saveConversationStateAsync(resolvedAgencyId, respBody.sessionContext, requestBody?.history || [], respBody.reply, respBody.type).catch(console.error);
       }
@@ -422,7 +371,12 @@ export async function POST(
     }
 
     requestBody = await req.json();
-    const { message, action, history = [], sessionContext = {} } = requestBody;
+    const { message, action, history = [] } = requestBody;
+    // Client round-tripped sessionContext is untrusted; normalize structure only.
+    const sessionContext: AgencySessionState = normalizeAgencySessionState(
+      requestBody.sessionContext || {}
+    );
+    requestBody.sessionContext = sessionContext;
     requestValidationMs = performance.now() - routeStart;
 
     let finalMessage = message;
@@ -936,7 +890,7 @@ export async function POST(
         const normalized = normalizeEmail(action.email);
         if (isValidEmail(normalized)) {
           finalMessage = `[SİSTEM AKSİYONU: Kullanıcı e-posta formunu doldurarak geçerli bir e-posta adresi iletti: ${normalized}. Lütfen bunu onayla ve lead toplama aşamasına kaldığın yerden devam et.]`;
-          sessionContext.patientEmail = normalized;
+          sessionContext.patientEmail = normalized ?? undefined;
           sessionContext.patientEmailStatus = "verified_format";
         } else {
           return jsonResponse({
@@ -1229,7 +1183,7 @@ export async function POST(
       return NextResponse.json({
         responseType: "chat_message",
         reply: emMsg,
-        sessionContext: ctx
+        sessionContext: serializeAgencySessionState(ctx)
       }, { headers: CORS });
     }
 
@@ -1242,7 +1196,7 @@ export async function POST(
         responseType: "chat_message",
         reply: agencyIntentResult.clarificationPrompt,
         quickReplies: agencyIntentResult.suggestedOptions || [],
-        sessionContext: ctx
+        sessionContext: serializeAgencySessionState(ctx)
       }, { headers: CORS });
     }
 
@@ -1574,7 +1528,7 @@ export async function POST(
       return NextResponse.json({
         responseType: "chat_message",
         reply: emMsg,
-        sessionContext: ctx
+        sessionContext: serializeAgencySessionState(ctx)
       }, { headers: CORS });
     }
 
@@ -1587,7 +1541,7 @@ export async function POST(
         responseType: "chat_message",
         reply: agencyIntentResult.clarificationPrompt,
         quickReplies: agencyIntentResult.suggestedOptions || [],
-        sessionContext: ctx
+        sessionContext: serializeAgencySessionState(ctx)
       }, { headers: CORS });
     }
 

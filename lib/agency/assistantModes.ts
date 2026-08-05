@@ -8,6 +8,9 @@
  * (see isExplicitReturnToNetworkDiscovery).
  */
 
+import type { AgencySessionState, AgencySessionStateInput } from "./agencySessionState";
+import { normalizeAgencySessionState } from "./agencySessionState";
+
 export type AssistantRole = "network_advisor" | "clinic_coordinator";
 
 export interface ConversationRoleContext {
@@ -62,8 +65,10 @@ export function isExplicitReturnToNetworkDiscovery(message?: string | null): boo
 /**
  * Exit Clinic Coordinator → Network Advisor without clearing intake / consent / treatment / city.
  */
-export function exitToNetworkAdvisor<T extends Record<string, any>>(ctx: T): T & Record<string, any> {
-  const next: Record<string, any> = { ...ctx };
+export function exitToNetworkAdvisor(
+  ctx: AgencySessionStateInput
+): AgencySessionState {
+  const next: AgencySessionState = normalizeAgencySessionState(ctx);
   delete next.selectedClinicId;
   delete next.selectedClinicName;
   next.selectedClinicIds = [];
@@ -71,15 +76,15 @@ export function exitToNetworkAdvisor<T extends Record<string, any>>(ctx: T): T &
   delete next.clinicSelectionMode;
   // Keep lastFocused* for soft reference but leave discovery stage.
   next.leadStage = next.lastRecommendedClinicIds?.length ? "recommendation" : "discovery";
-  return next as T & Record<string, any>;
+  return next;
 }
 
-export function enterClinicCoordinator<T extends Record<string, any>>(
-  ctx: T,
+export function enterClinicCoordinator(
+  ctx: AgencySessionStateInput,
   clinic: { id: string; name: string }
-): T {
-  return {
-    ...ctx,
+): AgencySessionState {
+  return normalizeAgencySessionState({
+    ...normalizeAgencySessionState(ctx),
     selectedClinicId: clinic.id,
     selectedClinicName: clinic.name,
     lastFocusedClinicId: clinic.id,
@@ -87,7 +92,7 @@ export function enterClinicCoordinator<T extends Record<string, any>>(
     selectedClinicIds: [clinic.id],
     leadStage: "clinic_selected",
     clinicSelectionStatus: "completed",
-  };
+  });
 }
 
 export function getCoordinatorClinicId(ctx: ConversationRoleContext): string | null {

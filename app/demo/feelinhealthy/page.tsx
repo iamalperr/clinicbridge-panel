@@ -22,6 +22,10 @@ import {
   readAgentQuoteSubmitted,
   saveQuotePrefill,
 } from "@/lib/agency/feelinhealthyQuotePrefill";
+import {
+  normalizeAgencySessionState,
+  type AgencySessionState,
+} from "@/lib/agency/agencySessionState";
 
 const GUEST_CLINIC_LIMIT =
   FEELINHEALTHY_CONFIG.guestQuoteClinicSelectionLimit ||
@@ -328,10 +332,10 @@ export default function FeelinHealthyLive() {
   const [matchedCategory, setMatchedCategory] = useState<string | null>(null);
   
   // Initialize with a unique session ID for consent tracking
-  const [sessionCtx, setSessionCtx] = useState<any>(() => {
+  const [sessionCtx, setSessionCtx] = useState<AgencySessionState>(() => {
     return {
-      sessionId: typeof window !== 'undefined' ? crypto.randomUUID() : "",
-      leadStage: "discovery"
+      sessionId: typeof window !== "undefined" ? crypto.randomUUID() : "",
+      leadStage: "discovery",
     };
   });
   // Always send the latest backend session — avoids stale React closures on rapid widget clicks.
@@ -339,10 +343,12 @@ export default function FeelinHealthyLive() {
   useEffect(() => {
     sessionCtxRef.current = sessionCtx;
   }, [sessionCtx]);
-  const commitSessionCtx = useCallback((next: any) => {
+  const commitSessionCtx = useCallback((next: AgencySessionState | Record<string, unknown> | null | undefined) => {
     if (!next || typeof next !== "object") return;
-    sessionCtxRef.current = next;
-    setSessionCtx(next);
+    // Structural normalize only — does not authorize consent/lead/quote writes.
+    const normalized = normalizeAgencySessionState(next);
+    sessionCtxRef.current = normalized;
+    setSessionCtx(normalized);
   }, []);
 
   // Profile-tab quote submit → lock Teklif İste on this agent tab.

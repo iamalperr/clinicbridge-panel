@@ -25,6 +25,8 @@ import {
   type LocationDecision,
 } from "./feelinhealthyConfig";
 import { resolveAssistantRole, type AssistantRole } from "./assistantModes";
+import type { AgencySessionState, AgencySessionStateInput } from "./agencySessionState";
+import { normalizeAgencySessionState } from "./agencySessionState";
 
 // ─── Stages ──────────────────────────────────────────────────────────────────
 
@@ -124,9 +126,9 @@ export interface ResolveNextOptions {
 // ─── Derive state from session context ───────────────────────────────────────
 
 export function deriveFeelinHealthyState(
-  ctx: Record<string, any> | null | undefined
+  ctx: AgencySessionStateInput | null | undefined
 ): FeelinHealthyConversationState {
-  const c = ctx || {};
+  const c = normalizeAgencySessionState(ctx);
   const intake = evaluateFeelinHealthyIntake(c);
   const assistantRole = resolveAssistantRole(c);
 
@@ -458,7 +460,7 @@ export type StructuredActionType =
   | "change_clinic";
 
 export interface ApplyStructuredActionResult {
-  ctx: Record<string, any>;
+  ctx: AgencySessionState;
   /** True when the action was a no-op because state already matched. */
   idempotentSkip: boolean;
   clearedFields: string[];
@@ -470,7 +472,7 @@ export interface ApplyStructuredActionResult {
  * Istanbul side confirmation toward another city.
  */
 export function applyStructuredLocationAction(
-  ctx: Record<string, any>,
+  ctx: AgencySessionStateInput,
   action: {
     type: string;
     city?: string;
@@ -588,11 +590,11 @@ export function applyStructuredLocationAction(
  */
 export function buildGateResponseFromAction(
   action: NextConversationAction,
-  sessionContext: Record<string, any>
+  sessionContext: AgencySessionState
 ): {
   reply: string;
   type: string;
-  sessionContext: Record<string, any>;
+  sessionContext: AgencySessionState;
   showClinicCards: boolean;
   citySelectionCard?: any;
   sideClarificationCard?: any;
@@ -755,18 +757,19 @@ export function inferTreatmentFromText(text?: string | null): string | null {
  * Never clears an already-set treatment.
  */
 export function ensureTreatmentFromPending(
-  ctx: Record<string, any>,
+  ctx: AgencySessionStateInput,
   fallbackText?: string | null
-): Record<string, any> {
-  if (ctx.lastTreatmentCategory || ctx.treatmentId) return ctx;
+): AgencySessionState {
+  const current = normalizeAgencySessionState(ctx);
+  if (current.lastTreatmentCategory || current.treatmentId) return current;
   const source =
     fallbackText ||
-    ctx.pendingHealthRequest ||
-    ctx.pendingUserMessage ||
+    current.pendingHealthRequest ||
+    current.pendingUserMessage ||
     "";
   const inferred = inferTreatmentFromText(source);
-  if (!inferred) return ctx;
-  return { ...ctx, lastTreatmentCategory: inferred };
+  if (!inferred) return current;
+  return { ...current, lastTreatmentCategory: inferred };
 }
 
 /**
@@ -775,14 +778,14 @@ export function ensureTreatmentFromPending(
  * Stale empty-match locks must clear so matching can restart.
  */
 export function applyDetectedTreatmentUpdate(
-  ctx: Record<string, any>,
+  ctx: AgencySessionStateInput,
   opts: {
     message?: string | null;
     extractedTreatment?: string | null;
     modelTreatment?: string | null;
   } = {}
 ): {
-  ctx: Record<string, any>;
+  ctx: AgencySessionState;
   changed: boolean;
   previous: string | null;
   next: string | null;
@@ -849,10 +852,10 @@ export function applyDetectedTreatmentUpdate(
  * Merge session updates without wiping completed intake / consent / treatment / location.
  */
 export function mergeFeelinHealthySession(
-  previous: Record<string, any>,
-  incoming: Record<string, any>
-): Record<string, any> {
-  const merged = { ...previous, ...incoming };
+  previous: AgencySessionStateInput,
+  incoming: AgencySessionState | Record<string, unknown>
+): AgencySessionState {
+  const merged: AgencySessionState = { ...previous, ...incoming };
 
   const preserveKeys = [
     "quoteConsent",
@@ -887,7 +890,7 @@ export function mergeFeelinHealthySession(
       nextVal === "" ||
       nextVal === false;
     if (prevVal !== undefined && prevVal !== null && prevVal !== "" && nextEmpty) {
-      merged[key] = prevVal;
+      (merged as Record<string, unknown>)[key] = prevVal;
     }
   }
 

@@ -7,6 +7,8 @@
 
 import { enterClinicCoordinator } from "./assistantModes";
 import { FEELINHEALTHY_CONFIG } from "./feelinhealthyConfig";
+import type { AgencySessionState, AgencySessionStateInput } from "./agencySessionState";
+import { normalizeAgencySessionState } from "./agencySessionState";
 
 export const CLINIC_CARD_ACTIONS = [
   "select_clinic",
@@ -31,7 +33,7 @@ export interface ClinicCardActionResult {
   httpStatus?: number;
   reply?: string;
   type?: string;
-  sessionContext: Record<string, any>;
+  sessionContext: AgencySessionState;
   showClinicCards?: boolean;
   shouldCreateNewLead?: boolean;
   shouldUpdateLead?: boolean;
@@ -131,7 +133,7 @@ export function buildClinicCardActionKey(
 }
 
 export function hasProcessedClinicCardAction(
-  sessionContext: Record<string, any>,
+  sessionContext: AgencySessionStateInput,
   key: string
 ): boolean {
   const list = Array.isArray(sessionContext[PROCESSED_KEY])
@@ -141,14 +143,18 @@ export function hasProcessedClinicCardAction(
 }
 
 export function markClinicCardActionProcessed(
-  sessionContext: Record<string, any>,
+  sessionContext: AgencySessionStateInput,
   key: string
-): Record<string, any> {
+): AgencySessionState {
   const prev = Array.isArray(sessionContext[PROCESSED_KEY])
     ? (sessionContext[PROCESSED_KEY] as string[])
     : [];
   const next = [...prev.filter((k) => k !== key), key].slice(-MAX_PROCESSED);
-  return { ...sessionContext, [PROCESSED_KEY]: next, lastStructuredActionId: key };
+  return normalizeAgencySessionState({
+    ...sessionContext,
+    [PROCESSED_KEY]: next,
+    lastStructuredActionId: key,
+  });
 }
 
 export function resolveGuestQuoteClinicLimit(): number {
@@ -176,7 +182,7 @@ export function buildCanonicalClinicProfileUrl(params: {
 
 function clinicBelongsToRecommendationSet(
   clinicId: string,
-  sessionContext: Record<string, any>
+  sessionContext: AgencySessionStateInput
 ): boolean {
   const recommended = Array.isArray(sessionContext.lastRecommendedClinicIds)
     ? sessionContext.lastRecommendedClinicIds.map(String)
@@ -189,14 +195,15 @@ function clinicBelongsToRecommendationSet(
  * Pure select_clinic handler — never creates a quote.
  */
 export function handleSelectClinic(params: {
-  sessionContext: Record<string, any>;
+  sessionContext: AgencySessionStateInput;
   clinicId: string;
   clinicName?: string;
   locale?: string;
 }): ClinicCardActionResult {
   const locale = (params.locale || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
-  const name = params.clinicName || params.sessionContext.selectedClinicName || "Selected clinic";
-  const next = enterClinicCoordinator(params.sessionContext, {
+  const ctx = normalizeAgencySessionState(params.sessionContext);
+  const name = params.clinicName || ctx.selectedClinicName || "Selected clinic";
+  const next = enterClinicCoordinator(ctx, {
     id: params.clinicId,
     name,
   });
@@ -221,14 +228,14 @@ export function handleSelectClinic(params: {
  * Pure view_clinic_details handler — no selection, no quote.
  */
 export function handleViewClinicDetails(params: {
-  sessionContext: Record<string, any>;
+  sessionContext: AgencySessionStateInput;
   clinicId: string;
   clinicName?: string;
   clinicSlug?: string;
   profilePath?: string;
   locale?: string;
 }): ClinicCardActionResult {
-  const next = { ...params.sessionContext };
+  const next = normalizeAgencySessionState(params.sessionContext);
   // Soft focus only — do not enter coordinator / do not change leadStage.
   next.lastFocusedClinicId = params.clinicId;
   next.lastFocusedClinicName =
@@ -260,14 +267,14 @@ export function handleViewClinicDetails(params: {
  * Caller persists quote and fills success/error reply.
  */
 export function prepareRequestQuote(params: {
-  sessionContext: Record<string, any>;
+  sessionContext: AgencySessionStateInput;
   clinicId: string;
   clinicName?: string;
   locale?: string;
 }): ClinicCardActionResult {
   const locale = (params.locale || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
   const limit = resolveGuestQuoteClinicLimit();
-  const next = { ...params.sessionContext };
+  const next = normalizeAgencySessionState(params.sessionContext);
 
   const stage = String(next.leadStage || "");
   if (
@@ -386,12 +393,12 @@ export function handleClinicSelectionPanelAction(params: {
   clinicId?: string | null;
   clinicName?: string | null;
   recommendedClinicIds?: string[] | null;
-  sessionContext: Record<string, any>;
+  sessionContext: AgencySessionStateInput;
   locale?: string;
 }): ClinicCardActionResult {
   const locale = (params.locale || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
   const limit = resolveGuestQuoteClinicLimit();
-  const next = { ...params.sessionContext };
+  const next = normalizeAgencySessionState(params.sessionContext);
   const recommended = Array.from(
     new Set(
       [
@@ -631,7 +638,7 @@ export function requestQuoteFailureCopy(locale: string): string {
  */
 export function routeClinicCardAction(params: {
   payload: ClinicCardActionPayload;
-  sessionContext: Record<string, any>;
+  sessionContext: AgencySessionStateInput;
 }): ClinicCardActionResult {
   const conversationId = String(
     params.sessionContext.sessionId || params.sessionContext.conversationId || "unknown"
@@ -647,7 +654,7 @@ export function routeClinicCardAction(params: {
     return {
       kind: "noop",
       type: "noop",
-      sessionContext: params.sessionContext,
+      sessionContext: normalizeAgencySessionState(params.sessionContext),
       shouldCreateNewLead: false,
       shouldPersistQuote: false,
     };
@@ -657,7 +664,7 @@ export function routeClinicCardAction(params: {
   switch (params.payload.action) {
     case "select_clinic":
       result = handleSelectClinic({
-        sessionContext: params.sessionContext,
+        sessionContext: normalizeAgencySessionState(params.sessionContext),
         clinicId: params.payload.clinicId,
         clinicName: params.payload.clinicName,
         locale: params.payload.locale,
@@ -665,7 +672,7 @@ export function routeClinicCardAction(params: {
       break;
     case "view_clinic_details":
       result = handleViewClinicDetails({
-        sessionContext: params.sessionContext,
+        sessionContext: normalizeAgencySessionState(params.sessionContext),
         clinicId: params.payload.clinicId,
         clinicName: params.payload.clinicName,
         clinicSlug: params.payload.clinicSlug,
@@ -675,7 +682,7 @@ export function routeClinicCardAction(params: {
       break;
     case "request_quote":
       result = prepareRequestQuote({
-        sessionContext: params.sessionContext,
+        sessionContext: normalizeAgencySessionState(params.sessionContext),
         clinicId: params.payload.clinicId,
         clinicName: params.payload.clinicName,
         locale: params.payload.locale,
@@ -687,7 +694,7 @@ export function routeClinicCardAction(params: {
         httpStatus: 400,
         reply: "Unsupported clinic card action",
         type: "text",
-        sessionContext: params.sessionContext,
+        sessionContext: normalizeAgencySessionState(params.sessionContext),
       };
   }
 
