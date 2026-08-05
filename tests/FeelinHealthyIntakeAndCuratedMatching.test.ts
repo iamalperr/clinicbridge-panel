@@ -159,7 +159,9 @@ describe("FeelinHealthy Conversion & Additional Clinics Calculation", () => {
   it("calculates patient-specific additional eligible count", () => {
     const res = calculateAdditionalCountAndConversion(6, 2, "tr");
     expect(res.additionalCount).toBe(4);
-    expect(res.conversionMessage).toContain("4 sağlık kuruluşu daha bulunuyor");
+    expect(res.conversionMessage).toMatch(/FeelinHealthy yapay zeka asistanı/i);
+    expect(res.conversionMessage).toMatch(/2 öneri sunuyor/);
+    expect(res.conversionMessage).toMatch(/ücretsiz üye/i);
     expect(res.ctaText).toBe("Daha Fazla Teklif Al");
   });
 

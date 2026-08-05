@@ -146,7 +146,8 @@ describe("P0 production ID matching — Dental Implant Istanbul European", () =>
     expect(conv.additionalCount).toBeGreaterThan(0);
     expect(conv.ctaText).toBe("Daha Fazla Teklif Al");
     expect(conv.registrationUrl).toBe("https://www.feelinhealthy.com/register");
-    expect(conv.conversionMessage).toContain(String(conv.additionalCount));
+    expect(conv.conversionMessage).toMatch(/FeelinHealthy yapay zeka asistanı/i);
+    expect(conv.conversionMessage).toMatch(/öneri sunuyor/);
   });
 
   it("Test 5: exactly 2 eligible → no false additional CTA", () => {

@@ -1784,18 +1784,14 @@ export function calculateAdditionalCountAndConversion(
 } {
   const additionalCount = Math.max(0, totalEligible - displayedCount);
   const isEn = locale.toLowerCase().startsWith("en");
-  const singular = additionalCount === 1;
+  const shown = Math.max(1, displayedCount || FEELINHEALTHY_CONFIG.maxGuestClinics || 2);
 
   return {
     additionalCount,
     hasConversionOffer: additionalCount > 0,
     conversionMessage: isEn
-      ? singular
-        ? `There is ${additionalCount} more healthcare provider matching your preferences. Create a free account to receive more quotes and compare your options.`
-        : `There are ${additionalCount} more healthcare providers matching your preferences. Create a free account to receive more quotes and compare your options.`
-      : singular
-        ? `Tercihlerinize uygun ${additionalCount} sağlık kuruluşu daha bulunuyor. Daha fazla teklif alıp seçenekleri karşılaştırmak için ücretsiz üye olabilirsiniz.`
-        : `Tercihlerinize uygun ${additionalCount} sağlık kuruluşu daha bulunuyor. Daha fazla teklif alıp seçenekleri karşılaştırmak için ücretsiz üye olabilirsiniz.`,
+      ? `The FeelinHealthy AI assistant is currently showing ${shown} clinic suggestions from our partner network for your treatment. Create a free account to request quotes from all matching providers and compare your options.`
+      : `FeelinHealthy yapay zeka asistanı, tedavinize uygun anlaşmalı kliniklerden şu an ${shown} öneri sunuyor. Tüm uygun sağlık kuruluşlarından teklif alıp seçenekleri karşılaştırmak için ücretsiz üye olabilirsiniz.`,
     ctaText: isEn ? "Get More Quotes" : "Daha Fazla Teklif Al",
     registrationUrl: FEELINHEALTHY_CONFIG.registrationUrl,
   };
