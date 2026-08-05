@@ -960,15 +960,27 @@ export async function POST(
     // While Group 1 is open a bare full name is a legitimate answer, so the
     // extractor is told a name is expected. Never before consent — treatment
     // requests must not be parsed as names, and treatment must still extract.
-    const expectedIntakeSlot =
+    // When only country is still missing in Group 2, pass patientCountry so
+    // freeform answers like "İspanya" / "Madrid" are accepted.
+    let expectedIntakeSlot: string | undefined;
+    if (
       isFeelinHealthy &&
       ctx.quoteConsent === true &&
       !isReplayedTreatmentRequest &&
       !structuredLocationAction &&
-      resolveAssistantRole(ctx) !== "clinic_coordinator" &&
-      !evaluateFeelinHealthyIntake(ctx).group1Complete
-        ? "patientName"
-        : undefined;
+      resolveAssistantRole(ctx) !== "clinic_coordinator"
+    ) {
+      const intakeNow = evaluateFeelinHealthyIntake(ctx);
+      if (!intakeNow.group1Complete) {
+        expectedIntakeSlot = "patientName";
+      } else if (
+        !intakeNow.group2Complete &&
+        intakeNow.missingFieldsInCurrentGroup.length === 1 &&
+        intakeNow.missingFieldsInCurrentGroup[0] === "patientCountry"
+      ) {
+        expectedIntakeSlot = "patientCountry";
+      }
+    }
 
     // Intent Router & Slot Extractor Evaluation for Agency
     const agencySlotsExtracted = SlotExtractor.extractSlots(

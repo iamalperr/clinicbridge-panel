@@ -363,7 +363,7 @@ export class SlotExtractor {
     }
 
     // 14. Country Extraction
-    const countryRes = this.parseCountry(lower, expectedSlot);
+    const countryRes = this.parseCountry(lower, expectedSlot, raw);
     if (countryRes) {
       extracted.country = countryRes;
       extracted.patientCountry = countryRes;
@@ -923,41 +923,127 @@ export class SlotExtractor {
   }
 
   /**
-   * Parse patient country of residence
+   * Parse patient country of residence.
+   * Uses Turkish-safe normalization so "İspanya".toLowerCase() (i + combining dot)
+   * still matches "ispanya". Common residence cities map to their country when
+   * patients answer with a city (e.g. Madrid → İspanya).
    */
-  public static parseCountry(lower: string, expectedSlot?: string): string | null {
+  public static parseCountry(
+    lower: string,
+    expectedSlot?: string,
+    raw?: string
+  ): string | null {
     const countriesTr: Record<string, string> = {
-      türkiye: "Türkiye", turkiye: "Türkiye", turkey: "Türkiye",
-      almanya: "Almanya", germany: "Almanya", deutschland: "Almanya",
-      ingiltere: "İngiltere", "birleşik krallık": "İngiltere", uk: "İngiltere", "united kingdom": "İngiltere", britain: "İngiltere",
-      hollanda: "Hollanda", netherlands: "Hollanda",
-      fransa: "Fransa", france: "Fransa",
-      belçika: "Belçika", belcika: "Belçika", belgium: "Belçika",
-      isviçre: "İsviçre", isvicre: "İsviçre", switzerland: "İsviçre",
-      avusturya: "Avusturya", austria: "Avusturya",
-      rusya: "Rusya", russia: "Rusya",
-      azerbaycan: "Azerbaycan", azerbaijan: "Azerbaycan",
-      amerika: "ABD", usa: "ABD", "united states": "ABD", abd: "ABD",
-      kanada: "Kanada", canada: "Kanada",
-      isveç: "İsveç", isvec: "İsveç", sweden: "İsveç",
-      norveç: "Norveç", norvec: "Norveç", norway: "Norveç",
-      danimarka: "Danimarka", denmark: "Danimarka",
-      irak: "Irak", iraq: "Irak", iran: "İran",
-      "suudi arabistan": "Suudi Arabistan", "saudi arabia": "Suudi Arabistan",
-      dubai: "BAE", bae: "BAE", uae: "BAE"
+      türkiye: "Türkiye",
+      turkiye: "Türkiye",
+      turkey: "Türkiye",
+      almanya: "Almanya",
+      germany: "Almanya",
+      deutschland: "Almanya",
+      berlin: "Almanya",
+      munich: "Almanya",
+      munih: "Almanya",
+      hamburg: "Almanya",
+      ingiltere: "İngiltere",
+      "birleşik krallık": "İngiltere",
+      "birlesik krallik": "İngiltere",
+      uk: "İngiltere",
+      "united kingdom": "İngiltere",
+      britain: "İngiltere",
+      london: "İngiltere",
+      hollanda: "Hollanda",
+      netherlands: "Hollanda",
+      amsterdam: "Hollanda",
+      fransa: "Fransa",
+      france: "Fransa",
+      paris: "Fransa",
+      belçika: "Belçika",
+      belcika: "Belçika",
+      belgium: "Belçika",
+      isviçre: "İsviçre",
+      isvicre: "İsviçre",
+      switzerland: "İsviçre",
+      avusturya: "Avusturya",
+      austria: "Avusturya",
+      ispanya: "İspanya",
+      spain: "İspanya",
+      espana: "İspanya",
+      españa: "İspanya",
+      madrid: "İspanya",
+      barcelona: "İspanya",
+      valencia: "İspanya",
+      sevilla: "İspanya",
+      italya: "İtalya",
+      italy: "İtalya",
+      roma: "İtalya",
+      portugal: "Portekiz",
+      portekiz: "Portekiz",
+      lisbon: "Portekiz",
+      lizbon: "Portekiz",
+      yunanistan: "Yunanistan",
+      greece: "Yunanistan",
+      polonya: "Polonya",
+      poland: "Polonya",
+      rusya: "Rusya",
+      russia: "Rusya",
+      azerbaycan: "Azerbaycan",
+      azerbaijan: "Azerbaycan",
+      amerika: "ABD",
+      usa: "ABD",
+      "united states": "ABD",
+      abd: "ABD",
+      kanada: "Kanada",
+      canada: "Kanada",
+      isveç: "İsveç",
+      isvec: "İsveç",
+      sweden: "İsveç",
+      norveç: "Norveç",
+      norvec: "Norveç",
+      norway: "Norveç",
+      danimarka: "Danimarka",
+      denmark: "Danimarka",
+      irak: "Irak",
+      iraq: "Irak",
+      iran: "İran",
+      "suudi arabistan": "Suudi Arabistan",
+      "saudi arabia": "Suudi Arabistan",
+      dubai: "BAE",
+      bae: "BAE",
+      uae: "BAE",
     };
 
-    for (const [key, name] of Object.entries(countriesTr)) {
-      const regex = new RegExp(`\\b${key}\\b`, "i");
-      if (regex.test(lower)) {
-        return name;
+    const haystack = SlotExtractor.normalizeForKeywordMatch(lower);
+    const sortedKeys = Object.keys(countriesTr).sort((a, b) => b.length - a.length);
+    for (const key of sortedKeys) {
+      const nk = SlotExtractor.normalizeForKeywordMatch(key).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      // Avoid \\b — it breaks on Turkish letters after normalize. Use non-letter edges.
+      const regex = new RegExp(`(?:^|[^a-z0-9çğıöşü])${nk}(?:$|[^a-z0-9çğıöşü])`, "i");
+      if (regex.test(` ${haystack} `)) {
+        return countriesTr[key];
       }
     }
 
     if (expectedSlot === "patientCountry" || expectedSlot === "country") {
-      const clean = lower.trim();
-      if (clean.length >= 3 && clean.length <= 30 && /^[a-zA-ZçğıöşüÇĞİÖŞÜ\s]+$/.test(clean)) {
-        return clean.charAt(0).toUpperCase() + clean.slice(1);
+      const source = SlotExtractor.normalizeForKeywordMatch(raw || lower);
+      const parts = source
+        .split(/[,;|/]+/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+      let candidate = parts.length > 1 ? parts[parts.length - 1] : source.trim();
+      candidate = candidate
+        .replace(/[a-z0-9._%+-]+@[a-z0-9.-]+/gi, "")
+        .replace(/\+?\d[\d\s().-]{5,}\d/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (
+        candidate.length >= 2 &&
+        candidate.length <= 40 &&
+        /^[a-zA-ZçğıöşüÇĞİÖŞÜñÑ\s'-]+$/u.test(candidate)
+      ) {
+        return candidate
+          .split(/\s+/)
+          .map((w) => w.charAt(0).toLocaleUpperCase("tr-TR") + w.slice(1))
+          .join(" ");
       }
     }
 
