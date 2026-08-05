@@ -32,6 +32,7 @@ import {
   buildFeelinHealthyMatchingDiagnostics,
   logFeelinHealthyMatchingDiagnostics,
   normalizeTreatmentBranch,
+  getAvailableCitiesForTreatment,
   type IntakeGroupNumber,
 } from "@/lib/agency/feelinhealthyConfig";
 import {
@@ -62,6 +63,7 @@ import {
   applyStructuredLocationAction,
   ensureTreatmentFromPending,
   mergeFeelinHealthySession,
+  applyDetectedTreatmentUpdate,
 } from "@/lib/agency/feelinhealthyConversationMachine";
 import {
   parseClinicCardAction,
@@ -169,6 +171,8 @@ interface SessionContext {
   pendingLocationExpansion?: boolean;
   pendingLocationExpansionTarget?: string;
   pendingLocationBranch?: string;
+  /** Dedupes identical empty-match replies so the agent escalates instead of looping. */
+  lastEmptyMatchKey?: string;
   isGuestUser?: boolean;
   selectedCity?: string | null;
   locationSelectionConfirmed?: boolean;
@@ -1059,6 +1063,15 @@ export async function POST(
           `${finalMessage || ""} ${message || ""} ${ctx.pendingHealthRequest || ""}`
         )
       );
+      // Mid-chat treatment switch (e.g. implant → saç ekimi after empty match).
+      const treatmentUpdate = applyDetectedTreatmentUpdate(ctx, {
+        message: finalMessage || message,
+        extractedTreatment: agencySlotsExtracted.extracted.treatment,
+      });
+      Object.assign(ctx, treatmentUpdate.ctx);
+      if (treatmentUpdate.changed) {
+        (ctx as any).__forceClinicMatching = true;
+      }
     }
 
     // The replayed treatment request and structured city/side actions must never
@@ -2048,12 +2061,16 @@ export async function POST(
     if (isFeelinHealthy && newCtx.quoteConsent === true) {
       const currentLang = (parsed.language || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
 
-      // Persist treatment from the model / extractor without inventing a branch.
-      if (parsed.treatmentCategory && !newCtx.lastTreatmentCategory) {
-        newCtx.lastTreatmentCategory = parsed.treatmentCategory;
-      }
-      if (agencySlotsExtracted.extracted.treatment && !newCtx.lastTreatmentCategory) {
-        newCtx.lastTreatmentCategory = agencySlotsExtracted.extracted.treatment;
+      // Persist / switch treatment from model + extractor (patients may change mid-flow).
+      const postLlmTreatmentUpdate = applyDetectedTreatmentUpdate(newCtx, {
+        message: finalMessage || message,
+        extractedTreatment: agencySlotsExtracted.extracted.treatment,
+        modelTreatment: parsed.treatmentCategory,
+      });
+      Object.assign(newCtx, postLlmTreatmentUpdate.ctx);
+      if (postLlmTreatmentUpdate.changed) {
+        (newCtx as any).__forceClinicMatching = true;
+        parsed.intent = parsed.intent || "clinic_matching";
       }
 
       // Adopt a model-proposed city only when the patient's own message already
@@ -2471,6 +2488,35 @@ export async function POST(
             emptySide,
             fullAgencyClinics
           );
+          const emptyKey = `${emptyBranchKey}|${emptyCity || ""}|${String(emptySide || "")}`;
+
+          // Same empty reply twice → escalate to city selection / clearer next step.
+          if (newCtx.lastEmptyMatchKey === emptyKey) {
+            const cities = getAvailableCitiesForTreatment(
+              emptyBranchKey,
+              fullAgencyClinics,
+              replyLang
+            );
+            if (cities.length > 0) {
+              const cityCard = getCitySelectionCard(emptyBranchKey, cities, replyLang);
+              newCtx.pendingCitySelection = true;
+              delete newCtx.pendingLocationExpansion;
+              delete newCtx.lastEmptyMatchKey;
+              return jsonResponse({
+                reply:
+                  replyLang === "en"
+                    ? `I've updated your treatment to ${emptyBranchKey.replace(/_/g, " ")}. Which city works best so I can show partner clinics?`
+                    : `Tedavi tercihinizi güncelledim. Partner klinikleri gösterebilmem için hangi şehir sizin için daha uygun?`,
+                type: "city_selection",
+                citySelectionCard: cityCard,
+                sessionContext: newCtx,
+                showClinicCards: false,
+                shouldCreateNewLead: false,
+                shouldUpdateLead: false,
+              }, { headers: CORS });
+            }
+          }
+
           const supportLabels = (emptyCurated.supportedLocationsForBranch || []).map((l: any) =>
             replyLang === "en" ? l.displayNameEn : l.displayNameTr
           );
@@ -2481,6 +2527,7 @@ export async function POST(
             side: emptySide,
             supportedLocationLabels: supportLabels,
           });
+          newCtx.lastEmptyMatchKey = emptyKey;
           const alt = emptyCurated.supportedLocationsForBranch?.[0];
           if (alt) {
             newCtx.pendingLocationExpansion = true;

@@ -20,6 +20,7 @@ import {
   getTreatmentClarificationPrompt,
   getUnsupportedLocationPrompt,
   getCuratedClinicsForFeelinHealthy,
+  normalizeTreatmentBranch,
   type LocationDecision,
 } from "./feelinhealthyConfig";
 import { resolveAssistantRole, type AssistantRole } from "./assistantModes";
@@ -751,6 +752,82 @@ export function ensureTreatmentFromPending(
   const inferred = inferTreatmentFromText(source);
   if (!inferred) return ctx;
   return { ...ctx, lastTreatmentCategory: inferred };
+}
+
+/**
+ * Apply an explicit mid-chat treatment change (or first detection).
+ * Patients often switch after an empty-match prompt ("diş → saç ekimi").
+ * Stale empty-match locks must clear so matching can restart.
+ */
+export function applyDetectedTreatmentUpdate(
+  ctx: Record<string, any>,
+  opts: {
+    message?: string | null;
+    extractedTreatment?: string | null;
+    modelTreatment?: string | null;
+  } = {}
+): {
+  ctx: Record<string, any>;
+  changed: boolean;
+  previous: string | null;
+  next: string | null;
+} {
+  const candidateRaw =
+    (opts.extractedTreatment && String(opts.extractedTreatment).trim()) ||
+    (opts.modelTreatment && String(opts.modelTreatment).trim()) ||
+    inferTreatmentFromText(opts.message) ||
+    null;
+
+  if (!candidateRaw) {
+    return {
+      ctx,
+      changed: false,
+      previous: ctx.lastTreatmentCategory ? String(ctx.lastTreatmentCategory) : null,
+      next: null,
+    };
+  }
+
+  const previous = ctx.lastTreatmentCategory
+    ? String(ctx.lastTreatmentCategory)
+    : ctx.treatmentId
+      ? String(ctx.treatmentId)
+      : null;
+  const prevBranch = previous ? normalizeTreatmentBranch(previous) : null;
+  const nextBranch = normalizeTreatmentBranch(candidateRaw);
+
+  if (prevBranch && prevBranch === nextBranch) {
+    // Same branch — keep existing label unless missing.
+    if (!ctx.lastTreatmentCategory) {
+      return {
+        ctx: { ...ctx, lastTreatmentCategory: candidateRaw },
+        changed: false,
+        previous,
+        next: candidateRaw,
+      };
+    }
+    return { ctx, changed: false, previous, next: candidateRaw };
+  }
+
+  const next = { ...ctx };
+  next.lastTreatmentCategory = candidateRaw;
+  next.treatmentId = candidateRaw;
+  if (opts.message) next.pendingHealthRequest = String(opts.message);
+  delete next.pendingLocationExpansion;
+  delete next.pendingLocationExpansionTarget;
+  delete next.pendingLocationBranch;
+  delete next.lastEmptyMatchKey;
+  delete next.lastRecommendedClinicIds;
+  next.__forceClinicMatching = true;
+  if (next.leadStage !== "quote_request_created" && next.leadStage !== "completed") {
+    next.leadStage = "recommendation";
+  }
+
+  return {
+    ctx: next,
+    changed: true,
+    previous,
+    next: candidateRaw,
+  };
 }
 
 /**
