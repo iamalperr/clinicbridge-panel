@@ -294,15 +294,22 @@ export async function persistAgencyQuoteRequest(
       { merge: true }
     );
 
-    // Notifications only after lead + quote are persisted. Email failure must not
-    // roll back the quote; retry jobs handle delivery later.
+    // Notifications only after lead + quote are persisted. Await so serverless
+    // runtimes do not freeze mid-send (fire-and-forget left jobs stuck in
+    // `processing`). Email failure must not roll back the quote.
     if (leadResult.status === "created") {
-      scheduleAndProcessAgencyLeadNotification(input.agencyId, leadId).catch((err) => {
-        console.error("[persistAgencyQuoteRequest] Agency notification error:", err);
-      });
-      scheduleAndProcessPatientLeadNotification(input.agencyId, leadId).catch((err) => {
-        console.error("[persistAgencyQuoteRequest] Patient notification error:", err);
-      });
+      const settled = await Promise.allSettled([
+        scheduleAndProcessAgencyLeadNotification(input.agencyId, leadId),
+        scheduleAndProcessPatientLeadNotification(input.agencyId, leadId),
+      ]);
+      for (const result of settled) {
+        if (result.status === "rejected") {
+          console.error(
+            "[persistAgencyQuoteRequest] Notification error:",
+            result.reason instanceof Error ? result.reason.message : result.reason
+          );
+        }
+      }
     }
 
     return {

@@ -195,15 +195,21 @@ export async function submitAgencyLead(input: SubmitLeadInput) {
     return { leadId: leadRef.id, agencyId, status: "created" };
   });
 
-  // Post-commit: trigger notifications async (unless deferred until quote persist)
+  // Post-commit: trigger notifications. Await so serverless runtimes do not
+  // freeze mid-send when this path is used without quote deferral.
   if (result.status === "created" && !input.deferNotifications) {
-    // Fire and forget (don't await) so it doesn't block the frontend response
-    scheduleAndProcessAgencyLeadNotification(result.agencyId, result.leadId).catch(err => {
-      console.error("[submitAgencyLead] Agency notification error:", err);
-    });
-    scheduleAndProcessPatientLeadNotification(result.agencyId, result.leadId).catch(err => {
-      console.error("[submitAgencyLead] Patient notification error:", err);
-    });
+    const settled = await Promise.allSettled([
+      scheduleAndProcessAgencyLeadNotification(result.agencyId, result.leadId),
+      scheduleAndProcessPatientLeadNotification(result.agencyId, result.leadId),
+    ]);
+    for (const item of settled) {
+      if (item.status === "rejected") {
+        console.error(
+          "[submitAgencyLead] Notification error:",
+          item.reason instanceof Error ? item.reason.message : item.reason
+        );
+      }
+    }
   }
 
   return result;

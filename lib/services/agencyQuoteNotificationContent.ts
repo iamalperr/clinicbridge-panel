@@ -361,15 +361,29 @@ export function computeNextRetryAt(attemptCount: number, nowMs = Date.now()): st
   return new Date(nowMs + minutes * 60_000).toISOString();
 }
 
+/** Jobs left in `processing` after a serverless freeze/timeout can be reclaimed. */
+export const STALE_PROCESSING_NOTIFICATION_MS = 90_000;
+
 export function isRetryableNotificationJob(job: {
   status?: string;
   attemptCount?: number;
   maxAttempts?: number;
   nextAttemptAt?: string | null;
+  updatedAt?: string | null;
+  lastAttemptAt?: string | null;
 }, nowMs = Date.now()): boolean {
   if (!job) return false;
-  if (job.status === "sent" || job.status === "processing") return false;
+  if (job.status === "sent") return false;
   if (job.status === "skipped" || job.status === "config_missing") return false;
+
+  // Fresh `processing` is owned by an in-flight worker; stale ones must be reclaimable
+  // (Vercel often freezes fire-and-forget work after the HTTP response returns).
+  if (job.status === "processing") {
+    const marker = job.lastAttemptAt || job.updatedAt;
+    if (!marker) return true;
+    return nowMs - new Date(marker).getTime() >= STALE_PROCESSING_NOTIFICATION_MS;
+  }
+
   const attempts = Number(job.attemptCount || 0);
   const max = Number(job.maxAttempts || 3);
   if (attempts >= max) return false;

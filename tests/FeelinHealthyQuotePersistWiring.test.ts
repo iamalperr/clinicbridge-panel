@@ -35,6 +35,9 @@ describe("FeelinHealthy quote request persistence wiring", () => {
     expect(serviceSource).toContain("selectedClinicNames");
     expect(serviceSource).toContain("travelDate");
     expect(serviceSource).toContain("deferNotifications: true");
+    // Notifications must be awaited (not fire-and-forget) so serverless does not freeze mid-send.
+    expect(serviceSource).toContain("Promise.allSettled");
+    expect(serviceSource).toContain("scheduleAndProcessAgencyLeadNotification");
   });
 
   it("lead submission aligns consent version with matching-chat before persist", () => {

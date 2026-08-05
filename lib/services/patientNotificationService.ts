@@ -1,8 +1,11 @@
 import { getAdminDb } from "@/lib/firebase-admin";
 import { Resend } from "resend";
 import { getOrCreatePatientRequestViewToken } from "@/lib/services/patientPortalTokenService";
+import { isLeadSubmittedForPatientNotification } from "@/lib/services/leadNotificationEligibility";
 
 const resend = new Resend(process.env.RESEND_API_KEY || "fallback_key");
+
+export { isLeadSubmittedForPatientNotification };
 
 export async function scheduleAndProcessPatientLeadNotification(agencyId: string, leadId: string) {
   const adminDb = getAdminDb();
@@ -19,7 +22,24 @@ export async function scheduleAndProcessPatientLeadNotification(agencyId: string
       const doc = await t.get(jobRef);
       if (doc.exists) {
         const data = doc.data()!;
-        if (data.status === "sent" || data.status === "processing" || data.status === "skipped") {
+        if (data.status === "sent" || data.status === "processing") {
+          return { skip: true, reason: data.status };
+        }
+        // Allow one reclaim when we previously skipped due to the legacy
+        // status==="submitted" gate (now fixed for quote_requested leads).
+        if (
+          data.status === "skipped" &&
+          data.lastErrorCode === "LEAD_NOT_SUBMITTED" &&
+          Number(data.attemptCount || 0) < Number(data.maxAttempts || 3)
+        ) {
+          t.update(jobRef, {
+            status: "pending",
+            lastErrorCode: null,
+            updatedAt: new Date().toISOString(),
+          });
+          return { skip: false, jobData: { ...data, status: "pending", lastErrorCode: null } };
+        }
+        if (data.status === "skipped") {
           return { skip: true, reason: data.status };
         }
         if (data.status === "failed" && data.attemptCount < data.maxAttempts) {
@@ -104,8 +124,9 @@ export async function processPatientNotificationJob(agencyId: string, jobId: str
       return; // Do not retry
     }
 
-    // Ensure lead is submitted
-    if (lead.status !== "submitted") {
+    // Ensure lead is submitted. Canonical agency statuses are waiting_for_assignment /
+    // quote_requested / etc. — never the legacy literal "submitted".
+    if (!isLeadSubmittedForPatientNotification(lead)) {
       await jobRef.update({
         status: "skipped",
         lastErrorCode: "LEAD_NOT_SUBMITTED",

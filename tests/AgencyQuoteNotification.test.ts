@@ -84,9 +84,24 @@ describe("FeelinHealthy quote request email notifications", () => {
     expect(isRetryableNotificationJob({ status: "sent", attemptCount: 1, maxAttempts: 3 })).toBe(
       false
     );
+    // Fresh processing is owned by an in-flight worker.
     expect(
-      isRetryableNotificationJob({ status: "processing", attemptCount: 1, maxAttempts: 3 })
+      isRetryableNotificationJob({
+        status: "processing",
+        attemptCount: 1,
+        maxAttempts: 3,
+        lastAttemptAt: new Date().toISOString(),
+      })
     ).toBe(false);
+    // Stale processing (serverless freeze) must be reclaimable.
+    expect(
+      isRetryableNotificationJob({
+        status: "processing",
+        attemptCount: 1,
+        maxAttempts: 3,
+        lastAttemptAt: new Date(Date.now() - 120_000).toISOString(),
+      })
+    ).toBe(true);
     expect(computeNextRetryAt(1)).toMatch(/T/);
   });
 

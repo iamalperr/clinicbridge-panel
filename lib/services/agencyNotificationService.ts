@@ -71,15 +71,19 @@ export async function scheduleAndProcessAgencyLeadNotification(agencyId: string,
       const doc = await t.get(jobRef);
       if (doc.exists) {
         const data = doc.data()!;
-        if (data.status === "sent" || data.status === "processing") {
+        if (data.status === "sent") {
           return { skip: true, reason: data.status };
         }
+        // Reclaim failed / pending / stale-processing jobs; skip only fresh in-flight work.
         if (isRetryableNotificationJob(data)) {
           t.update(jobRef, {
             status: "retrying",
             updatedAt: new Date().toISOString(),
           });
           return { skip: false, jobData: { ...data, status: "retrying" } };
+        }
+        if (data.status === "processing") {
+          return { skip: true, reason: "processing" };
         }
         return { skip: true, reason: data.status === "failed" ? "max_attempts_reached" : data.status };
       }
@@ -370,7 +374,7 @@ export async function processAgencyNotificationJob(agencyId: string, jobId: stri
       throw new Error("RESEND_API_KEY_MISSING");
     }
 
-    const result = await resend.emails.send({
+    const sendPromise = resend.emails.send({
       from: "ClinicBridge AI <noreply@clinicbridge-ai.com>",
       to: recipients,
       ...(delivery.cc.length > 0 ? { cc: delivery.cc } : {}),
@@ -379,6 +383,13 @@ export async function processAgencyNotificationJob(agencyId: string, jobId: stri
       html: content.html,
       text: content.text,
     });
+    // Bound Resend so a hung provider cannot leave the job stuck in `processing`.
+    const result = await Promise.race([
+      sendPromise,
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("RESEND_TIMEOUT")), 12_000);
+      }),
+    ]);
 
     if (result.error) {
       throw new Error(result.error.message || "RESEND_SEND_ERROR");
@@ -499,7 +510,8 @@ export async function retryDueAgencyLeadNotifications(options?: {
 
     for (const doc of jobsSnap.docs) {
       const job = doc.data();
-      if (!["failed", "pending", "retrying"].includes(String(job.status || ""))) {
+      // Include stale `processing` (serverless freeze) via isRetryableNotificationJob.
+      if (!["failed", "pending", "retrying", "processing"].includes(String(job.status || ""))) {
         continue;
       }
       scanned += 1;
