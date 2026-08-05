@@ -2,6 +2,11 @@ import { getAdminDb } from "@/lib/firebase-admin";
 import { Resend } from "resend";
 import { getOrCreatePatientRequestViewToken } from "@/lib/services/patientPortalTokenService";
 import { isLeadSubmittedForPatientNotification } from "@/lib/services/leadNotificationEligibility";
+import { pickOfficialClinicName } from "@/lib/services/agencyQuoteNotificationContent";
+import {
+  buildPatientRequestReceivedCopy,
+  buildPatientRequestReceivedSubject,
+} from "@/lib/services/patientRequestReceivedContent";
 
 const resend = new Resend(process.env.RESEND_API_KEY || "fallback_key");
 
@@ -140,9 +145,26 @@ export async function processPatientNotificationJob(agencyId: string, jobId: str
     const crSnap = await adminDb.collection("agencies").doc(agencyId).collection("clinic_requests")
       .where("leadId", "==", jobData.leadId).get();
     
-    const clinicRequests = crSnap.docs.map(d => d.data());
+    const clinicRequests = crSnap.docs
+      .map((d) => d.data())
+      .filter((d) => {
+        const st = String(d.status || "").toLowerCase();
+        return st !== "cancelled" && st !== "rejected";
+      });
 
-    if (clinicRequests.length === 0) {
+    // Prefer clinic_requests; fall back to lead.clinicIds / selectedClinicNames so a
+    // missing CR snapshot does not block the patient acknowledgement email.
+    let clinicIds: string[] = clinicRequests
+      .map((cr) => String(cr.clinicId || "").trim())
+      .filter(Boolean);
+    if (clinicIds.length === 0 && Array.isArray(lead.clinicIds)) {
+      clinicIds = lead.clinicIds.map((id: any) => String(id || "").trim()).filter(Boolean);
+    }
+
+    if (
+      clinicIds.length === 0 &&
+      !(Array.isArray(lead.selectedClinicNames) && lead.selectedClinicNames.length > 0)
+    ) {
       console.warn(`[patientNotificationService] No clinic requests found for lead ${jobData.leadId}`);
       await jobRef.update({
         status: "skipped",
@@ -153,118 +175,76 @@ export async function processPatientNotificationJob(agencyId: string, jobId: str
       return; // Do not retry
     }
 
-    // Resolve Clinic Names
-    const clinicNames = [];
-    for (const cr of clinicRequests) {
-      const cSnap = await adminDb.collection("clinics").doc(cr.clinicId).get();
-      clinicNames.push(cSnap.exists ? cSnap.data()?.name || cr.clinicId : cr.clinicId);
+    // Resolve Clinic Names — agency clinics first (canonical), then lead names.
+    const clinicNames: string[] = [];
+    if (Array.isArray(lead.selectedClinicNames) && lead.selectedClinicNames.length > 0 && clinicIds.length === 0) {
+      clinicNames.push(...lead.selectedClinicNames.map(String));
+    } else {
+      for (const clinicId of clinicIds) {
+        const agencyClinic = await adminDb
+          .collection("agencies")
+          .doc(agencyId)
+          .collection("clinics")
+          .doc(clinicId)
+          .get();
+        if (agencyClinic.exists) {
+          clinicNames.push(pickOfficialClinicName(agencyClinic.data(), clinicId));
+          continue;
+        }
+        const topClinic = await adminDb.collection("clinics").doc(clinicId).get();
+        clinicNames.push(pickOfficialClinicName(topClinic.exists ? topClinic.data() : null, clinicId));
+      }
+      if (clinicNames.length === 0 && Array.isArray(lead.selectedClinicNames)) {
+        clinicNames.push(...lead.selectedClinicNames.map(String));
+      }
     }
 
     // Determine Language (fallback chain)
     const agencySnap = await adminDb.collection("agencies").doc(agencyId).get();
     const agencyData = agencySnap.data() || {};
     // Language priority: lead locale -> conversation locale -> agency default locale -> "en"
-    const lang = (lead.language || agencyData.settings?.defaultLocale || "en") === "tr" ? "tr" : "en";
+    const lang: "tr" | "en" =
+      String(lead.language || agencyData.settings?.defaultLocale || agencyData.defaultLanguage || "tr")
+        .toLowerCase()
+        .startsWith("en")
+        ? "en"
+        : "tr";
     
     // Resolve Agency Branding
-    const agencyName = agencyData.name || "ClinicBridge AI";
+    const agencyName = agencyData.name || agencyData.branding?.displayName || "FeelinHealthy";
     const replyTo = agencyData.settings?.supportEmail || agencyData.email;
 
-    const leadReference = `CB-${new Date(lead.createdAt).toISOString().slice(0,10).replace(/-/g, "")}-${jobData.leadId.substring(0, 5).toUpperCase()}`;
+    const createdRaw = lead.createdAt?.toDate?.() || lead.createdAt || new Date().toISOString();
+    const createdDate = new Date(createdRaw);
+    const datePart = Number.isNaN(createdDate.getTime())
+      ? new Date().toISOString().slice(0, 10).replace(/-/g, "")
+      : createdDate.toISOString().slice(0, 10).replace(/-/g, "");
+    const leadReference = `CB-${datePart}-${String(jobData.leadId).substring(0, 5).toUpperCase()}`;
 
-    const subject = lang === "tr" 
-      ? `Talebiniz Alındı — ${leadReference}`
-      : `Your Request Has Been Received — ${leadReference}`;
+    const subject = buildPatientRequestReceivedSubject({
+      lang,
+      leadReference,
+      agencyName,
+    });
 
     const patientFirstName = lead.patientName ? lead.patientName.split(" ")[0] : (lang === "tr" ? "Değerli Hastamız" : "Dear Patient");
     const treatmentName = lead.treatmentCategory || (lang === "tr" ? "Tedavi talebi" : "Treatment request");
-
-    const preferredDate = lead.preferredDate; 
-    const preferredTime = lead.preferredTime;
 
     // Generate CTA Token and URL
     const rawToken = await getOrCreatePatientRequestViewToken(agencyId, jobData.leadId, jobId);
     const secureUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://app.clinicbridge-ai.com"}/patient/request?token=${rawToken}`;
 
-    const htmlContent = lang === "tr" ? `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.6;">
-        <h2 style="color: #0d9488;">Talebiniz başarıyla alındı</h2>
-        <p>Merhaba ${patientFirstName},</p>
-        <p><strong>${agencyName}</strong> üzerinden oluşturduğunuz tedavi talebiniz başarıyla alınmıştır.</p>
-        
-        <div style="background-color: #f8fafc; padding: 16px; border-radius: 8px; margin: 24px 0;">
-          <p style="margin: 0 0 8px 0; color: #64748b; font-size: 13px;">Talep Referansı</p>
-          <p style="margin: 0; font-weight: bold; font-size: 16px;">${leadReference}</p>
-        </div>
-        
-        <h3 style="border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Talep Özeti</h3>
-        <p><strong>Tedavi:</strong> ${treatmentName}</p>
-        
-        <p><strong>Seçilen Klinikler:</strong></p>
-        <ol style="margin-top: 4px;">
-          ${clinicNames.slice(0, 3).map(cn => `<li>${cn}</li>`).join("")}
-        </ol>
-        
-        ${preferredDate ? `<p><strong>Tercih Edilen Tarih:</strong> ${preferredDate}</p>` : ""}
-        ${preferredTime ? `<p><strong>Tercih Edilen Saat:</strong> ${preferredTime}</p>` : ""}
-        
-        <p style="margin-top: 24px;">Talebiniz seçtiğiniz klinikler bazında değerlendirilecektir.</p>
-        
-        <p style="margin-top: 16px; font-weight: bold; color: #b91c1c;">
-          Bu kayıt kesinleşmiş bir randevu değildir. Klinik veya ilgili ekip değerlendirmesi tamamlandıktan sonra süreçle ilgili ayrıca bilgilendirileceksiniz.
-        </p>
-
-        <p>Talebinizin özetini güvenli bağlantı üzerinden görüntüleyebilirsiniz.</p>
-        
-        <div style="margin: 32px 0;">
-          <a href="${secureUrl}" style="display: inline-block; padding: 12px 24px; background-color: #0d9488; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">Talebimi Görüntüle</a>
-        </div>
-        
-        <p>Aynı talep için yeniden başvuru yapmanıza gerek yoktur.</p>
-        
-        <p style="margin-top: 32px; color: #64748b; font-size: 14px;">ClinicBridge AI</p>
-      </div>
-    ` : `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.6;">
-        <h2 style="color: #0d9488;">Your request has been received</h2>
-        <p>Hello ${patientFirstName},</p>
-        <p>Your treatment request submitted through <strong>${agencyName}</strong> has been received successfully.</p>
-        
-        <div style="background-color: #f8fafc; padding: 16px; border-radius: 8px; margin: 24px 0;">
-          <p style="margin: 0 0 8px 0; color: #64748b; font-size: 13px;">Request Reference</p>
-          <p style="margin: 0; font-weight: bold; font-size: 16px;">${leadReference}</p>
-        </div>
-        
-        <h3 style="border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Request Summary</h3>
-        <p><strong>Treatment:</strong> ${treatmentName}</p>
-        
-        <p><strong>Selected Clinics:</strong></p>
-        <ol style="margin-top: 4px;">
-          ${clinicNames.slice(0, 3).map(cn => `<li>${cn}</li>`).join("")}
-        </ol>
-        
-        ${preferredDate ? `<p><strong>Preferred Date:</strong> ${preferredDate}</p>` : ""}
-        ${preferredTime ? `<p><strong>Preferred Time:</strong> ${preferredTime}</p>` : ""}
-        
-        <p style="margin-top: 24px;">Your request will be reviewed separately for each selected clinic.</p>
-        
-        <p style="margin-top: 16px; font-weight: bold; color: #b91c1c;">
-          This is not a confirmed appointment. You will be informed separately after the clinic or relevant team completes its review.
-        </p>
-
-        <p>You can view your request summary through the secure link below.</p>
-
-        <div style="margin: 32px 0;">
-          <a href="${secureUrl}" style="display: inline-block; padding: 12px 24px; background-color: #0d9488; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">View My Request</a>
-        </div>
-        
-        <p>You do not need to submit the same request again.</p>
-        
-        <p style="margin-top: 32px; color: #64748b; font-size: 14px;">ClinicBridge AI</p>
-      </div>
-    `;
-
-    const textContent = lang === "tr" ? `Talebiniz başarıyla alındı\nMerhaba ${patientFirstName},\n${agencyName} üzerinden oluşturduğunuz tedavi talebiniz başarıyla alınmıştır.\nTalep Referansı: ${leadReference}\nTalep Özeti:\nTedavi: ${treatmentName}\nSeçilen Klinikler:\n${clinicNames.slice(0, 3).map((cn, i) => `${i+1}. ${cn}`).join("\n")}\nTalebiniz seçtiğiniz klinikler bazında değerlendirilecektir.\nBu kayıt kesinleşmiş bir randevu değildir. Klinik veya ilgili ekip değerlendirmesi tamamlandıktan sonra süreçle ilgili ayrıca bilgilendirileceksiniz.\n\nTalebinizi görüntülemek için:\n${secureUrl}\n\nAynı talep için yeniden başvuru yapmanıza gerek yoktur.\nClinicBridge AI` : `Your request has been received\nHello ${patientFirstName},\nYour treatment request submitted through ${agencyName} has been received successfully.\nRequest Reference: ${leadReference}\nRequest Summary:\nTreatment: ${treatmentName}\nSelected Clinics:\n${clinicNames.slice(0, 3).map((cn, i) => `${i+1}. ${cn}`).join("\n")}\nYour request will be reviewed separately for each selected clinic.\nThis is not a confirmed appointment. You will be informed separately after the clinic or relevant team completes its review.\n\nView your request:\n${secureUrl}\n\nYou do not need to submit the same request again.\nClinicBridge AI`;
+    const { html: htmlContent, text: textContent } = buildPatientRequestReceivedCopy({
+      lang,
+      agencyName,
+      patientFirstName,
+      treatmentName,
+      clinicNames,
+      leadReference,
+      secureUrl,
+      travelDate: lead.travelDate || null,
+      selectedCity: lead.selectedCity || null,
+    });
 
     if (!process.env.RESEND_API_KEY) {
        console.warn("[patientNotificationService] RESEND_API_KEY missing. Mocking success.");

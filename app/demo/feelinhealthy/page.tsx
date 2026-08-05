@@ -12,6 +12,7 @@ import { IstanbulSideClarificationCard } from "@/components/chat/IstanbulSideCla
 import { CitySelectionCard } from "@/components/chat/CitySelectionCard";
 import { FEELINHEALTHY_CONFIG } from "@/lib/agency/feelinhealthyConfig";
 import type { ClinicCardActionType } from "@/lib/agency/feelinhealthyClinicCardActions";
+import { requestQuoteSuccessCopy } from "@/lib/agency/feelinhealthyClinicCardActions";
 import {
   appendAgentPrefillQuery,
   buildQuotePrefillFromSession,
@@ -716,10 +717,7 @@ export default function FeelinHealthyLive() {
                 ...withoutFailure,
                 {
                   role: "ai",
-                  text:
-                    lang === "tr"
-                      ? `Teklif talebiniz başarıyla oluşturuldu${payload?.clinicName ? ` (${payload.clinicName})` : ""}. FeelinHealthy ekibi talebinizi inceleyerek sizinle iletişime geçecektir.`
-                      : `Your quote request${payload?.clinicName ? ` for ${payload.clinicName}` : ""} has been created successfully. The FeelinHealthy team will review it and contact you shortly.`,
+                  text: requestQuoteSuccessCopy(lang, payload?.clinicName),
                   type: "text",
                 },
               ];

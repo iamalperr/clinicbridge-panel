@@ -351,14 +351,35 @@ export function prepareRequestQuote(params: {
 
 export function requestQuoteSuccessCopy(locale: string, clinicName?: string): string {
   const isEn = locale.toLowerCase().startsWith("en");
+  const clinicBit = clinicName
+    ? isEn
+      ? ` for ${clinicName}`
+      : ` (${clinicName})`
+    : "";
+
   if (isEn) {
-    return clinicName
-      ? `Your quote request for ${clinicName} has been created successfully. The FeelinHealthy team will review it and contact you shortly.`
-      : "Your quote request has been created successfully. The FeelinHealthy team will review it and contact you shortly.";
+    return [
+      `Your quote request${clinicBit} has been created successfully.`,
+      ``,
+      `What happens next:`,
+      `1. The FeelinHealthy team is reviewing your request and preferences.`,
+      `2. A confirmation with a short process summary will be sent to your registered email.`,
+      `3. The team will contact you with clinic options and the next steps.`,
+      ``,
+      `You do not need to submit the same request again. Meanwhile, feel free to ask here about the clinic, treatment process, pricing, or travel.`,
+    ].join("\n");
   }
-  return clinicName
-    ? `Teklif talebiniz başarıyla oluşturuldu (${clinicName}). FeelinHealthy ekibi talebinizi inceleyerek sizinle iletişime geçecektir.`
-    : "Teklif talebiniz başarıyla oluşturuldu. FeelinHealthy ekibi talebinizi inceleyerek sizinle iletişime geçecektir.";
+
+  return [
+    `Teklif talebiniz başarıyla oluşturuldu${clinicBit}.`,
+    ``,
+    `Şimdi ne olacak:`,
+    `1. FeelinHealthy ekibi talebinizi ve tercihlerinizi inceliyor.`,
+    `2. Kayıtlı e-posta adresinize onay ve kısa süreç özeti iletilecek.`,
+    `3. Ekip sizinle iletişime geçerek klinik seçenekleri ve sonraki adımları paylaşacak.`,
+    ``,
+    `Aynı talep için yeniden yazmanıza gerek yok. Bu arada klinik, tedavi süreci, fiyatlandırma veya seyahat hakkında sorularınız varsa buradan sorabilirsiniz.`,
+  ].join("\n");
 }
 
 export function requestQuoteFailureCopy(locale: string): string {

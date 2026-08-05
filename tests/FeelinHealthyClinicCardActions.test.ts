@@ -87,6 +87,9 @@ describe("FeelinHealthy clinic card action contracts", () => {
     expect(result.sessionContext.__fhQuoteRequestedByCardAction).toBe(true);
     expect(resolveAssistantRole(result.sessionContext)).toBe("network_advisor");
     expect(requestQuoteSuccessCopy("tr")).toMatch(/Teklif talebiniz başarıyla oluşturuldu/);
+    expect(requestQuoteSuccessCopy("tr")).toMatch(/Şimdi ne olacak/);
+    expect(requestQuoteSuccessCopy("tr")).toMatch(/e-posta/);
+    expect(requestQuoteSuccessCopy("tr", "İstanbul Diş Akademisi")).toContain("İstanbul Diş Akademisi");
     expect(requestQuoteFailureCopy("tr")).toMatch(/kaydedemedik/);
     expect(requestQuoteFailureCopy("tr")).not.toMatch(/Klinik seçiminizi aldım/);
   });
