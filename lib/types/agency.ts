@@ -415,6 +415,17 @@ export interface Lead {
   source: LeadSource;
   sourceUrl?: string;
 
+  // Email / notification delivery (agency quote + patient acknowledgement)
+  notificationStatus?: string | null;
+  notificationAttempts?: number;
+  notificationSentAt?: string | null;
+  notificationEmailSent?: boolean;
+  patientEmailSent?: boolean;
+  notificationErrorCode?: string | null;
+  notificationErrorMessage?: string | null;
+  nextRetryAt?: string | null;
+  lastNotificationAttemptAt?: string | null;
+
   createdAt: any;
   updatedAt: any;
 }
