@@ -11,7 +11,7 @@ import {
 import { subscribeToLead, updateLeadStatus, updateLeadClinicSelection, draftLeadOffers, sendLeadPatientOffer, subscribeToClinicRequests, subscribeToNotificationJobs, subscribeToExtendedRequests } from "@/lib/services/leadService";
 import { subscribeToAgencyClinics, getAgency } from "@/lib/services/agencyService";
 import { resolveAgencyClinicSelectionLimit } from "@/lib/agency/leadClinicSelection";
-import { formatOfferPriceRange } from "@/lib/agency/clinicOfferDraft";
+import { describeClinicOfferDraftError, formatOfferPriceRange } from "@/lib/agency/clinicOfferDraft";
 import { FEELINHEALTHY_CONFIG } from "@/lib/agency/feelinhealthyConfig";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n-context";
@@ -171,7 +171,13 @@ export default function LeadDetailPage() {
         if (cancelled) return;
         // Soft: show message but do not block the page.
         setDraftOffers(Array.isArray(lead.draftOfferSummary) ? lead.draftOfferSummary : []);
-        setDraftOffersError(err?.message || null);
+        setDraftOffersError(
+          describeClinicOfferDraftError(
+            err?.code || err?.message,
+            language === "tr" ? "tr" : "en",
+            err?.message
+          )
+        );
       } finally {
         if (!cancelled) setDraftOffersLoading(false);
       }
@@ -260,7 +266,11 @@ export default function LeadDetailPage() {
           console.error("[lead offer email]", offerErr);
           showToast(
             "error",
-            offerErr?.message ||
+            describeClinicOfferDraftError(
+              offerErr?.code || offerErr?.message,
+              language === "tr" ? "tr" : "en",
+              offerErr?.message
+            ) ||
               (language === "tr"
                 ? "Durum güncellendi ancak teklif e-postası gönderilemedi. Klinik fiyatlarını kontrol edin."
                 : "Status updated but offer email could not be sent. Check clinic pricing.")

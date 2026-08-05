@@ -254,7 +254,13 @@ export async function draftLeadOffers(
   });
   const payload = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(payload?.message || payload?.error || `Draft offers failed (${res.status})`);
+    const code = String(payload?.error || "INTERNAL_ERROR");
+    const message = String(
+      payload?.message || payload?.error || `Draft offers failed (${res.status})`
+    );
+    const err = new Error(message) as Error & { code?: string };
+    err.code = code;
+    throw err;
   }
   return {
     quoteId: payload.quoteId,
@@ -284,7 +290,13 @@ export async function sendLeadPatientOffer(
   });
   const payload = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(payload?.message || payload?.error || `Send offer failed (${res.status})`);
+    const code = String(payload?.error || "INTERNAL_ERROR");
+    const message = String(
+      payload?.message || payload?.error || `Send offer failed (${res.status})`
+    );
+    const err = new Error(message) as Error & { code?: string };
+    err.code = code;
+    throw err;
   }
   return {
     quoteId: payload.quoteId,

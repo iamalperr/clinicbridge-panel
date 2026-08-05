@@ -133,3 +133,36 @@ export function formatOfferPriceRange(offer: {
   }
   return `${offer.priceMin} ${cur}`;
 }
+
+/** User-facing copy for draft-offers / send-offer API error codes. */
+export function describeClinicOfferDraftError(
+  code: string | null | undefined,
+  lang: "tr" | "en" = "tr",
+  fallbackMessage?: string | null
+): string {
+  const c = String(code || "").toUpperCase();
+  const tr: Record<string, string> = {
+    QUOTE_NOT_FOUND: "Bu lead’e bağlı teklif kaydı bulunamadı. Teklif isteği tamamlanmış mı kontrol edin.",
+    NO_CLINICS: "Seçili klinik yok. Önce klinik seçimi yapın.",
+    NO_PRICING_MATCH:
+      "Seçili kliniklerde bu tedaviye eşleşen yüklü fiyat bulunamadı. Klinik fiyatlarını kontrol edin.",
+    NO_OFFERS: "Gönderilecek klinik teklifi yok.",
+    LEAD_NOT_FOUND: "Lead bulunamadı.",
+    DB_UNAVAILABLE: "Veritabanına şu an ulaşılamıyor. Biraz sonra tekrar deneyin.",
+    INTERNAL_ERROR: "Teklif taslağı oluşturulamadı. Klinik fiyatlarını ve teklif kaydını kontrol edin.",
+  };
+  const en: Record<string, string> = {
+    QUOTE_NOT_FOUND: "No quote is linked to this lead yet. Check that the quote request completed.",
+    NO_CLINICS: "No clinics selected. Select clinics first.",
+    NO_PRICING_MATCH:
+      "No uploaded clinic pricing matched this treatment. Check clinic price lists.",
+    NO_OFFERS: "No clinic offers available to send.",
+    LEAD_NOT_FOUND: "Lead not found.",
+    DB_UNAVAILABLE: "Database is temporarily unavailable. Try again shortly.",
+    INTERNAL_ERROR: "Could not draft the offer. Check clinic prices and the linked quote.",
+  };
+  const map = lang === "tr" ? tr : en;
+  if (c && map[c]) return map[c];
+  if (fallbackMessage && !/^[A-Z0-9_]+$/.test(fallbackMessage)) return fallbackMessage;
+  return map.INTERNAL_ERROR;
+}

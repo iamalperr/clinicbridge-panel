@@ -7,6 +7,34 @@ import {
 
 export const dynamic = "force-dynamic";
 
+function asPatientOfferEmailError(err: unknown): PatientOfferEmailError | null {
+  if (err instanceof PatientOfferEmailError) return err;
+  if (
+    err &&
+    typeof err === "object" &&
+    (err as { name?: string }).name === "PatientOfferEmailError" &&
+    typeof (err as { code?: string }).code === "string"
+  ) {
+    const e = err as { code: string; message?: string; status?: number };
+    return new PatientOfferEmailError(e.code, e.message || e.code, e.status || 400);
+  }
+  return null;
+}
+
+function asAuthError(err: unknown): AuthError | null {
+  if (err instanceof AuthError) return err;
+  if (
+    err &&
+    typeof err === "object" &&
+    (err as { name?: string }).name === "AuthError" &&
+    typeof (err as { status?: number }).status === "number"
+  ) {
+    const e = err as { message?: string; status: number };
+    return new AuthError(e.message || "Unauthorized", e.status);
+  }
+  return null;
+}
+
 /**
  * POST /api/agency/[agencyId]/leads/[leadId]/send-offer
  * Draft offers from pricing if needed, then email the patient offer.
@@ -37,16 +65,36 @@ export async function POST(
 
     return NextResponse.json(result);
   } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
+    const authErr = asAuthError(err);
+    if (authErr) {
+      return NextResponse.json({ error: authErr.message }, { status: authErr.status });
     }
-    if (err instanceof PatientOfferEmailError) {
+    const offerErr = asPatientOfferEmailError(err);
+    if (offerErr) {
       return NextResponse.json(
-        { error: err.code, message: err.message },
-        { status: err.status }
+        { error: offerErr.code, message: offerErr.message },
+        { status: offerErr.status }
+      );
+    }
+    if (
+      err &&
+      typeof err === "object" &&
+      (err as { name?: string }).name === "ClinicOfferDraftError" &&
+      typeof (err as { code?: string }).code === "string"
+    ) {
+      const e = err as { code: string; message?: string; status?: number };
+      return NextResponse.json(
+        { error: e.code, message: e.message || e.code },
+        { status: e.status || 400 }
       );
     }
     console.error("[send-offer]", err instanceof Error ? err.message : err);
-    return NextResponse.json({ error: "INTERNAL_ERROR" }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "INTERNAL_ERROR",
+        message: err instanceof Error ? err.message : "Internal error",
+      },
+      { status: 500 }
+    );
   }
 }

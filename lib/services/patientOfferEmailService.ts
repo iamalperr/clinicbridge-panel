@@ -51,15 +51,28 @@ export async function sendPatientOfferEmailForLead(params: {
     clinicOffers = draft.clinicOffers;
     drafted = !draft.skipped;
   } catch (err) {
-    if (err instanceof ClinicOfferDraftError && err.code === "NO_PRICING_MATCH") {
+    const draftErr =
+      err instanceof ClinicOfferDraftError
+        ? err
+        : err &&
+            typeof err === "object" &&
+            (err as { name?: string }).name === "ClinicOfferDraftError" &&
+            typeof (err as { code?: string }).code === "string"
+          ? new ClinicOfferDraftError(
+              (err as { code: string }).code,
+              (err as { message?: string }).message || (err as { code: string }).code,
+              (err as { status?: number }).status || 400
+            )
+          : null;
+    if (draftErr?.code === "NO_PRICING_MATCH") {
       throw new PatientOfferEmailError(
         "NO_PRICING_MATCH",
         "Hastaya teklif göndermek için seçili kliniklerde eşleşen fiyat kaydı gerekli.",
         422
       );
     }
-    if (err instanceof ClinicOfferDraftError) {
-      throw new PatientOfferEmailError(err.code, err.message, err.status);
+    if (draftErr) {
+      throw new PatientOfferEmailError(draftErr.code, draftErr.message, draftErr.status);
     }
     throw err;
   }

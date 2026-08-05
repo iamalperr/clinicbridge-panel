@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { join } from "path";
 import {
+  describeClinicOfferDraftError,
   formatOfferPriceRange,
   pickBestPricingForClinic,
 } from "../lib/agency/clinicOfferDraft";
@@ -97,5 +98,27 @@ describe("offer draft wiring", () => {
     expect(page).toContain("sendLeadPatientOffer");
     expect(page).toContain("Hastaya Özel Teklif Taslağı");
     expect(page).toContain('actionKey === "converted"');
+    expect(page).toContain("describeClinicOfferDraftError");
+  });
+
+  it("draft-offers route recovers typed errors without instanceof", () => {
+    const route = readFileSync(
+      join(
+        process.cwd(),
+        "app/api/agency/[agencyId]/leads/[leadId]/draft-offers/route.ts"
+      ),
+      "utf8"
+    );
+    expect(route).toContain("asClinicOfferDraftError");
+    expect(route).toContain('name === "ClinicOfferDraftError"');
+    expect(route).toContain("message: draftErr.message");
+  });
+});
+
+describe("draft error copy", () => {
+  it("maps known codes to Turkish UX (not raw INTERNAL_ERROR)", () => {
+    expect(describeClinicOfferDraftError("NO_PRICING_MATCH", "tr")).toMatch(/fiyat/i);
+    expect(describeClinicOfferDraftError("QUOTE_NOT_FOUND", "tr")).toMatch(/teklif/i);
+    expect(describeClinicOfferDraftError("INTERNAL_ERROR", "tr")).not.toBe("INTERNAL_ERROR");
   });
 });
