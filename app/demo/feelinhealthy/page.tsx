@@ -627,18 +627,18 @@ export default function FeelinHealthyLive() {
       if (data.openProfileInNewTab && data.profileUrl && typeof window !== "undefined") {
         const ctx = data.sessionContext || sessionCtxRef.current || {};
         const clinicId = String(payload?.clinicId || ctx.lastFocusedClinicId || "").trim();
-        saveQuotePrefill(
-          buildQuotePrefillFromSession(
-            ctx,
-            {
-              clinicId,
-              clinicName: payload?.clinicName || ctx.lastFocusedClinicName,
-              clinicSlug: payload?.clinicSlug,
-            },
-            lang
-          )
+        const prefill = buildQuotePrefillFromSession(
+          ctx,
+          {
+            clinicId,
+            clinicName: payload?.clinicName || ctx.lastFocusedClinicName,
+            clinicSlug: payload?.clinicSlug,
+          },
+          lang
         );
-        const url = appendAgentPrefillQuery(data.profileUrl);
+        saveQuotePrefill(prefill);
+        // Encode patient fields in the URL — new tabs do not share sessionStorage.
+        const url = appendAgentPrefillQuery(data.profileUrl, prefill);
         window.open(url, "_blank", "noopener,noreferrer");
       }
 
@@ -665,6 +665,77 @@ export default function FeelinHealthyLive() {
 
       if (isClinicCardAction) {
         processedClinicActionIdsRef.current.add(actionId);
+      }
+
+      // Client fallback when server quote persist failed (e.g. older deploy / race).
+      if (
+        payload?.action === "request_quote" &&
+        data.quotePersistError &&
+        typeof window !== "undefined"
+      ) {
+        const ctx = data.sessionContext || sessionCtxRef.current || {};
+        const clinicId = String(payload?.clinicId || "").trim();
+        try {
+          const fallbackRes = await fetch(`/api/public/agency/${SLUG}/quote-request`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              conversationId: ctx.sessionId,
+              sessionId: ctx.sessionId,
+              clinicId,
+              clinicIds: clinicId ? [clinicId] : ctx.selectedClinicIds || [],
+              patientEmail: ctx.patientEmail,
+              patientName: ctx.patientName,
+              patientPhone: ctx.patientPhone,
+              patientCountry: ctx.patientCountry,
+              country: ctx.patientCountry,
+              patientAge: ctx.patientAge,
+              patientGender: ctx.patientGender,
+              language: lang,
+              treatmentCategory: ctx.lastTreatmentCategory,
+              treatmentSubcategory: ctx.lastSubTreatment,
+              selectedCity: ctx.selectedCity,
+              istanbulSide: ctx.istanbul_side || ctx.istanbulSide,
+              travelDate: ctx.travelDate,
+              source: "widget",
+              sourceUrl: window.location.href,
+            }),
+          });
+          const fallbackData = await fallbackRes.json().catch(() => ({}));
+          if (fallbackRes.ok && fallbackData.ok) {
+            setAiMsgs((p) => {
+              const withoutFailure = p.filter(
+                (m) =>
+                  !(
+                    m.role === "ai" &&
+                    typeof m.text === "string" &&
+                    (m.text.includes("kaydedemedik") || m.text.includes("could not save"))
+                  )
+              );
+              return [
+                ...withoutFailure,
+                {
+                  role: "ai",
+                  text:
+                    lang === "tr"
+                      ? `Teklif talebiniz başarıyla oluşturuldu${payload?.clinicName ? ` (${payload.clinicName})` : ""}. FeelinHealthy ekibi talebinizi inceleyerek sizinle iletişime geçecektir.`
+                      : `Your quote request${payload?.clinicName ? ` for ${payload.clinicName}` : ""} has been created successfully. The FeelinHealthy team will review it and contact you shortly.`,
+                  type: "text",
+                },
+              ];
+            });
+            if (ctx.sessionId) {
+              commitSessionCtx({
+                ...ctx,
+                leadStage: "quote_request_created",
+                leadId: fallbackData.leadId,
+                quoteId: fallbackData.quoteId,
+              });
+            }
+          }
+        } catch (fallbackErr) {
+          console.warn("[CB-DEMO] quote-request fallback failed", fallbackErr);
+        }
       }
 
       // Client-side persist only for non-FH legacy paths. FeelinHealthy request_quote

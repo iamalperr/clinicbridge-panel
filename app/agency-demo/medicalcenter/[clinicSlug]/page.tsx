@@ -244,9 +244,10 @@ export default function ClinicProfilePage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const sp = new URLSearchParams(window.location.search);
-    const agent = sp.get("from") === "agent" || sp.get("prefill") === "1";
+    const agent = sp.get("from") === "agent" || sp.get("prefill") === "1" || Boolean(sp.get("cbp"));
     setFromAgent(agent);
-    const prefill = loadQuotePrefill();
+    // Prefer URL `cbp` payload (cross-tab safe), then localStorage.
+    const prefill = loadQuotePrefill(window.location.search);
     if (prefill) {
       if (prefill.language === "en" || prefill.language === "tr") {
         setLang(prefill.language);
@@ -345,7 +346,9 @@ export default function ClinicProfilePage() {
     setLeadDone(false);
     setLeadError(null);
     // Re-hydrate from agent prefill each time the modal opens.
-    const prefill = loadQuotePrefill();
+    const prefill = loadQuotePrefill(
+      typeof window !== "undefined" ? window.location.search : undefined
+    );
     if (prefill) {
       setLeadForm({
         name: prefill.patientName || leadForm.name,
@@ -380,7 +383,8 @@ export default function ClinicProfilePage() {
           ? crypto.randomUUID()
           : `profile_${Date.now()}`);
 
-      const leadRes = await fetch("/api/public/agency/feelinhealthy/lead", {
+      // Dedicated endpoint bootstraps consent + persists lead+quote atomically.
+      const quoteRes = await fetch("/api/public/agency/feelinhealthy/quote-request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -388,11 +392,13 @@ export default function ClinicProfilePage() {
           patientEmail: leadForm.email,
           patientPhone: leadForm.phone || undefined,
           country: leadForm.country || undefined,
+          patientCountry: leadForm.country || undefined,
           language: lang,
           treatmentCategory: prefillMeta.treatmentCategory || "other",
           treatmentSubcategory: prefillMeta.treatmentSubcategory || "",
           clinicIds: [clinic.id],
           conversationId,
+          sessionId: conversationId,
           conversationSummary: leadForm.message || undefined,
           selectedCity: prefillMeta.selectedCity,
           istanbulSide: prefillMeta.istanbulSide,
@@ -401,47 +407,12 @@ export default function ClinicProfilePage() {
           patientGender: prefillMeta.patientGender,
           source: fromAgent ? "widget" : "clinic_profile",
           sourceUrl: typeof window !== "undefined" ? window.location.href : undefined,
-          consentAccepted: true,
         }),
       });
-      const leadData = await leadRes.json().catch(() => ({}));
-
-      // Consent may be missing when opening profile without chat — create via matching-chat consent is not available here.
-      // If lead fails with CONSENT_REQUIRED, still try quote path after a soft success UX only when lead succeeded.
-      if (!leadRes.ok || !leadData.leadId) {
-        if (leadData.error === "CONSENT_REQUIRED") {
-          // Soft-create consent through a dedicated public consent isn't available; ask user to accept in chat.
-          // Fallback: show friendly message but keep form filled.
-          throw new Error(
-            lang === "tr"
-              ? "Teklif için sohbetteki KVKK onayınız gerekli. Lütfen demo sohbetinden tekrar 'Teklif İste'ye basın."
-              : "KVKK consent from the chat session is required. Please use Request Quote from the demo chat."
-          );
-        }
-        throw new Error(leadData.error || "LEAD_FAILED");
+      const quoteData = await quoteRes.json().catch(() => ({}));
+      if (!quoteRes.ok || !quoteData.ok) {
+        throw new Error(quoteData.error || quoteData.errorMessage || "QUOTE_FAILED");
       }
-
-      await fetch("/api/public/agency/feelinhealthy/quote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          leadId: leadData.leadId,
-          patientName: leadForm.name,
-          patientEmail: leadForm.email,
-          patientPhone: leadForm.phone || undefined,
-          patientCountry: leadForm.country || undefined,
-          treatmentCategory: prefillMeta.treatmentCategory || "other",
-          treatmentName: prefillMeta.treatmentCategory || "",
-          subTreatment: prefillMeta.treatmentSubcategory || "",
-          selectedClinicIds: [clinic.id],
-          selectedClinicNames: [clinic.name],
-          selectedCity: prefillMeta.selectedCity,
-          istanbulSide: prefillMeta.istanbulSide,
-          travelDate: prefillMeta.travelDate,
-          conversationId,
-          consentStatus: "accepted",
-        }),
-      });
 
       clearQuotePrefill();
       setLeadDone(true);

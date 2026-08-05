@@ -45,10 +45,35 @@ describe("FeelinHealthy quote request persistence wiring", () => {
     expect(leadSubmissionSource).toContain("resolveAgencyConsentVersion");
   });
 
+  it("lead transaction reads clinics before any writes (Firestore rule)", () => {
+    const leadSubmissionSource = readFileSync(
+      join(process.cwd(), "lib/services/leadSubmissionService.ts"),
+      "utf8"
+    );
+    const validateIdx = leadSubmissionSource.indexOf("Validate clinics (reads) before any writes");
+    const leadSetIdx = leadSubmissionSource.indexOf("transaction.set(leadRef, leadData)");
+    expect(validateIdx).toBeGreaterThan(-1);
+    expect(leadSetIdx).toBeGreaterThan(validateIdx);
+  });
+
   it("demo uses structured clinic card actions (not shared lead_capture path)", () => {
     expect(demoSource).toContain('action: "select_clinic"');
     expect(demoSource).toContain('action: "view_clinic_details"');
     expect(demoSource).toContain('action: "request_quote"');
     expect(demoSource).not.toContain('type: "lead_capture"');
+  });
+
+  it("demo opens profile with URL-encoded prefill and has quote-request fallback", () => {
+    expect(demoSource).toContain("appendAgentPrefillQuery(data.profileUrl, prefill)");
+    expect(demoSource).toContain("/quote-request");
+  });
+
+  it("dedicated quote-request route exists and bootstraps consent", () => {
+    const quoteRequestSource = readFileSync(
+      join(process.cwd(), "app/api/public/agency/[slug]/quote-request/route.ts"),
+      "utf8"
+    );
+    expect(quoteRequestSource).toContain("saveConsentRecord");
+    expect(quoteRequestSource).toContain("persistAgencyQuoteRequest");
   });
 });

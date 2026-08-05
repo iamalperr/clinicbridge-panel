@@ -101,13 +101,36 @@ export async function submitAgencyLead(input: SubmitLeadInput) {
   if (uniqueClinicIds.length > maxClinics) throw new Error("CLINIC_SELECTION_LIMIT_EXCEEDED");
 
   // Create Transaction
+  // Firestore requires ALL reads before ANY writes inside a transaction.
+  // Reading clinics after set(lead) was aborting every first-time quote persist.
   const result = await adminDb.runTransaction(async (transaction: any) => {
     // Idempotency: Check if a lead with this conversationId already exists
-    const leadsQuery = adminDb.collection("agencies").doc(agencyId).collection("leads").where("conversationId", "==", conversationId).limit(1);
+    const leadsQuery = adminDb
+      .collection("agencies")
+      .doc(agencyId)
+      .collection("leads")
+      .where("conversationId", "==", conversationId)
+      .limit(1);
     const existingLeadsSnap = await transaction.get(leadsQuery);
     if (!existingLeadsSnap.empty) {
       // Idempotent return
       return { leadId: existingLeadsSnap.docs[0].id, agencyId, status: "already_exists" };
+    }
+
+    // Validate clinics (reads) before any writes.
+    const clinicSnaps: Array<{ clinicId: string; snap: any }> = [];
+    for (const clinicId of uniqueClinicIds) {
+      const clinicSnap = await transaction.get(
+        adminDb.collection("agencies").doc(agencyId).collection("clinics").doc(clinicId)
+      );
+      if (!clinicSnap.exists) {
+        throw new Error("INVALID_CLINIC_SELECTION");
+      }
+      const clinicStatus = String(clinicSnap.data()?.status || "active").toLowerCase();
+      if (clinicStatus === "inactive" || clinicStatus === "archived" || clinicStatus === "disabled") {
+        throw new Error("INVALID_CLINIC_SELECTION");
+      }
+      clinicSnaps.push({ clinicId, snap: clinicSnap });
     }
 
     // Prepare Lead document
@@ -155,23 +178,9 @@ export async function submitAgencyLead(input: SubmitLeadInput) {
 
     transaction.set(leadRef, leadData);
 
-    // Prepare ClinicRequests
-    for (const clinicId of uniqueClinicIds) {
-      // Validate clinic exists and belongs to agency.
-      // Accept missing status as active (legacy docs); only reject explicit inactive.
-      const clinicSnap = await transaction.get(
-        adminDb.collection("agencies").doc(agencyId).collection("clinics").doc(clinicId)
-      );
-      if (!clinicSnap.exists) {
-        throw new Error("INVALID_CLINIC_SELECTION");
-      }
-      const clinicStatus = String(clinicSnap.data()?.status || "active").toLowerCase();
-      if (clinicStatus === "inactive" || clinicStatus === "archived" || clinicStatus === "disabled") {
-        throw new Error("INVALID_CLINIC_SELECTION");
-      }
-
+    for (const { clinicId } of clinicSnaps) {
       const crRef = adminDb.collection("agencies").doc(agencyId).collection("clinic_requests").doc();
-      const crData = {
+      transaction.set(crRef, {
         leadId: leadRef.id,
         agencyId,
         clinicId,
@@ -180,8 +189,7 @@ export async function submitAgencyLead(input: SubmitLeadInput) {
         createdAt: now,
         updatedAt: now,
         submittedAt: now,
-      };
-      transaction.set(crRef, crData);
+      });
     }
 
     return { leadId: leadRef.id, agencyId, status: "created" };
