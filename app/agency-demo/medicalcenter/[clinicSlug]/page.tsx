@@ -9,6 +9,10 @@ import {
   Building2, Clock, Award, Shield, Languages, ExternalLink, Send,
   Phone, Mail, Loader2, X, DollarSign, HelpCircle, UserCircle,
 } from "lucide-react";
+import {
+  clearQuotePrefill,
+  loadQuotePrefill,
+} from "@/lib/agency/feelinhealthyQuotePrefill";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -212,11 +216,64 @@ export default function ClinicProfilePage() {
   const [leadModal, setLeadModal] = useState(false);
   const [leadDone, setLeadDone] = useState(false);
   const [leadSending, setLeadSending] = useState(false);
+  const [leadError, setLeadError] = useState<string | null>(null);
+  const [fromAgent, setFromAgent] = useState(false);
+  const [leadForm, setLeadForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    country: "",
+    message: "",
+  });
+  const [prefillMeta, setPrefillMeta] = useState<{
+    sessionId?: string;
+    treatmentCategory?: string;
+    treatmentSubcategory?: string;
+    selectedCity?: string;
+    istanbulSide?: string;
+    travelDate?: string;
+    patientAge?: number | string;
+    patientGender?: string;
+  }>({});
   const [clinicPricing, setClinicPricing] = useState<any[]>([]);
   const [clinicFaqs, setClinicFaqs] = useState<any[]>([]);
   const [clinicDoctors, setClinicDoctors] = useState<any[]>([]);
 
   const t = (k: string) => TX[lang][k] || k;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search);
+    const agent = sp.get("from") === "agent" || sp.get("prefill") === "1";
+    setFromAgent(agent);
+    const prefill = loadQuotePrefill();
+    if (prefill) {
+      if (prefill.language === "en" || prefill.language === "tr") {
+        setLang(prefill.language);
+      }
+      setLeadForm({
+        name: prefill.patientName || "",
+        email: prefill.patientEmail || "",
+        phone: prefill.patientPhone || "",
+        country: prefill.patientCountry || "",
+        message: prefill.message || "",
+      });
+      setPrefillMeta({
+        sessionId: prefill.sessionId,
+        treatmentCategory: prefill.treatmentCategory,
+        treatmentSubcategory: prefill.treatmentSubcategory,
+        selectedCity: prefill.selectedCity,
+        istanbulSide: prefill.istanbulSide,
+        travelDate: prefill.travelDate,
+        patientAge: prefill.patientAge,
+        patientGender: prefill.patientGender,
+      });
+      // Auto-open quote modal when arriving from the agent "Daha Fazla Bilgi" flow.
+      if (agent && (prefill.patientName || prefill.patientEmail)) {
+        setLeadModal(true);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     // Try live data first, fallback to local
@@ -228,7 +285,7 @@ export default function ClinicProfilePage() {
           if (data.clinics?.length > 0) {
             const mapped: ClinicProfile[] = data.clinics.map((c: any) => ({
               id: c.id, name: c.clinicName,
-              clinicSlug: c.clinicSlug || c.clinicName?.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+$/g, "") || c.id,
+              clinicSlug: c.clinicSlug || c.slug || c.clinicName?.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+$/g, "") || c.id,
               type: { tr: c.clinicType || "", en: c.clinicType || "" },
               location: c.location ? `${c.location.city}, ${c.location.country}` : "",
               rating: c.rating || 4.8, reviews: c.reviewCount || 0, priceRange: "",
@@ -250,7 +307,12 @@ export default function ClinicProfilePage() {
               locationDetails: c.locationDetails || {},
             }));
             setAllClinics(mapped);
-            const found = mapped.find((c: ClinicProfile) => c.clinicSlug === slug);
+            const found = mapped.find(
+              (c: ClinicProfile) =>
+                c.clinicSlug === slug ||
+                c.id === slug ||
+                c.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+$/g, "") === slug
+            );
             if (found) { setClinic(found); setLoading(false); return; }
           }
         }
@@ -279,10 +341,122 @@ export default function ClinicProfilePage() {
     })();
   }, [clinic?.id]);
 
-  const handleLeadSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const openLeadModal = () => {
+    setLeadDone(false);
+    setLeadError(null);
+    // Re-hydrate from agent prefill each time the modal opens.
+    const prefill = loadQuotePrefill();
+    if (prefill) {
+      setLeadForm({
+        name: prefill.patientName || leadForm.name,
+        email: prefill.patientEmail || leadForm.email,
+        phone: prefill.patientPhone || leadForm.phone,
+        country: prefill.patientCountry || leadForm.country,
+        message: prefill.message || leadForm.message,
+      });
+      setPrefillMeta({
+        sessionId: prefill.sessionId || prefillMeta.sessionId,
+        treatmentCategory: prefill.treatmentCategory || prefillMeta.treatmentCategory,
+        treatmentSubcategory: prefill.treatmentSubcategory || prefillMeta.treatmentSubcategory,
+        selectedCity: prefill.selectedCity || prefillMeta.selectedCity,
+        istanbulSide: prefill.istanbulSide || prefillMeta.istanbulSide,
+        travelDate: prefill.travelDate || prefillMeta.travelDate,
+        patientAge: prefill.patientAge ?? prefillMeta.patientAge,
+        patientGender: prefill.patientGender || prefillMeta.patientGender,
+      });
+    }
+    setLeadModal(true);
+  };
+
+  const handleLeadSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!clinic?.id) return;
     setLeadSending(true);
-    setTimeout(() => { setLeadSending(false); setLeadDone(true); }, 1500);
+    setLeadError(null);
+    try {
+      const conversationId =
+        prefillMeta.sessionId ||
+        (typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `profile_${Date.now()}`);
+
+      const leadRes = await fetch("/api/public/agency/feelinhealthy/lead", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patientName: leadForm.name,
+          patientEmail: leadForm.email,
+          patientPhone: leadForm.phone || undefined,
+          country: leadForm.country || undefined,
+          language: lang,
+          treatmentCategory: prefillMeta.treatmentCategory || "other",
+          treatmentSubcategory: prefillMeta.treatmentSubcategory || "",
+          clinicIds: [clinic.id],
+          conversationId,
+          conversationSummary: leadForm.message || undefined,
+          selectedCity: prefillMeta.selectedCity,
+          istanbulSide: prefillMeta.istanbulSide,
+          travelDate: prefillMeta.travelDate,
+          patientAge: prefillMeta.patientAge,
+          patientGender: prefillMeta.patientGender,
+          source: fromAgent ? "widget" : "clinic_profile",
+          sourceUrl: typeof window !== "undefined" ? window.location.href : undefined,
+          consentAccepted: true,
+        }),
+      });
+      const leadData = await leadRes.json().catch(() => ({}));
+
+      // Consent may be missing when opening profile without chat — create via matching-chat consent is not available here.
+      // If lead fails with CONSENT_REQUIRED, still try quote path after a soft success UX only when lead succeeded.
+      if (!leadRes.ok || !leadData.leadId) {
+        if (leadData.error === "CONSENT_REQUIRED") {
+          // Soft-create consent through a dedicated public consent isn't available; ask user to accept in chat.
+          // Fallback: show friendly message but keep form filled.
+          throw new Error(
+            lang === "tr"
+              ? "Teklif için sohbetteki KVKK onayınız gerekli. Lütfen demo sohbetinden tekrar 'Teklif İste'ye basın."
+              : "KVKK consent from the chat session is required. Please use Request Quote from the demo chat."
+          );
+        }
+        throw new Error(leadData.error || "LEAD_FAILED");
+      }
+
+      await fetch("/api/public/agency/feelinhealthy/quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leadId: leadData.leadId,
+          patientName: leadForm.name,
+          patientEmail: leadForm.email,
+          patientPhone: leadForm.phone || undefined,
+          patientCountry: leadForm.country || undefined,
+          treatmentCategory: prefillMeta.treatmentCategory || "other",
+          treatmentName: prefillMeta.treatmentCategory || "",
+          subTreatment: prefillMeta.treatmentSubcategory || "",
+          selectedClinicIds: [clinic.id],
+          selectedClinicNames: [clinic.name],
+          selectedCity: prefillMeta.selectedCity,
+          istanbulSide: prefillMeta.istanbulSide,
+          travelDate: prefillMeta.travelDate,
+          conversationId,
+          consentStatus: "accepted",
+        }),
+      });
+
+      clearQuotePrefill();
+      setLeadDone(true);
+    } catch (err: any) {
+      console.error("[clinic-profile] quote submit failed", err);
+      setLeadError(
+        err?.message && String(err.message).length < 180
+          ? String(err.message)
+          : lang === "tr"
+            ? "Teklif talebinizi şu anda kaydedemedik. Lütfen kısa süre sonra yeniden deneyin."
+            : "We could not save your quote request right now. Please try again shortly."
+      );
+    } finally {
+      setLeadSending(false);
+    }
   };
 
   const relatedClinics = allClinics.filter((c) => c.clinicSlug !== slug).slice(0, 3);
@@ -372,7 +546,7 @@ export default function ClinicProfilePage() {
                 {clinic.accommodation && <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "rgba(255,255,255,.9)" }}><Hotel size={16} /> Accommodation</span>}
               </div>
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                <button className="btn" onClick={() => { setLeadDone(false); setLeadModal(true); }} style={{ padding: "12px 28px", borderRadius: 10, background: C.teal, color: "#fff", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><Send size={16} /> {t("hero.quote")}</button>
+                <button className="btn" onClick={openLeadModal} style={{ padding: "12px 28px", borderRadius: 10, background: C.teal, color: "#fff", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><Send size={16} /> {t("hero.quote")}</button>
                 {clinic.externalProfileUrl && (
                   <a href={clinic.externalProfileUrl} target="_blank" rel="noopener noreferrer" className="btn" style={{ padding: "12px 20px", borderRadius: 10, background: "rgba(255,255,255,.2)", backdropFilter: "blur(4px)", color: "#fff", fontSize: 13, fontWeight: 600, textDecoration: "none", display: "flex", alignItems: "center", gap: 6 }}>
                     <ExternalLink size={14} /> {t("profile.viewExternal")}
@@ -581,7 +755,7 @@ export default function ClinicProfilePage() {
                       </div>
                     </div>
                   </div>
-                  <button className="btn" onClick={() => { setLeadDone(false); setLeadModal(true); }} style={{ width: "100%", marginTop: 20, padding: "12px 0", borderRadius: 10, background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`, color: "#fff", fontSize: 14, fontWeight: 700 }}>{t("hero.quote")}</button>
+                  <button className="btn" onClick={openLeadModal} style={{ width: "100%", marginTop: 20, padding: "12px 0", borderRadius: 10, background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`, color: "#fff", fontSize: 14, fontWeight: 700 }}>{t("hero.quote")}</button>
                 </div>
               </div>
 
@@ -597,7 +771,7 @@ export default function ClinicProfilePage() {
           <h2 style={{ fontSize: "clamp(22px, 3vw, 32px)", fontWeight: 800, color: "#fff", marginBottom: 12 }}>{t("cta.title")}</h2>
           <p style={{ fontSize: 15, color: "rgba(255,255,255,.8)", marginBottom: 28 }}>{t("cta.sub")}</p>
           <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-            <button className="btn" onClick={() => { setLeadDone(false); setLeadModal(true); }} style={{ padding: "14px 32px", borderRadius: 12, background: "#fff", color: C.navy, fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><Send size={16} /> {t("cta.quote")}</button>
+            <button className="btn" onClick={openLeadModal} style={{ padding: "14px 32px", borderRadius: 12, background: "#fff", color: C.navy, fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><Send size={16} /> {t("cta.quote")}</button>
             <Link href="/agency-demo#ai-section" className="btn" style={{ padding: "14px 28px", borderRadius: 12, background: "rgba(255,255,255,.15)", color: "#fff", fontSize: 15, fontWeight: 600, textDecoration: "none", display: "flex", alignItems: "center", gap: 8, backdropFilter: "blur(4px)" }}><Sparkles size={16} /> {t("cta.ai")}</Link>
           </div>
         </div>
@@ -664,19 +838,49 @@ export default function ClinicProfilePage() {
                   </div>
                 </div>
                 <form onSubmit={handleLeadSubmit} style={{ padding: "24px 28px" }}>
+                  {fromAgent && (leadForm.name || leadForm.email) && (
+                    <div style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 10, background: "rgba(13,148,136,.08)", border: "1px solid rgba(13,148,136,.25)", fontSize: 12.5, color: C.teal, fontWeight: 600 }}>
+                      {lang === "tr"
+                        ? "Bilgileriniz AI asistan görüşmenizden otomatik dolduruldu."
+                        : "Your details were auto-filled from the AI assistant conversation."}
+                    </div>
+                  )}
+                  {leadError && (
+                    <div style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 10, background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.25)", fontSize: 12.5, color: "#b91c1c" }}>
+                      {leadError}
+                    </div>
+                  )}
                   <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                    {(["name", "email", "phone", "country"] as const).map((k) => (
+                    {([
+                      { k: "name", key: "name" as const },
+                      { k: "email", key: "email" as const },
+                      { k: "phone", key: "phone" as const },
+                      { k: "country", key: "country" as const },
+                    ]).map(({ k, key }) => (
                       <div key={k}>
                         <label style={{ fontSize: 12.5, fontWeight: 600, color: C.textSec, marginBottom: 4, display: "block" }}>{t(`lead.${k}`)}</label>
-                        <input name={k} type={k === "email" ? "email" : k === "phone" ? "tel" : "text"} required={k !== "phone"} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 14, outline: "none", color: C.text, background: C.bg }} />
+                        <input
+                          name={k}
+                          type={k === "email" ? "email" : k === "phone" ? "tel" : "text"}
+                          required={k !== "phone"}
+                          value={leadForm[key]}
+                          onChange={(e) => setLeadForm((p) => ({ ...p, [key]: e.target.value }))}
+                          style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 14, outline: "none", color: C.text, background: C.bg }}
+                        />
                       </div>
                     ))}
                     <div>
                       <label style={{ fontSize: 12.5, fontWeight: 600, color: C.textSec, marginBottom: 4, display: "block" }}>{t("lead.message")}</label>
-                      <textarea name="message" rows={3} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 14, outline: "none", resize: "none", fontFamily: "inherit", color: C.text, background: C.bg }} />
+                      <textarea
+                        name="message"
+                        rows={3}
+                        value={leadForm.message}
+                        onChange={(e) => setLeadForm((p) => ({ ...p, message: e.target.value }))}
+                        style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 14, outline: "none", resize: "none", fontFamily: "inherit", color: C.text, background: C.bg }}
+                      />
                     </div>
                     <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer", fontSize: 12.5, color: C.textSec }}>
-                      <input type="checkbox" required style={{ width: 16, height: 16, marginTop: 2, accentColor: C.teal }} /> {t("lead.consent")}
+                      <input type="checkbox" required defaultChecked={fromAgent} style={{ width: 16, height: 16, marginTop: 2, accentColor: C.teal }} /> {t("lead.consent")}
                     </label>
                   </div>
                   <div style={{ display: "flex", gap: 10, marginTop: 20 }}>

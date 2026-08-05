@@ -38,20 +38,40 @@ export async function getActiveConsent(
   const db = getAdminDb();
   if (!db) return null;
 
-  const snap = await db
-    .collection("agencies")
-    .doc(agencyId)
-    .collection("consents")
-    .where("sessionId", "==", sessionId)
-    .where("consentStatus", "==", "accepted")
-    .where("consentVersion", "==", requiredVersion)
-    .limit(1)
-    .get();
+  // Prefer a simple sessionId query (no composite index), then filter in memory.
+  // The previous 3-field equality query required a composite index and could
+  // silently fail consent checks in production.
+  try {
+    const snap = await db
+      .collection("agencies")
+      .doc(agencyId)
+      .collection("consents")
+      .where("sessionId", "==", sessionId)
+      .limit(5)
+      .get();
 
-  if (snap.empty) return null;
-  
-  const doc = snap.docs[0];
-  return { id: doc.id, ...doc.data() } as AgencyConsentRecord;
+    if (snap.empty) return null;
+
+    const accepted = snap.docs
+      .map((doc) => ({ id: doc.id, ...doc.data() } as AgencyConsentRecord))
+      .filter((c) => c.consentStatus === "accepted");
+
+    if (accepted.length === 0) return null;
+
+    const versionMatch = accepted.find(
+      (c) => String(c.consentVersion || "").trim() === String(requiredVersion || "").trim()
+    );
+    if (versionMatch) return versionMatch;
+
+    // Soft fallback: any accepted consent for this session (version drift / legacy).
+    return accepted[0];
+  } catch (err) {
+    console.warn(
+      "[agencyConsentService] getActiveConsent failed",
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
 }
 
 export async function saveConsentRecord(

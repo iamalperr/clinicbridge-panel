@@ -12,6 +12,11 @@ import { IstanbulSideClarificationCard } from "@/components/chat/IstanbulSideCla
 import { CitySelectionCard } from "@/components/chat/CitySelectionCard";
 import { FEELINHEALTHY_CONFIG } from "@/lib/agency/feelinhealthyConfig";
 import type { ClinicCardActionType } from "@/lib/agency/feelinhealthyClinicCardActions";
+import {
+  appendAgentPrefillQuery,
+  buildQuotePrefillFromSession,
+  saveQuotePrefill,
+} from "@/lib/agency/feelinhealthyQuotePrefill";
 
 const GUEST_CLINIC_LIMIT =
   FEELINHEALTHY_CONFIG.guestQuoteClinicSelectionLimit ||
@@ -620,7 +625,21 @@ export default function FeelinHealthyLive() {
       }
 
       if (data.openProfileInNewTab && data.profileUrl && typeof window !== "undefined") {
-        window.open(data.profileUrl, "_blank", "noopener,noreferrer");
+        const ctx = data.sessionContext || sessionCtxRef.current || {};
+        const clinicId = String(payload?.clinicId || ctx.lastFocusedClinicId || "").trim();
+        saveQuotePrefill(
+          buildQuotePrefillFromSession(
+            ctx,
+            {
+              clinicId,
+              clinicName: payload?.clinicName || ctx.lastFocusedClinicName,
+              clinicSlug: payload?.clinicSlug,
+            },
+            lang
+          )
+        );
+        const url = appendAgentPrefillQuery(data.profileUrl);
+        window.open(url, "_blank", "noopener,noreferrer");
       }
 
       // view_clinic_details may intentionally omit chat reply.

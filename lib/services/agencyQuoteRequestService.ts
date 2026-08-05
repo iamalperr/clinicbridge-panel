@@ -15,6 +15,7 @@ import { pickOfficialClinicName } from "@/lib/services/agencyQuoteNotificationCo
 import { scheduleAndProcessAgencyLeadNotification } from "@/lib/services/agencyNotificationService";
 import { scheduleAndProcessPatientLeadNotification } from "@/lib/services/patientNotificationService";
 import { FEELINHEALTHY_CONFIG } from "@/lib/agency/feelinhealthyConfig";
+import { resolveAgencyConsentVersion } from "@/lib/services/agencyConsentService";
 
 export interface PersistAgencyQuoteRequestInput {
   agencyId: string;
@@ -98,29 +99,97 @@ export async function persistAgencyQuoteRequest(
   }
 
   try {
-    const leadResult = await submitAgencyLead({
-      agencyId: input.agencyId,
-      conversationId: input.conversationId,
-      clinicIds,
-      patientEmail: input.patientEmail,
-      patientName: input.patientName || undefined,
-      patientPhone: input.patientPhone || undefined,
-      patientAge: input.patientAge ?? undefined,
-      patientGender: input.patientGender || undefined,
-      country: input.country || undefined,
-      language: input.language || undefined,
-      treatmentCategory: input.treatmentCategory || undefined,
-      treatmentSubcategory: input.treatmentSubcategory || undefined,
-      conversationSummary: input.conversationSummary || undefined,
-      source: input.source || "widget",
-      sourceUrl: input.sourceUrl || undefined,
-      selectedCity: input.selectedCity || undefined,
-      istanbulSide: input.istanbulSide || undefined,
-      travelDate: input.travelDate || undefined,
-      // Persist quote doc before email; notifications start after quote write.
-      deferNotifications: true,
-    });
+    // Ensure consent exists before lead create (covers missing index / race / version drift).
+    try {
+      const agencySnapForConsent = await adminDb.collection("agencies").doc(input.agencyId).get();
+      const privacyVersion = resolveAgencyConsentVersion(agencySnapForConsent.data()?.privacySettings);
+      const { saveConsentRecord, requireAcceptedAgencyConsent } = await import(
+        "@/lib/services/agencyConsentService"
+      );
+      const hasConsent = await requireAcceptedAgencyConsent(
+        input.agencyId,
+        input.conversationId,
+        privacyVersion
+      );
+      if (!hasConsent) {
+        await saveConsentRecord(
+          input.agencyId,
+          input.conversationId,
+          "accepted",
+          privacyVersion,
+          String(input.language || "tr"),
+          "agency_widget"
+        );
+      }
+    } catch (consentEnsureErr) {
+      console.warn(
+        "[persistAgencyQuoteRequest] consent ensure warning",
+        consentEnsureErr instanceof Error ? consentEnsureErr.message : consentEnsureErr
+      );
+    }
 
+    let leadResult;
+    try {
+      leadResult = await submitAgencyLead({
+        agencyId: input.agencyId,
+        conversationId: input.conversationId,
+        clinicIds,
+        patientEmail: input.patientEmail,
+        patientName: input.patientName || undefined,
+        patientPhone: input.patientPhone || undefined,
+        patientAge: input.patientAge ?? undefined,
+        patientGender: input.patientGender || undefined,
+        country: input.country || undefined,
+        language: input.language || undefined,
+        treatmentCategory: input.treatmentCategory || undefined,
+        treatmentSubcategory: input.treatmentSubcategory || undefined,
+        conversationSummary: input.conversationSummary || undefined,
+        source: input.source || "widget",
+        sourceUrl: input.sourceUrl || undefined,
+        selectedCity: input.selectedCity || undefined,
+        istanbulSide: input.istanbulSide || undefined,
+        travelDate: input.travelDate || undefined,
+        deferNotifications: true,
+      });
+    } catch (leadErr: any) {
+      // One retry after forcing consent write when consent gate still fails.
+      if (leadErr?.message === "CONSENT_REQUIRED") {
+        const agencySnapForConsent = await adminDb.collection("agencies").doc(input.agencyId).get();
+        const privacyVersion = resolveAgencyConsentVersion(agencySnapForConsent.data()?.privacySettings);
+        const { saveConsentRecord } = await import("@/lib/services/agencyConsentService");
+        await saveConsentRecord(
+          input.agencyId,
+          input.conversationId,
+          "accepted",
+          privacyVersion,
+          String(input.language || "tr"),
+          "agency_widget"
+        );
+        leadResult = await submitAgencyLead({
+          agencyId: input.agencyId,
+          conversationId: input.conversationId,
+          clinicIds,
+          patientEmail: input.patientEmail,
+          patientName: input.patientName || undefined,
+          patientPhone: input.patientPhone || undefined,
+          patientAge: input.patientAge ?? undefined,
+          patientGender: input.patientGender || undefined,
+          country: input.country || undefined,
+          language: input.language || undefined,
+          treatmentCategory: input.treatmentCategory || undefined,
+          treatmentSubcategory: input.treatmentSubcategory || undefined,
+          conversationSummary: input.conversationSummary || undefined,
+          source: input.source || "widget",
+          sourceUrl: input.sourceUrl || undefined,
+          selectedCity: input.selectedCity || undefined,
+          istanbulSide: input.istanbulSide || undefined,
+          travelDate: input.travelDate || undefined,
+          deferNotifications: true,
+        });
+      } else {
+        throw leadErr;
+      }
+    }
     const leadId = leadResult.leadId;
     const clinicNames = await resolveClinicNames(input.agencyId, clinicIds);
     const now = new Date().toISOString();

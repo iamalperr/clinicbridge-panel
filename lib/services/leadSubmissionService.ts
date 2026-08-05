@@ -157,9 +157,16 @@ export async function submitAgencyLead(input: SubmitLeadInput) {
 
     // Prepare ClinicRequests
     for (const clinicId of uniqueClinicIds) {
-      // Validate clinic exists and belongs to agency
-      const clinicSnap = await transaction.get(adminDb.collection("agencies").doc(agencyId).collection("clinics").doc(clinicId));
-      if (!clinicSnap.exists || clinicSnap.data()?.status !== "active") {
+      // Validate clinic exists and belongs to agency.
+      // Accept missing status as active (legacy docs); only reject explicit inactive.
+      const clinicSnap = await transaction.get(
+        adminDb.collection("agencies").doc(agencyId).collection("clinics").doc(clinicId)
+      );
+      if (!clinicSnap.exists) {
+        throw new Error("INVALID_CLINIC_SELECTION");
+      }
+      const clinicStatus = String(clinicSnap.data()?.status || "active").toLowerCase();
+      if (clinicStatus === "inactive" || clinicStatus === "archived" || clinicStatus === "disabled") {
         throw new Error("INVALID_CLINIC_SELECTION");
       }
 

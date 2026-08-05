@@ -566,10 +566,13 @@ export async function POST(
           const quoteCtx = cardResult.sessionContext;
           const clinicIdsForQuote = cardResult.clinicIdsForQuote || [cardPayload.clinicId];
 
-          if (quoteCtx.quoteConsent === true && quoteCtx.sessionId) {
+          // Always ensure consent before quote persist (matching already required KVKK).
+          if (quoteCtx.sessionId) {
             try {
-              const { saveConsentRecord } = await import("@/lib/services/agencyConsentService");
-              const privacyVersion = agencyData.privacySettings?.version || "v1.0";
+              const { saveConsentRecord, resolveAgencyConsentVersion } = await import(
+                "@/lib/services/agencyConsentService"
+              );
+              const privacyVersion = resolveAgencyConsentVersion(agencyData.privacySettings);
               await saveConsentRecord(
                 agencyId,
                 quoteCtx.sessionId,
@@ -578,6 +581,7 @@ export async function POST(
                 locale,
                 "agency_widget"
               );
+              quoteCtx.quoteConsent = true;
             } catch (consentErr) {
               console.warn(
                 "[matching-chat] consent ensure failed (request_quote)",

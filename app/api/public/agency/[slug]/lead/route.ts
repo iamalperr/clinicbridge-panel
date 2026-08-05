@@ -40,6 +40,30 @@ export async function POST(
     }
 
     const agencyId = agencySnap.docs[0].id;
+    const agencyData = agencySnap.docs[0].data();
+
+    // Profile / widget forms with explicit checkbox can bootstrap consent for this conversation.
+    if (body.consentAccepted === true && body.conversationId) {
+      try {
+        const { saveConsentRecord, resolveAgencyConsentVersion } = await import(
+          "@/lib/services/agencyConsentService"
+        );
+        const version = resolveAgencyConsentVersion(agencyData.privacySettings);
+        await saveConsentRecord(
+          agencyId,
+          String(body.conversationId),
+          "accepted",
+          version,
+          String(body.language || "tr"),
+          "agency_widget"
+        );
+      } catch (consentErr) {
+        console.warn(
+          "[public/agency/lead] consent bootstrap failed",
+          consentErr instanceof Error ? consentErr.message : consentErr
+        );
+      }
+    }
 
     const { submitAgencyLead } = await import("@/lib/services/leadSubmissionService");
     
