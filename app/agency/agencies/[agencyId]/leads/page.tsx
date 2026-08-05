@@ -3,18 +3,20 @@
 import { useAgencyWorkspace } from "@/components/agency/AgencyWorkspaceContext";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { agencyLeadDetailPath } from "@/lib/agency/leadQuoteArchitecture";
 import { useAuth } from "@/lib/auth-context";
 import { isSuperAdmin } from "@/lib/types";
 import { subscribeToLeads } from "@/lib/services/leadService";
 import Badge from "@/components/ui/Badge";
 import { UI_COLORS } from "@/components/ui/ui-shared";
-import { Search, Filter, Loader2, UserPlus, AlertCircle } from "lucide-react";
+import { Search, Loader2, AlertCircle } from "lucide-react";
 import type { Lead, TreatmentCategory, LeadStatus } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES, LEAD_STATUSES, LEAD_URGENCIES } from "@/lib/types/agency";
 import { useI18n } from "@/lib/i18n-context";
 
 export default function LeadsPage() {
+  const router = useRouter();
   const { profile } = useAuth();
   const { agencyId } = useAgencyWorkspace();
   const { t, language } = useI18n();
@@ -201,13 +203,30 @@ export default function LeadsPage() {
                 </td>
               </tr>
             ) : (
-              filtered.map((lead) => (
+              filtered.map((lead) => {
+                const detailHref = lead.id
+                  ? agencyLeadDetailPath(agencyId, lead.id)
+                  : null;
+                const openLead = () => {
+                  if (!detailHref) return;
+                  router.push(detailHref);
+                };
+                return (
                 <tr
                   key={lead.id}
+                  role="link"
+                  tabIndex={0}
                   style={{
                     borderBottom: `1px solid ${UI_COLORS.border}`,
-                    cursor: "pointer",
+                    cursor: detailHref ? "pointer" : "default",
                     transition: "background 0.15s",
+                  }}
+                  onClick={openLead}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      openLead();
+                    }
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = "rgba(16, 185, 129, 0.03)";
@@ -217,9 +236,9 @@ export default function LeadsPage() {
                   }}
                 >
                   <td style={{ padding: "12px 14px" }}>
-                    <Link href={`/agency/agencies/${agencyId}/leads/${lead.id}`} style={{ textDecoration: "none", color: UI_COLORS.textPrimary, fontWeight: 600 }}>
+                    <span style={{ color: UI_COLORS.textPrimary, fontWeight: 600 }}>
                       {lead.patientName || t("portal.leads.anonymous")}
-                    </Link>
+                    </span>
                     {lead.patientEmail && (
                       <p style={{ fontSize: 11.5, color: UI_COLORS.textMuted, marginTop: 2 }}>
                         {lead.patientEmail}
@@ -288,7 +307,8 @@ export default function LeadsPage() {
                       : "—"}
                   </td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>

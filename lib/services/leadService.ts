@@ -39,7 +39,7 @@ export async function getLead(
     doc(db, "agencies", agencyId, "leads", leadId)
   );
   if (!snap.exists()) return null;
-  return { id: snap.id, ...snap.data() } as Lead;
+  return { ...snap.data(), id: snap.id } as Lead;
 }
 
 export function subscribeToLead(
@@ -51,7 +51,7 @@ export function subscribeToLead(
     doc(db, "agencies", agencyId, "leads", leadId),
     (snap) => {
       if (snap.exists()) {
-        onData({ id: snap.id, ...snap.data() } as Lead);
+        onData({ ...snap.data(), id: snap.id } as Lead);
       } else {
         onData(null);
       }
@@ -291,8 +291,8 @@ export function subscribeToLeads(
     (snap) => {
       onData(
         snap.docs.map((d) => ({
-          id: d.id,
           ...d.data(),
+          id: d.id,
         })) as Lead[]
       );
     },
