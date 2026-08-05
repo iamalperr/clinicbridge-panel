@@ -17,7 +17,9 @@ import { FEELINHEALTHY_CONFIG } from "./feelinhealthyConfig";
 import { resolveAssistantRole, type AssistantRole } from "./assistantModes";
 import {
   getAgencyIstanbulSide,
+  getAgencySelectedCity,
   getAgencySelectedClinicIds,
+  getAgencyTreatmentContext,
 } from "./agencySessionState";
 
 export type PolicyWarningSeverity = "warning" | "error";
@@ -517,6 +519,8 @@ export function compileAssistantPolicy(input: {
   const selectedClinicIds = getAgencySelectedClinicIds(ctx);
   const assistantRole = resolveAssistantRole(ctx);
   const isSelectedClinicMode = assistantRole === "clinic_coordinator";
+  const treatment = getAgencyTreatmentContext(ctx);
+  const selectedCity = getAgencySelectedCity(ctx);
 
   const intakeFields: IntakeFieldPolicy[] = isFeelinHealthy
     ? FEELINHEALTHY_CANONICAL_INTAKE.map((f) => ({ ...f }))
@@ -587,10 +591,11 @@ export function compileAssistantPolicy(input: {
     conversationState: {
       stage: String(ctx.leadStage || ctx.intakeStage || "start"),
       consentAccepted: ctx.quoteConsent === true || ctx.consentStatus === "accepted",
-      treatmentKnown: Boolean(ctx.lastTreatmentCategory),
-      treatmentCategory: ctx.lastTreatmentCategory || null,
+      // Structural presence only — not curated-branch eligibility authorization.
+      treatmentKnown: Boolean(treatment.category),
+      treatmentCategory: treatment.category || null,
       intakeGroup: ctx.intakeStage ?? null,
-      selectedCity: ctx.selectedCity || null,
+      selectedCity: selectedCity ?? null,
       istanbulSide: getAgencyIstanbulSide(ctx) ?? null,
       selectedClinicId: ctx.selectedClinicId || ctx.lastFocusedClinicId || null,
       selectedClinicName: ctx.selectedClinicName || ctx.lastFocusedClinicName || null,

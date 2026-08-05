@@ -3,8 +3,11 @@ import { getAdminDb } from "@/lib/firebase-admin";
 import {
   getAgencyIstanbulSide,
   getAgencyPatientName,
+  getAgencySelectedCity,
   getAgencySelectedClinicIds,
   getAgencySessionId,
+  getAgencyTravelDate,
+  getAgencyTreatmentContext,
 } from "@/lib/agency/agencySessionState";
 
 const CORS = {
@@ -88,14 +91,17 @@ export async function POST(
       patientEmail: body.patientEmail || null,
       patientPhone: body.patientPhone || null,
       patientCountry: body.patientCountry || null,
-      treatmentCategory: body.treatmentCategory || "other",
-      treatmentName: body.treatmentName || "",
-      subTreatment: body.subTreatment || null,
+      treatmentCategory:
+        body.treatmentCategory || getAgencyTreatmentContext(body).category || "other",
+      treatmentName:
+        body.treatmentName || getAgencyTreatmentContext(body).category || "",
+      subTreatment:
+        body.subTreatment || getAgencyTreatmentContext(body).subcategory || null,
       selectedClinicIds,
       selectedClinicNames,
-      selectedCity: body.selectedCity || null,
+      selectedCity: getAgencySelectedCity(body) || null,
       istanbul_side: getAgencyIstanbulSide(body) || null,
-      travelDate: body.travelDate || null,
+      travelDate: getAgencyTravelDate(body) || null,
       conversationId: body.conversationId || null,
       intakeAnswers: body.intakeAnswers || {},
       consentStatus: "pending" as string,

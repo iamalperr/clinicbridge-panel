@@ -43,6 +43,9 @@ import {
   getAgencyIstanbulSide,
   getAgencySelectedClinicIds,
   getAgencyPatientName,
+  getAgencyTreatmentContext,
+  getAgencyTravelDate,
+  getAgencySelectedCity,
   type AgencySessionState,
 } from "@/lib/agency/agencySessionState";
 import {
@@ -554,12 +557,12 @@ export async function POST(
             patientGender: quoteCtx.patientGender,
             country: quoteCtx.patientCountry,
             language: locale,
-            treatmentCategory: quoteCtx.lastTreatmentCategory,
-            treatmentSubcategory: quoteCtx.lastSubTreatment,
-            treatmentName: quoteCtx.lastTreatmentCategory || "",
-            selectedCity: quoteCtx.selectedCity,
+            treatmentCategory: getAgencyTreatmentContext(quoteCtx).category,
+            treatmentSubcategory: getAgencyTreatmentContext(quoteCtx).subcategory,
+            treatmentName: getAgencyTreatmentContext(quoteCtx).category || "",
+            selectedCity: getAgencySelectedCity(quoteCtx),
             istanbulSide: getAgencyIstanbulSide(quoteCtx) || undefined,
-            travelDate: quoteCtx.travelDate,
+            travelDate: getAgencyTravelDate(quoteCtx),
             conversationSummary: Array.isArray(history)
               ? history
                   .slice(-12)
@@ -749,12 +752,12 @@ export async function POST(
           patientGender: quoteCtx.patientGender,
           country: quoteCtx.patientCountry,
           language: locale,
-          treatmentCategory: quoteCtx.lastTreatmentCategory,
-          treatmentSubcategory: quoteCtx.lastSubTreatment,
-          treatmentName: quoteCtx.lastTreatmentCategory || "",
-          selectedCity: quoteCtx.selectedCity,
+          treatmentCategory: getAgencyTreatmentContext(quoteCtx).category,
+          treatmentSubcategory: getAgencyTreatmentContext(quoteCtx).subcategory,
+          treatmentName: getAgencyTreatmentContext(quoteCtx).category || "",
+          selectedCity: getAgencySelectedCity(quoteCtx),
           istanbulSide: getAgencyIstanbulSide(quoteCtx) || undefined,
-          travelDate: quoteCtx.travelDate,
+          travelDate: getAgencyTravelDate(quoteCtx),
           conversationSummary: Array.isArray(history)
             ? history
                 .slice(-12)
@@ -1161,7 +1164,7 @@ export async function POST(
         fullName: ctx.patientName,
         phone: ctx.patientPhone,
         email: ctx.patientEmail,
-        treatment: ctx.lastTreatmentCategory
+        treatment: getAgencyTreatmentContext(ctx).category
       },
       agencyData.defaultLanguage || "tr",
       "Europe/Istanbul",
@@ -1174,9 +1177,9 @@ export async function POST(
         fullName: ctx.patientName,
         phone: ctx.patientPhone,
         email: ctx.patientEmail,
-        treatment: ctx.lastTreatmentCategory
+        treatment: getAgencyTreatmentContext(ctx).category
       },
-      activeTreatment: ctx.lastTreatmentCategory,
+      activeTreatment: getAgencyTreatmentContext(ctx).category,
       activeClinic: ctx.selectedClinicName || ctx.lastFocusedClinicName,
       agencyContext: {
         agencyId,
@@ -1342,8 +1345,8 @@ export async function POST(
         (ctx as any).__forceClinicMatching = true;
       } else if (isLocationExpansionAffirmative(msg)) {
         const branchKey = String(
-          normalizeTreatmentBranch(ctx.lastTreatmentCategory || "") ||
-            ctx.lastTreatmentCategory ||
+          normalizeTreatmentBranch(getAgencyTreatmentContext(ctx).category || "") ||
+            getAgencyTreatmentContext(ctx).category ||
             ""
         );
         const escalation = buildEmptyMatchCityEscalation({
@@ -1465,7 +1468,7 @@ export async function POST(
       hasHealthKeyword ||
       hasPersonalSlotData ||
       agencySlotsExtracted.extracted.treatment ||
-      ctx.lastTreatmentCategory ||
+      getAgencyTreatmentContext(ctx).category ||
       agencyIntentResult.intent === "treatment_information" ||
       agencyIntentResult.intent === "pricing_request" ||
       agencyIntentResult.intent === "doctor_information" ||
@@ -1637,8 +1640,8 @@ export async function POST(
     ctx.showProfileLinks = showProfileLinks; // Instruct frontend to hide links if false
     
     // Apply Treatment Clinic Rules if available
-    if (matchingConfig?.treatmentClinicRules && matchingConfig.treatmentClinicRules.length > 0 && ctx.lastTreatmentCategory) {
-      const activeRule = matchingConfig.treatmentClinicRules.find((r: any) => r.treatmentCategory === ctx.lastTreatmentCategory);
+    if (matchingConfig?.treatmentClinicRules && matchingConfig.treatmentClinicRules.length > 0 && getAgencyTreatmentContext(ctx).category) {
+      const activeRule = matchingConfig.treatmentClinicRules.find((r: any) => r.treatmentCategory === getAgencyTreatmentContext(ctx).category);
       if (activeRule && activeRule.eligibleClinicIds && activeRule.eligibleClinicIds.length > 0) {
         allClinics = allClinics.filter((c: any) => activeRule.eligibleClinicIds.includes(c.id));
       }
@@ -1857,7 +1860,7 @@ export async function POST(
   * KVKK/GDPR Onayı: ${ctx.quoteConsent ? "Evet" : "Yok"}
 - Klinik Seçimi (clinicSelectionMode): ${ctx.clinicSelectionMode || "Yok"} (Status: ${ctx.clinicSelectionStatus || "not_started"})
 - Seçili Klinik ID'leri: ${getAgencySelectedClinicIds(ctx).join(", ") || "Yok"} (Toplam ${getAgencySelectedClinicIds(ctx).length} / Maks ${maxClinics})
-- İlgi Alanı: Tedavi: ${ctx.lastTreatmentCategory || "Bilinmiyor"}, Alt Tedavi: ${ctx.lastSubTreatment || "Bilinmiyor"}, Lokasyon: ${ctx.lastLocation || "Bilinmiyor"}
+- İlgi Alanı: Tedavi: ${getAgencyTreatmentContext(ctx).category || "Bilinmiyor"}, Alt Tedavi: ${getAgencyTreatmentContext(ctx).subcategory || "Bilinmiyor"}, Lokasyon: ${ctx.lastLocation || "Bilinmiyor"}
 `;
     if (ctx.lastFocusedClinicName) {
       contextHint += `- En son incelenen klinik: "${ctx.lastFocusedClinicName}" (ID: ${ctx.lastFocusedClinicId}).\n`;
@@ -1891,8 +1894,8 @@ export async function POST(
         selectedClinicName: String(
           ctx.selectedClinicName || selectedClinic?.clinicName || ctx.lastFocusedClinicName || "Selected clinic"
         ),
-        selectedTreatment: ctx.lastTreatmentCategory || null,
-        selectedCity: ctx.selectedCity || null,
+        selectedTreatment: getAgencyTreatmentContext(ctx).category || null,
+        selectedCity: getAgencySelectedCity(ctx) || null,
         selectedIstanbulSide: getAgencyIstanbulSide(ctx) || null,
         patientProfileSummary: buildPatientProfileSummary(ctx),
         clinicKnowledge: clinicContext,
@@ -1933,15 +1936,15 @@ export async function POST(
     const skipLlmForDeterministicMatch =
       isFeelinHealthy &&
       Boolean((ctx as any).__forceClinicMatching) &&
-      (structuredLocationAction || Boolean(ctx.lastTreatmentCategory && ctx.selectedCity));
+      (structuredLocationAction || Boolean(getAgencyTreatmentContext(ctx).category && getAgencySelectedCity(ctx)));
 
     if (skipLlmForDeterministicMatch) {
       const isEn = (agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en");
       parsed = {
         intent: "clinic_recommendation",
         language: isEn ? "en" : "tr",
-        treatmentCategory: ctx.lastTreatmentCategory,
-        location: ctx.selectedCity || ctx.lastLocation,
+        treatmentCategory: getAgencyTreatmentContext(ctx).category,
+        location: getAgencySelectedCity(ctx) || ctx.lastLocation,
         showClinicCards: true,
         shouldCreateLead: false,
         needsFollowUp: false,
@@ -1952,8 +1955,8 @@ export async function POST(
       responseParseMs = 0;
     } else if (!process.env.OPENAI_API_KEY) {
       console.warn("[matching-chat] OPENAI_API_KEY is not configured. Running in deterministic intake mode.");
-      const trBranch = agencySlotsExtracted.extracted.treatment || ctx.lastTreatmentCategory || undefined;
-      const trLoc = ctx.selectedCity || agencySlotsExtracted.extracted.city || ctx.lastLocation || undefined;
+      const trBranch = agencySlotsExtracted.extracted.treatment || getAgencyTreatmentContext(ctx).category || undefined;
+      const trLoc = getAgencySelectedCity(ctx) || agencySlotsExtracted.extracted.city || ctx.lastLocation || undefined;
       const isEn = (agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en");
       parsed = {
         intent: "clinic_recommendation",
@@ -2262,7 +2265,7 @@ export async function POST(
       isTryingToCollectData ||
       parsed.intent === "clinic_recommendation" ||
       parsed.intent === "clinic_matching" ||
-      (isFeelinHealthy && (!!parsed.treatmentCategory || !!newCtx.lastTreatmentCategory || /\b(implant|diş|zirkonyum|saç|estetik|botoks|rinoplasti|obezite|tüp bebek|tedavi|doktor|klinik|operasyon|bariatrik|veneers|crowns|dental|hair|aesthetic|rhinoplasty|surgery|treatment)\b/i.test(finalMessage || message || "")))
+      (isFeelinHealthy && (!!parsed.treatmentCategory || !!getAgencyTreatmentContext(newCtx).category || /\b(implant|diş|zirkonyum|saç|estetik|botoks|rinoplasti|obezite|tüp bebek|tedavi|doktor|klinik|operasyon|bariatrik|veneers|crowns|dental|hair|aesthetic|rhinoplasty|surgery|treatment)\b/i.test(finalMessage || message || "")))
     );
     
     if (isMedicalOrTreatmentRequest && privacySettings.enabled && privacySettings.requiredBeforePersonalData) {
@@ -2345,7 +2348,7 @@ export async function POST(
 
       // Side guidance ("emin değilim") only after Istanbul is already selected.
       if (
-        newCtx.selectedCity === "istanbul" &&
+        getAgencySelectedCity(newCtx) === "istanbul" &&
         (newCtx.pendingSideGuidance ||
           /\b(fark etmez|emin degilim|emin değilim|bilmiyorum|kararsizim|kararsızım|neresi uygun|hangisi daha iyi|yardım|not sure|any|unsure|dont know|help me choose)\b/i.test(
             finalMessage || message || ""
@@ -2354,7 +2357,7 @@ export async function POST(
         const sideCues = resolveIstanbulSideFromText(finalMessage || message || "");
         const guidanceText = getSideGuidancePrompt(sideCues.cueName, currentLang);
         const cardData = getIstanbulSideClarificationCard(
-          newCtx.lastTreatmentCategory || null,
+          getAgencyTreatmentContext(newCtx).category || null,
           currentLang
         );
         delete newCtx.pendingSideGuidance;
@@ -2496,7 +2499,10 @@ export async function POST(
       }
 
       if (isFeelinHealthy && allowFeelinHealthyMatch) {
-        const branchOrCat = parsed.treatmentCategory || newCtx.lastTreatmentCategory || agencySlotsExtracted.extracted.treatment;
+        const branchOrCat =
+          parsed.treatmentCategory ||
+          getAgencyTreatmentContext(newCtx).category ||
+          agencySlotsExtracted.extracted.treatment;
         const locationDecision = decideFeelinHealthyLocationNextStep(newCtx, fullAgencyClinics, (parsed.language || "tr"));
         // Hard gate: never render clinics until city (and Istanbul side when needed) are known.
         if (locationDecision.step !== "ready") {
@@ -2729,7 +2735,9 @@ export async function POST(
         // Empty match: always escalate to clickable city options (never text-only loop).
         if (isFeelinHealthy && recommendations.length === 0) {
           const emptyBranchRaw =
-            parsed.treatmentCategory || newCtx.lastTreatmentCategory || agencySlotsExtracted.extracted.treatment;
+            parsed.treatmentCategory ||
+            getAgencyTreatmentContext(newCtx).category ||
+            agencySlotsExtracted.extracted.treatment;
           const emptyBranchKey = String(normalizeTreatmentBranch(emptyBranchRaw));
           const emptyLocation = decideFeelinHealthyLocationNextStep(
             newCtx,
@@ -2873,12 +2881,14 @@ export async function POST(
             patientGender: newCtx.patientGender,
             country: newCtx.patientCountry,
             language: parsed.language || "tr",
-            treatmentCategory: newCtx.lastTreatmentCategory || parsed.treatmentCategory,
-            treatmentSubcategory: newCtx.lastSubTreatment || parsed.subTreatment,
-            treatmentName: newCtx.lastTreatmentCategory || "",
-            selectedCity: newCtx.selectedCity,
+            treatmentCategory:
+              getAgencyTreatmentContext(newCtx).category || parsed.treatmentCategory,
+            treatmentSubcategory:
+              getAgencyTreatmentContext(newCtx).subcategory || parsed.subTreatment,
+            treatmentName: getAgencyTreatmentContext(newCtx).category || "",
+            selectedCity: getAgencySelectedCity(newCtx),
             istanbulSide: getAgencyIstanbulSide(newCtx) || undefined,
-            travelDate: newCtx.travelDate,
+            travelDate: getAgencyTravelDate(newCtx),
             source: "widget",
           });
           if (!persistResult.ok) {
@@ -3023,11 +3033,17 @@ export async function POST(
               patientGender: newCtx.patientGender || undefined,
               country: newCtx.patientCountry || undefined,
               language: parsed.language || "tr",
-              treatmentCategory: newCtx.lastTreatmentCategory || parsed.treatmentCategory || undefined,
-              treatmentSubcategory: newCtx.lastSubTreatment || parsed.subTreatment || undefined,
-              selectedCity: newCtx.selectedCity || undefined,
+              treatmentCategory:
+                getAgencyTreatmentContext(newCtx).category ||
+                parsed.treatmentCategory ||
+                undefined,
+              treatmentSubcategory:
+                getAgencyTreatmentContext(newCtx).subcategory ||
+                parsed.subTreatment ||
+                undefined,
+              selectedCity: getAgencySelectedCity(newCtx) || undefined,
               istanbulSide: getAgencyIstanbulSide(newCtx) || undefined,
-              travelDate: newCtx.travelDate || undefined,
+              travelDate: getAgencyTravelDate(newCtx) || undefined,
               source: "widget",
             });
             newCtx.leadStage = "quote_request_created";
@@ -3125,7 +3141,10 @@ export async function POST(
       resolveAssistantRole(newCtx) !== "clinic_coordinator" &&
       (parsed.intent === "clinic_matching" || parsed.intent === "clinic_recommendation")
     ) {
-      const branchOrCat = parsed.treatmentCategory || newCtx.lastTreatmentCategory || agencySlotsExtracted.extracted.treatment;
+      const branchOrCat =
+        parsed.treatmentCategory ||
+        getAgencyTreatmentContext(newCtx).category ||
+        agencySlotsExtracted.extracted.treatment;
       const locationDecision = decideFeelinHealthyLocationNextStep(newCtx, fullAgencyClinics, (parsed.language || "tr"));
       if (locationDecision.step === "ready") {
         const effectiveCity = locationDecision.city;

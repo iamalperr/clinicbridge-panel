@@ -8,7 +8,10 @@ import { persistAgencyQuoteRequest } from "@/lib/services/agencyQuoteRequestServ
 import {
   getAgencyIstanbulSide,
   getAgencyPatientName,
+  getAgencySelectedCity,
   getAgencySessionId,
+  getAgencyTravelDate,
+  getAgencyTreatmentContext,
 } from "@/lib/agency/agencySessionState";
 
 const CORS = {
@@ -124,12 +127,18 @@ export async function POST(
       patientGender: body.patientGender || undefined,
       country: body.country || body.patientCountry || undefined,
       language: locale,
-      treatmentCategory: body.treatmentCategory || undefined,
-      treatmentSubcategory: body.treatmentSubcategory || undefined,
-      treatmentName: body.treatmentName || body.treatmentCategory || "",
-      selectedCity: body.selectedCity || undefined,
+      treatmentCategory:
+        body.treatmentCategory || getAgencyTreatmentContext(body).category || undefined,
+      treatmentSubcategory:
+        body.treatmentSubcategory || getAgencyTreatmentContext(body).subcategory || undefined,
+      treatmentName:
+        body.treatmentName ||
+        body.treatmentCategory ||
+        getAgencyTreatmentContext(body).category ||
+        "",
+      selectedCity: getAgencySelectedCity(body) || undefined,
       istanbulSide: getAgencyIstanbulSide(body) || undefined,
-      travelDate: body.travelDate || undefined,
+      travelDate: getAgencyTravelDate(body) || undefined,
       conversationSummary: body.conversationSummary || undefined,
       source: body.source || "widget",
       sourceUrl: body.sourceUrl || undefined,

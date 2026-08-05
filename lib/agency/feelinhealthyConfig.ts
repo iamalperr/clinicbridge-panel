@@ -18,6 +18,12 @@
  *    - Clinic cards display exact side ("İstanbul, Avrupa Yakası" / "İstanbul, Anadolu Yakası").
  */
 
+import {
+  getAgencySelectedCity,
+  getAgencyTravelDate,
+  getAgencyTreatmentContext,
+} from "./agencySessionState";
+
 const CITY_DISPLAY_NAMES: Record<string, { tr: string; en: string }> = {
   istanbul: { tr: "İstanbul", en: "Istanbul" },
   izmir: { tr: "İzmir", en: "Izmir" },
@@ -817,8 +823,9 @@ export function decideFeelinHealthyLocationNextStep(
   availableClinics: any[] = [],
   locale: string = "tr"
 ): LocationDecision {
-  const treatmentBranch = context.lastTreatmentCategory
-    ? normalizeTreatmentBranch(context.lastTreatmentCategory)
+  const treatmentCtx = getAgencyTreatmentContext(context);
+  const treatmentBranch = treatmentCtx.category
+    ? normalizeTreatmentBranch(treatmentCtx.category)
     : null;
 
   if (!treatmentBranch) {
@@ -837,8 +844,10 @@ export function decideFeelinHealthyLocationNextStep(
     locale
   );
 
-  const fromSelected = context.selectedCity
-    ? resolveCityAndSide(context.selectedCity)
+  // Canonical selectedCity only — lastLocation remains a separate negotiation cue.
+  const selectedCity = getAgencySelectedCity(context);
+  const fromSelected = selectedCity
+    ? resolveCityAndSide(selectedCity)
     : { city: null, side: null };
   const fromLast = context.lastLocation
     ? resolveCityAndSide(context.lastLocation)
@@ -1551,7 +1560,7 @@ export function isReadyForClinicMatching(context: {
     context.consentStatus === "accept";
   if (!consentOk) missing.push("consent");
 
-  const treatment = context.lastTreatmentCategory || context.treatmentId;
+  const treatment = getAgencyTreatmentContext(context).category;
   if (!treatment) missing.push("treatment");
 
   const intake = evaluateFeelinHealthyIntake(context);
@@ -1677,8 +1686,8 @@ export function evaluateFeelinHealthyIntake(context: any): IntakeGroupStatus {
   if (!hasPhone) missingGroup2.push("patientPhone");
   if (!hasCountry) missingGroup2.push("patientCountry");
 
-  // Group 3 (Travel Plan): travelDate
-  const hasTravelDate = Boolean(context.travelDate || context.travelDateStart || context.travelDateText);
+  // Group 3 (Travel Plan): canonical travel date (incl. legacy aliases).
+  const hasTravelDate = Boolean(getAgencyTravelDate(context));
   const group3Complete = hasTravelDate;
 
   const missingGroup3: string[] = [];

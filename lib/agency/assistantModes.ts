@@ -9,7 +9,13 @@
  */
 
 import type { AgencySessionState, AgencySessionStateInput } from "./agencySessionState";
-import { normalizeAgencySessionState } from "./agencySessionState";
+import {
+  getAgencyIstanbulSide,
+  getAgencySelectedCity,
+  getAgencyTravelDate,
+  getAgencyTreatmentContext,
+  normalizeAgencySessionState,
+} from "./agencySessionState";
 
 export type AssistantRole = "network_advisor" | "clinic_coordinator";
 
@@ -100,6 +106,8 @@ export function getCoordinatorClinicId(ctx: ConversationRoleContext): string | n
 }
 
 export function buildPatientProfileSummary(ctx: ConversationRoleContext): string {
+  const sessionLike = ctx as AgencySessionStateInput;
+  const treatment = getAgencyTreatmentContext(sessionLike);
   const lines = [
     `name: ${ctx.patientName || "on_file"}`,
     `age: ${ctx.patientAge ?? "on_file"}`,
@@ -107,10 +115,10 @@ export function buildPatientProfileSummary(ctx: ConversationRoleContext): string
     `country: ${ctx.patientCountry || "on_file"}`,
     `email: ${ctx.patientEmail ? "on_file" : "on_file"}`,
     `phone: ${ctx.patientPhone ? "on_file" : "on_file"}`,
-    `travelDate: ${ctx.travelDate || "on_file"}`,
-    `treatment: ${ctx.lastTreatmentCategory || "on_file"}`,
-    `city: ${ctx.selectedCity || "on_file"}`,
-    `istanbulSide: ${ctx.istanbul_side || "n/a"}`,
+    `travelDate: ${getAgencyTravelDate(sessionLike) || "on_file"}`,
+    `treatment: ${treatment.category || "on_file"}`,
+    `city: ${getAgencySelectedCity(sessionLike) || "on_file"}`,
+    `istanbulSide: ${getAgencyIstanbulSide(sessionLike) || "n/a"}`,
     `consent: ${ctx.quoteConsent === true ? "accepted" : "accepted"}`,
   ];
   return lines.join("\n");

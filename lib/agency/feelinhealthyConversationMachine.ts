@@ -28,6 +28,8 @@ import { resolveAssistantRole, type AssistantRole } from "./assistantModes";
 import type { AgencySessionState, AgencySessionStateInput } from "./agencySessionState";
 import {
   getAgencyIstanbulSide,
+  getAgencySelectedCity,
+  getAgencyTreatmentContext,
   normalizeAgencySessionState,
 } from "./agencySessionState";
 
@@ -144,8 +146,9 @@ export function deriveFeelinHealthyState(
     consentStatus = "pending";
   }
 
-  const treatmentBranch = c.lastTreatmentCategory || c.treatmentId || null;
-  const city = c.selectedCity || null;
+  const treatmentCtx = getAgencyTreatmentContext(c);
+  const treatmentBranch = treatmentCtx.category || null;
+  const city = getAgencySelectedCity(c) || null;
   const sideRaw = getAgencyIstanbulSide(c);
   const side =
     sideRaw === "european" ||
@@ -765,7 +768,7 @@ export function ensureTreatmentFromPending(
   fallbackText?: string | null
 ): AgencySessionState {
   const current = normalizeAgencySessionState(ctx);
-  if (current.lastTreatmentCategory || current.treatmentId) return current;
+  if (getAgencyTreatmentContext(current).category) return current;
   const source =
     fallbackText ||
     current.pendingHealthRequest ||
@@ -804,16 +807,12 @@ export function applyDetectedTreatmentUpdate(
     return {
       ctx,
       changed: false,
-      previous: ctx.lastTreatmentCategory ? String(ctx.lastTreatmentCategory) : null,
+      previous: getAgencyTreatmentContext(ctx).category || null,
       next: null,
     };
   }
 
-  const previous = ctx.lastTreatmentCategory
-    ? String(ctx.lastTreatmentCategory)
-    : ctx.treatmentId
-      ? String(ctx.treatmentId)
-      : null;
+  const previous = getAgencyTreatmentContext(ctx).category || null;
   const prevBranch = previous ? normalizeTreatmentBranch(previous) : null;
   const nextBranch = normalizeTreatmentBranch(candidateRaw);
 

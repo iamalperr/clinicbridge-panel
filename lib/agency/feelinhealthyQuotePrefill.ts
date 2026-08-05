@@ -8,8 +8,11 @@
 import {
   getAgencyIstanbulSide,
   getAgencyPatientName,
+  getAgencySelectedCity,
   getAgencySelectedClinicIds,
   getAgencySessionId,
+  getAgencyTravelDate,
+  getAgencyTreatmentContext,
 } from "./agencySessionState";
 
 export const FEELINHEALTHY_QUOTE_PREFILL_KEY = "feelinhealthy_agent_quote_prefill_v1";
@@ -46,6 +49,7 @@ export function buildQuotePrefillFromSession(
   const patientName = getAgencyPatientName(ctx);
   const sessionId = getAgencySessionId(ctx);
   const istanbulSide = getAgencyIstanbulSide(ctx);
+  const treatment = getAgencyTreatmentContext(ctx);
   return {
     version: 1,
     savedAt: new Date().toISOString(),
@@ -60,11 +64,11 @@ export function buildQuotePrefillFromSession(
     patientCountry: ctx.patientCountry ? String(ctx.patientCountry) : undefined,
     patientAge: ctx.patientAge ?? ctx.age ?? undefined,
     patientGender: ctx.patientGender || ctx.gender || undefined,
-    treatmentCategory: ctx.lastTreatmentCategory || undefined,
-    treatmentSubcategory: ctx.lastSubTreatment || undefined,
-    selectedCity: ctx.selectedCity || undefined,
+    treatmentCategory: treatment.category || undefined,
+    treatmentSubcategory: treatment.subcategory || undefined,
+    selectedCity: getAgencySelectedCity(ctx) || undefined,
     istanbulSide: istanbulSide || undefined,
-    travelDate: ctx.travelDate || undefined,
+    travelDate: getAgencyTravelDate(ctx) || undefined,
     language: locale || ctx.language || "tr",
     message: undefined,
   };

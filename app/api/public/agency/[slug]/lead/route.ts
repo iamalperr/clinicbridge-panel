@@ -7,7 +7,10 @@ import {
 import {
   getAgencyIstanbulSide,
   getAgencyPatientName,
+  getAgencySelectedCity,
   getAgencySessionId,
+  getAgencyTravelDate,
+  getAgencyTreatmentContext,
 } from "@/lib/agency/agencySessionState";
 
 const CORS = {
@@ -90,16 +93,19 @@ export async function POST(
         patientGender: body.patientGender,
         country: body.country,
         language: body.language,
-        treatmentCategory: body.treatmentCategory,
-        treatmentSubcategory: body.treatmentSubcategory,
+        treatmentCategory:
+          body.treatmentCategory || getAgencyTreatmentContext(body).category,
+        treatmentSubcategory:
+          body.treatmentSubcategory || getAgencyTreatmentContext(body).subcategory,
         urgency: body.urgency,
         conversationSummary: body.conversationSummary,
         aiExtractedNotes: body.aiExtractedNotes,
         source: body.source,
         sourceUrl: body.sourceUrl,
-        selectedCity: body.selectedCity || body.preferredCity || body.city,
+        selectedCity:
+          getAgencySelectedCity(body) || body.preferredCity || body.city,
         istanbulSide: getAgencyIstanbulSide(body) || undefined,
-        travelDate: body.travelDate,
+        travelDate: getAgencyTravelDate(body),
       });
       return NextResponse.json(
         { ok: true, leadId: result.leadId, agencyId, status: result.status },
