@@ -71,12 +71,15 @@ describe("FeelinHealthy quote request persistence wiring", () => {
     expect(demoSource).toContain("/quote-request");
   });
 
-  it("dedicated quote-request route exists and bootstraps consent", () => {
+  it("dedicated quote-request route gates consent (no silent bootstrap)", () => {
     const quoteRequestSource = readFileSync(
       join(process.cwd(), "app/api/public/agency/[slug]/quote-request/route.ts"),
       "utf8"
     );
-    expect(quoteRequestSource).toContain("saveConsentRecord");
+    expect(quoteRequestSource).toContain("ensureAcceptedConsentForPersistence");
+    expect(quoteRequestSource).toContain("consentAction");
     expect(quoteRequestSource).toContain("persistAgencyQuoteRequest");
+    expect(quoteRequestSource).toContain("CONSENT_REQUIRED");
+    expect(quoteRequestSource).not.toMatch(/if \(body\.consentAccepted === true\)/);
   });
 });

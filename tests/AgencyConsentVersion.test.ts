@@ -19,10 +19,12 @@ describe("Agency consent version alignment", () => {
   it("defines shared default consent version v1.0", () => {
     expect(consentServiceSource).toContain('export const DEFAULT_AGENCY_CONSENT_VERSION = "v1.0"');
     expect(consentServiceSource).toContain("resolveAgencyConsentVersion");
+    expect(consentServiceSource).toContain("verifyAcceptedAgencyConsent");
   });
 
   it("lead submission uses shared resolver (not empty-string fallback)", () => {
     expect(leadSubmissionSource).toContain("resolveAgencyConsentVersion");
+    expect(leadSubmissionSource).toContain("verifyAcceptedAgencyConsent");
     expect(leadSubmissionSource).not.toContain('privacySettings?.version || ""');
   });
 

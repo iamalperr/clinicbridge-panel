@@ -1,8 +1,5 @@
 import { getAdminDb } from "@/lib/firebase-admin";
-import {
-  requireAcceptedAgencyConsent,
-  resolveAgencyConsentVersion,
-} from "@/lib/services/agencyConsentService";
+import { resolveAgencyConsentVersion } from "@/lib/services/agencyConsentService";
 import { normalizeEmail, isValidEmail } from "@/lib/utils/emailValidation";
 import { scheduleAndProcessAgencyLeadNotification } from "@/lib/services/agencyNotificationService";
 import { scheduleAndProcessPatientLeadNotification } from "@/lib/services/patientNotificationService";
@@ -85,9 +82,13 @@ export async function submitAgencyLead(input: SubmitLeadInput) {
 
   // Validate Consent — version must match matching-chat / saveConsentRecord default.
   const version = resolveAgencyConsentVersion(agencyData.privacySettings);
-  const hasConsent = await requireAcceptedAgencyConsent(agencyId, conversationId, version);
-  if (!hasConsent) {
-    throw new Error("CONSENT_REQUIRED");
+  const {
+    verifyAcceptedAgencyConsent,
+    consentVerificationErrorCode,
+  } = await import("@/lib/services/agencyConsentService");
+  const consentCheck = await verifyAcceptedAgencyConsent(agencyId, conversationId, version);
+  if (!consentCheck.ok) {
+    throw new Error(consentVerificationErrorCode(consentCheck) || "CONSENT_REQUIRED");
   }
 
   // Validate Email

@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
+import {
+  ensureAcceptedConsentForPersistence,
+  resolveAgencyConsentVersion,
+} from "@/lib/services/agencyConsentService";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -15,7 +19,8 @@ export async function OPTIONS() {
  * POST /api/public/agency-lead
  *
  * Creates a new lead in the agency's leads sub-collection.
- * Called from the widget when a patient conversation produces actionable info.
+ * Requires verified accepted consent (or a validated structured consent action).
+ * Client-supplied consentStatus / consentAccepted booleans are not sufficient.
  */
 export async function POST(req: Request) {
   try {
@@ -32,10 +37,16 @@ export async function POST(req: Request) {
       urgency,
       conversationSummary,
       conversationId,
+      sessionId,
       aiExtractedNotes,
-      consentStatus,
       source,
       sourceUrl,
+      clinicIds,
+      selectedCity,
+      istanbulSide,
+      istanbul_side,
+      travelDate,
+      consentAction,
     } = body;
 
     if (!agencyId) {
@@ -47,54 +58,91 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "db unavailable" }, { status: 503, headers: CORS });
     }
 
-    // Verify agency exists
     const agencyDoc = await adminDb.collection("agencies").doc(agencyId).get();
     if (!agencyDoc.exists) {
       return NextResponse.json({ error: "Agency not found" }, { status: 404, headers: CORS });
     }
 
-    const now = new Date().toISOString();
+    const resolvedConversationId = String(conversationId || sessionId || "").trim();
+    if (!resolvedConversationId) {
+      return NextResponse.json(
+        { ok: false, error: "CONVERSATION_ID_REQUIRED" },
+        { status: 400, headers: CORS }
+      );
+    }
 
-    const lead = {
+    const agencyData = agencyDoc.data() || {};
+    const version = resolveAgencyConsentVersion(agencyData.privacySettings);
+    const consentGate = await ensureAcceptedConsentForPersistence({
       agencyId,
-      clinicId: null,
-      patientName: patientName || null,
-      patientEmail: patientEmail || null,
-      patientPhone: patientPhone || null,
-      country: country || "Unknown",
-      language: language || "en",
-      treatmentCategory: treatmentCategory || "other",
-      treatmentSubcategory: treatmentSubcategory || null,
-      urgency: urgency || "medium",
-      conversationSummary: conversationSummary || "",
-      conversationId: conversationId || null,
-      aiExtractedNotes: aiExtractedNotes || null,
-      consentStatus: consentStatus || "pending",
-      consentTimestamp: consentStatus === "accepted" ? now : null,
-      status: "new",
-      statusHistory: [
+      sessionId: resolvedConversationId,
+      requiredVersion: version,
+      consentAction,
+      localeFallback: String(language || "tr"),
+    });
+    if (!consentGate.ok) {
+      return NextResponse.json(
         {
-          status: "new",
-          changedAt: now,
-          note: "Lead created from widget",
+          ok: false,
+          error: consentGate.errorCode || "CONSENT_REQUIRED",
+          consentStatus: consentGate.status,
         },
-      ],
-      source: source || "widget",
-      sourceUrl: sourceUrl || null,
-      createdAt: now,
-      updatedAt: now,
-    };
+        { status: 403, headers: CORS }
+      );
+    }
 
-    const docRef = await adminDb
-      .collection("agencies")
-      .doc(agencyId)
-      .collection("leads")
-      .add(lead);
-
-    return NextResponse.json(
-      { ok: true, leadId: docRef.id },
-      { headers: CORS }
-    );
+    const { submitAgencyLead } = await import("@/lib/services/leadSubmissionService");
+    try {
+      const result = await submitAgencyLead({
+        agencyId,
+        conversationId: resolvedConversationId,
+        clinicIds: Array.isArray(clinicIds) ? clinicIds : [],
+        patientEmail,
+        patientName,
+        patientPhone,
+        country,
+        language,
+        treatmentCategory,
+        treatmentSubcategory,
+        urgency,
+        conversationSummary,
+        aiExtractedNotes,
+        source: source || "widget",
+        sourceUrl,
+        selectedCity,
+        istanbulSide: istanbulSide || istanbul_side,
+        travelDate,
+      });
+      return NextResponse.json(
+        { ok: true, leadId: result.leadId, agencyId, status: result.status },
+        { headers: CORS }
+      );
+    } catch (submitError: any) {
+      const message = submitError?.message || "Internal error";
+      const status = String(message).startsWith("CONSENT_") ? 403 : 400;
+      if (
+        [
+          "CONVERSATION_ID_REQUIRED",
+          "AGENCY_ID_REQUIRED",
+          "AGENCY_NOT_FOUND",
+          "CONSENT_REQUIRED",
+          "CONSENT_REJECTED",
+          "CONSENT_VERSION_MISMATCH",
+          "CONSENT_VERIFICATION_FAILED",
+          "CONSENT_SAVE_FAILED",
+          "CONSENT_EXPIRED",
+          "PATIENT_EMAIL_REQUIRED",
+          "PATIENT_EMAIL_INVALID",
+          "CLINIC_SELECTION_REQUIRED",
+          "CLINIC_SELECTION_LIMIT_EXCEEDED",
+          "INVALID_CLINIC_SELECTION",
+        ].includes(message)
+      ) {
+        return NextResponse.json({ ok: false, error: message }, { status, headers: CORS });
+      }
+      console.error("[agency-lead] Submit error:", message);
+      return NextResponse.json({ ok: false, error: "Internal error" }, { status: 500, headers: CORS });
+    }
   } catch (err) {
     console.error("[agency-lead] Error:", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500, headers: CORS });

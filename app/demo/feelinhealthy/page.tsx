@@ -721,9 +721,11 @@ export default function FeelinHealthyLive() {
       }
 
       // Client fallback when server quote persist failed (e.g. older deploy / race).
+      // Never retry when the failure is a consent gate — that would bypass KVKK.
       if (
         payload?.action === "request_quote" &&
         data.quotePersistError &&
+        !String(data.quotePersistError).startsWith("CONSENT_") &&
         typeof window !== "undefined"
       ) {
         const ctx = data.sessionContext || sessionCtxRef.current || {};

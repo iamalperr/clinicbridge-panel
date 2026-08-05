@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
+import {
+  ensureAcceptedConsentForPersistence,
+  resolveAgencyConsentVersion,
+} from "@/lib/services/agencyConsentService";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -14,6 +18,8 @@ export async function OPTIONS() {
 /**
  * POST /api/public/agency/[slug]/lead
  * Creates a lead in the agency's leads sub-collection.
+ * Consent: requires verified DB acceptance, or a validated structured
+ * privacy_consent_response action (never a raw consentAccepted boolean alone).
  */
 export async function POST(
   req: Request,
@@ -27,7 +33,6 @@ export async function POST(
       return NextResponse.json({ error: "db unavailable" }, { status: 503, headers: CORS });
     }
 
-    // Find agency
     const agencySnap = await adminDb
       .collection("agencies")
       .where("slug", "==", slug)
@@ -41,36 +46,36 @@ export async function POST(
 
     const agencyId = agencySnap.docs[0].id;
     const agencyData = agencySnap.docs[0].data();
+    const conversationId = String(body.conversationId || body.sessionId || "").trim();
+    if (!conversationId) {
+      return NextResponse.json(
+        { error: "CONVERSATION_ID_REQUIRED" },
+        { status: 400, headers: CORS }
+      );
+    }
 
-    // Profile / widget forms with explicit checkbox can bootstrap consent for this conversation.
-    if (body.consentAccepted === true && body.conversationId) {
-      try {
-        const { saveConsentRecord, resolveAgencyConsentVersion } = await import(
-          "@/lib/services/agencyConsentService"
-        );
-        const version = resolveAgencyConsentVersion(agencyData.privacySettings);
-        await saveConsentRecord(
-          agencyId,
-          String(body.conversationId),
-          "accepted",
-          version,
-          String(body.language || "tr"),
-          "agency_widget"
-        );
-      } catch (consentErr) {
-        console.warn(
-          "[public/agency/lead] consent bootstrap failed",
-          consentErr instanceof Error ? consentErr.message : consentErr
-        );
-      }
+    const version = resolveAgencyConsentVersion(agencyData.privacySettings);
+    const consentGate = await ensureAcceptedConsentForPersistence({
+      agencyId,
+      sessionId: conversationId,
+      requiredVersion: version,
+      consentAction: body.consentAction,
+      localeFallback: String(body.language || "tr"),
+    });
+    if (!consentGate.ok) {
+      const errorCode = consentGate.errorCode || "CONSENT_REQUIRED";
+      return NextResponse.json(
+        { ok: false, error: errorCode, consentStatus: consentGate.status },
+        { status: 403, headers: CORS }
+      );
     }
 
     const { submitAgencyLead } = await import("@/lib/services/leadSubmissionService");
-    
+
     try {
       const result = await submitAgencyLead({
         agencyId,
-        conversationId: body.conversationId,
+        conversationId,
         clinicIds: Array.isArray(body.clinicIds) ? body.clinicIds : [],
         patientEmail: body.patientEmail,
         patientName: body.patientName,
@@ -90,16 +95,31 @@ export async function POST(
         istanbulSide: body.istanbulSide || body.istanbul_side,
         travelDate: body.travelDate,
       });
-      return NextResponse.json({ ok: true, leadId: result.leadId, agencyId, status: result.status }, { headers: CORS });
+      return NextResponse.json(
+        { ok: true, leadId: result.leadId, agencyId, status: result.status },
+        { headers: CORS }
+      );
     } catch (submitError: any) {
       console.error("[public/agency/lead] Submit error:", submitError.message);
       const knownErrors = [
-        "CONVERSATION_ID_REQUIRED", "AGENCY_ID_REQUIRED", "AGENCY_NOT_FOUND",
-        "CONSENT_REQUIRED", "PATIENT_EMAIL_REQUIRED", "PATIENT_EMAIL_INVALID",
-        "CLINIC_SELECTION_REQUIRED", "CLINIC_SELECTION_LIMIT_EXCEEDED", "INVALID_CLINIC_SELECTION"
+        "CONVERSATION_ID_REQUIRED",
+        "AGENCY_ID_REQUIRED",
+        "AGENCY_NOT_FOUND",
+        "CONSENT_REQUIRED",
+        "CONSENT_REJECTED",
+        "CONSENT_VERSION_MISMATCH",
+        "CONSENT_VERIFICATION_FAILED",
+        "CONSENT_SAVE_FAILED",
+        "CONSENT_EXPIRED",
+        "PATIENT_EMAIL_REQUIRED",
+        "PATIENT_EMAIL_INVALID",
+        "CLINIC_SELECTION_REQUIRED",
+        "CLINIC_SELECTION_LIMIT_EXCEEDED",
+        "INVALID_CLINIC_SELECTION",
       ];
       if (knownErrors.includes(submitError.message)) {
-        return NextResponse.json({ error: submitError.message }, { status: 400, headers: CORS });
+        const status = String(submitError.message).startsWith("CONSENT_") ? 403 : 400;
+        return NextResponse.json({ error: submitError.message }, { status, headers: CORS });
       }
       return NextResponse.json({ error: "Internal error" }, { status: 500, headers: CORS });
     }

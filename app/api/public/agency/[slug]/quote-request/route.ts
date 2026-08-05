@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
-import { resolveAgencyConsentVersion, saveConsentRecord } from "@/lib/services/agencyConsentService";
+import {
+  ensureAcceptedConsentForPersistence,
+  resolveAgencyConsentVersion,
+} from "@/lib/services/agencyConsentService";
 import { persistAgencyQuoteRequest } from "@/lib/services/agencyQuoteRequestService";
 
 const CORS = {
@@ -15,8 +18,9 @@ export async function OPTIONS() {
 
 /**
  * POST /api/public/agency/[slug]/quote-request
- * Dedicated FeelinHealthy (and agency) quote persist endpoint used by clinic cards.
- * Always bootstraps consent for the conversation before writing lead+quote.
+ * Dedicated agency quote persist endpoint.
+ * Requires verified DB consent, or a validated structured consentAction.
+ * A raw consentAccepted boolean alone is never enough.
  */
 export async function POST(
   req: Request,
@@ -85,14 +89,23 @@ export async function POST(
 
     const locale = String(body.language || "tr");
     const privacyVersion = resolveAgencyConsentVersion(agencyData.privacySettings);
-    await saveConsentRecord(
+    const consentGate = await ensureAcceptedConsentForPersistence({
       agencyId,
-      conversationId,
-      "accepted",
-      privacyVersion,
-      locale,
-      "agency_widget"
-    );
+      sessionId: conversationId,
+      requiredVersion: privacyVersion,
+      consentAction: body.consentAction,
+      localeFallback: locale,
+    });
+    if (!consentGate.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: consentGate.errorCode || "CONSENT_REQUIRED",
+          consentStatus: consentGate.status,
+        },
+        { status: 403, headers: CORS }
+      );
+    }
 
     const persistResult = await persistAgencyQuoteRequest({
       agencyId,

@@ -91,13 +91,46 @@ export async function POST(
       travelDate: body.travelDate || null,
       conversationId: body.conversationId || null,
       intakeAnswers: body.intakeAnswers || {},
-      consentStatus: body.consentStatus || "accepted",
+      consentStatus: "pending" as string,
       status: "requested",
       clinicOffers: [],
       internalNotes: null,
       createdAt: now,
       updatedAt: now,
     };
+
+    const conversationId = String(body.conversationId || body.sessionId || "").trim();
+    if (!conversationId) {
+      return NextResponse.json(
+        { ok: false, error: "CONVERSATION_ID_REQUIRED" },
+        { status: 400, headers: CORS }
+      );
+    }
+
+    const {
+      resolveAgencyConsentVersion,
+      ensureAcceptedConsentForPersistence,
+    } = await import("@/lib/services/agencyConsentService");
+    const privacyVersion = resolveAgencyConsentVersion(agencySnap.docs[0].data()?.privacySettings);
+    const consentGate = await ensureAcceptedConsentForPersistence({
+      agencyId,
+      sessionId: conversationId,
+      requiredVersion: privacyVersion,
+      consentAction: body.consentAction,
+      localeFallback: String(body.language || "tr"),
+    });
+    if (!consentGate.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: consentGate.errorCode || "CONSENT_REQUIRED",
+          consentStatus: consentGate.status,
+        },
+        { status: 403, headers: CORS }
+      );
+    }
+    quote.consentStatus = "accepted";
+    quote.conversationId = conversationId;
 
     const docRef = await adminDb
       .collection("agencies")

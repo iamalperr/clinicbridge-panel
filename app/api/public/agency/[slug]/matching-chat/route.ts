@@ -570,37 +570,14 @@ export async function POST(
             );
           }
 
-          // request_quote — persist before success copy; email is async after DB write
+          // request_quote — persist before success copy; email is async after DB write.
+          // Never manufacture consent here — require prior privacy_consent_response write.
           const locale =
             (cardPayload.locale || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en")
               ? "en"
               : "tr";
           const quoteCtx = cardResult.sessionContext;
           const clinicIdsForQuote = cardResult.clinicIdsForQuote || [cardPayload.clinicId];
-
-          // Always ensure consent before quote persist (matching already required KVKK).
-          if (quoteCtx.sessionId) {
-            try {
-              const { saveConsentRecord, resolveAgencyConsentVersion } = await import(
-                "@/lib/services/agencyConsentService"
-              );
-              const privacyVersion = resolveAgencyConsentVersion(agencyData.privacySettings);
-              await saveConsentRecord(
-                agencyId,
-                quoteCtx.sessionId,
-                "accepted",
-                privacyVersion,
-                locale,
-                "agency_widget"
-              );
-              quoteCtx.quoteConsent = true;
-            } catch (consentErr) {
-              console.warn(
-                "[matching-chat] consent ensure failed (request_quote)",
-                consentErr instanceof Error ? consentErr.message : "unknown"
-              );
-            }
-          }
 
           const { persistAgencyQuoteRequest } = await import(
             "@/lib/services/agencyQuoteRequestService"
@@ -632,6 +609,47 @@ export async function POST(
           });
 
           if (!persistResult.ok) {
+            const consentBlocked =
+              typeof persistResult.errorCode === "string" &&
+              persistResult.errorCode.startsWith("CONSENT_");
+            if (consentBlocked) {
+              const structuredData = getStructuredConsentData(agencyData, locale);
+              const noticeUrl =
+                slug === "feelinhealthy"
+                  ? "https://feelinhealthy.com/kvkk"
+                  : structuredData.privacyNoticeUrl || "https://feelinhealthy.com/kvkk";
+              const consentTextTr =
+                agencyData.privacySettings?.consentTextTr ||
+                "Size uygun klinikleri önerebilmemiz ve talebinizi değerlendirebilmemiz için onayınıza ihtiyaç duyuyoruz.";
+              const consentTextEn =
+                agencyData.privacySettings?.consentTextEn ||
+                "We need your consent to recommend suitable clinics and evaluate your request.";
+              return jsonResponse(
+                {
+                  reply: locale === "en" ? consentTextEn : consentTextTr,
+                  type: "consent_request",
+                  privacyNoticeUrl: noticeUrl,
+                  privacyNoticeLabel: structuredData.privacyNoticeLabel || "Aydınlatma metnini",
+                  consentStructured: {
+                    consentTextBeforeLink:
+                      structuredData.consentTextBeforeLink ||
+                      "Sizlere uygun klinikleri önerebilmemiz ve talebinizi değerlendirebilmemiz için paylaşacağınız kişisel ve sağlıkla ilgili verileri işlememize yönelik onayınıza ihtiyaç duyuyoruz. ",
+                    privacyNoticeLabel: structuredData.privacyNoticeLabel || "Aydınlatma metnini",
+                    privacyNoticeUrl: noticeUrl,
+                    consentTextAfterLink:
+                      structuredData.consentTextAfterLink || " inceleyerek devam edebilirsiniz.",
+                  },
+                  consentVersion:
+                    agencyData.privacySettings?.version || "v1.0",
+                  sessionContext: quoteCtx,
+                  showClinicCards: false,
+                  shouldCreateNewLead: false,
+                  shouldUpdateLead: false,
+                  quotePersistError: persistResult.errorCode,
+                },
+                { headers: CORS }
+              );
+            }
             return jsonResponse(
               {
                 reply: requestQuoteFailureCopy(locale),
@@ -751,27 +769,8 @@ export async function POST(
 
         const quoteCtx = panelResult.sessionContext;
         const clinicIdsForQuote = panelResult.clinicIdsForQuote || quoteCtx.selectedClinicIds || [];
-        try {
-          const { saveConsentRecord, resolveAgencyConsentVersion } = await import(
-            "@/lib/services/agencyConsentService"
-          );
-          const privacyVersion = resolveAgencyConsentVersion(agencyData.privacySettings);
-          await saveConsentRecord(
-            agencyId,
-            String(quoteCtx.sessionId || ""),
-            "accepted",
-            privacyVersion,
-            locale,
-            "agency_widget"
-          );
-          quoteCtx.quoteConsent = true;
-        } catch (consentErr) {
-          console.warn(
-            "[matching-chat] consent ensure failed (clinic_selection_complete)",
-            consentErr instanceof Error ? consentErr.message : "unknown"
-          );
-        }
 
+        // Never manufacture consent on clinic selection — require prior consent write.
         const { persistAgencyQuoteRequest } = await import(
           "@/lib/services/agencyQuoteRequestService"
         );
@@ -802,6 +801,46 @@ export async function POST(
         });
 
         if (!persistResult.ok) {
+          const consentBlocked =
+            typeof persistResult.errorCode === "string" &&
+            persistResult.errorCode.startsWith("CONSENT_");
+          if (consentBlocked) {
+            const structuredData = getStructuredConsentData(agencyData, locale);
+            const noticeUrl =
+              slug === "feelinhealthy"
+                ? "https://feelinhealthy.com/kvkk"
+                : structuredData.privacyNoticeUrl || "https://feelinhealthy.com/kvkk";
+            const consentTextTr =
+              agencyData.privacySettings?.consentTextTr ||
+              "Size uygun klinikleri önerebilmemiz ve talebinizi değerlendirebilmemiz için onayınıza ihtiyaç duyuyoruz.";
+            const consentTextEn =
+              agencyData.privacySettings?.consentTextEn ||
+              "We need your consent to recommend suitable clinics and evaluate your request.";
+            return jsonResponse(
+              {
+                reply: locale === "en" ? consentTextEn : consentTextTr,
+                type: "consent_request",
+                privacyNoticeUrl: noticeUrl,
+                privacyNoticeLabel: structuredData.privacyNoticeLabel || "Aydınlatma metnini",
+                consentStructured: {
+                  consentTextBeforeLink:
+                    structuredData.consentTextBeforeLink ||
+                    "Sizlere uygun klinikleri önerebilmemiz ve talebinizi değerlendirebilmemiz için paylaşacağınız kişisel ve sağlıkla ilgili verileri işlememize yönelik onayınıza ihtiyaç duyuyoruz. ",
+                  privacyNoticeLabel: structuredData.privacyNoticeLabel || "Aydınlatma metnini",
+                  privacyNoticeUrl: noticeUrl,
+                  consentTextAfterLink:
+                    structuredData.consentTextAfterLink || " inceleyerek devam edebilirsiniz.",
+                },
+                consentVersion: agencyData.privacySettings?.version || "v1.0",
+                sessionContext: quoteCtx,
+                showClinicCards: true,
+                shouldCreateNewLead: false,
+                shouldUpdateLead: false,
+                quotePersistError: persistResult.errorCode,
+              },
+              { headers: CORS }
+            );
+          }
           return jsonResponse(
             {
               reply: requestQuoteFailureCopy(locale),
@@ -975,25 +1014,35 @@ export async function POST(
           finalMessage = `[SİSTEM AKSİYONU: Kullanıcı klinik seçimini tamamladı. Seçilen toplam klinik sayısı: ${sessionContext.selectedClinicIds?.length || 0}. Artık lead toplama sürecine (Ad Soyad vb.) geçebilirsin.]`;
         }
       } else if (action.type === "privacy_consent_response") {
-        const { saveConsentRecord } = await import("@/lib/services/agencyConsentService");
+        const { saveConsentRecord, resolveAgencyConsentVersion } = await import(
+          "@/lib/services/agencyConsentService"
+        );
         const consentLang = action.locale || "tr";
         const consentStatus = action.action === "accept" ? "accepted" : "declined";
-        const privacySettingsForConsent = agencyData.privacySettings || {
-          enabled: true, mode: "kvkk", version: "v1.0",
-          consentTextTr: "", consentTextEn: "", requiredBeforePersonalData: true
-        };
+        const privacyVersion = resolveAgencyConsentVersion(agencyData.privacySettings);
 
         const sid = sessionContext.sessionId || `sess_${Date.now()}`;
         sessionContext.sessionId = sid;
 
-        await saveConsentRecord(
+        const savedConsent = await saveConsentRecord(
           agencyId,
           sid,
           consentStatus as any,
-          privacySettingsForConsent.version,
+          privacyVersion,
           consentLang,
           "agency_widget"
         );
+        if (!savedConsent && consentStatus === "accepted") {
+          return jsonResponse({
+            reply: consentLang === "tr"
+              ? "Onayınızı kaydedemedik. Lütfen tekrar deneyin."
+              : "We could not save your consent. Please try again.",
+            type: "text",
+            sessionContext,
+            showClinicCards: false,
+            consentSaveError: "CONSENT_SAVE_FAILED",
+          }, { headers: CORS });
+        }
 
         if (consentStatus === "declined") {
           sessionContext.quoteConsent = false;
@@ -1463,10 +1512,22 @@ export async function POST(
     );
 
     if (isHealthOrTreatmentRequest && privacySettings.enabled && privacySettings.requiredBeforePersonalData) {
-      const hasConsent = ctx.quoteConsent === true || (await requireAcceptedAgencyConsent(agencyId, ctx.sessionId!, privacySettings.version));
+      // Persistence and PII progression require DB-verified consent — session flag is UI-only.
+      const sessionDeclined = ctx.quoteConsent === false;
+      const hasConsent = await requireAcceptedAgencyConsent(
+        agencyId,
+        ctx.sessionId!,
+        privacySettings.version
+      );
+      if (hasConsent) {
+        ctx.quoteConsent = true;
+      } else if (ctx.quoteConsent === true) {
+        // Forged/stale session accept without DB record — clear flag; do not treat as decline.
+        delete ctx.quoteConsent;
+      }
       if (!hasConsent) {
         const isEn = (agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en");
-        if (ctx.quoteConsent === false) {
+        if (sessionDeclined) {
           return jsonResponse({
             reply: isEn
               ? "Since you declined the privacy consent, I cannot process personal or health data. I can only assist with general information."
@@ -2181,7 +2242,11 @@ export async function POST(
     if (!newCtx.travelDate && agencySlotsExtracted.extracted.travelDateText) {
       newCtx.travelDate = agencySlotsExtracted.extracted.travelDateText;
     }
-    if (parsed.quoteConsent !== undefined && parsed.quoteConsent !== null) newCtx.quoteConsent = parsed.quoteConsent;
+    // Consent acceptance must come from privacy_consent_response (or equivalent
+    // structured action), never from free-form LLM extraction alone.
+    if (parsed.quoteConsent === false) {
+      newCtx.quoteConsent = false;
+    }
     if (parsed.missingLeadField) newCtx.missingLeadField = parsed.missingLeadField;
     
     // Never downgrade Clinic Coordinator / completed quote stages via LLM rematch intents.
@@ -2205,8 +2270,9 @@ export async function POST(
     }
     if (parsed.intent === "conversation_completed") newCtx.leadStage = "completed";
     
-    if (parsed.shouldCreateLead && !ctx.quoteConsent && parsed.quoteConsent) {
-      newCtx.quoteConsent = true;
+    // Do not manufacture acceptance from LLM shouldCreateLead + quoteConsent flags.
+    if (parsed.shouldCreateLead && ctx.quoteConsent === false) {
+      newCtx.quoteConsent = false;
     }
 
     // --- CONSENT GATING ---
@@ -2236,9 +2302,21 @@ export async function POST(
     );
     
     if (isMedicalOrTreatmentRequest && privacySettings.enabled && privacySettings.requiredBeforePersonalData) {
-      const hasConsent = ctx.quoteConsent === true || (await requireAcceptedAgencyConsent(agencyId, ctx.sessionId!, privacySettings.version));
+      const sessionDeclined = ctx.quoteConsent === false || newCtx.quoteConsent === false;
+      const hasConsent = await requireAcceptedAgencyConsent(
+        agencyId,
+        ctx.sessionId!,
+        privacySettings.version
+      );
+      if (hasConsent) {
+        ctx.quoteConsent = true;
+        newCtx.quoteConsent = true;
+      } else {
+        if (ctx.quoteConsent === true) delete ctx.quoteConsent;
+        if (newCtx.quoteConsent === true) delete newCtx.quoteConsent;
+      }
       if (!hasConsent) {
-        if (ctx.quoteConsent === false) {
+        if (sessionDeclined) {
            return jsonResponse({
              reply: parsed.language === "tr" 
                ? "Daha önce onay vermediğiniz için kişiselleştirilmiş işlem yapamıyoruz. Genel konularda yardımcı olabilirim."
@@ -2855,6 +2933,42 @@ export async function POST(
             source: "widget",
           });
           if (!persistResult.ok) {
+            const consentBlocked =
+              typeof persistResult.errorCode === "string" &&
+              persistResult.errorCode.startsWith("CONSENT_");
+            if (consentBlocked) {
+              const locale = (parsed.language || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
+              const structuredData = getStructuredConsentData(agencyData, locale);
+              const noticeUrl =
+                slug === "feelinhealthy"
+                  ? "https://feelinhealthy.com/kvkk"
+                  : structuredData.privacyNoticeUrl || "https://feelinhealthy.com/kvkk";
+              return jsonResponse({
+                reply:
+                  locale === "en"
+                    ? agencyData.privacySettings?.consentTextEn ||
+                      "We need your consent to recommend suitable clinics and evaluate your request."
+                    : agencyData.privacySettings?.consentTextTr ||
+                      "Size uygun klinikleri önerebilmemiz ve talebinizi değerlendirebilmemiz için onayınıza ihtiyaç duyuyoruz.",
+                type: "consent_request",
+                privacyNoticeUrl: noticeUrl,
+                privacyNoticeLabel: structuredData.privacyNoticeLabel || "Aydınlatma metnini",
+                consentStructured: {
+                  consentTextBeforeLink:
+                    structuredData.consentTextBeforeLink ||
+                    "Sizlere uygun klinikleri önerebilmemiz ve talebinizi değerlendirebilmemiz için paylaşacağınız kişisel ve sağlıkla ilgili verileri işlememize yönelik onayınıza ihtiyaç duyuyoruz. ",
+                  privacyNoticeLabel: structuredData.privacyNoticeLabel || "Aydınlatma metnini",
+                  privacyNoticeUrl: noticeUrl,
+                  consentTextAfterLink:
+                    structuredData.consentTextAfterLink || " inceleyerek devam edebilirsiniz.",
+                },
+                consentVersion: agencyData.privacySettings?.version || "v1.0",
+                sessionContext: newCtx,
+                showClinicCards: false,
+                shouldCreateNewLead: false,
+                quotePersistError: persistResult.errorCode,
+              }, { headers: CORS });
+            }
             return jsonResponse({
               reply:
                 parsed.language === "en"
@@ -2887,16 +3001,136 @@ export async function POST(
           }, { headers: CORS });
         }
 
-        newCtx.leadStage = "quote_request_created";
-        return jsonResponse({
-          reply: parsed.replyText || "Harika, talebinizi başarıyla oluşturdum.",
-          type: "text",
-          sessionContext: newCtx,
-          showClinicCards: false,
-          leadStatus: newCtx.leadStage,
-          shouldCreateNewLead: true,
-          shouldUpdateLead: false
-        }, { headers: CORS });
+        // Non-FH (product-global): hard consent gate + server-side lead persist.
+        // Never return success / shouldCreateNewLead based on session quoteConsent alone.
+        {
+          const locale = (parsed.language || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
+          const conversationId = String(newCtx.sessionId || ctx.sessionId || "");
+          const {
+            resolveAgencyConsentVersion,
+            verifyAcceptedAgencyConsent,
+            consentVerificationErrorCode,
+          } = await import("@/lib/services/agencyConsentService");
+          const privacyVersion = resolveAgencyConsentVersion(agencyData.privacySettings);
+          const consentCheck = await verifyAcceptedAgencyConsent(
+            agencyId,
+            conversationId,
+            privacyVersion
+          );
+          if (!consentCheck.ok) {
+            const structuredData = getStructuredConsentData(agencyData, locale);
+            const noticeUrl = structuredData.privacyNoticeUrl || "https://feelinhealthy.com/kvkk";
+            return jsonResponse({
+              reply:
+                locale === "en"
+                  ? agencyData.privacySettings?.consentTextEn ||
+                    "We need your consent before we can create your treatment request."
+                  : agencyData.privacySettings?.consentTextTr ||
+                    "Tedavi talebinizi oluşturmadan önce onayınıza ihtiyaç duyuyoruz.",
+              type: "consent_request",
+              privacyNoticeUrl: noticeUrl,
+              privacyNoticeLabel: structuredData.privacyNoticeLabel || "Aydınlatma metnini",
+              consentStructured: {
+                consentTextBeforeLink: structuredData.consentTextBeforeLink,
+                privacyNoticeLabel: structuredData.privacyNoticeLabel,
+                privacyNoticeUrl: noticeUrl,
+                consentTextAfterLink: structuredData.consentTextAfterLink,
+              },
+              consentVersion: privacyVersion,
+              sessionContext: newCtx,
+              showClinicCards: false,
+              shouldCreateNewLead: false,
+              quotePersistError: consentVerificationErrorCode(consentCheck) || "CONSENT_REQUIRED",
+            }, { headers: CORS });
+          }
+
+          const clinicIdsForLead = Array.from(
+            new Set(
+              [
+                newCtx.selectedClinicId,
+                ...(newCtx.selectedClinicIds || []),
+                newCtx.lastFocusedClinicId,
+              ].filter(Boolean) as string[]
+            )
+          );
+          if (clinicIdsForLead.length === 0) {
+            return jsonResponse({
+              reply:
+                locale === "en"
+                  ? "Please select at least one clinic before we create your request."
+                  : "Talebinizi oluşturmadan önce lütfen en az bir klinik seçin.",
+              type: "text",
+              sessionContext: newCtx,
+              showClinicCards: true,
+              shouldCreateNewLead: false,
+            }, { headers: CORS });
+          }
+
+          try {
+            const { submitAgencyLead } = await import("@/lib/services/leadSubmissionService");
+            const leadResult = await submitAgencyLead({
+              agencyId,
+              conversationId,
+              clinicIds: clinicIdsForLead,
+              patientEmail: String(newCtx.patientEmail || ""),
+              patientName: newCtx.patientName || undefined,
+              patientPhone: newCtx.patientPhone || undefined,
+              patientAge: typeof newCtx.patientAge === "number" ? newCtx.patientAge : undefined,
+              patientGender: newCtx.patientGender || undefined,
+              country: newCtx.patientCountry || undefined,
+              language: parsed.language || "tr",
+              treatmentCategory: newCtx.lastTreatmentCategory || parsed.treatmentCategory || undefined,
+              treatmentSubcategory: newCtx.lastSubTreatment || parsed.subTreatment || undefined,
+              selectedCity: newCtx.selectedCity || undefined,
+              istanbulSide: newCtx.istanbul_side || undefined,
+              travelDate: newCtx.travelDate || undefined,
+              source: "widget",
+            });
+            newCtx.leadStage = "quote_request_created";
+            newCtx.leadId = leadResult.leadId;
+            return jsonResponse({
+              reply: parsed.replyText || (locale === "en"
+                ? "Your request has been created successfully."
+                : "Harika, talebinizi başarıyla oluşturdum."),
+              type: "text",
+              sessionContext: newCtx,
+              showClinicCards: false,
+              leadStatus: newCtx.leadStage,
+              shouldCreateNewLead: false,
+              shouldUpdateLead: false,
+              leadId: leadResult.leadId,
+            }, { headers: CORS });
+          } catch (leadErr: any) {
+            const errorCode = String(leadErr?.message || "LEAD_PERSIST_FAILED");
+            if (errorCode.startsWith("CONSENT_")) {
+              const structuredData = getStructuredConsentData(agencyData, locale);
+              return jsonResponse({
+                reply:
+                  locale === "en"
+                    ? "We need your consent before we can create your treatment request."
+                    : "Tedavi talebinizi oluşturmadan önce onayınıza ihtiyaç duyuyoruz.",
+                type: "consent_request",
+                consentVersion: privacyVersion,
+                sessionContext: newCtx,
+                showClinicCards: false,
+                shouldCreateNewLead: false,
+                quotePersistError: errorCode,
+                privacyNoticeUrl: structuredData.privacyNoticeUrl,
+              }, { headers: CORS });
+            }
+            return jsonResponse({
+              reply:
+                locale === "en"
+                  ? "We could not save your request right now. Please try again shortly."
+                  : "Talebinizi şu anda kaydedemedik. Lütfen kısa süre sonra yeniden deneyin.",
+              type: "text",
+              sessionContext: newCtx,
+              showClinicCards: false,
+              shouldCreateNewLead: false,
+              quotePersistError: errorCode,
+            }, { headers: CORS });
+          }
+        }
       }
     }
 
