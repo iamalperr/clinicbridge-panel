@@ -1,5 +1,8 @@
 import { getAdminDb } from "@/lib/firebase-admin";
-import { requireAcceptedAgencyConsent } from "@/lib/services/agencyConsentService";
+import {
+  requireAcceptedAgencyConsent,
+  resolveAgencyConsentVersion,
+} from "@/lib/services/agencyConsentService";
 import { normalizeEmail, isValidEmail } from "@/lib/utils/emailValidation";
 import { scheduleAndProcessAgencyLeadNotification } from "@/lib/services/agencyNotificationService";
 import { scheduleAndProcessPatientLeadNotification } from "@/lib/services/patientNotificationService";
@@ -72,8 +75,8 @@ export async function submitAgencyLead(input: SubmitLeadInput) {
   const maxClinics = matchingConfig?.maxClinicsToShow || agencyData.settings?.maxClinicsPerTreatmentRequest || 3;
   const routingMode = matchingConfig?.routingMode || "manual";
 
-  // Validate Consent
-  const version = agencyData.privacySettings?.version || "";
+  // Validate Consent — version must match matching-chat / saveConsentRecord default.
+  const version = resolveAgencyConsentVersion(agencyData.privacySettings);
   const hasConsent = await requireAcceptedAgencyConsent(agencyId, conversationId, version);
   if (!hasConsent) {
     throw new Error("CONSENT_REQUIRED");

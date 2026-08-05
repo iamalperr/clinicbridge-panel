@@ -3,6 +3,16 @@ import { getAdminDb } from "@/lib/firebase-admin";
 export type ConsentStatus = "pending" | "accepted" | "declined" | "revoked";
 export type ConsentSource = "agency_widget" | "agency_portal_chat";
 
+/** Must match matching-chat privacy gate default (agencies without explicit version). */
+export const DEFAULT_AGENCY_CONSENT_VERSION = "v1.0";
+
+export function resolveAgencyConsentVersion(
+  privacySettings?: { version?: string } | null
+): string {
+  const trimmed = String(privacySettings?.version || "").trim();
+  return trimmed || DEFAULT_AGENCY_CONSENT_VERSION;
+}
+
 export interface AgencyConsentRecord {
   id?: string;
   agencyId: string;

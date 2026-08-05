@@ -35,6 +35,14 @@ describe("FeelinHealthy quote request persistence wiring", () => {
     expect(serviceSource).toContain("travelDate");
   });
 
+  it("lead submission aligns consent version with matching-chat before persist", () => {
+    const leadSubmissionSource = readFileSync(
+      join(process.cwd(), "lib/services/leadSubmissionService.ts"),
+      "utf8"
+    );
+    expect(leadSubmissionSource).toContain("resolveAgencyConsentVersion");
+  });
+
   it("demo also creates quote document when client-side persist runs", () => {
     expect(demoSource).toContain(`/api/public/agency/${"${SLUG}"}/quote`);
   });
