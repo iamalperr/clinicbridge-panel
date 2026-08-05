@@ -667,3 +667,99 @@ export function isHardGateAction(action: NextConversationAction): boolean {
     action.kind === "location_negotiation"
   );
 }
+
+/**
+ * Infer treatment branch from free text without relying on SlotExtractor locale quirks.
+ * Handles Turkish capital İ ("İmplant") which breaks ASCII toLowerCase matching.
+ */
+export function inferTreatmentFromText(text?: string | null): string | null {
+  if (!text) return null;
+  const normalized = String(text)
+    .toLocaleLowerCase("tr-TR")
+    .replace(/\u0307/g, "")
+    .normalize("NFC");
+
+  const rules: Array<{ id: string; patterns: RegExp[] }> = [
+    { id: "implant", patterns: [/\bimplant\b/, /diş implant/, /dis implant/, /dental implant/] },
+    { id: "dental", patterns: [/\b(zirkonyum|kaplama|veneers?|crowns?|diş|dis tedavi|dental)\b/] },
+    { id: "hair", patterns: [/\b(saç ekim|sac ekim|hair transplant|fue|dhi)\b/] },
+    { id: "aesthetic", patterns: [/\b(estetik|rinoplasti|rhinoplasty|botoks|dolgu|liposuction)\b/] },
+    { id: "ivf", patterns: [/\b(tüp bebek|tup bebek|\bivf\b|fertility)\b/] },
+    { id: "eye", patterns: [/\b(göz|lasik|katarakt|\beye\b)\b/] },
+    { id: "obesity", patterns: [/\b(obezite|bariatrik|tüp mide)\b/] },
+  ];
+
+  for (const rule of rules) {
+    if (rule.patterns.some((re) => re.test(normalized))) return rule.id;
+  }
+  return null;
+}
+
+/**
+ * Ensure treatment known on session from pending/original health request.
+ * Never clears an already-set treatment.
+ */
+export function ensureTreatmentFromPending(
+  ctx: Record<string, any>,
+  fallbackText?: string | null
+): Record<string, any> {
+  if (ctx.lastTreatmentCategory || ctx.treatmentId) return ctx;
+  const source =
+    fallbackText ||
+    ctx.pendingHealthRequest ||
+    ctx.pendingUserMessage ||
+    "";
+  const inferred = inferTreatmentFromText(source);
+  if (!inferred) return ctx;
+  return { ...ctx, lastTreatmentCategory: inferred };
+}
+
+/**
+ * Merge session updates without wiping completed intake / consent / treatment / location.
+ */
+export function mergeFeelinHealthySession(
+  previous: Record<string, any>,
+  incoming: Record<string, any>
+): Record<string, any> {
+  const merged = { ...previous, ...incoming };
+
+  const preserveKeys = [
+    "quoteConsent",
+    "patientName",
+    "firstName",
+    "lastName",
+    "patientAge",
+    "age",
+    "patientGender",
+    "gender",
+    "patientEmail",
+    "patientEmailStatus",
+    "patientPhone",
+    "patientCountry",
+    "travelDate",
+    "travelDateStart",
+    "travelDateText",
+    "lastTreatmentCategory",
+    "selectedCity",
+    "istanbul_side",
+    "locationSelectionConfirmed",
+    "sideSelectionConfirmed",
+    "sessionId",
+  ] as const;
+
+  for (const key of preserveKeys) {
+    const prevVal = previous[key];
+    const nextVal = merged[key];
+    const nextEmpty =
+      nextVal === undefined ||
+      nextVal === null ||
+      nextVal === "" ||
+      nextVal === false;
+    if (prevVal !== undefined && prevVal !== null && prevVal !== "" && nextEmpty) {
+      merged[key] = prevVal;
+    }
+  }
+
+  if (previous.quoteConsent === true) merged.quoteConsent = true;
+  return merged;
+}

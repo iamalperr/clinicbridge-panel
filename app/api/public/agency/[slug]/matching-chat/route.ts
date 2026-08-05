@@ -58,6 +58,8 @@ import {
   buildGateResponseFromAction,
   isHardGateAction,
   applyStructuredLocationAction,
+  ensureTreatmentFromPending,
+  mergeFeelinHealthySession,
 } from "@/lib/agency/feelinhealthyConversationMachine";
 
 const CORS = {
@@ -738,10 +740,11 @@ export async function POST(
     }
 
     // While Group 1 is open a bare full name is a legitimate answer, so the
-    // extractor is told a name is expected. At every other point an unlabelled
-    // phrase is left alone rather than guessed at as a name.
+    // extractor is told a name is expected. Never before consent — treatment
+    // requests must not be parsed as names, and treatment must still extract.
     const expectedIntakeSlot =
       isFeelinHealthy &&
+      ctx.quoteConsent === true &&
       !isReplayedTreatmentRequest &&
       !structuredLocationAction &&
       resolveAssistantRole(ctx) !== "clinic_coordinator" &&
@@ -807,6 +810,16 @@ export async function POST(
 
     if (agencySlotsExtracted.extracted.treatment && !ctx.lastTreatmentCategory) {
       ctx.lastTreatmentCategory = agencySlotsExtracted.extracted.treatment;
+    }
+    // Turkish "İmplant" must not lose treatment across consent / intake.
+    if (isFeelinHealthy) {
+      Object.assign(
+        ctx,
+        ensureTreatmentFromPending(
+          ctx,
+          `${finalMessage || ""} ${message || ""} ${ctx.pendingHealthRequest || ""}`
+        )
+      );
     }
 
     // The replayed treatment request and structured city/side actions must never
@@ -991,6 +1004,8 @@ export async function POST(
           ctx.pendingUserMessage = finalMessage || message;
           ctx.pendingHealthRequest = finalMessage || message;
         }
+        // Persist minimum treatment intent before consent so it survives KVKK.
+        Object.assign(ctx, ensureTreatmentFromPending(ctx, finalMessage || message));
         const consentLang = isEn ? "en" : "tr";
         const structuredData = getStructuredConsentData(agencyData, consentLang);
         const noticeUrl = isFeelinHealthy ? "https://feelinhealthy.com/kvkk" : (structuredData.privacyNoticeUrl || "https://feelinhealthy.com/kvkk");
@@ -1398,7 +1413,29 @@ export async function POST(
     
     let parsed: any;
 
-    if (!process.env.OPENAI_API_KEY) {
+    // Structured city/side actions that are ready for matching must never call the LLM.
+    // LLM parse failures previously rediscovered Group 1 after side selection (P0).
+    const skipLlmForDeterministicMatch =
+      isFeelinHealthy &&
+      Boolean((ctx as any).__forceClinicMatching) &&
+      (structuredLocationAction || Boolean(ctx.lastTreatmentCategory && ctx.selectedCity));
+
+    if (skipLlmForDeterministicMatch) {
+      const isEn = (agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en");
+      parsed = {
+        intent: "clinic_recommendation",
+        language: isEn ? "en" : "tr",
+        treatmentCategory: ctx.lastTreatmentCategory,
+        location: ctx.selectedCity || ctx.lastLocation,
+        showClinicCards: true,
+        shouldCreateLead: false,
+        needsFollowUp: false,
+        replyText: "",
+        missingLeadField: null,
+      };
+      openAiTotalMs = 0;
+      responseParseMs = 0;
+    } else if (!process.env.OPENAI_API_KEY) {
       console.warn("[matching-chat] OPENAI_API_KEY is not configured. Running in deterministic intake mode.");
       const trBranch = agencySlotsExtracted.extracted.treatment || ctx.lastTreatmentCategory || undefined;
       const trLoc = ctx.selectedCity || agencySlotsExtracted.extracted.city || ctx.lastLocation || undefined;
@@ -1416,55 +1453,142 @@ export async function POST(
       openAiTotalMs = 0;
       responseParseMs = 0;
     } else {
-      // Wrap in Promise.race for 8-second hard timeout
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          const err: any = new Error("PROVIDER_TIMEOUT");
-          err.code = "OPENAI_TIMEOUT";
-          reject(err);
-        }, 8000);
-      });
-
-      const completion = await Promise.race([
-        trackableAIRequest({
-          clinicId: ctx.selectedClinicId || undefined,
-          channel: "portal",
-          requestType: "chat",
-          model: "gpt-4o-mini", // Fast model for intake as requested
-          temperature: 0.3,
-          maxTokens: 1200,
-          responseFormat: { type: "json_object" },
-          messages: [
-            { role: "system", content: systemPrompt },
-            ...history.slice(-6).map((h: any) => ({
-              role: h.role as "user" | "assistant",
-              content: typeof h.content === "string" ? h.content : JSON.stringify(h.content),
-            })),
-            { role: "user", content: finalMessage },
-          ],
-        }),
-        timeoutPromise
-      ]);
-
-      openAiTotalMs = performance.now() - aiStart;
-      const parseStart = performance.now();
-
-      const raw = completion.content?.trim() ?? "{}";
-      try {
-        parsed = JSON.parse(raw);
-        responseParseMs = performance.now() - parseStart;
-      } catch (err: any) {
-        console.error("[matching-chat] [ALERT] OPENAI_RESPONSE_PARSE_FAILED", err.message, "RAW:", raw.slice(0, 500));
-        // Degraded Mode Fallback for JSON Parse error
+      const runFeelinHealthyDegradedFallback = (reason: string, rawSnippet?: string) => {
+        console.error(`[matching-chat] [ALERT] ${reason}`, rawSnippet?.slice(0, 500) || "");
         const isTr = ctx.language === "tr" || (!ctx.language && true);
-        const newCtx: SessionContext = { ...ctx, processingMode: "degraded" };
-        return jsonResponse({
-          reply: isTr 
-            ? (isFeelinHealthy ? "Talebinizi aldım. Size en uygun klinikleri hazırlayabilmemiz için adınızı soyadınızı, yaşınızı ve cinsiyetinizi paylaşabilir misiniz?" : "Talebinizi aldım. Size uygun klinikleri hazırlayabilmem için yaklaşık bütçenizi, tercih ettiğiniz tarihi ve dil ihtiyacınızı paylaşabilir misiniz?")
-            : (isFeelinHealthy ? "I've saved your request. To prepare the most suitable clinic options for you, could you please share your full name, age, and gender?" : "I've saved your request. To prepare suitable clinic options, could you share your approximate budget, preferred dates and language requirements?"),
-          type: "text",
-          sessionContext: newCtx,
-        }, { headers: CORS });
+        const degradedCtx: SessionContext = {
+          ...mergeFeelinHealthySession(ctx, { processingMode: "degraded" }),
+          processingMode: "degraded",
+        } as SessionContext;
+        Object.assign(degradedCtx, ensureTreatmentFromPending(degradedCtx));
+        const degradedNext = resolveNextConversationAction(degradedCtx, {
+          availableClinics: fullAgencyClinics,
+          locale: isTr ? "tr" : "en",
+          isStructuredAction: structuredLocationAction,
+          promptContext: degradedCtx,
+        });
+        if (isHardGateAction(degradedNext)) {
+          const gate = buildGateResponseFromAction(degradedNext, degradedCtx);
+          if (gate) {
+            return {
+              type: "response" as const,
+              body: {
+                reply: gate.reply,
+                type: gate.type,
+                citySelectionCard: gate.citySelectionCard,
+                sideClarificationCard: gate.sideClarificationCard,
+                sessionContext: gate.sessionContext,
+                showClinicCards: false,
+                stage: gate.stage,
+              },
+            };
+          }
+        }
+        if (degradedNext.kind === "match_clinics" || degradedNext.kind === "clinic_selection") {
+          Object.assign(ctx, degradedCtx);
+          (ctx as any).__forceClinicMatching = true;
+          return {
+            type: "parsed" as const,
+            parsed: {
+              intent: "clinic_recommendation",
+              language: isTr ? "tr" : "en",
+              replyText: "",
+              treatmentCategory: degradedCtx.lastTreatmentCategory,
+              shouldCreateLead: false,
+              needsFollowUp: false,
+              showClinicCards: true,
+              missingLeadField: null,
+            },
+          };
+        }
+        return {
+          type: "response" as const,
+          body: {
+            reply:
+              degradedNext.kind === "selected_clinic" || degradedNext.kind === "quote"
+                ? (isTr
+                  ? "Seçtiğiniz klinik üzerinden devam ediyoruz. Nasıl yardımcı olabilirim?"
+                  : "Continuing with your selected clinic. How can I help?")
+                : (isTr
+                  ? "Talebinizi aldım. Bir önceki adımdan devam edelim."
+                  : "I've received your request. Let's continue from the previous step."),
+            type: "text",
+            sessionContext: degradedCtx,
+            showClinicCards: false,
+            stage: degradedNext.kind,
+          },
+        };
+      };
+
+      try {
+        // Wrap in Promise.race for 8-second hard timeout
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            const err: any = new Error("PROVIDER_TIMEOUT");
+            err.code = "OPENAI_TIMEOUT";
+            reject(err);
+          }, 8000);
+        });
+
+        const completion = await Promise.race([
+          trackableAIRequest({
+            clinicId: ctx.selectedClinicId || undefined,
+            channel: "portal",
+            requestType: "chat",
+            model: "gpt-4o-mini", // Fast model for intake as requested
+            temperature: 0.3,
+            maxTokens: 1200,
+            responseFormat: { type: "json_object" },
+            messages: [
+              { role: "system", content: systemPrompt },
+              ...history.slice(-6).map((h: any) => ({
+                role: h.role as "user" | "assistant",
+                content: typeof h.content === "string" ? h.content : JSON.stringify(h.content),
+              })),
+              { role: "user", content: finalMessage },
+            ],
+          }),
+          timeoutPromise
+        ]);
+
+        openAiTotalMs = performance.now() - aiStart;
+        const parseStart = performance.now();
+        const raw = completion.content?.trim() ?? "{}";
+        try {
+          parsed = JSON.parse(raw);
+          responseParseMs = performance.now() - parseStart;
+        } catch (err: any) {
+          if (isFeelinHealthy) {
+            const fallback = runFeelinHealthyDegradedFallback("OPENAI_RESPONSE_PARSE_FAILED", raw);
+            if (fallback.type === "response") {
+              return jsonResponse(fallback.body, { headers: CORS });
+            }
+            parsed = fallback.parsed;
+          } else {
+            const isTr = ctx.language === "tr" || (!ctx.language && true);
+            return jsonResponse({
+              reply: isTr
+                ? "Talebinizi aldım. Size uygun klinikleri hazırlayabilmem için yaklaşık bütçenizi, tercih ettiğiniz tarihi ve dil ihtiyacınızı paylaşabilir misiniz?"
+                : "I've saved your request. To prepare suitable clinic options, could you share your approximate budget, preferred dates and language requirements?",
+              type: "text",
+              sessionContext: { ...ctx, processingMode: "degraded" },
+            }, { headers: CORS });
+          }
+        }
+      } catch (providerErr: any) {
+        openAiTotalMs = performance.now() - aiStart;
+        if (isFeelinHealthy) {
+          const fallback = runFeelinHealthyDegradedFallback(
+            providerErr?.code === "OPENAI_TIMEOUT" ? "OPENAI_TIMEOUT" : "OPENAI_PROVIDER_FAILED",
+            providerErr?.message
+          );
+          if (fallback.type === "response") {
+            return jsonResponse(fallback.body, { headers: CORS });
+          }
+          parsed = fallback.parsed;
+        } else {
+          throw providerErr;
+        }
       }
     }
 
@@ -1490,8 +1614,11 @@ export async function POST(
 
     console.log(`[matching-chat] Intent: ${parsed.intent}, Treatment: ${parsed.treatmentCategory}, Sub: ${parsed.subTreatment}, Location: ${parsed.location}, ClinicName: ${parsed.clinicName}`);
 
-    const newCtx: SessionContext = { ...ctx };
+    const newCtx: SessionContext = mergeFeelinHealthySession(ctx, { ...ctx }) as SessionContext;
     if (parsed.treatmentCategory) newCtx.lastTreatmentCategory = parsed.treatmentCategory;
+    if (!newCtx.lastTreatmentCategory) {
+      Object.assign(newCtx, ensureTreatmentFromPending(newCtx, finalMessage || message));
+    }
     if (parsed.subTreatment) newCtx.lastSubTreatment = parsed.subTreatment;
     if (parsed.location) newCtx.lastLocation = parsed.location;
     

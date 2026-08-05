@@ -467,23 +467,36 @@ export class SlotExtractor {
   /**
    * Parse canonical treatment entity from text
    */
+  /**
+   * Normalize Turkish/locale text for keyword matching.
+   * Critical: Turkish "İ".toLowerCase() becomes "i" + combining dot (i̇),
+   * which does NOT match ASCII "implant". Fold that to plain "i".
+   */
+  public static normalizeForKeywordMatch(text: string): string {
+    return String(text || "")
+      .toLocaleLowerCase("tr-TR")
+      .replace(/\u0307/g, "") // strip combining dot above from İ→i̇
+      .normalize("NFC");
+  }
+
   public static parseCanonicalTreatment(lower: string): { id: string; matchedRaw: string } | null {
+    const haystack = SlotExtractor.normalizeForKeywordMatch(lower);
     // Check specific/longer keywords first to avoid prefix shadowing
     for (const t of CANONICAL_TREATMENTS) {
       for (const kw of t.keywords) {
-        const kwLower = kw.toLowerCase();
+        const kwLower = SlotExtractor.normalizeForKeywordMatch(kw);
         const isArabic = /[\u0600-\u06FF]/.test(kwLower);
 
         if (isArabic) {
-          if (lower.includes(kwLower)) {
+          if (haystack.includes(kwLower)) {
             return { id: t.id, matchedRaw: kw };
           }
         } else {
-          const idx = lower.indexOf(kwLower);
+          const idx = haystack.indexOf(kwLower);
           if (idx !== -1) {
             // Check boundaries: character before and after must not be letters or numbers
-            const charBefore = idx > 0 ? lower[idx - 1] : " ";
-            const charAfter = idx + kwLower.length < lower.length ? lower[idx + kwLower.length] : " ";
+            const charBefore = idx > 0 ? haystack[idx - 1] : " ";
+            const charAfter = idx + kwLower.length < haystack.length ? haystack[idx + kwLower.length] : " ";
             const isWordChar = (c: string) => /[\p{L}\p{N}]/u.test(c);
             if (!isWordChar(charBefore) && !isWordChar(charAfter)) {
               return { id: t.id, matchedRaw: kw };

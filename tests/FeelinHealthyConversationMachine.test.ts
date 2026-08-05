@@ -7,10 +7,14 @@ import {
   canShowCityWidget,
   canShowIstanbulSideWidget,
   deriveFeelinHealthyState,
+  ensureTreatmentFromPending,
+  inferTreatmentFromText,
   isHardGateAction,
+  mergeFeelinHealthySession,
   resolveNextConversationAction,
 } from "../lib/agency/feelinhealthyConversationMachine";
 import { resolveIstanbulSideFromText } from "../lib/agency/feelinhealthyConfig";
+import { SlotExtractor } from "../lib/conversation/slotExtractor";
 
 const REPO_ROOT = resolve(__dirname, "..");
 const route = readFileSync(
@@ -344,5 +348,120 @@ describe("FeelinHealthy route wiring to state machine", () => {
   it("keeps pre-LLM authoritative gate for FeelinHealthy", () => {
     expect(route).toContain("authoritative state machine (pre-LLM)");
     expect(route).toContain("isHardGateAction");
+  });
+
+  it("never hardcodes Group 1 rediscovery in degraded LLM fallback", () => {
+    expect(route).not.toContain(
+      'isFeelinHealthy ? "Talebinizi aldım. Size en uygun klinikleri hazırlayabilmemiz için adınızı soyadınızı, yaşınızı ve cinsiyetinizi paylaşabilir misiniz?"'
+    );
+    expect(route).toContain("runFeelinHealthyDegradedFallback");
+    expect(route).toContain("skipLlmForDeterministicMatch");
+  });
+});
+
+describe("Screenshot journey regressions (CTO P0)", () => {
+  it("extracts treatment from Turkish capital İ (İmplant)", () => {
+    expect(inferTreatmentFromText("İmplant yaptırmak istiyorum")).toBe("implant");
+    expect(SlotExtractor.parseCanonicalTreatment("İmplant yaptırmak istiyorum")?.id).toBe("implant");
+    expect(SlotExtractor.extractSlots("İmplant yaptırmak istiyorum", {}, "tr").extracted.treatment).toBe(
+      "implant"
+    );
+  });
+
+  it("preserves treatment through consent pending helper", () => {
+    const ctx = ensureTreatmentFromPending(
+      { pendingHealthRequest: "İmplant yaptırmak istiyorum" },
+      "İmplant yaptırmak istiyorum"
+    );
+    expect(ctx.lastTreatmentCategory).toBe("implant");
+  });
+
+  it("after full intake + Istanbul + European side → match, never intake", () => {
+    const ctx = {
+      quoteConsent: true,
+      lastTreatmentCategory: "implant",
+      selectedCity: "istanbul",
+      istanbul_side: "european",
+      locationSelectionConfirmed: true,
+      sideSelectionConfirmed: true,
+      ...completeIntake,
+    };
+    const next = resolveNextConversationAction(ctx, {
+      availableClinics: dentalClinics,
+      locale: "tr",
+      isStructuredAction: true,
+      promptContext: ctx,
+    });
+    expect(next.kind).toBe("match_clinics");
+    expect(next.kind).not.toBe("intake");
+  });
+
+  it("merge never wipes completed intake when LLM returns empty fields", () => {
+    const previous = {
+      quoteConsent: true,
+      patientName: "Alper Ozgul",
+      patientAge: 27,
+      patientGender: "Erkek",
+      patientEmail: "yusufalperozgul@hotmail.com",
+      patientPhone: "+905314629921",
+      patientCountry: "Turkiye",
+      travelDate: "Eylül 2026",
+      lastTreatmentCategory: "implant",
+      selectedCity: "istanbul",
+      istanbul_side: "european",
+    };
+    const merged = mergeFeelinHealthySession(previous, {
+      patientName: null,
+      patientEmail: "",
+      lastTreatmentCategory: undefined,
+      processingMode: "degraded",
+    });
+    expect(merged.patientName).toBe("Alper Ozgul");
+    expect(merged.patientEmail).toBe("yusufalperozgul@hotmail.com");
+    expect(merged.lastTreatmentCategory).toBe("implant");
+    expect(merged.quoteConsent).toBe(true);
+  });
+
+  it("complete journey never restarts Group 1 after side selection", () => {
+    let ctx: Record<string, any> = {
+      quoteConsent: true,
+      lastTreatmentCategory: "implant",
+      pendingHealthRequest: "İmplant yaptırmak istiyorum",
+    };
+    // G1
+    ctx = { ...ctx, patientName: "Alper Ozgul", patientGender: "Erkek", patientAge: 27 };
+    expect(resolveNextConversationAction(ctx, { locale: "tr" }).kind).toBe("intake");
+    // G2
+    ctx = {
+      ...ctx,
+      patientEmail: "yusufalperozgul@hotmail.com",
+      patientPhone: "+905314629921",
+      patientCountry: "Turkiye",
+    };
+    expect((resolveNextConversationAction(ctx, { locale: "tr" }) as any).group).toBe(3);
+    // G3
+    ctx = { ...ctx, travelDate: "Eylül 2026" };
+    expect(
+      resolveNextConversationAction(ctx, { availableClinics: dentalClinics, locale: "tr" }).kind
+    ).toBe("ask_city");
+    // City
+    ctx = applyStructuredLocationAction(ctx, { type: "select_treatment_city", city: "istanbul" }).ctx;
+    expect(
+      resolveNextConversationAction(ctx, {
+        availableClinics: dentalClinics,
+        locale: "tr",
+        isStructuredAction: true,
+      }).kind
+    ).toBe("ask_side");
+    // Side
+    ctx = applyStructuredLocationAction(ctx, { type: "side_selection", side: "european" }).ctx;
+    const afterSide = resolveNextConversationAction(ctx, {
+      availableClinics: dentalClinics,
+      locale: "tr",
+      isStructuredAction: true,
+    });
+    expect(afterSide.kind).toBe("match_clinics");
+    expect(ctx.patientName).toBe("Alper Ozgul");
+    expect(ctx.lastTreatmentCategory).toBe("implant");
   });
 });

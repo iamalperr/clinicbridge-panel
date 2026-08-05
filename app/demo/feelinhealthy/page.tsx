@@ -315,6 +315,16 @@ export default function FeelinHealthyLive() {
       leadStage: "discovery"
     };
   });
+  // Always send the latest backend session — avoids stale React closures on rapid widget clicks.
+  const sessionCtxRef = useRef(sessionCtx);
+  useEffect(() => {
+    sessionCtxRef.current = sessionCtx;
+  }, [sessionCtx]);
+  const commitSessionCtx = useCallback((next: any) => {
+    if (!next || typeof next !== "object") return;
+    sessionCtxRef.current = next;
+    setSessionCtx(next);
+  }, []);
 
   /** Persist quote request (lead + quotes) after matching-chat signals readiness. */
   const persistQuoteRequestLead = useCallback(async (opts: {
@@ -555,7 +565,7 @@ export default function FeelinHealthyLive() {
         body: JSON.stringify({
           action: payload,
           history: aiMsgs.slice(-10).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text })),
-          sessionContext: sessionCtx,
+          sessionContext: sessionCtxRef.current,
         }),
       });
 
@@ -575,9 +585,9 @@ export default function FeelinHealthyLive() {
         conversionData: data.conversionData,
       };
       setAiMsgs((p) => [...p, replyMsg]);
-      if (data.sessionContext) setSessionCtx(data.sessionContext);
+      if (data.sessionContext) commitSessionCtx(data.sessionContext);
 
-      const nextCtx = data.sessionContext || sessionCtx;
+      const nextCtx = data.sessionContext || sessionCtxRef.current;
       const hist = aiMsgs.slice(-10).map((m) => ({
         role: m.role === "ai" ? "assistant" : "user",
         content: m.text,
@@ -627,7 +637,7 @@ export default function FeelinHealthyLive() {
         body: JSON.stringify({
           action: { type: "select_treatment_city", city, value: city, optionId, locale: lang },
           history: aiMsgs.slice(-10).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text })),
-          sessionContext: sessionCtx,
+          sessionContext: sessionCtxRef.current,
         }),
       });
 
@@ -649,7 +659,7 @@ export default function FeelinHealthyLive() {
         conversionData: data.conversionData,
       };
       setAiMsgs((p) => [...p, replyMsg]);
-      if (data.sessionContext) setSessionCtx(data.sessionContext);
+      if (data.sessionContext) commitSessionCtx(data.sessionContext);
     } catch (err) {
       console.error("[CB-DEMO] ERROR:", err);
       setAiMsgs((p) => [...p, {
@@ -690,7 +700,7 @@ export default function FeelinHealthyLive() {
         body: JSON.stringify({
           action: actionPayload,
           history: aiMsgs.slice(-10).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text })),
-          sessionContext: sessionCtx,
+          sessionContext: sessionCtxRef.current,
         }),
       });
 
@@ -712,7 +722,7 @@ export default function FeelinHealthyLive() {
         conversionData: data.conversionData,
       };
       setAiMsgs((p) => [...p, replyMsg]);
-      if (data.sessionContext) setSessionCtx(data.sessionContext);
+      if (data.sessionContext) commitSessionCtx(data.sessionContext);
     } catch (err) {
       console.error("[CB-DEMO] ERROR:", err);
       setAiMsgs((p) => [...p, {
@@ -744,7 +754,7 @@ export default function FeelinHealthyLive() {
         body: JSON.stringify({
           action: { type: "privacy_consent_response", action: status, locale: lang },
           history: aiMsgs.slice(-10).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text })),
-          sessionContext: sessionCtx,
+          sessionContext: sessionCtxRef.current,
         }),
       });
 
@@ -766,7 +776,7 @@ export default function FeelinHealthyLive() {
         conversionData: data.conversionData,
       };
       setAiMsgs((p) => [...p, replyMsg]);
-      if (data.sessionContext) setSessionCtx(data.sessionContext);
+      if (data.sessionContext) commitSessionCtx(data.sessionContext);
     } catch (err) {
       console.error("[CB-DEMO] ERROR:", err);
       setAiMsgs((p) => [...p, {
@@ -790,7 +800,7 @@ export default function FeelinHealthyLive() {
         body: JSON.stringify({
           action: { type: "patient_email_submission", email, locale: lang },
           history: aiMsgs.slice(-10).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text })),
-          sessionContext: sessionCtx,
+          sessionContext: sessionCtxRef.current,
         }),
       });
 
@@ -812,7 +822,7 @@ export default function FeelinHealthyLive() {
         conversionData: data.conversionData,
       };
       setAiMsgs((p) => [...p, replyMsg]);
-      if (data.sessionContext) setSessionCtx(data.sessionContext);
+      if (data.sessionContext) commitSessionCtx(data.sessionContext);
     } catch (err) {
       console.error("[CB-DEMO] ERROR:", err);
       setAiMsgs((p) => [...p, {
@@ -843,7 +853,7 @@ export default function FeelinHealthyLive() {
         body: JSON.stringify({
           message: msg,
           history: aiMsgs.slice(-10).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text })),
-          sessionContext: sessionCtx,
+          sessionContext: sessionCtxRef.current,
         }),
       });
 
@@ -871,9 +881,9 @@ export default function FeelinHealthyLive() {
         conversionData: data.conversionData,
       };
       setAiMsgs((p) => [...p, replyMsg]);
-      if (data.sessionContext) setSessionCtx(data.sessionContext);
+      if (data.sessionContext) commitSessionCtx(data.sessionContext);
       if (data.shouldCreateNewLead) {
-        const nextCtx = data.sessionContext || sessionCtx;
+        const nextCtx = data.sessionContext || sessionCtxRef.current;
         const hist = aiMsgs.slice(-10).map((m) => ({
           role: m.role === "ai" ? "assistant" : "user",
           content: m.text,
