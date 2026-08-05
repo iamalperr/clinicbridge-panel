@@ -1,10 +1,15 @@
 "use client";
 
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { agencyQuotesPath } from "@/lib/agency/leadQuoteArchitecture";
+import {
+  LEAD_STATUS_ACTIONS,
+  type LeadStatusActionKey,
+} from "@/lib/agency/leadStatusActions";
 import { subscribeToLead, updateLeadStatus, subscribeToClinicRequests, subscribeToNotificationJobs, subscribeToExtendedRequests } from "@/lib/services/leadService";
+import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n-context";
 import { UI_COLORS } from "@/components/ui/ui-shared";
 import Badge from "@/components/ui/Badge";
@@ -68,6 +73,7 @@ function statusVariant(s: string): "info" | "success" | "danger" | "warning" | "
 export default function LeadDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { getToken } = useAuth();
   const { t, language } = useI18n();
   const agencyId = params.agencyId as string;
   const leadId = params.leadId as string;
@@ -117,16 +123,26 @@ export default function LeadDetailPage() {
 
   // ─── Actions ────────────────────────────────────────────────────────────
 
-  const handleStatusChange = async (newStatus: LeadStatus) => {
+  const handleStatusAction = async (actionKey: LeadStatusActionKey) => {
+    if (actionLoading) return;
+
+    const action = LEAD_STATUS_ACTIONS[actionKey];
+    const lang = language === "tr" ? "tr" : "en";
+    const historyNote = action.historyNote[lang];
+
     setActionLoading(true);
     try {
-      await updateLeadStatus(agencyId, leadId, newStatus, undefined, `Status changed to ${newStatus}`);
+      const token = await getToken();
+      if (!token) throw new Error("AUTH_REQUIRED");
+
+      await updateLeadStatus(agencyId, leadId, action.status, token, historyNote);
       showToast("success", "Durum güncellendi.");
     } catch (err) {
-      console.error(err);
+      console.error("[lead status update]", err);
       showToast("error", "Durum güncellenemedi.");
+    } finally {
+      setActionLoading(false);
     }
-    setActionLoading(false);
   };
 
   const handleSendPatientEmail = async () => {
@@ -445,21 +461,21 @@ export default function LeadDetailPage() {
         <p style={{ width: "100%", fontSize: 14, fontWeight: 700, color: UI_COLORS.textPrimary, marginBottom: 8 }}>Aksiyonlar</p>
 
         {lead.status !== "clinic_contacted" && lead.status !== "converted" && lead.status !== "lost" && (
-          <Button variant="secondary" onClick={() => handleStatusChange("clinic_contacted")} isLoading={actionLoading}>
-            <Phone size={14} /> İletişime Geçildi
+          <Button variant="secondary" onClick={() => handleStatusAction("contacted")} isLoading={actionLoading} disabled={actionLoading}>
+            <Phone size={14} /> {LEAD_STATUS_ACTIONS.contacted.buttonLabel[language === "tr" ? "tr" : "en"]}
           </Button>
         )}
 
         {lead.status !== "converted" && (
-          <Button onClick={() => handleStatusChange("converted")} isLoading={actionLoading}>
-            <CheckCircle size={14} /> Onaylandı / Dönüştürüldü
+          <Button onClick={() => handleStatusAction("converted")} isLoading={actionLoading} disabled={actionLoading}>
+            <CheckCircle size={14} /> {LEAD_STATUS_ACTIONS.converted.buttonLabel[language === "tr" ? "tr" : "en"]}
           </Button>
         )}
 
         {lead.status !== "lost" && (
-          <Button variant="secondary" onClick={() => handleStatusChange("lost")} isLoading={actionLoading}
+          <Button variant="secondary" onClick={() => handleStatusAction("lost")} isLoading={actionLoading} disabled={actionLoading}
             style={{ color: "#ef4444", borderColor: "rgba(239,68,68,0.2)" }}>
-            <XCircle size={14} /> Kayıp / İptal
+            <XCircle size={14} /> {LEAD_STATUS_ACTIONS.lost.buttonLabel[language === "tr" ? "tr" : "en"]}
           </Button>
         )}
 

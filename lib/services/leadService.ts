@@ -180,26 +180,23 @@ export async function updateLeadStatus(
   agencyId: string,
   leadId: string,
   newStatus: LeadStatus,
-  changedBy?: string,
+  authToken: string,
   note?: string
 ): Promise<void> {
-  const leadRef = doc(db, "agencies", agencyId, "leads", leadId);
-  const snap = await getDoc(leadRef);
-  if (!snap.exists()) throw new Error("Lead not found");
-
-  const current = snap.data() as Lead;
-  const historyEntry: LeadStatusHistoryEntry = {
-    status: newStatus,
-    changedAt: new Date().toISOString(),
-    changedBy,
-    note,
-  };
-
-  await updateDoc(leadRef, {
-    status: newStatus,
-    statusHistory: [...(current.statusHistory || []), historyEntry],
-    updatedAt: serverTimestamp(),
+  const res = await fetch(`/api/agency/${agencyId}/leads/${leadId}/status`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${authToken}`,
+    },
+    body: JSON.stringify({ status: newStatus, note }),
   });
+
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}));
+    const message = payload?.message || payload?.error || `Status update failed (${res.status})`;
+    throw new Error(message);
+  }
 }
 
 // ─── Clinic Assignment ──────────────────────────────────────────────────────
