@@ -20,7 +20,6 @@ describe("patient request-received email content", () => {
       treatmentName: "implant",
       clinicNames: ["İstanbul Diş Akademisi"],
       leadReference: "CB-20260805-ABC12",
-      secureUrl: "https://app.clinicbridge-ai.com/patient/request?token=x",
       selectedCity: "istanbul",
       travelDate: "eylül",
     });
@@ -30,10 +29,12 @@ describe("patient request-received email content", () => {
     expect(html).toContain("İstanbul Diş Akademisi");
     expect(html).toContain("implant");
     expect(text).toContain("FeelinHealthy ekibi talebinizi inceler");
-    expect(text).toContain("https://app.clinicbridge-ai.com/patient/request?token=x");
+    // CTA temporarily off by default
+    expect(html).not.toContain("Talebimi Görüntüle");
+    expect(text).not.toMatch(/görüntüleyin/i);
   });
 
-  it("includes EN next-step copy", () => {
+  it("includes EN next-step copy without View My Request by default", () => {
     const { html } = buildPatientRequestReceivedCopy({
       lang: "en",
       agencyName: "FeelinHealthy",
@@ -41,9 +42,24 @@ describe("patient request-received email content", () => {
       treatmentName: "implant",
       clinicNames: ["BHT Clinic"],
       leadReference: "CB-1",
-      secureUrl: "https://example.com/r",
     });
     expect(html).toMatch(/reviewing/i);
     expect(html).toContain("What happens next");
+    expect(html).not.toContain("View My Request");
+  });
+
+  it("can re-enable the view-request CTA when flagged", () => {
+    const { html } = buildPatientRequestReceivedCopy({
+      lang: "tr",
+      agencyName: "FeelinHealthy",
+      patientFirstName: "Alper",
+      treatmentName: "implant",
+      clinicNames: ["Klinik A"],
+      leadReference: "CB-1",
+      secureUrl: "https://app.clinicbridge-ai.com/patient/request?token=x",
+      includeViewRequestCta: true,
+    });
+    expect(html).toContain("Talebimi Görüntüle");
+    expect(html).toContain("token=x");
   });
 });

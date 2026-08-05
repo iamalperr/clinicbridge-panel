@@ -1,6 +1,9 @@
 /**
  * Pure content for the patient "request received / agency evaluating" email.
  * Kept free of Firebase/Resend for unit tests.
+ *
+ * NOTE: Patient portal CTA ("Talebimi Görüntüle") is temporarily disabled.
+ * Re-enable via includeViewRequestCta + secureUrl when ready.
  */
 
 export function buildPatientRequestReceivedSubject(params: {
@@ -21,7 +24,10 @@ export function buildPatientRequestReceivedCopy(params: {
   treatmentName: string;
   clinicNames: string[];
   leadReference: string;
-  secureUrl: string;
+  /** Optional patient-portal URL; only rendered when includeViewRequestCta is true. */
+  secureUrl?: string;
+  /** Temporarily false — hides "Talebimi Görüntüle" / "View My Request". */
+  includeViewRequestCta?: boolean;
   travelDate?: string | null;
   selectedCity?: string | null;
 }): { html: string; text: string } {
@@ -33,9 +39,12 @@ export function buildPatientRequestReceivedCopy(params: {
     clinicNames,
     leadReference,
     secureUrl,
+    includeViewRequestCta = false,
     travelDate,
     selectedCity,
   } = params;
+
+  const showCta = includeViewRequestCta === true && Boolean(secureUrl);
 
   const clinicsListHtml =
     clinicNames.length > 0
@@ -48,6 +57,17 @@ export function buildPatientRequestReceivedCopy(params: {
       : lang === "tr"
         ? "(klinik bilgisi kayıtlı)"
         : "(clinic details on file)";
+
+  const ctaHtmlTr = showCta
+    ? `<div style="margin: 32px 0;">
+          <a href="${secureUrl}" style="display: inline-block; padding: 12px 24px; background-color: #0d9488; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">Talebimi Görüntüle</a>
+        </div>`
+    : "";
+  const ctaHtmlEn = showCta
+    ? `<div style="margin: 32px 0;">
+        <a href="${secureUrl}" style="display: inline-block; padding: 12px 24px; background-color: #0d9488; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">View My Request</a>
+      </div>`
+    : "";
 
   if (lang === "tr") {
     const html = `
@@ -80,9 +100,7 @@ export function buildPatientRequestReceivedCopy(params: {
         <p style="margin-top: 24px;">Bu kayıt kesinleşmiş bir randevu değildir. Değerlendirme tamamlandığında sizinle ayrıca iletişime geçilecektir.</p>
         <p>Aynı talep için yeniden başvuru yapmanıza gerek yoktur.</p>
 
-        <div style="margin: 32px 0;">
-          <a href="${secureUrl}" style="display: inline-block; padding: 12px 24px; background-color: #0d9488; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">Talebimi Görüntüle</a>
-        </div>
+        ${ctaHtmlTr}
 
         <p style="margin-top: 32px; color: #64748b; font-size: 14px;">${escapeHtml(agencyName)} · ClinicBridge AI</p>
       </div>
@@ -106,7 +124,7 @@ export function buildPatientRequestReceivedCopy(params: {
       clinicsListText,
       ``,
       `Bu bir randevu onayı değildir. Aynı talep için yeniden başvurmanıza gerek yoktur.`,
-      `Talebinizi görüntüleyin: ${secureUrl}`,
+      showCta ? `Talebinizi görüntüleyin: ${secureUrl}` : "",
       ``,
       `${agencyName} · ClinicBridge AI`,
     ]
@@ -145,9 +163,7 @@ export function buildPatientRequestReceivedCopy(params: {
       <p style="margin-top: 24px;">This is not a confirmed appointment. You will hear from us again after the review.</p>
       <p>You do not need to submit the same request again.</p>
 
-      <div style="margin: 32px 0;">
-        <a href="${secureUrl}" style="display: inline-block; padding: 12px 24px; background-color: #0d9488; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">View My Request</a>
-      </div>
+      ${ctaHtmlEn}
 
       <p style="margin-top: 32px; color: #64748b; font-size: 14px;">${escapeHtml(agencyName)} · ClinicBridge AI</p>
     </div>
@@ -171,7 +187,7 @@ export function buildPatientRequestReceivedCopy(params: {
     clinicsListText,
     ``,
     `This is not an appointment confirmation. You do not need to re-apply.`,
-    `View your request: ${secureUrl}`,
+    showCta ? `View your request: ${secureUrl}` : "",
     ``,
     `${agencyName} · ClinicBridge AI`,
   ]

@@ -1,6 +1,5 @@
 import { getAdminDb } from "@/lib/firebase-admin";
 import { Resend } from "resend";
-import { getOrCreatePatientRequestViewToken } from "@/lib/services/patientPortalTokenService";
 import { isLeadSubmittedForPatientNotification } from "@/lib/services/leadNotificationEligibility";
 import { pickOfficialClinicName } from "@/lib/services/agencyQuoteNotificationContent";
 import {
@@ -230,10 +229,7 @@ export async function processPatientNotificationJob(agencyId: string, jobId: str
     const patientFirstName = lead.patientName ? lead.patientName.split(" ")[0] : (lang === "tr" ? "Değerli Hastamız" : "Dear Patient");
     const treatmentName = lead.treatmentCategory || (lang === "tr" ? "Tedavi talebi" : "Treatment request");
 
-    // Generate CTA Token and URL
-    const rawToken = await getOrCreatePatientRequestViewToken(agencyId, jobData.leadId, jobId);
-    const secureUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://app.clinicbridge-ai.com"}/patient/request?token=${rawToken}`;
-
+    // Patient portal CTA temporarily disabled — skip token minting for now.
     const { html: htmlContent, text: textContent } = buildPatientRequestReceivedCopy({
       lang,
       agencyName,
@@ -241,7 +237,7 @@ export async function processPatientNotificationJob(agencyId: string, jobId: str
       treatmentName,
       clinicNames,
       leadReference,
-      secureUrl,
+      includeViewRequestCta: false,
       travelDate: lead.travelDate || null,
       selectedCity: lead.selectedCity || null,
     });
