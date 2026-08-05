@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { agencyQuotesPath } from "@/lib/agency/leadQuoteArchitecture";
 import { subscribeToLead, updateLeadStatus, subscribeToClinicRequests, subscribeToNotificationJobs, subscribeToExtendedRequests } from "@/lib/services/leadService";
 import { useI18n } from "@/lib/i18n-context";
 import { UI_COLORS } from "@/components/ui/ui-shared";
@@ -11,7 +13,7 @@ import Modal from "@/components/ui/Modal";
 import {
   ArrowLeft, Loader2, User, Phone, Mail, MapPin, Calendar,
   Stethoscope, Building2, DollarSign, MessageSquare, Send,
-  CheckCircle, XCircle, Clock, FileText, Globe, Bell,
+  CheckCircle, XCircle, Clock, FileText, Globe, Bell, ExternalLink,
 } from "lucide-react";
 import type { Lead, LeadStatus, TreatmentCategory } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES, LEAD_STATUSES, LEAD_URGENCIES } from "@/lib/types/agency";
@@ -243,11 +245,39 @@ export default function LeadDetailPage() {
         <SectionCard title={t("Treatment") || "Treatment"} icon={<Stethoscope size={18} color={UI_COLORS.brand} />}>
           <InfoRow icon={<Stethoscope size={14} />} label="Tedavi Kategorisi" value={catLabel(lead.treatmentCategory)} />
           <InfoRow icon={<Stethoscope size={14} />} label="Alt Tedavi" value={lead.treatmentSubcategory} />
-          <InfoRow icon={<Building2 size={14} />} label="Tercih Edilen Klinik" value={lead.assignedClinicName} />
+          <InfoRow
+            icon={<Building2 size={14} />}
+            label={t("portal.leads.selectedClinics")}
+            value={
+              lead.selectedClinicNames?.length
+                ? lead.selectedClinicNames.join(", ")
+                : lead.assignedClinicName
+            }
+          />
           <InfoRow icon={<DollarSign size={14} />} label="Bütçe" value={(lead as any).budget} />
-          <InfoRow icon={<Calendar size={14} />} label="Seyahat Tarihi" value={(lead as any).travelDate} />
+          <InfoRow icon={<Calendar size={14} />} label="Seyahat Tarihi" value={lead.travelDate || (lead as any).travelDate} />
+          <InfoRow icon={<MapPin size={14} />} label={t("portal.leads.city")} value={lead.selectedCity} />
           <InfoRow icon={<FileText size={14} />} label="KVKK Onayı" value={lead.consentStatus === "accepted" ? "✅ Onaylandı" : lead.consentStatus === "declined" ? "❌ Reddedildi" : "⏳ Bekliyor"} />
           <InfoRow icon={<Clock size={14} />} label="Kaynak" value={lead.source} />
+          {lead.quoteId ? (
+            <div style={{ paddingTop: 12 }}>
+              <Link
+                href={agencyQuotesPath(agencyId, lead.quoteId)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "#6366f1",
+                  textDecoration: "none",
+                }}
+              >
+                <ExternalLink size={13} />
+                {t("portal.leads.viewQuote")}
+              </Link>
+            </div>
+          ) : null}
         </SectionCard>
       </div>
       

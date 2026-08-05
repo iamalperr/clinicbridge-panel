@@ -675,7 +675,11 @@
       "noLeads": "Lead bulunamadı",
       "noAgencyAssigned": "Acenta Atanmamış",
       "noAgencyAssignedDesc": "Hesabınız herhangi bir acentaya bağlı değil.",
-      "anonymous": "Anonim"
+      "anonymous": "Anonim",
+      "hasQuote": "Teklif bağlı",
+      "viewQuote": "Teklif talebini aç",
+      "selectedClinics": "Seçilen klinikler",
+      "city": "Şehir"
     },
     "quotes": {
       "title": "Teklif Talepleri",
@@ -697,6 +701,7 @@
       "clinicOffers": "Klinik Teklifleri",
       "clinics": "klinik",
       "anonymousPatient": "Anonim Hasta",
+      "viewLead": "Hasta lead'ini aç",
       "draft": "Taslak",
       "waitingConsent": "Onay Bekliyor",
       "requested": "Talep Edildi",

@@ -255,13 +255,30 @@ export default function LeadsPage() {
                     />
                   </td>
                   <td style={{ padding: "12px 14px", color: UI_COLORS.textSecondary, fontSize: 12.5 }}>
-                    {lead.clinicRequestCount ? (
-                      <span style={{ background: "rgba(16,185,129,0.1)", color: "#10b981", padding: "4px 8px", borderRadius: 12, fontWeight: 600 }}>
-                        {lead.clinicRequestCount} {language === "tr" ? "Klinik" : "Clinics"}
-                      </span>
-                    ) : (
-                      lead.assignedClinicName || "—"
-                    )}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      {lead.selectedClinicNames?.length
+                        ? (
+                          <span style={{ fontWeight: 600, color: UI_COLORS.textPrimary }}>
+                            {lead.selectedClinicNames.length === 1
+                              ? lead.selectedClinicNames[0]
+                              : `${lead.selectedClinicNames[0]} +${lead.selectedClinicNames.length - 1}`}
+                          </span>
+                        )
+                        : lead.assignedClinicName
+                          ? <span style={{ fontWeight: 600 }}>{lead.assignedClinicName}</span>
+                          : lead.clinicRequestCount
+                            ? (
+                              <span style={{ background: "rgba(16,185,129,0.1)", color: "#10b981", padding: "4px 8px", borderRadius: 12, fontWeight: 600, width: "fit-content" }}>
+                                {lead.clinicRequestCount} {language === "tr" ? "Klinik" : "Clinics"}
+                              </span>
+                            )
+                            : "—"}
+                      {lead.quoteId ? (
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "#6366f1" }}>
+                          {t("portal.leads.hasQuote")}
+                        </span>
+                      ) : null}
+                    </div>
                   </td>
                   <td style={{ padding: "12px 14px", color: UI_COLORS.textMuted, fontSize: 12 }}>
                     {lead.createdAt?.toDate

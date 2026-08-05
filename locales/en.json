@@ -638,7 +638,11 @@
       "noLeads": "No leads found",
       "noAgencyAssigned": "No Agency Assigned",
       "noAgencyAssignedDesc": "Your account is not linked to any agency.",
-      "anonymous": "Anonymous"
+      "anonymous": "Anonymous",
+      "hasQuote": "Quote linked",
+      "viewQuote": "Open quote request",
+      "selectedClinics": "Selected clinics",
+      "city": "City"
     },
     "quotes": {
       "title": "Quote Requests",
@@ -660,6 +664,7 @@
       "clinicOffers": "Clinic Offers",
       "clinics": "clinics",
       "anonymousPatient": "Anonymous Patient",
+      "viewLead": "Open patient lead",
       "draft": "Draft",
       "waitingConsent": "Waiting Consent",
       "requested": "Requested",

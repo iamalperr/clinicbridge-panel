@@ -190,12 +190,17 @@ export interface QuoteRequest {
   leadId: string;
   patientName?: string;
   patientEmail?: string;
+  patientPhone?: string;
   patientCountry?: string;
   treatmentCategory: TreatmentCategory;
   treatmentName: string;
   subTreatment?: string;
   selectedClinicIds: string[];
   selectedClinicNames: string[];
+  selectedCity?: string | null;
+  istanbul_side?: string | null;
+  travelDate?: string | null;
+  conversationId?: string | null;
   intakeAnswers?: Record<string, string>;
   consentStatus: "pending" | "accepted" | "declined";
   status: QuoteStatus;

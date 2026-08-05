@@ -4,6 +4,12 @@
  */
 
 import { getAdminDb } from "@/lib/firebase-admin";
+import {
+  buildLeadQuoteLinkPatch,
+  buildLeadQuoteStatusHistoryEntry,
+  LEAD_STATUS_AFTER_QUOTE,
+  QUOTE_STATUS_AFTER_CREATE,
+} from "@/lib/agency/leadQuoteArchitecture";
 import { submitAgencyLead } from "@/lib/services/leadSubmissionService";
 import { pickOfficialClinicName } from "@/lib/services/agencyQuoteNotificationContent";
 
@@ -133,7 +139,7 @@ export async function persistAgencyQuoteRequest(
           travelDate: input.travelDate || null,
           conversationId: input.conversationId,
           consentStatus: "accepted",
-          status: "requested",
+          status: QUOTE_STATUS_AFTER_CREATE,
           updatedAt: now,
         },
         { merge: true }
@@ -167,7 +173,7 @@ export async function persistAgencyQuoteRequest(
           istanbul_side: input.istanbulSide || null,
         },
         consentStatus: "accepted",
-        status: "requested",
+        status: QUOTE_STATUS_AFTER_CREATE,
         clinicOffers: [],
         internalNotes: null,
         createdAt: now,
@@ -183,12 +189,34 @@ export async function persistAgencyQuoteRequest(
       clinicCount: clinicIds.length,
     });
 
+    // Bi-directional link: Lead → Quote + status progression to quote_requested
+    const leadRef = adminDb.collection("agencies").doc(input.agencyId).collection("leads").doc(leadId);
+    const leadSnap = await leadRef.get();
+    const previousHistory = Array.isArray(leadSnap.data()?.statusHistory)
+      ? leadSnap.data()!.statusHistory
+      : [];
+    await leadRef.set(
+      {
+        ...buildLeadQuoteLinkPatch({
+          quoteId,
+          clinicIds,
+          clinicNames,
+          travelDate: input.travelDate,
+          selectedCity: input.selectedCity,
+          istanbulSide: input.istanbulSide,
+          nowIso: now,
+        }),
+        statusHistory: [...previousHistory, buildLeadQuoteStatusHistoryEntry(now)],
+      },
+      { merge: true }
+    );
+
     return {
       ok: true,
       leadId,
       quoteId,
       agencyId: input.agencyId,
-      status: leadResult.status,
+      status: LEAD_STATUS_AFTER_QUOTE,
     };
   } catch (err: any) {
     const errorCode = err?.message || "PERSIST_FAILED";

@@ -3,8 +3,11 @@
 import { useAgencyWorkspace } from "@/components/agency/AgencyWorkspaceContext";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { isSuperAdmin } from "@/lib/types";
+import { agencyLeadDetailPath } from "@/lib/agency/leadQuoteArchitecture";
 import { subscribeToQuotes, updateQuoteStatus } from "@/lib/services/quoteService";
 import Badge from "@/components/ui/Badge";
 import { UI_COLORS } from "@/components/ui/ui-shared";
@@ -18,12 +21,14 @@ export default function QuotesPage() {
   const { profile } = useAuth();
   const { agencyId } = useAgencyWorkspace();
   const { t, language } = useI18n();
+  const searchParams = useSearchParams();
+  const focusQuoteId = searchParams.get("quoteId");
 
   const [quotes, setQuotes] = useState<QuoteRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(focusQuoteId);
 
   const catLabel = (cat: string) => TREATMENT_CATEGORIES[cat as TreatmentCategory]?.[language === "tr" ? "tr" : "en"] || cat;
   const quoteStatusLabel = (s: string) => QUOTE_STATUSES[s as QuoteStatus]?.[language === "tr" ? "tr" : "en"] || s;
@@ -33,6 +38,10 @@ export default function QuotesPage() {
     const unsub = subscribeToQuotes(agencyId, (data) => { setQuotes(data); setLoading(false); });
     return () => unsub();
   }, [agencyId]);
+
+  useEffect(() => {
+    if (focusQuoteId) setExpandedId(focusQuoteId);
+  }, [focusQuoteId]);
 
   if (!agencyId) {
     return (
@@ -174,6 +183,25 @@ export default function QuotesPage() {
                         <p><strong>{t("portal.quotes.email")}:</strong> {q.patientEmail || "—"}</p>
                         <p><strong>{t("portal.quotes.country")}:</strong> {q.patientCountry || "—"}</p>
                         <p><strong>{t("portal.quotes.consent")}:</strong> {q.consentStatus}</p>
+                        {q.leadId && agencyId && (
+                          <p style={{ marginTop: 8 }}>
+                            <Link
+                              href={agencyLeadDetailPath(agencyId, q.leadId)}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 6,
+                                fontSize: 13,
+                                fontWeight: 600,
+                                color: "#10b981",
+                                textDecoration: "none",
+                              }}
+                            >
+                              <ExternalLink size={13} />
+                              {t("portal.quotes.viewLead")}
+                            </Link>
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div>

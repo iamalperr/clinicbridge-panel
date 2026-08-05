@@ -367,6 +367,8 @@ export interface Lead {
   clinicId: string | null;
   clinicIds?: string[];
   assignedClinicName?: string;
+  /** Official clinic names for selected clinics (mirrors quote.selectedClinicNames). */
+  selectedClinicNames?: string[];
   clinicRequestCount?: number;
 
   // Patient info
@@ -383,10 +385,19 @@ export interface Lead {
   treatmentSubcategory?: string;
   urgency: LeadUrgency;
 
+  // Location / travel (from intake)
+  selectedCity?: string | null;
+  istanbul_side?: string | null;
+  travelDate?: string | null;
+
   // AI conversation
   conversationSummary: string;
   conversationId?: string;
   aiExtractedNotes?: string;
+
+  // Quote request link (operational source of truth after clinic selection)
+  quoteId?: string | null;
+  quoteRequestedAt?: string | null;
 
   // KVKK / GDPR
   consentStatus: "accepted" | "declined" | "pending";
