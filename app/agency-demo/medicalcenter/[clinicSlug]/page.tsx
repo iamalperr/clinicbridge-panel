@@ -12,6 +12,7 @@ import {
 import {
   clearQuotePrefill,
   loadQuotePrefill,
+  markAgentQuoteSubmitted,
 } from "@/lib/agency/feelinhealthyQuotePrefill";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -415,6 +416,12 @@ export default function ClinicProfilePage() {
       }
 
       clearQuotePrefill();
+      markAgentQuoteSubmitted({
+        sessionId: conversationId,
+        clinicIds: [clinic.id],
+        leadId: quoteData.leadId,
+        quoteId: quoteData.quoteId,
+      });
       setLeadDone(true);
     } catch (err: any) {
       console.error("[clinic-profile] quote submit failed", err);

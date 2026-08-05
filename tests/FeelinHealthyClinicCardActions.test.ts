@@ -74,6 +74,22 @@ describe("FeelinHealthy clinic card action contracts", () => {
     expect(result.reply).toBeUndefined();
   });
 
+  it("Test 3b – Request quote rejected when already locked", () => {
+    const result = prepareRequestQuote({
+      sessionContext: {
+        ...baseCtx,
+        leadStage: "quote_request_created",
+        quoteRequestLocked: true,
+      },
+      clinicId: "clinic-a",
+      clinicName: "BHT Clinic",
+      locale: "tr",
+    });
+    expect(result.shouldPersistQuote).toBe(false);
+    expect(result.httpStatus).toBe(409);
+    expect(result.reply).toMatch(/zaten kaydedildi/i);
+  });
+
   it("Test 3 – Request quote: prepares persist for clicked clinic only, no coordinator switch", () => {
     const result = prepareRequestQuote({
       sessionContext: { ...baseCtx },

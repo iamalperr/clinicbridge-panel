@@ -15,7 +15,11 @@ import type { ClinicCardActionType } from "@/lib/agency/feelinhealthyClinicCardA
 import { requestQuoteSuccessCopy } from "@/lib/agency/feelinhealthyClinicCardActions";
 import {
   appendAgentPrefillQuery,
+  applyQuoteSubmittedSignalToSession,
   buildQuotePrefillFromSession,
+  isQuoteRequestLocked,
+  markAgentQuoteSubmitted,
+  readAgentQuoteSubmitted,
   saveQuotePrefill,
 } from "@/lib/agency/feelinhealthyQuotePrefill";
 
@@ -341,6 +345,30 @@ export default function FeelinHealthyLive() {
     setSessionCtx(next);
   }, []);
 
+  // Profile-tab quote submit → lock Teklif İste on this agent tab.
+  useEffect(() => {
+    const syncQuoteLock = () => {
+      const current = sessionCtxRef.current || {};
+      const sessionId = current.sessionId;
+      if (!sessionId || isQuoteRequestLocked(current)) return;
+      const signal = readAgentQuoteSubmitted(sessionId);
+      if (!signal) return;
+      commitSessionCtx(applyQuoteSubmittedSignalToSession(current, signal));
+    };
+    syncQuoteLock();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "feelinhealthy_agent_quote_submitted_v1") syncQuoteLock();
+    };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", syncQuoteLock);
+    document.addEventListener("visibilitychange", syncQuoteLock);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", syncQuoteLock);
+      document.removeEventListener("visibilitychange", syncQuoteLock);
+    };
+  }, [commitSessionCtx]);
+
   /** Persist quote request (lead + quotes) after matching-chat signals readiness. */
   const persistQuoteRequestLead = useCallback(async (opts: {
     ctx: any;
@@ -662,7 +690,31 @@ export default function FeelinHealthyLive() {
         }
       }
 
-      if (data.sessionContext) commitSessionCtx(data.sessionContext);
+      if (data.sessionContext) {
+        let nextCtx = data.sessionContext;
+        if (
+          nextCtx.leadStage === "quote_request_created" ||
+          nextCtx.leadStage === "completed" ||
+          data.leadId
+        ) {
+          nextCtx = {
+            ...nextCtx,
+            quoteRequestLocked: true,
+            leadStage: nextCtx.leadStage === "completed" ? "completed" : "quote_request_created",
+            leadId: data.leadId || nextCtx.leadId,
+            quoteId: data.quoteId || nextCtx.quoteId,
+          };
+          markAgentQuoteSubmitted({
+            sessionId: nextCtx.sessionId,
+            clinicIds:
+              nextCtx.selectedClinicIds ||
+              (payload?.clinicId ? [String(payload.clinicId)] : []),
+            leadId: nextCtx.leadId,
+            quoteId: nextCtx.quoteId,
+          });
+        }
+        commitSessionCtx(nextCtx);
+      }
 
       if (isClinicCardAction) {
         processedClinicActionIdsRef.current.add(actionId);
@@ -723,9 +775,16 @@ export default function FeelinHealthyLive() {
               ];
             });
             if (ctx.sessionId) {
+              markAgentQuoteSubmitted({
+                sessionId: ctx.sessionId,
+                clinicIds: clinicId ? [clinicId] : ctx.selectedClinicIds || [],
+                leadId: fallbackData.leadId,
+                quoteId: fallbackData.quoteId,
+              });
               commitSessionCtx({
                 ...ctx,
                 leadStage: "quote_request_created",
+                quoteRequestLocked: true,
                 leadId: fallbackData.leadId,
                 quoteId: fallbackData.quoteId,
               });
@@ -1517,8 +1576,9 @@ export default function FeelinHealthyLive() {
                                   {lang === "tr" ? "Daha Fazla Bilgi" : "More Info"}
                                 </button>
                                 <button
-                                  disabled={aiTyping}
+                                  disabled={aiTyping || isQuoteRequestLocked(sessionCtx)}
                                   onClick={() => {
+                                    if (isQuoteRequestLocked(sessionCtx)) return;
                                     const clinicId = String(rec.clinicId || rec.id || "").trim();
                                     if (!clinicId) return;
                                     sendSystemAction({
@@ -1529,9 +1589,36 @@ export default function FeelinHealthyLive() {
                                       locale: lang,
                                     });
                                   }}
-                                  style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, background: C.white, color: C.navy, border: `1px solid ${C.border}`, cursor: aiTyping ? "not-allowed" : "pointer", opacity: aiTyping ? 0.6 : 1 }}
+                                  style={{
+                                    flex: 1,
+                                    padding: "6px 0",
+                                    borderRadius: 6,
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    background: isQuoteRequestLocked(sessionCtx) ? "#F1F5F9" : C.white,
+                                    color: isQuoteRequestLocked(sessionCtx) ? "#94A3B8" : C.navy,
+                                    border: `1px solid ${C.border}`,
+                                    cursor:
+                                      aiTyping || isQuoteRequestLocked(sessionCtx)
+                                        ? "not-allowed"
+                                        : "pointer",
+                                    opacity: aiTyping ? 0.6 : 1,
+                                  }}
+                                  title={
+                                    isQuoteRequestLocked(sessionCtx)
+                                      ? lang === "tr"
+                                        ? "Teklif talebiniz zaten alındı"
+                                        : "Quote request already submitted"
+                                      : undefined
+                                  }
                                 >
-                                  {lang === "tr" ? "Teklif İste" : "Request Quote"}
+                                  {isQuoteRequestLocked(sessionCtx)
+                                    ? lang === "tr"
+                                      ? "Teklif Alındı"
+                                      : "Quote Sent"
+                                    : lang === "tr"
+                                      ? "Teklif İste"
+                                      : "Request Quote"}
                                 </button>
                               </div>
                             </div>
@@ -1543,7 +1630,9 @@ export default function FeelinHealthyLive() {
                           </p>
                         )}
 
-                        {m.type === "clinic_recommendations" && sessionCtx.clinicSelectionStatus !== "completed" && (
+                        {m.type === "clinic_recommendations" &&
+                          sessionCtx.clinicSelectionStatus !== "completed" &&
+                          !isQuoteRequestLocked(sessionCtx) && (
                           <div style={{ marginTop: 12, padding: "12px", background: C.primaryBg, borderRadius: 12, border: `1px solid ${C.primaryBorder}` }}>
                             <p style={{ fontSize: 12, color: C.navy, fontWeight: 600, marginBottom: 8, textAlign: "center" }}>
                               {lang === "tr" 

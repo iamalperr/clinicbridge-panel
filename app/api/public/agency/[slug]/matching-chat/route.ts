@@ -157,6 +157,8 @@ interface SessionContext {
   age?: number;
   leadId?: string;
   quoteId?: string;
+  /** Guest quote CTA locked after a successful quote (incl. profile-tab submit). */
+  quoteRequestLocked?: boolean;
   gender?: string;
 
   // FeelinHealthy specific session fields
@@ -637,6 +639,7 @@ export async function POST(
           }
 
           quoteCtx.leadStage = "quote_request_created";
+          quoteCtx.quoteRequestLocked = true;
           quoteCtx.leadId = persistResult.leadId;
           quoteCtx.quoteId = persistResult.quoteId;
           delete quoteCtx.__fhQuoteRequestedByCardAction;

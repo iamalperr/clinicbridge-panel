@@ -1,11 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   appendAgentPrefillQuery,
+  applyQuoteSubmittedSignalToSession,
   buildQuotePrefillFromSession,
   clearQuotePrefill,
   decodePrefillPayload,
   FEELINHEALTHY_QUOTE_PREFILL_KEY,
+  FEELINHEALTHY_QUOTE_SUBMITTED_KEY,
+  isQuoteRequestLocked,
   loadQuotePrefill,
+  markAgentQuoteSubmitted,
+  readAgentQuoteSubmitted,
   saveQuotePrefill,
 } from "../lib/agency/feelinhealthyQuotePrefill";
 
@@ -114,5 +119,26 @@ describe("FeelinHealthy quote prefill bridge", () => {
     expect(loaded?.patientEmail).toBe("can@x.com");
     // Mirrored into localStorage for subsequent modal opens.
     expect(localMemory.get(FEELINHEALTHY_QUOTE_PREFILL_KEY)).toBeTruthy();
+  });
+
+  it("marks and reads cross-tab quote submitted signal for the same session", () => {
+    markAgentQuoteSubmitted({
+      sessionId: "sess-lock-1",
+      clinicIds: ["c1", "c2"],
+      leadId: "lead-1",
+      quoteId: "quote-1",
+    });
+    expect(localMemory.get(FEELINHEALTHY_QUOTE_SUBMITTED_KEY)).toBeTruthy();
+    const signal = readAgentQuoteSubmitted("sess-lock-1");
+    expect(signal?.clinicIds).toEqual(["c1", "c2"]);
+    expect(readAgentQuoteSubmitted("other")).toBeNull();
+
+    const locked = applyQuoteSubmittedSignalToSession(
+      { sessionId: "sess-lock-1", leadStage: "recommendation" },
+      signal!
+    );
+    expect(isQuoteRequestLocked(locked)).toBe(true);
+    expect(locked.leadStage).toBe("quote_request_created");
+    expect(locked.selectedClinicIds).toEqual(["c1", "c2"]);
   });
 });

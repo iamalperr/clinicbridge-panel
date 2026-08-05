@@ -269,6 +269,31 @@ export function prepareRequestQuote(params: {
   const limit = resolveGuestQuoteClinicLimit();
   const next = { ...params.sessionContext };
 
+  const stage = String(next.leadStage || "");
+  if (
+    next.quoteRequestLocked === true ||
+    stage === "quote_request_created" ||
+    stage === "completed"
+  ) {
+    return {
+      kind: "error",
+      httpStatus: 409,
+      reply:
+        locale === "en"
+          ? "Your quote request is already registered. You don’t need to submit another one — ask here if you have questions about next steps."
+          : "Teklif talebiniz zaten kaydedildi. Yeniden göndermenize gerek yok — süreç hakkında sorularınız varsa buradan sorabilirsiniz.",
+      type: "text",
+      sessionContext: {
+        ...next,
+        quoteRequestLocked: true,
+        leadStage: stage === "completed" ? "completed" : "quote_request_created",
+      },
+      showClinicCards: true,
+      shouldCreateNewLead: false,
+      shouldPersistQuote: false,
+    };
+  }
+
   if (!clinicBelongsToRecommendationSet(params.clinicId, next)) {
     return {
       kind: "error",

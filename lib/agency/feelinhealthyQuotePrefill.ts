@@ -186,3 +186,92 @@ export function appendAgentPrefillQuery(
     return `${profileUrl}${join}from=agent&prefill=1`;
   }
 }
+
+/**
+ * Cross-tab signal: profile page quote submit → agent chat locks Teklif İste.
+ * Same origin localStorage so window.open tabs can notify the agent tab.
+ */
+export const FEELINHEALTHY_QUOTE_SUBMITTED_KEY = "feelinhealthy_agent_quote_submitted_v1";
+
+export interface FeelinHealthyQuoteSubmittedSignal {
+  version: 1;
+  sessionId: string;
+  clinicIds: string[];
+  leadId?: string;
+  quoteId?: string;
+  submittedAt: string;
+}
+
+export function markAgentQuoteSubmitted(signal: {
+  sessionId?: string | null;
+  clinicIds?: string[] | null;
+  leadId?: string | null;
+  quoteId?: string | null;
+}): void {
+  if (typeof window === "undefined") return;
+  const sessionId = String(signal.sessionId || "").trim();
+  if (!sessionId) return;
+  const clinicIds = Array.from(
+    new Set((signal.clinicIds || []).map((id) => String(id || "").trim()).filter(Boolean))
+  );
+  const payload: FeelinHealthyQuoteSubmittedSignal = {
+    version: 1,
+    sessionId,
+    clinicIds,
+    leadId: signal.leadId ? String(signal.leadId) : undefined,
+    quoteId: signal.quoteId ? String(signal.quoteId) : undefined,
+    submittedAt: new Date().toISOString(),
+  };
+  try {
+    window.localStorage.setItem(FEELINHEALTHY_QUOTE_SUBMITTED_KEY, JSON.stringify(payload));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function readAgentQuoteSubmitted(
+  sessionId?: string | null
+): FeelinHealthyQuoteSubmittedSignal | null {
+  if (typeof window === "undefined") return null;
+  const want = String(sessionId || "").trim();
+  if (!want) return null;
+  try {
+    const raw = window.localStorage.getItem(FEELINHEALTHY_QUOTE_SUBMITTED_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as FeelinHealthyQuoteSubmittedSignal;
+    if (!parsed || parsed.version !== 1) return null;
+    if (String(parsed.sessionId || "") !== want) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+/** True when guest quote CTA must stay closed on clinic cards. */
+export function isQuoteRequestLocked(sessionContext: Record<string, any> | null | undefined): boolean {
+  const ctx = sessionContext || {};
+  const stage = String(ctx.leadStage || "");
+  if (stage === "quote_request_created" || stage === "completed") return true;
+  if (ctx.quoteRequestLocked === true) return true;
+  return false;
+}
+
+/** Merge a cross-tab submitted signal into agent session context. */
+export function applyQuoteSubmittedSignalToSession(
+  sessionContext: Record<string, any>,
+  signal: FeelinHealthyQuoteSubmittedSignal
+): Record<string, any> {
+  const existing = Array.isArray(sessionContext.selectedClinicIds)
+    ? sessionContext.selectedClinicIds.map(String)
+    : [];
+  const merged = Array.from(new Set([...existing, ...(signal.clinicIds || [])]));
+  return {
+    ...sessionContext,
+    quoteRequestLocked: true,
+    leadStage: "quote_request_created",
+    selectedClinicIds: merged,
+    leadId: signal.leadId || sessionContext.leadId,
+    quoteId: signal.quoteId || sessionContext.quoteId,
+    clinicSelectionStatus: "completed",
+  };
+}
