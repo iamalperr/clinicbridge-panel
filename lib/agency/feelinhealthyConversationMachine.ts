@@ -21,6 +21,7 @@ import {
   getUnsupportedLocationPrompt,
   getCuratedClinicsForFeelinHealthy,
   normalizeTreatmentBranch,
+  isLocationExpansionAffirmative,
   type LocationDecision,
 } from "./feelinhealthyConfig";
 import { resolveAssistantRole, type AssistantRole } from "./assistantModes";
@@ -510,6 +511,10 @@ export function applyStructuredLocationAction(
       next.selectedCity = cityValue;
       next.locationSelectionConfirmed = true;
       next.pendingCitySelection = false;
+      delete next.lastEmptyMatchKey;
+      delete next.pendingLocationExpansion;
+      delete next.pendingLocationExpansionTarget;
+      delete next.pendingLocationBranch;
       if (cityValue !== "istanbul") {
         if (next.istanbul_side !== undefined) clearedFields.push("istanbul_side");
         delete next.istanbul_side;
@@ -534,6 +539,10 @@ export function applyStructuredLocationAction(
       next.sideSelectionConfirmed = true;
       delete next.pendingSideClarification;
       delete next.pendingSideGuidance;
+      delete next.lastEmptyMatchKey;
+      delete next.pendingLocationExpansion;
+      delete next.pendingLocationExpansionTarget;
+      delete next.pendingLocationBranch;
     } else if (action.side === "unsure") {
       next.istanbul_side = "unsure";
       next.istanbul_side_source = "structured_card";
@@ -686,7 +695,13 @@ export function shouldAllowLlmAssistForIntakeGate(
     return false;
   }
   const text = String(userMessage || "").trim();
-  return text.length >= 2;
+  if (text.length < 2) return false;
+  // Affirmative / "değerlendirelim" after empty-match must stay on the structured
+  // city card path — never let the model echo the same empty-match paragraph.
+  if (action.kind === "location_negotiation" && isLocationExpansionAffirmative(text)) {
+    return false;
+  }
+  return true;
 }
 
 /**

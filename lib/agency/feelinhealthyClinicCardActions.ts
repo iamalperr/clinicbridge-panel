@@ -374,6 +374,219 @@ export function prepareRequestQuote(params: {
   };
 }
 
+/**
+ * Deterministic handlers for the guest "Nasıl ilerlemek istersiniz?" panel.
+ * These must early-return (no LLM) — otherwise hard-gates / mode overwrite make
+ * the buttons appear broken.
+ */
+export function handleClinicSelectionPanelAction(params: {
+  type: "clinic_selection_mode" | "clinic_selection_update" | "clinic_selection_complete";
+  mode?: "automatic" | "manual" | string | null;
+  action?: "select" | "deselect" | string | null;
+  clinicId?: string | null;
+  clinicName?: string | null;
+  recommendedClinicIds?: string[] | null;
+  sessionContext: Record<string, any>;
+  locale?: string;
+}): ClinicCardActionResult {
+  const locale = (params.locale || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
+  const limit = resolveGuestQuoteClinicLimit();
+  const next = { ...params.sessionContext };
+  const recommended = Array.from(
+    new Set(
+      [
+        ...(Array.isArray(params.recommendedClinicIds) ? params.recommendedClinicIds : []),
+        ...(Array.isArray(next.lastRecommendedClinicIds) ? next.lastRecommendedClinicIds : []),
+      ]
+        .map((id) => String(id || "").trim())
+        .filter(Boolean)
+    )
+  );
+  if (recommended.length > 0) {
+    next.lastRecommendedClinicIds = recommended;
+  }
+
+  if (params.type === "clinic_selection_mode") {
+    if (params.mode === "automatic") {
+      const picked = recommended.slice(0, limit);
+      next.clinicSelectionMode = "automatic";
+      next.clinicSelectionStatus = "in_progress";
+      next.selectedClinicIds = picked;
+      if (picked[0]) {
+        next.lastFocusedClinicId = picked[0];
+      }
+      return {
+        kind: "handled",
+        reply:
+          locale === "en"
+            ? `I've selected ${picked.length} matching clinic${picked.length === 1 ? "" : "s"} for you. Tap “Confirm selection and continue” to submit your quote request, or switch to manual selection to change clinics.`
+            : `Sizin için uygun ${picked.length} kliniği seçtim. Teklif talebini göndermek için “Seçimi Onayla ve Devam Et”e basın; değiştirmek isterseniz “Klinikleri tek tek seç”e geçebilirsiniz.`,
+        type: "text",
+        sessionContext: next,
+        showClinicCards: true,
+        shouldCreateNewLead: false,
+        shouldPersistQuote: false,
+      };
+    }
+
+    next.clinicSelectionMode = "manual";
+    next.clinicSelectionStatus = "in_progress";
+    // Keep any existing picks when switching to manual.
+    return {
+      kind: "handled",
+      reply:
+        locale === "en"
+          ? `Select up to ${limit} clinics from the cards above, then tap “Complete selection and continue”.`
+          : `Yukarıdaki kartlardan en fazla ${limit} klinik seçin, ardından “Seçimi Tamamla ve Devam Et”e basın.`,
+      type: "text",
+      sessionContext: next,
+      showClinicCards: true,
+      shouldCreateNewLead: false,
+      shouldPersistQuote: false,
+    };
+  }
+
+  if (params.type === "clinic_selection_update") {
+    next.clinicSelectionMode = "manual";
+    next.clinicSelectionStatus = "in_progress";
+    const current = new Set<string>(
+      (Array.isArray(next.selectedClinicIds) ? next.selectedClinicIds : []).map(String)
+    );
+    const clinicId = String(params.clinicId || "").trim();
+    const clinicName = String(params.clinicName || "Klinik");
+
+    if (!clinicId) {
+      return {
+        kind: "error",
+        httpStatus: 400,
+        reply: locale === "en" ? "Clinic id is missing." : "Klinik bilgisi eksik.",
+        type: "text",
+        sessionContext: next,
+        showClinicCards: true,
+        shouldCreateNewLead: false,
+        shouldPersistQuote: false,
+      };
+    }
+
+    if (params.action === "select") {
+      if (!current.has(clinicId) && current.size >= limit) {
+        return {
+          kind: "error",
+          httpStatus: 400,
+          reply:
+            locale === "en"
+              ? `You can select up to ${limit} clinics. Remove one to add another.`
+              : `En fazla ${limit} klinik seçebilirsiniz. Yeni eklemek için bir seçimi kaldırın.`,
+          type: "text",
+          sessionContext: next,
+          showClinicCards: true,
+          shouldCreateNewLead: false,
+          shouldPersistQuote: false,
+        };
+      }
+      current.add(clinicId);
+      next.lastFocusedClinicId = clinicId;
+      next.lastFocusedClinicName = clinicName;
+    } else if (params.action === "deselect") {
+      current.delete(clinicId);
+    }
+
+    next.selectedClinicIds = Array.from(current);
+    return {
+      kind: "handled",
+      reply:
+        locale === "en"
+          ? `Selection updated (${next.selectedClinicIds.length}/${limit}).`
+          : `Seçiminiz güncellendi (${next.selectedClinicIds.length}/${limit}).`,
+      type: "text",
+      sessionContext: next,
+      showClinicCards: true,
+      shouldCreateNewLead: false,
+      shouldPersistQuote: false,
+    };
+  }
+
+  // clinic_selection_complete
+  const selected = Array.from(
+    new Set(
+      (Array.isArray(next.selectedClinicIds) ? next.selectedClinicIds : [])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean)
+    )
+  ).slice(0, limit);
+
+  if (selected.length === 0) {
+    const fallback = recommended.slice(0, limit);
+    if (fallback.length === 0) {
+      return {
+        kind: "error",
+        httpStatus: 400,
+        reply:
+          locale === "en"
+            ? "Please select at least one clinic before continuing."
+            : "Devam etmek için lütfen en az bir klinik seçin.",
+        type: "text",
+        sessionContext: next,
+        showClinicCards: true,
+        shouldCreateNewLead: false,
+        shouldPersistQuote: false,
+      };
+    }
+    next.selectedClinicIds = fallback;
+  } else {
+    next.selectedClinicIds = selected;
+  }
+
+  next.clinicSelectionStatus = "completed";
+  next.clinicSelectionMode = next.clinicSelectionMode || "manual";
+  next.lastFocusedClinicId = next.selectedClinicIds[0];
+  next.__fhQuoteRequestedByCardAction = true;
+
+  const emailOk =
+    next.patientEmailStatus === "verified_format" ||
+    String(next.patientEmail || "").includes("@");
+
+  if (!emailOk) {
+    next.leadStage = "collecting_email";
+    return {
+      kind: "handled",
+      reply:
+        locale === "en"
+          ? "Your clinic selection is saved. To complete the quote request we need a valid email address."
+          : "Klinik seçiminiz kaydedildi. Teklif talebini tamamlamak için geçerli bir e-posta adresine ihtiyacımız var.",
+      type: "email_request",
+      sessionContext: next,
+      showClinicCards: false,
+      shouldCreateNewLead: false,
+      shouldPersistQuote: false,
+      clinicIdsForQuote: next.selectedClinicIds,
+    };
+  }
+
+  return {
+    kind: "handled",
+    reply:
+      locale === "en"
+        ? `Great — I'll submit your quote request for ${next.selectedClinicIds.length} clinic(s) now.`
+        : `Harika — ${next.selectedClinicIds.length} klinik için teklif talebinizi şimdi oluşturuyorum.`,
+    type: "text",
+    sessionContext: next,
+    showClinicCards: false,
+    shouldCreateNewLead: false,
+    shouldPersistQuote: true,
+    clinicIdsForQuote: next.selectedClinicIds,
+  };
+}
+
+export function isClinicSelectionPanelAction(raw: any): boolean {
+  const type = raw?.type || raw?.action;
+  return (
+    type === "clinic_selection_mode" ||
+    type === "clinic_selection_update" ||
+    type === "clinic_selection_complete"
+  );
+}
+
 export function requestQuoteSuccessCopy(locale: string, clinicName?: string): string {
   const isEn = locale.toLowerCase().startsWith("en");
   const clinicBit = clinicName

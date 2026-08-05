@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { PrivacyConsentCard } from "@/components/chat/PrivacyConsentCard";
 import { IstanbulSideClarificationCard } from "@/components/chat/IstanbulSideClarificationCard";
+import { CitySelectionCard } from "@/components/chat/CitySelectionCard";
 
 /* ── Chat Message Types (inline — no external dependency) ── */
 interface MatchedPrice {
@@ -43,7 +44,9 @@ interface ChatMessage {
   privacyNoticeLabel?: string;
   consentStructured?: any;
   sideClarificationCard?: any;
+  citySelectionCard?: any;
   selectedSideOptionId?: string;
+  selectedCityOptionId?: string;
 }
 
 interface SessionContext {
@@ -692,6 +695,66 @@ export default function AgencyDemoPage() {
     }
   };
 
+  const sendCitySelectionAction = async (city: string, optionId: string) => {
+    if (aiTyping) return;
+    setAiTyping(true);
+
+    const userDisplay =
+      lang === "tr"
+        ? `${city === "istanbul" ? "İstanbul" : city === "izmir" ? "İzmir" : city.charAt(0).toUpperCase() + city.slice(1)} tercih ediyorum`
+        : `I prefer ${city.charAt(0).toUpperCase() + city.slice(1)}`;
+
+    setAiMessages((prev) => [
+      ...prev.map((m) =>
+        m.type === "city_selection"
+          ? { ...m, type: "city_selection_resolved", selectedCityOptionId: optionId }
+          : m
+      ),
+      { id: nextMsgId(), role: "user", type: "text", text: userDisplay },
+    ]);
+
+    try {
+      const res = await fetch(`/api/public/agency/feelinhealthy/matching-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: { type: "select_treatment_city", city, value: city, optionId, locale: lang },
+          history: aiMessages.slice(-10).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text })),
+          sessionContext: sessionCtx,
+        }),
+      });
+
+      if (!res.ok) throw new Error(`API error ${res.status}`);
+      const data = await res.json();
+
+      const replyMsg: ChatMessage = {
+        id: nextMsgId(),
+        role: "ai",
+        text: data.reply || "Yanıt alınamadı.",
+        type: data.type || "text",
+        sideClarificationCard: data.sideClarificationCard,
+        citySelectionCard: data.citySelectionCard,
+        clinics: data.clinics || undefined,
+        showClinicCards: data.showClinicCards,
+        privacyNoticeUrl: data.privacyNoticeUrl,
+        privacyNoticeLabel: data.privacyNoticeLabel,
+        consentStructured: data.consentStructured,
+      };
+      setAiMessages((prev) => [...prev, replyMsg]);
+      if (data.sessionContext) setSessionCtx(data.sessionContext);
+    } catch (err) {
+      console.error("[CB-DEMO] ERROR:", err);
+      setAiMessages((prev) => [...prev, {
+        id: nextMsgId(),
+        role: "ai",
+        type: "text",
+        text: lang === "tr" ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin." : "We're experiencing a technical issue. Please try again."
+      }]);
+    } finally {
+      setAiTyping(false);
+    }
+  };
+
   const sendSideSelectionAction = async (side: string, optionId: string, actionType?: "confirm" | "reject") => {
     if (aiTyping) return;
     setAiTyping(true);
@@ -734,6 +797,7 @@ export default function AgencyDemoPage() {
         text: data.reply || "Yanıt alınamadı.",
         type: data.type || "text",
         sideClarificationCard: data.sideClarificationCard,
+        citySelectionCard: data.citySelectionCard,
         clinics: data.clinics || undefined,
         showClinicCards: data.showClinicCards,
         privacyNoticeUrl: data.privacyNoticeUrl,
@@ -903,6 +967,8 @@ export default function AgencyDemoPage() {
         privacyNoticeUrl: data.privacyNoticeUrl,
         privacyNoticeLabel: data.privacyNoticeLabel,
         consentStructured: data.consentStructured,
+        sideClarificationCard: data.sideClarificationCard,
+        citySelectionCard: data.citySelectionCard,
       };
 
       // Replace temporary message with actual response
@@ -1253,6 +1319,31 @@ export default function AgencyDemoPage() {
                           borderColor={C.border}
                         />
                       </div>
+                    ) : msg.type === "city_selection" || msg.type === "city_selection_resolved" ? (
+                      <div style={{
+                        background: C.white,
+                        color: C.text,
+                        padding: "14px 18px",
+                        borderRadius: "4px 16px 16px 16px",
+                        border: `1px solid ${C.border}`,
+                        fontSize: 14,
+                        lineHeight: 1.6,
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.03)"
+                      }}>
+                        <CitySelectionCard
+                          title={msg.citySelectionCard?.title}
+                          message={msg.text || msg.citySelectionCard?.message}
+                          options={msg.citySelectionCard?.options || []}
+                          lang={lang}
+                          isResolved={msg.type === "city_selection_resolved"}
+                          selectedOptionId={msg.selectedCityOptionId}
+                          disabled={aiTyping}
+                          onSelectCity={(city, optionId) => sendCitySelectionAction(city, optionId)}
+                          primaryColor={C.teal}
+                          navyColor={C.navy}
+                          borderColor={C.border}
+                        />
+                      </div>
                     ) : msg.type === "side_clarification" || msg.type === "side_clarification_single" || msg.type === "side_clarification_resolved" ? (
                       <div style={{
                         background: C.white,
@@ -1391,10 +1482,32 @@ export default function AgencyDemoPage() {
                                 : `How would you like to proceed? (Max 2 clinics allowed)`}
                             </p>
                             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                              <button onClick={() => sendSystemAction({ type: "clinic_selection_mode", mode: "automatic" })} style={{ width: "100%", padding: "12px", borderRadius: 12, fontSize: 14, fontWeight: 700, background: sessionCtx.clinicSelectionMode === "automatic" ? `linear-gradient(135deg, ${C.teal}, ${C.navy})` : C.white, color: sessionCtx.clinicSelectionMode === "automatic" ? "#fff" : C.teal, border: `1px solid ${sessionCtx.clinicSelectionMode === "automatic" ? "transparent" : C.teal}`, cursor: "pointer", transition: "all 0.2s" }}>
+                              <button
+                                onClick={() => {
+                                  const recommendedClinicIds = (msg.clinics || [])
+                                    .map((c: any) => String(c.clinicId || c.id || "").trim())
+                                    .filter(Boolean);
+                                  sendSystemAction({
+                                    type: "clinic_selection_mode",
+                                    mode: "automatic",
+                                    recommendedClinicIds,
+                                    locale: lang,
+                                  });
+                                }}
+                                style={{ width: "100%", padding: "12px", borderRadius: 12, fontSize: 14, fontWeight: 700, background: sessionCtx.clinicSelectionMode === "automatic" ? `linear-gradient(135deg, ${C.teal}, ${C.navy})` : C.white, color: sessionCtx.clinicSelectionMode === "automatic" ? "#fff" : C.teal, border: `1px solid ${sessionCtx.clinicSelectionMode === "automatic" ? "transparent" : C.teal}`, cursor: "pointer", transition: "all 0.2s" }}
+                              >
                                 {lang === "tr" ? "Tüm uygun kliniklerden teklif al" : "Get offers from all suitable clinics"}
                               </button>
-                              <button onClick={() => sendSystemAction({ type: "clinic_selection_mode", mode: "manual" })} style={{ width: "100%", padding: "12px", borderRadius: 12, fontSize: 14, fontWeight: 700, background: sessionCtx.clinicSelectionMode === "manual" ? `linear-gradient(135deg, ${C.teal}, ${C.navy})` : C.white, color: sessionCtx.clinicSelectionMode === "manual" ? "#fff" : C.teal, border: `1px solid ${sessionCtx.clinicSelectionMode === "manual" ? "transparent" : C.teal}`, cursor: "pointer", transition: "all 0.2s" }}>
+                              <button
+                                onClick={() =>
+                                  sendSystemAction({
+                                    type: "clinic_selection_mode",
+                                    mode: "manual",
+                                    locale: lang,
+                                  })
+                                }
+                                style={{ width: "100%", padding: "12px", borderRadius: 12, fontSize: 14, fontWeight: 700, background: sessionCtx.clinicSelectionMode === "manual" ? `linear-gradient(135deg, ${C.teal}, ${C.navy})` : C.white, color: sessionCtx.clinicSelectionMode === "manual" ? "#fff" : C.teal, border: `1px solid ${sessionCtx.clinicSelectionMode === "manual" ? "transparent" : C.teal}`, cursor: "pointer", transition: "all 0.2s" }}
+                              >
                                 {lang === "tr" ? "Klinikleri tek tek seç" : "Select clinics individually"}
                               </button>
                             </div>
@@ -1403,10 +1516,22 @@ export default function AgencyDemoPage() {
                               <div style={{ marginTop: 16, textAlign: "center", borderTop: `1px solid ${C.tealBorder}`, paddingTop: 16 }}>
                                 <p style={{ fontSize: 14, color: C.text, fontWeight: 600, marginBottom: 12 }}>
                                   {lang === "tr" ? "Seçilen Klinikler: " : "Selected Clinics: "}
-                                  <span style={{ color: C.teal, fontSize: 16 }}>{sessionCtx.selectedClinicIds?.length || 0} / 3</span>
+                                  <span style={{ color: C.teal, fontSize: 16 }}>{sessionCtx.selectedClinicIds?.length || 0} / 2</span>
                                 </p>
                                 {sessionCtx.selectedClinicIds && sessionCtx.selectedClinicIds.length > 0 && (
-                                  <button onClick={() => sendSystemAction({ type: "clinic_selection_complete" })} style={{ width: "100%", padding: "12px", borderRadius: 12, fontSize: 14, fontWeight: 700, background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer", boxShadow: "0 4px 12px rgba(13,148,136,0.2)" }}>
+                                  <button
+                                    onClick={() => {
+                                      const recommendedClinicIds = (msg.clinics || [])
+                                        .map((c: any) => String(c.clinicId || c.id || "").trim())
+                                        .filter(Boolean);
+                                      sendSystemAction({
+                                        type: "clinic_selection_complete",
+                                        recommendedClinicIds,
+                                        locale: lang,
+                                      });
+                                    }}
+                                    style={{ width: "100%", padding: "12px", borderRadius: 12, fontSize: 14, fontWeight: 700, background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer", boxShadow: "0 4px 12px rgba(13,148,136,0.2)" }}
+                                  >
                                     {lang === "tr" ? "Seçimi Tamamla ve Devam Et" : "Complete Selection and Continue"}
                                   </button>
                                 )}
@@ -1415,7 +1540,19 @@ export default function AgencyDemoPage() {
 
                             {sessionCtx.clinicSelectionMode === "automatic" && (
                               <div style={{ marginTop: 16, textAlign: "center", borderTop: `1px solid ${C.tealBorder}`, paddingTop: 16 }}>
-                                <button onClick={() => sendSystemAction({ type: "clinic_selection_complete" })} style={{ width: "100%", padding: "12px", borderRadius: 12, fontSize: 14, fontWeight: 700, background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer", boxShadow: "0 4px 12px rgba(13,148,136,0.2)" }}>
+                                <button
+                                  onClick={() => {
+                                    const recommendedClinicIds = (msg.clinics || [])
+                                      .map((c: any) => String(c.clinicId || c.id || "").trim())
+                                      .filter(Boolean);
+                                    sendSystemAction({
+                                      type: "clinic_selection_complete",
+                                      recommendedClinicIds,
+                                      locale: lang,
+                                    });
+                                  }}
+                                  style={{ width: "100%", padding: "12px", borderRadius: 12, fontSize: 14, fontWeight: 700, background: `linear-gradient(135deg, ${C.teal}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer", boxShadow: "0 4px 12px rgba(13,148,136,0.2)" }}
+                                >
                                   {lang === "tr" ? "Seçimi Onayla ve Devam Et" : "Confirm Selection and Continue"}
                                 </button>
                               </div>

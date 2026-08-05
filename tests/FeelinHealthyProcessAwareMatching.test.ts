@@ -4,6 +4,8 @@ import {
   getEmptyMatchProcessReply,
   getTreatmentClarificationPrompt,
   getCuratedClinicsForFeelinHealthy,
+  buildEmptyMatchCityEscalation,
+  isLocationExpansionAffirmative,
 } from "../lib/agency/feelinhealthyConfig";
 import {
   inferTreatmentFromText,
@@ -58,8 +60,39 @@ describe("process-aware empty match + soft treatment ask", () => {
       branchKey: "hair_transplant",
       supportedLocationLabels: ["İstanbul Avrupa Yakası", "İstanbul Anadolu Yakası"],
     });
-    expect(reply).toMatch(/değerlendirelim|yakın bir bölge/i);
+    expect(reply).toMatch(/aşağıdaki|anlaşmalı bölgeler/i);
     expect(reply).toContain("İstanbul Avrupa Yakası");
+    expect(reply).not.toMatch(/değerlendirelim demeniz/i);
+  });
+
+  it("değerlendirelim matches expansion affirmative (conjugated form)", () => {
+    expect(isLocationExpansionAffirmative("değerlendirelim")).toBe(true);
+    expect(isLocationExpansionAffirmative("Değerlendirelim")).toBe(true);
+    expect(isLocationExpansionAffirmative("let's evaluate")).toBe(true);
+    expect(isLocationExpansionAffirmative("evet")).toBe(true);
+    expect(isLocationExpansionAffirmative("implant istiyorum")).toBe(false);
+  });
+
+  it("empty match escalation returns clickable city card and clears location locks", () => {
+    const result = buildEmptyMatchCityEscalation({
+      locale: "tr",
+      branchKey: "dental",
+      sessionContext: {
+        selectedCity: "istanbul",
+        istanbul_side: "european",
+        locationSelectionConfirmed: true,
+        sideSelectionConfirmed: true,
+        lastEmptyMatchKey: "dental|istanbul|european",
+        pendingLocationExpansion: true,
+      },
+    });
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe("city_selection");
+    expect(result!.citySelectionCard.options.length).toBeGreaterThan(0);
+    expect(result!.sessionContext.selectedCity).toBeUndefined();
+    expect(result!.sessionContext.istanbul_side).toBeUndefined();
+    expect(result!.sessionContext.lastEmptyMatchKey).toBeUndefined();
+    expect(result!.sessionContext.pendingCitySelection).toBe(true);
   });
 
   it("treatment clarification informs process and accepts natural wording", () => {
@@ -68,7 +101,7 @@ describe("process-aware empty match + soft treatment ask", () => {
     expect(prompt).not.toMatch(/Hangi tedavi veya sağlık hizmeti için destek arıyorsunuz\?$/);
   });
 
-  it("allows LLM assist for ask_treatment and location negotiation", () => {
+  it("blocks LLM assist for değerlendirelim on location negotiation", () => {
     expect(
       shouldAllowLlmAssistForIntakeGate(
         { kind: "ask_treatment", prompt: "x" } as any,
@@ -78,8 +111,20 @@ describe("process-aware empty match + soft treatment ask", () => {
     expect(
       shouldAllowLlmAssistForIntakeGate(
         { kind: "location_negotiation", prompt: "x" } as any,
-        "Değerlendirelim"
+        "İzmir'de bakmak istiyorum"
       )
     ).toBe(true);
+    expect(
+      shouldAllowLlmAssistForIntakeGate(
+        { kind: "location_negotiation", prompt: "x" } as any,
+        "değerlendirelim"
+      )
+    ).toBe(false);
+    expect(
+      shouldAllowLlmAssistForIntakeGate(
+        { kind: "location_negotiation", prompt: "x" } as any,
+        "Değerlendirelim"
+      )
+    ).toBe(false);
   });
 });

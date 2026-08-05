@@ -12,6 +12,8 @@ import {
   requestQuoteSuccessCopy,
   requestQuoteFailureCopy,
   resolveClinicFromPool,
+  handleClinicSelectionPanelAction,
+  isClinicSelectionPanelAction,
 } from "../lib/agency/feelinhealthyClinicCardActions";
 import { resolveAssistantRole } from "../lib/agency/assistantModes";
 import { FEELINHEALTHY_CONFIG } from "../lib/agency/feelinhealthyConfig";
@@ -257,5 +259,72 @@ describe("FeelinHealthy clinic card action contracts", () => {
     expect(route).toContain("guestQuoteClinicSelectionLimit");
     expect(route).toContain("Do NOT auto-call persistAgencyQuoteRequest");
     expect(route).toContain("requestQuoteFailureCopy");
+    expect(route).toContain("handleClinicSelectionPanelAction");
+    expect(route).toContain("isClinicSelectionPanelAction");
+    // Must not wipe guest mode choice every request.
+    expect(route).toMatch(/if\s*\(\s*!ctx\.clinicSelectionMode\s*\)/);
+  });
+
+  it("selection panel: automatic mode picks recommended clinics without persisting quote", () => {
+    expect(isClinicSelectionPanelAction({ type: "clinic_selection_mode", mode: "automatic" })).toBe(
+      true
+    );
+    const result = handleClinicSelectionPanelAction({
+      type: "clinic_selection_mode",
+      mode: "automatic",
+      recommendedClinicIds: ["clinic-a", "clinic-b", "clinic-c"],
+      sessionContext: { ...baseCtx, selectedClinicIds: [] },
+      locale: "tr",
+    });
+    expect(result.kind).toBe("handled");
+    expect(result.shouldPersistQuote).toBe(false);
+    expect(result.sessionContext.clinicSelectionMode).toBe("automatic");
+    expect(result.sessionContext.clinicSelectionStatus).toBe("in_progress");
+    expect(result.sessionContext.selectedClinicIds).toEqual(["clinic-a", "clinic-b"]);
+    expect(result.showClinicCards).toBe(true);
+  });
+
+  it("selection panel: manual mode keeps cards interactive", () => {
+    const result = handleClinicSelectionPanelAction({
+      type: "clinic_selection_mode",
+      mode: "manual",
+      sessionContext: { ...baseCtx, selectedClinicIds: ["clinic-a"] },
+      locale: "tr",
+    });
+    expect(result.shouldPersistQuote).toBe(false);
+    expect(result.sessionContext.clinicSelectionMode).toBe("manual");
+    expect(result.sessionContext.selectedClinicIds).toEqual(["clinic-a"]);
+  });
+
+  it("selection panel: complete persists quote when email is ready", () => {
+    const result = handleClinicSelectionPanelAction({
+      type: "clinic_selection_complete",
+      sessionContext: {
+        ...baseCtx,
+        clinicSelectionMode: "automatic",
+        selectedClinicIds: ["clinic-a", "clinic-b"],
+      },
+      locale: "tr",
+    });
+    expect(result.kind).toBe("handled");
+    expect(result.shouldPersistQuote).toBe(true);
+    expect(result.clinicIdsForQuote).toEqual(["clinic-a", "clinic-b"]);
+    expect(result.sessionContext.clinicSelectionStatus).toBe("completed");
+  });
+
+  it("selection panel: complete asks for email when missing", () => {
+    const result = handleClinicSelectionPanelAction({
+      type: "clinic_selection_complete",
+      sessionContext: {
+        ...baseCtx,
+        patientEmail: "",
+        patientEmailStatus: undefined,
+        selectedClinicIds: ["clinic-a"],
+      },
+      locale: "tr",
+    });
+    expect(result.shouldPersistQuote).toBe(false);
+    expect(result.type).toBe("email_request");
+    expect(result.sessionContext.leadStage).toBe("collecting_email");
   });
 });

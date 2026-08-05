@@ -903,6 +903,7 @@ export function getTreatmentClarificationPrompt(locale: string = "tr"): string {
 
 /**
  * Empty match reply that advances the conversation instead of looping the same line.
+ * Prefer {@link buildEmptyMatchCityEscalation} so the UI shows clickable city options.
  */
 export function getEmptyMatchProcessReply(params: {
   locale?: string;
@@ -929,7 +930,7 @@ export function getEmptyMatchProcessReply(params: {
     }
     return (
       `I couldn't show a partner clinic for this exact combination yet.${altText} ` +
-      `If you like, we can try a nearby area or another Istanbul side — just say which you prefer, or reply "let's evaluate".`
+      `Please pick a partner city from the options below so I can continue matching.`
     );
   }
   if (!alts.length) {
@@ -941,8 +942,84 @@ export function getEmptyMatchProcessReply(params: {
   }
   return (
     `Bu kombinasyon için henüz doğrudan gösterebileceğim bir partner klinik bulamadım.${altText} ` +
-    `Dilerseniz yakın bir bölgeyi veya diğer İstanbul yakasını deneyelim — tercihinizi yazmanız yeterli, "değerlendirelim" demeniz de olur.`
+    `Devam edebilmem için aşağıdaki anlaşmalı bölgelerden birini seçmeniz yeterli.`
   );
+}
+
+/**
+ * Detects "let's evaluate" / "değerlendirelim" / short affirmatives after an empty-match offer.
+ * Must match conjugated Turkish forms — word-boundary after "değerlendir" fails on "değerlendirelim".
+ * Avoid matching treatment asks like "implant istiyorum".
+ */
+export function isLocationExpansionAffirmative(message?: string | null): boolean {
+  const raw = String(message || "").trim();
+  if (!raw) return false;
+  const msg = raw.toLocaleLowerCase("tr-TR").normalize("NFC");
+  if (/de[ğg]erlendir/.test(msg)) return true;
+  if (/let['’]?s\s+evaluate|\bevaluate\b/.test(msg)) return true;
+  // Pure short confirmations only (not free-text treatment / location sentences).
+  if (raw.length > 40) return false;
+  return /^(evet|olur|olsun|uygun|fark\s*etmez|tamam|yes|sure|okay|ok|why\s+not|neden\s+olmas[ıi]n|tabii?|kabul)([!.?\s]*)$/i.test(
+    msg
+  );
+}
+
+/**
+ * Escalate empty-match / "değerlendirelim" into a clickable city selection card.
+ * Clears stale location locks so re-picking Istanbul can change the side.
+ */
+export function buildEmptyMatchCityEscalation(params: {
+  locale?: string;
+  branchKey?: string | null;
+  availableClinics?: any[];
+  sessionContext: Record<string, any>;
+  supportedLocationLabels?: string[];
+}): {
+  reply: string;
+  type: "city_selection";
+  citySelectionCard: ReturnType<typeof getCitySelectionCard>;
+  sessionContext: Record<string, any>;
+} | null {
+  const locale = (params.locale || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
+  const branchKey = String(normalizeTreatmentBranch(params.branchKey) || params.branchKey || "");
+  const cities = getAvailableCitiesForTreatment(
+    branchKey || params.branchKey,
+    params.availableClinics || [],
+    locale
+  );
+  if (!cities.length) return null;
+
+  const next = { ...params.sessionContext };
+  next.pendingCitySelection = true;
+  delete next.pendingLocationExpansion;
+  delete next.pendingLocationExpansionTarget;
+  delete next.pendingLocationBranch;
+  delete next.lastEmptyMatchKey;
+  // Allow Istanbul to be chosen again so the patient can switch side.
+  delete next.selectedCity;
+  delete next.locationSelectionConfirmed;
+  delete next.istanbul_side;
+  delete next.istanbul_side_source;
+  delete next.sideSelectionConfirmed;
+  delete next.pendingSideClarification;
+  delete next.pendingSideGuidance;
+
+  const cityCard = getCitySelectionCard(branchKey || params.branchKey, cities, locale);
+  const reply = getEmptyMatchProcessReply({
+    locale,
+    branchKey,
+    supportedLocationLabels: params.supportedLocationLabels?.length
+      ? params.supportedLocationLabels
+      : cities.map((c) => (locale === "en" ? c.displayNameEn : c.displayNameTr)),
+  });
+  cityCard.message = reply;
+
+  return {
+    reply,
+    type: "city_selection",
+    citySelectionCard: cityCard,
+    sessionContext: next,
+  };
 }
 
 // ─── Branch Istanbul Side Availability & Clarification Helper ────────────────

@@ -1640,10 +1640,32 @@ export default function FeelinHealthyLive() {
                                 : `How would you like to proceed? (Max ${GUEST_CLINIC_LIMIT} clinics allowed)`}
                             </p>
                             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                              <button onClick={() => sendSystemAction({ type: "clinic_selection_mode", mode: "automatic" })} style={{ width: "100%", padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: sessionCtx.clinicSelectionMode === "automatic" ? `linear-gradient(135deg, ${C.primary}, ${C.navy})` : C.white, color: sessionCtx.clinicSelectionMode === "automatic" ? "#fff" : C.primary, border: `1px solid ${sessionCtx.clinicSelectionMode === "automatic" ? "transparent" : C.primary}`, cursor: "pointer" }}>
+                              <button
+                                onClick={() => {
+                                  const recommendedClinicIds = (m.clinics || [])
+                                    .map((c: any) => String(c.clinicId || c.id || "").trim())
+                                    .filter(Boolean);
+                                  sendSystemAction({
+                                    type: "clinic_selection_mode",
+                                    mode: "automatic",
+                                    recommendedClinicIds,
+                                    locale: lang,
+                                  });
+                                }}
+                                style={{ width: "100%", padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: sessionCtx.clinicSelectionMode === "automatic" ? `linear-gradient(135deg, ${C.primary}, ${C.navy})` : C.white, color: sessionCtx.clinicSelectionMode === "automatic" ? "#fff" : C.primary, border: `1px solid ${sessionCtx.clinicSelectionMode === "automatic" ? "transparent" : C.primary}`, cursor: "pointer" }}
+                              >
                                 {lang === "tr" ? "Tüm uygun kliniklerden teklif al" : "Get offers from all suitable clinics"}
                               </button>
-                              <button onClick={() => sendSystemAction({ type: "clinic_selection_mode", mode: "manual" })} style={{ width: "100%", padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: sessionCtx.clinicSelectionMode === "manual" ? `linear-gradient(135deg, ${C.primary}, ${C.navy})` : C.white, color: sessionCtx.clinicSelectionMode === "manual" ? "#fff" : C.primary, border: `1px solid ${sessionCtx.clinicSelectionMode === "manual" ? "transparent" : C.primary}`, cursor: "pointer" }}>
+                              <button
+                                onClick={() =>
+                                  sendSystemAction({
+                                    type: "clinic_selection_mode",
+                                    mode: "manual",
+                                    locale: lang,
+                                  })
+                                }
+                                style={{ width: "100%", padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: sessionCtx.clinicSelectionMode === "manual" ? `linear-gradient(135deg, ${C.primary}, ${C.navy})` : C.white, color: sessionCtx.clinicSelectionMode === "manual" ? "#fff" : C.primary, border: `1px solid ${sessionCtx.clinicSelectionMode === "manual" ? "transparent" : C.primary}`, cursor: "pointer" }}
+                              >
                                 {lang === "tr" ? "Klinikleri tek tek seç" : "Select clinics individually"}
                               </button>
                             </div>
@@ -1655,7 +1677,19 @@ export default function FeelinHealthyLive() {
                                   <span style={{ color: C.primary }}>{sessionCtx.selectedClinicIds?.length || 0} / {GUEST_CLINIC_LIMIT}</span>
                                 </p>
                                 {sessionCtx.selectedClinicIds && sessionCtx.selectedClinicIds.length > 0 && (
-                                  <button onClick={() => sendSystemAction({ type: "clinic_selection_complete" })} style={{ width: "100%", padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}>
+                                  <button
+                                    onClick={() => {
+                                      const recommendedClinicIds = (m.clinics || [])
+                                        .map((c: any) => String(c.clinicId || c.id || "").trim())
+                                        .filter(Boolean);
+                                      sendSystemAction({
+                                        type: "clinic_selection_complete",
+                                        recommendedClinicIds,
+                                        locale: lang,
+                                      });
+                                    }}
+                                    style={{ width: "100%", padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}
+                                  >
                                     {lang === "tr" ? "Seçimi Tamamla ve Devam Et" : "Complete Selection and Continue"}
                                   </button>
                                 )}
@@ -1664,7 +1698,19 @@ export default function FeelinHealthyLive() {
 
                             {sessionCtx.clinicSelectionMode === "automatic" && (
                               <div style={{ marginTop: 12, textAlign: "center" }}>
-                                <button onClick={() => sendSystemAction({ type: "clinic_selection_complete" })} style={{ width: "100%", padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}>
+                                <button
+                                  onClick={() => {
+                                    const recommendedClinicIds = (m.clinics || [])
+                                      .map((c: any) => String(c.clinicId || c.id || "").trim())
+                                      .filter(Boolean);
+                                    sendSystemAction({
+                                      type: "clinic_selection_complete",
+                                      recommendedClinicIds,
+                                      locale: lang,
+                                    });
+                                  }}
+                                  style={{ width: "100%", padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: `linear-gradient(135deg, ${C.primary}, ${C.navy})`, color: "#fff", border: "none", cursor: "pointer" }}
+                                >
                                   {lang === "tr" ? "Seçimi Onayla ve Devam Et" : "Confirm Selection and Continue"}
                                 </button>
                               </div>

@@ -26,6 +26,8 @@ import {
   isReadyForClinicMatching,
   getClinicMatchingReadyReply,
   getEmptyMatchProcessReply,
+  buildEmptyMatchCityEscalation,
+  isLocationExpansionAffirmative,
   getSideGuidancePrompt,
   formatClinicCardLocation,
   FEELINHEALTHY_CONFIG,
@@ -71,6 +73,8 @@ import {
   requestQuoteSuccessCopy,
   requestQuoteFailureCopy,
   resolveClinicFromPool,
+  handleClinicSelectionPanelAction,
+  isClinicSelectionPanelAction,
 } from "@/lib/agency/feelinhealthyClinicCardActions";
 
 const CORS = {
@@ -691,6 +695,148 @@ export async function POST(
           );
         }
       }
+
+      // Guest selection panel (automatic / manual / complete) — deterministic, no LLM.
+      if (isClinicSelectionPanelAction(action)) {
+        if (!sessionContext.sessionId) {
+          sessionContext.sessionId = `sess_${Date.now()}`;
+        }
+        const locale = (action.locale || agencyData.defaultLanguage || "tr")
+          .toLowerCase()
+          .startsWith("en")
+          ? "en"
+          : "tr";
+        const panelType = (action.type || action.action) as
+          | "clinic_selection_mode"
+          | "clinic_selection_update"
+          | "clinic_selection_complete";
+        const panelResult = handleClinicSelectionPanelAction({
+          type: panelType,
+          mode: action.mode,
+          action: action.action,
+          clinicId: action.clinicId,
+          clinicName: action.clinicName,
+          recommendedClinicIds: action.recommendedClinicIds,
+          sessionContext,
+          locale,
+        });
+
+        if (panelResult.kind === "error") {
+          return jsonResponse(
+            {
+              reply: panelResult.reply,
+              type: panelResult.type || "text",
+              sessionContext: panelResult.sessionContext,
+              showClinicCards: panelResult.showClinicCards !== false,
+              shouldCreateNewLead: false,
+              shouldUpdateLead: false,
+            },
+            { status: panelResult.httpStatus || 400, headers: CORS }
+          );
+        }
+
+        if (!panelResult.shouldPersistQuote) {
+          return jsonResponse(
+            {
+              reply: panelResult.reply,
+              type: panelResult.type || "text",
+              sessionContext: panelResult.sessionContext,
+              showClinicCards: panelResult.showClinicCards === true,
+              shouldCreateNewLead: false,
+              shouldUpdateLead: false,
+            },
+            { headers: CORS }
+          );
+        }
+
+        const quoteCtx = panelResult.sessionContext;
+        const clinicIdsForQuote = panelResult.clinicIdsForQuote || quoteCtx.selectedClinicIds || [];
+        try {
+          const { saveConsentRecord, resolveAgencyConsentVersion } = await import(
+            "@/lib/services/agencyConsentService"
+          );
+          const privacyVersion = resolveAgencyConsentVersion(agencyData.privacySettings);
+          await saveConsentRecord(
+            agencyId,
+            String(quoteCtx.sessionId || ""),
+            "accepted",
+            privacyVersion,
+            locale,
+            "agency_widget"
+          );
+          quoteCtx.quoteConsent = true;
+        } catch (consentErr) {
+          console.warn(
+            "[matching-chat] consent ensure failed (clinic_selection_complete)",
+            consentErr instanceof Error ? consentErr.message : "unknown"
+          );
+        }
+
+        const { persistAgencyQuoteRequest } = await import(
+          "@/lib/services/agencyQuoteRequestService"
+        );
+        const persistResult = await persistAgencyQuoteRequest({
+          agencyId,
+          conversationId: String(quoteCtx.sessionId || ""),
+          clinicIds: clinicIdsForQuote,
+          patientEmail: String(quoteCtx.patientEmail || ""),
+          patientName: quoteCtx.patientName,
+          patientPhone: quoteCtx.patientPhone,
+          patientAge: typeof quoteCtx.patientAge === "number" ? quoteCtx.patientAge : undefined,
+          patientGender: quoteCtx.patientGender,
+          country: quoteCtx.patientCountry,
+          language: locale,
+          treatmentCategory: quoteCtx.lastTreatmentCategory,
+          treatmentSubcategory: quoteCtx.lastSubTreatment,
+          treatmentName: quoteCtx.lastTreatmentCategory || "",
+          selectedCity: quoteCtx.selectedCity,
+          istanbulSide: quoteCtx.istanbul_side,
+          travelDate: quoteCtx.travelDate,
+          conversationSummary: Array.isArray(history)
+            ? history
+                .slice(-12)
+                .map((m: any) => `${m.role}: ${m.content || m.text || ""}`)
+                .join("\n")
+            : "",
+          source: "widget",
+        });
+
+        if (!persistResult.ok) {
+          return jsonResponse(
+            {
+              reply: requestQuoteFailureCopy(locale),
+              type: "text",
+              sessionContext: quoteCtx,
+              showClinicCards: true,
+              shouldCreateNewLead: false,
+              shouldUpdateLead: false,
+              quotePersistError: persistResult.errorCode,
+            },
+            { headers: CORS }
+          );
+        }
+
+        quoteCtx.leadStage = "quote_request_created";
+        quoteCtx.quoteRequestLocked = true;
+        quoteCtx.clinicSelectionStatus = "completed";
+        quoteCtx.leadId = persistResult.leadId;
+        quoteCtx.quoteId = persistResult.quoteId;
+        delete quoteCtx.__fhQuoteRequestedByCardAction;
+
+        return jsonResponse(
+          {
+            reply: requestQuoteSuccessCopy(locale),
+            type: "text",
+            sessionContext: quoteCtx,
+            showClinicCards: false,
+            shouldCreateNewLead: false,
+            shouldUpdateLead: false,
+            leadId: persistResult.leadId,
+            quoteId: persistResult.quoteId,
+          },
+          { headers: CORS }
+        );
+      }
     }
 
     // Handle system actions
@@ -1146,14 +1292,78 @@ export async function POST(
     }
 
 
-    // Handle user affirmative response to location negotiation / empty-match offer
-    if (ctx.pendingLocationExpansion) {
+    // Handle user affirmative / "değerlendirelim" after empty-match offer → city card (never LLM loop).
+    if (
+      isFeelinHealthy &&
+      (ctx.pendingLocationExpansion || ctx.lastEmptyMatchKey || ctx.pendingCitySelection)
+    ) {
       const msg = finalMessage || message || "";
-      const isAffirmative =
-        /\b(evet|olur|olsun|uygun|fark etmez|tamam|değerlendir|degerlendir|yes|sure|okay|ok|why not|neden olmasın|tabi|tabii|kabul|isterim|istiyorum)\b/i.test(
-          msg
+      const explicitSide = resolveIstanbulSideFromText(msg);
+      const hasExplicitLocation =
+        Boolean(explicitSide.city) ||
+        explicitSide.side === "european" ||
+        explicitSide.side === "anatolian";
+
+      if (hasExplicitLocation) {
+        if (explicitSide.city) {
+          ctx.selectedCity = explicitSide.city;
+          ctx.locationSelectionConfirmed = true;
+          ctx.lastLocation = getCityDisplayName(explicitSide.city, agencyData.defaultLanguage || "tr");
+        }
+        if (explicitSide.side === "european" || explicitSide.side === "anatolian") {
+          ctx.istanbul_side = explicitSide.side;
+          ctx.istanbul_side_source = explicitSide.source;
+          ctx.selectedCity = "istanbul";
+          ctx.locationSelectionConfirmed = true;
+          ctx.sideSelectionConfirmed = true;
+          ctx.lastLocation =
+            explicitSide.side === "anatolian" ? "İstanbul Anadolu Yakası" : "İstanbul Avrupa Yakası";
+          delete ctx.pendingSideClarification;
+          delete ctx.pendingSideGuidance;
+        }
+        delete ctx.pendingLocationExpansion;
+        delete ctx.pendingLocationExpansionTarget;
+        delete ctx.pendingLocationBranch;
+        delete ctx.lastEmptyMatchKey;
+        delete ctx.pendingCitySelection;
+        (ctx as any).__forceClinicMatching = true;
+      } else if (isLocationExpansionAffirmative(msg)) {
+        const branchKey = String(
+          normalizeTreatmentBranch(ctx.lastTreatmentCategory || "") ||
+            ctx.lastTreatmentCategory ||
+            ""
         );
-      if (isAffirmative) {
+        const escalation = buildEmptyMatchCityEscalation({
+          locale: (agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") ? "en" : "tr",
+          branchKey,
+          availableClinics: [],
+          sessionContext: ctx,
+        });
+        if (escalation) {
+          Object.assign(ctx, escalation.sessionContext);
+          return jsonResponse(
+            {
+              reply: escalation.reply,
+              type: escalation.type,
+              citySelectionCard: escalation.citySelectionCard,
+              sessionContext: ctx,
+              showClinicCards: false,
+              shouldCreateNewLead: false,
+              shouldUpdateLead: false,
+            },
+            { headers: CORS }
+          );
+        }
+        // No city options — clear pending so we don't soft-loop.
+        delete ctx.pendingLocationExpansion;
+        delete ctx.pendingLocationExpansionTarget;
+        delete ctx.pendingLocationBranch;
+        (ctx as any).__forceClinicMatching = true;
+      }
+    } else if (ctx.pendingLocationExpansion) {
+      // Non-FH agencies: keep prior affirmative → target apply behavior.
+      const msg = finalMessage || message || "";
+      if (isLocationExpansionAffirmative(msg)) {
         const target = ctx.pendingLocationExpansionTarget;
         if (target) {
           ctx.lastLocation = target;
@@ -1394,7 +1604,11 @@ export async function POST(
     }
 
     const prefilterStart = performance.now();
-    ctx.clinicSelectionMode = matchingConfig?.routingMode || "manual"; // Save routing mode for leads
+    // Seed default routing mode only when the guest has not chosen yet.
+    // Overwriting every request made the selection panel buttons appear broken.
+    if (!ctx.clinicSelectionMode) {
+      ctx.clinicSelectionMode = matchingConfig?.routingMode || "manual";
+    }
     ctx.showProfileLinks = showProfileLinks; // Instruct frontend to hide links if false
     
     // Apply Treatment Clinic Rules if available
@@ -2470,7 +2684,7 @@ export async function POST(
             ? `${parsed.subTreatment || "Tedaviniz"} için ${recommendations.length} uygun klinik buldum.`
             : `I found ${recommendations.length} suitable clinic(s) for ${parsed.subTreatment || "your treatment"}.`));
 
-        // Empty match: advance with alternatives instead of looping the same dead-end line.
+        // Empty match: always escalate to clickable city options (never text-only loop).
         if (isFeelinHealthy && recommendations.length === 0) {
           const emptyBranchRaw =
             parsed.treatmentCategory || newCtx.lastTreatmentCategory || agencySlotsExtracted.extracted.treatment;
@@ -2488,38 +2702,33 @@ export async function POST(
             emptySide,
             fullAgencyClinics
           );
-          const emptyKey = `${emptyBranchKey}|${emptyCity || ""}|${String(emptySide || "")}`;
-
-          // Same empty reply twice → escalate to city selection / clearer next step.
-          if (newCtx.lastEmptyMatchKey === emptyKey) {
-            const cities = getAvailableCitiesForTreatment(
-              emptyBranchKey,
-              fullAgencyClinics,
-              replyLang
-            );
-            if (cities.length > 0) {
-              const cityCard = getCitySelectionCard(emptyBranchKey, cities, replyLang);
-              newCtx.pendingCitySelection = true;
-              delete newCtx.pendingLocationExpansion;
-              delete newCtx.lastEmptyMatchKey;
-              return jsonResponse({
-                reply:
-                  replyLang === "en"
-                    ? `I've updated your treatment to ${emptyBranchKey.replace(/_/g, " ")}. Which city works best so I can show partner clinics?`
-                    : `Tedavi tercihinizi güncelledim. Partner klinikleri gösterebilmem için hangi şehir sizin için daha uygun?`,
-                type: "city_selection",
-                citySelectionCard: cityCard,
+          const supportLabels = (emptyCurated.supportedLocationsForBranch || []).map((l: any) =>
+            replyLang === "en" ? l.displayNameEn : l.displayNameTr
+          );
+          const escalation = buildEmptyMatchCityEscalation({
+            locale: replyLang,
+            branchKey: emptyBranchKey,
+            availableClinics: fullAgencyClinics,
+            sessionContext: newCtx,
+            supportedLocationLabels: supportLabels,
+          });
+          if (escalation) {
+            Object.assign(newCtx, escalation.sessionContext);
+            return jsonResponse(
+              {
+                reply: escalation.reply,
+                type: escalation.type,
+                citySelectionCard: escalation.citySelectionCard,
                 sessionContext: newCtx,
                 showClinicCards: false,
                 shouldCreateNewLead: false,
                 shouldUpdateLead: false,
-              }, { headers: CORS });
-            }
+              },
+              { headers: CORS }
+            );
           }
 
-          const supportLabels = (emptyCurated.supportedLocationsForBranch || []).map((l: any) =>
-            replyLang === "en" ? l.displayNameEn : l.displayNameTr
-          );
+          // No curated cities — text fallback only (rare).
           readyReply = getEmptyMatchProcessReply({
             locale: replyLang,
             branchKey: emptyBranchKey,
@@ -2527,14 +2736,7 @@ export async function POST(
             side: emptySide,
             supportedLocationLabels: supportLabels,
           });
-          newCtx.lastEmptyMatchKey = emptyKey;
-          const alt = emptyCurated.supportedLocationsForBranch?.[0];
-          if (alt) {
-            newCtx.pendingLocationExpansion = true;
-            newCtx.pendingLocationExpansionTarget =
-              replyLang === "en" ? alt.displayNameEn : alt.displayNameTr;
-            newCtx.pendingLocationBranch = emptyBranchKey;
-          }
+          newCtx.lastEmptyMatchKey = `${emptyBranchKey}|${emptyCity || ""}|${String(emptySide || "")}`;
           return jsonResponse({
             reply: readyReply,
             type: "location_negotiation",
