@@ -57,6 +57,7 @@ import {
   resolveNextConversationAction,
   buildGateResponseFromAction,
   isHardGateAction,
+  shouldAllowLlmAssistForIntakeGate,
   applyStructuredLocationAction,
   ensureTreatmentFromPending,
   mergeFeelinHealthySession,
@@ -960,8 +961,8 @@ export async function POST(
     // While Group 1 is open a bare full name is a legitimate answer, so the
     // extractor is told a name is expected. Never before consent — treatment
     // requests must not be parsed as names, and treatment must still extract.
-    // When only country is still missing in Group 2, pass patientCountry so
-    // freeform answers like "İspanya" / "Madrid" are accepted.
+    // For open Group 2/3 fields, pass the most helpful expected slot so fuzzy
+    // country / travel answers are accepted without demanding a rigid format.
     let expectedIntakeSlot: string | undefined;
     if (
       isFeelinHealthy &&
@@ -973,12 +974,16 @@ export async function POST(
       const intakeNow = evaluateFeelinHealthyIntake(ctx);
       if (!intakeNow.group1Complete) {
         expectedIntakeSlot = "patientName";
-      } else if (
-        !intakeNow.group2Complete &&
-        intakeNow.missingFieldsInCurrentGroup.length === 1 &&
-        intakeNow.missingFieldsInCurrentGroup[0] === "patientCountry"
-      ) {
-        expectedIntakeSlot = "patientCountry";
+      } else if (!intakeNow.group2Complete) {
+        if (intakeNow.missingFieldsInCurrentGroup.includes("patientCountry")) {
+          expectedIntakeSlot = "patientCountry";
+        } else if (intakeNow.missingFieldsInCurrentGroup.includes("patientEmail")) {
+          expectedIntakeSlot = "email";
+        } else if (intakeNow.missingFieldsInCurrentGroup.includes("patientPhone")) {
+          expectedIntakeSlot = "phone";
+        }
+      } else if (!intakeNow.group3Complete) {
+        expectedIntakeSlot = "travelDate";
       }
     }
 
@@ -1326,18 +1331,26 @@ export async function POST(
         ctx.stateVersion = (Number(ctx.stateVersion) || 0) + 1;
 
         if (isHardGateAction(nextAction)) {
-          const gate = buildGateResponseFromAction(nextAction, ctx);
-          if (gate) {
-            return jsonResponse({
-              reply: gate.reply,
-              type: gate.type,
-              citySelectionCard: gate.citySelectionCard,
-              sideClarificationCard: gate.sideClarificationCard,
-              sessionContext: gate.sessionContext,
-              showClinicCards: false,
-              stage: gate.stage,
-              stateVersion: gate.sessionContext.stateVersion,
-            }, { headers: CORS });
+          // Soft intake: let the model interpret natural / fuzzy answers when
+          // SlotExtractor alone may miss them. Consent, city, side, location stay hard.
+          const allowLlmIntakeAssist = shouldAllowLlmAssistForIntakeGate(
+            nextAction,
+            finalMessage || message
+          );
+          if (!allowLlmIntakeAssist) {
+            const gate = buildGateResponseFromAction(nextAction, ctx);
+            if (gate) {
+              return jsonResponse({
+                reply: gate.reply,
+                type: gate.type,
+                citySelectionCard: gate.citySelectionCard,
+                sideClarificationCard: gate.sideClarificationCard,
+                sessionContext: gate.sessionContext,
+                showClinicCards: false,
+                stage: gate.stage,
+                stateVersion: gate.sessionContext.stateVersion,
+              }, { headers: CORS });
+            }
           }
         }
         // match_clinics / clinic_selection / selected_clinic continue into matching or LLM.

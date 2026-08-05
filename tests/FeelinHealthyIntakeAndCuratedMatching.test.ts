@@ -94,13 +94,11 @@ describe("FeelinHealthy Deterministic Intake Flow (No Budget)", () => {
     expect(evalRes.missingFieldsInCurrentGroup).toEqual(["patientAge", "patientGender"]);
     expect(evalRes.allGroupsComplete).toBe(false);
 
-    // The surname is asked for again rather than assumed, so it can never be
-    // skipped when part of Group 1 is already known.
+    // Only ask for what is still missing — do not force restating the name.
     const promptTr = getGroupIntakePrompt(evalRes, ctx, "tr");
-    expect(promptTr).toContain("adınızı");
-    expect(promptTr).toContain("soyadınızı");
     expect(promptTr).toContain("yaşınızı");
     expect(promptTr).toContain("cinsiyetinizi");
+    expect(promptTr).not.toContain("tek bir mesajda");
   });
 
   it("advances to Group 2 (Email, Phone, Country) when Group 1 is complete", () => {
@@ -115,7 +113,6 @@ describe("FeelinHealthy Deterministic Intake Flow (No Budget)", () => {
     expect(evalRes.allGroupsComplete).toBe(false);
 
     const promptTr = getGroupIntakePrompt(evalRes, ctx, "tr");
-    expect(promptTr).toContain("İletişim bilgilerinizi");
     expect(promptTr.toLowerCase()).toContain("e-posta");
     expect(promptTr.toLowerCase()).toContain("telefon");
     expect(promptTr.toLowerCase()).not.toContain("whatsapp");
@@ -137,7 +134,7 @@ describe("FeelinHealthy Deterministic Intake Flow (No Budget)", () => {
     expect(evalRes.allGroupsComplete).toBe(false);
 
     const promptTr = getGroupIntakePrompt(evalRes, ctx, "tr");
-    expect(promptTr).toContain("Seyahatinizi hangi tarih veya dönem için planlıyorsunuz");
+    expect(promptTr).toMatch(/ne zaman gelmeyi düşünüyorsunuz|seyahatinizi/i);
     expect(promptTr.toLowerCase()).not.toContain("bütçe");
   });
 

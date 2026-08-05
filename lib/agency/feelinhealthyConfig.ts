@@ -1535,15 +1535,38 @@ export function getGroupIntakePrompt(
   locale: string = "tr"
 ): string {
   const isEn = locale.toLowerCase().startsWith("en");
+  const missing = status.missingFieldsInCurrentGroup;
 
   if (status.currentGroup === 1) {
-    // Group 1 is always asked as one combined question covering name, surname,
-    // gender and age. The example string is always a static international
-    // placeholder — never the patient's own name or any session value.
     const example = pickStaticGroup1Example(locale);
+    const name = context.patientName ? String(context.patientName).split(" ")[0] : "";
+    const greetingTr = name ? `Teşekkür ederim ${name}. ` : "";
+    const greetingEn = name ? `Thank you, ${name}. ` : "";
+
+    // Ask only for what is still missing — patients need not restate everything.
+    if (missing.length > 0 && missing.length < 3) {
+      const partsTr: string[] = [];
+      const partsEn: string[] = [];
+      if (missing.includes("patientName")) {
+        partsTr.push("adınızı ve soyadınızı");
+        partsEn.push("your first and last name");
+      }
+      if (missing.includes("patientGender")) {
+        partsTr.push("cinsiyetinizi");
+        partsEn.push("your gender");
+      }
+      if (missing.includes("patientAge")) {
+        partsTr.push("yaşınızı");
+        partsEn.push("your age");
+      }
+      return isEn
+        ? `${greetingEn}Could you share ${partsEn.join(" and ")}? Any natural wording is fine.`
+        : `${greetingTr}${partsTr.join(" ve ")} paylaşabilir misiniz? Nasıl yazarsanız yazın, yeterli.`;
+    }
+
     return isEn
-      ? `Could you share your first name, surname, gender and age in a single message? For example: "${example}".`
-      : `Lütfen adınızı, soyadınızı, cinsiyetinizi ve yaşınızı tek bir mesajda paylaşabilir misiniz? Örnek: "${example}".`;
+      ? `Could you share your first name, surname, gender and age? Any natural wording is fine — for example: "${example}".`
+      : `Adınızı, soyadınızı, cinsiyetinizi ve yaşınızı paylaşabilir misiniz? Nasıl yazarsanız yazın yeterli — isterseniz örnek: "${example}".`;
   }
 
   if (status.currentGroup === 2) {
@@ -1552,28 +1575,36 @@ export function getGroupIntakePrompt(
     const greetingEn = name ? `Thank you, ${name}. ` : "";
     const example = isEn ? GROUP2_EXAMPLE.en : GROUP2_EXAMPLE.tr;
 
-    const missing = status.missingFieldsInCurrentGroup;
     if (missing.length === 3) {
       return isEn
-        ? `${greetingEn}Could you also share your contact details—email, phone number and the country you live in? Example: ${example}.`
-        : `${greetingTr}İletişim bilgilerinizi de paylaşabilir misiniz? E-posta, telefon numarası ve yaşadığınız ülke yeterli. Örnek: ${example}.`;
+        ? `${greetingEn}Could you share your email, phone number and the country (or city) you live in? Natural wording is fine — e.g. ${example}.`
+        : `${greetingTr}E-posta, telefon ve yaşadığınız ülke (veya şehir) bilgisini paylaşabilir misiniz? Nasıl yazarsanız yazın yeterli — isterseniz: ${example}.`;
     }
+
     const partsTr: string[] = [];
     const partsEn: string[] = [];
-    if (missing.includes("patientEmail")) { partsTr.push("e-posta adresinizi"); partsEn.push("your email address"); }
-    if (missing.includes("patientPhone")) { partsTr.push("telefon numaranızı"); partsEn.push("your phone number"); }
-    if (missing.includes("patientCountry")) { partsTr.push("yaşadığınız ülkeyi"); partsEn.push("the country you live in"); }
+    if (missing.includes("patientEmail")) {
+      partsTr.push("e-posta adresinizi");
+      partsEn.push("your email address");
+    }
+    if (missing.includes("patientPhone")) {
+      partsTr.push("telefon numaranızı");
+      partsEn.push("your phone number");
+    }
+    if (missing.includes("patientCountry")) {
+      partsTr.push("yaşadığınız ülkeyi veya şehri");
+      partsEn.push("the country or city you live in");
+    }
 
     return isEn
-      ? `Could you also share ${partsEn.join(", ")}? Example: ${example}.`
-      : `Lütfen ${partsTr.join(", ")} de paylaşabilir misiniz? Örnek: ${example}.`;
+      ? `Could you share ${partsEn.join(" and ")}? A short natural answer is enough.`
+      : `${partsTr.join(" ve ")} paylaşabilir misiniz? Kısa ve doğal bir cevap yeterli.`;
   }
 
   if (status.currentGroup === 3) {
-    const example = isEn ? GROUP3_EXAMPLE.en : GROUP3_EXAMPLE.tr;
     return isEn
-      ? `When are you planning to travel for treatment? Example: ${example}.`
-      : `Seyahatinizi hangi tarih veya dönem için planlıyorsunuz? Örnek: ${example}.`;
+      ? `When are you thinking of travelling for treatment? An approximate period is fine — e.g. next month, this summer, or ${GROUP3_EXAMPLE.en}.`
+      : `Tedavi için ne zaman gelmeyi düşünüyorsunuz? Yaklaşık bir dönem yeterli — örneğin önümüzdeki ay, bu yaz veya ${GROUP3_EXAMPLE.tr}.`;
   }
 
   return isEn

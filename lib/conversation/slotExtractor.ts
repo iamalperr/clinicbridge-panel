@@ -370,7 +370,7 @@ export class SlotExtractor {
     }
 
     // 15. Travel Date / Timeframe Extraction
-    const travelDateRes = this.parseTravelDate(raw, lower);
+    const travelDateRes = this.parseTravelDate(raw, lower, expectedSlot);
     if (travelDateRes) {
       extracted.travelDate = travelDateRes;
       extracted.travelDateText = travelDateRes;
@@ -1051,40 +1051,89 @@ export class SlotExtractor {
   }
 
   /**
-   * Parse travel date preference or fuzzy timeframe (e.g. "önümüzdeki ay", "temmuz başı", "next month", "early july")
+   * Parse travel date preference or fuzzy timeframe.
+   * Uses Turkish-safe edges (not \\b) so "önümüzdeki ay" / "şubat" match.
    */
-  public static parseTravelDate(raw: string, lower: string): string | null {
+  public static parseTravelDate(
+    raw: string,
+    lower: string,
+    expectedSlot?: string
+  ): string | null {
+    const haystack = SlotExtractor.normalizeForKeywordMatch(lower);
+    const edge = (inner: string) =>
+      new RegExp(`(?:^|[^a-z0-9çğıöşü])(${inner})(?:$|[^a-z0-9çğıöşü])`, "i");
+
     // 1. Specific date range or date format (before fuzzy month-only matches)
     const rangeMatch = raw.match(
-      /\b\d{1,2}(?:\s*[-–—]\s*|\s+ila\s+|\s+to\s+)\d{1,2}\s+[a-zA-ZçğıöşüÇĞİÖŞÜ]+\b/i
+      /\d{1,2}(?:\s*[-–—]\s*|\s+ila\s+|\s+to\s+)\d{1,2}\s+[a-zA-ZçğıöşüÇĞİÖŞÜ]+/i
     );
     if (rangeMatch) {
       return rangeMatch[0].trim();
     }
 
     const dayMonthMatch = raw.match(
-      /\b\d{1,2}\s+[a-zA-ZçğıöşüÇĞİÖŞÜ]+(?:\s+\d{4})?\b/i
+      /\d{1,2}\s+[a-zA-ZçğıöşüÇĞİÖŞÜ]+(?:\s+\d{4})?/i
     );
-    if (dayMonthMatch && /(ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık|january|february|march|april|may|june|july|august|september|october|november|december)/i.test(dayMonthMatch[0])) {
+    if (
+      dayMonthMatch &&
+      /(ocak|şubat|subat|mart|nisan|mayıs|mayis|haziran|temmuz|ağustos|agustos|eylül|eylul|ekim|kasım|kasim|aralık|aralik|january|february|march|april|may|june|july|august|september|october|november|december)/i.test(
+        dayMonthMatch[0]
+      )
+    ) {
       return dayMonthMatch[0].trim();
     }
 
-    // 2. Fuzzy month expressions
-    const fuzzyPatterns = [
-      /\b(önümüzdeki ay|onumuzdeki ay|next month)\b/i,
-      /\b(haftaya|gelecek hafta|next week)\b/i,
-      /\b(bu ay|bu ay içinde|this month)\b/i,
-      /\b(yazın|yazin|in summer|bu yaz)\b/i,
-      /\b(sonbaharda|in autumn|in fall)\b/i,
-      /\b(en kısa sürede|en kisa surede|asap|as soon as possible)\b/i,
-      /\b((?:ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık)(?:\s+(?:başı|ortası|sonu|gibi))?)\b/i,
-      /\b((?:january|february|march|april|may|june|july|august|september|october|november|december)(?:\s+(?:early|mid|late|end))?)\b/i,
+    // 2. Fuzzy period expressions (approximate answers are first-class)
+    const fuzzyPatterns: Array<{ re: RegExp; label?: string }> = [
+      { re: edge("önümüzdeki ay|onumuzdeki ay|gelecek ay|next month") },
+      { re: edge("önümüzdeki hafta|onumuzdeki hafta|haftaya|gelecek hafta|next week") },
+      { re: edge("bu ay|bu ay içinde|bu ay icinde|this month") },
+      { re: edge("yazın|yazin|in summer|bu yaz|this summer") },
+      { re: edge("sonbaharda|in autumn|in fall") },
+      { re: edge("kışın|kisin|in winter|bu kış|bu kis") },
+      {
+        re: edge(
+          "en kısa sürede|en kisa surede|en kısa zamanda|en kisa zamanda|mümkün olan en kısa zamanda|mumkun olan en kisa zamanda|asap|as soon as possible"
+        ),
+      },
+      { re: edge("yakında|yakinda|yakın zamanda|yakin zamanda|soon|in the near future"), label: "yakında" },
+      { re: edge("esnek|henüz belli değil|henuz belli degil|flexible|not sure yet|tbd"), label: "esnek" },
+      {
+        re: edge(
+          "\\d{1,2}\\s*-\\s*\\d{1,2}\\s*hafta(?:\\s*içinde|\\s*icinde)?|\\d{1,2}\\s*hafta(?:\\s*içinde|\\s*icinde)?|in\\s*\\d{1,2}\\s*-\\s*\\d{1,2}\\s*weeks?|in\\s*\\d{1,2}\\s*weeks?"
+        ),
+      },
+      {
+        re: edge(
+          "(?:ocak|şubat|subat|mart|nisan|mayıs|mayis|haziran|temmuz|ağustos|agustos|eylül|eylul|ekim|kasım|kasim|aralık|aralik)(?:\\s+(?:başı|basi|ortası|ortasi|sonu|gibi))?"
+        ),
+      },
+      {
+        re: edge(
+          "(?:january|february|march|april|may|june|july|august|september|october|november|december)(?:\\s+(?:early|mid|late|end))?"
+        ),
+      },
     ];
 
-    for (const pat of fuzzyPatterns) {
-      const match = lower.match(pat);
+    for (const { re, label } of fuzzyPatterns) {
+      const match = ` ${haystack} `.match(re);
       if (match) {
-        return match[0].trim();
+        return (label || match[1] || match[0]).trim();
+      }
+    }
+
+    // 3. Freeform when travel is the expected answer (patients rarely give exact dates)
+    if (
+      expectedSlot === "travelDate" ||
+      expectedSlot === "travelDateText" ||
+      expectedSlot === "preferredDate"
+    ) {
+      const clean = SlotExtractor.normalizeForKeywordMatch(raw || lower)
+        .replace(/[a-z0-9._%+-]+@[a-z0-9.-]+/gi, "")
+        .replace(/\+?\d[\d\s().-]{5,}\d/g, "")
+        .trim();
+      if (clean.length >= 2 && clean.length <= 80) {
+        return clean;
       }
     }
 

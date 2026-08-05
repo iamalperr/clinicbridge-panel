@@ -33,7 +33,8 @@ describe("Intake example privacy", () => {
     const status = evaluateFeelinHealthyIntake({});
     const prompt = getGroupIntakePrompt(status, PATIENT, "tr");
 
-    expect(prompt).toMatch(/Örnek: "(John Smith, Erkek, 42|Emma Johnson, Kadın, 35)"/);
+    expect(prompt).toMatch(/örnek: "(John Smith, Erkek, 42|Emma Johnson, Kadın, 35)"/i);
+    expect(prompt).not.toContain("tek bir mesajda");
     expect(prompt).not.toContain("Alper");
     expect(prompt).not.toContain("Özgül");
     expect(prompt).not.toContain("27");
@@ -69,13 +70,15 @@ describe("Intake example privacy", () => {
 
     const prompt = getGroupIntakePrompt(status, { ...PATIENT, travelDate: undefined }, "tr");
     expect(prompt).toContain("Ekim 2026");
+    expect(prompt).toMatch(/önümüzdeki ay|yaklaşık/i);
     expect(prompt).not.toContain("Ağustos 2026");
   });
 
   it("English Group 1 examples stay generic", () => {
     const status = evaluateFeelinHealthyIntake({});
     const prompt = getGroupIntakePrompt(status, PATIENT, "en");
-    expect(prompt).toMatch(/For example: "(John Smith, Male, 42|Emma Johnson, Female, 35)"/);
+    expect(prompt).toMatch(/for example: "(John Smith, Male, 42|Emma Johnson, Female, 35)"/i);
+    expect(prompt.toLowerCase()).not.toContain("in a single message");
     expect(prompt).not.toContain("Alper");
   });
 });

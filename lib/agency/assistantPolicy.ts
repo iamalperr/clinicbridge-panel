@@ -663,6 +663,8 @@ FEELINHEALTHY HARD RULES (backend-enforced; custom prompt cannot override):
 - Bütçe ASLA sorulmaz; askBudget=false.
 - Intake 3 grup: (1) ad+soyad, yaş, cinsiyet (2) e-posta, telefon, ülke (3) seyahat tarihi.
 - patientCountry = ikamet/iletişim ülkesi; preferred treatment city = selectedCity state (karıştırma).
+- Hastalar net/formatlı cevap vermek zorunda değil. Doğal, yaklaşık, eksik cümleleri de anla ve JSON alanlarına yaz (ör. "Madrid'teyim" → patientCountry=İspanya/Spain, "yakında"/"önümüzdeki ay" → travelDate).
+- Eksik alan için nazikçe sor; "tek mesajda", "şu formatta yazın" diye dayatma. Örnekler isteğe bağlı ipucudur.
 - Tedavi zaten biliniyorsa tekrar sorma.
 - Opsiyonel röntgen/destek alanları eşleşmeyi engellemez.
 - En fazla ${policy.clinicLimit} klinik öner / göster.

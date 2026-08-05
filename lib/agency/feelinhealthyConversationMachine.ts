@@ -669,6 +669,20 @@ export function isHardGateAction(action: NextConversationAction): boolean {
 }
 
 /**
+ * Intake hard-gate may yield to the LLM when the patient already answered in
+ * natural language and SlotExtractor may have missed fuzzy fields. Consent,
+ * city/side cards, and location negotiation stay hard.
+ */
+export function shouldAllowLlmAssistForIntakeGate(
+  action: NextConversationAction,
+  userMessage?: string | null
+): boolean {
+  if (action.kind !== "intake") return false;
+  const text = String(userMessage || "").trim();
+  return text.length >= 2;
+}
+
+/**
  * Infer treatment branch from free text without relying on SlotExtractor locale quirks.
  * Handles Turkish capital İ ("İmplant") which breaks ASCII toLowerCase matching.
  */

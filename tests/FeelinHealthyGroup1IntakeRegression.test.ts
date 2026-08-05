@@ -85,14 +85,15 @@ describe("FeelinHealthy Group 1 intake regression", () => {
       expect(promptTr).toContain("yaşınızı");
     });
 
-    it("still asks for the name when only age and gender are missing", () => {
+    it("still asks for age/gender when only the name is known", () => {
       const ctx = { patientName: "Alper Özgül" };
       const status = evaluateFeelinHealthyIntake(ctx);
       const promptTr = getGroupIntakePrompt(status, ctx, "tr");
 
       expect(status.currentGroup).toBe(1);
-      expect(promptTr).toContain("adınızı");
-      expect(promptTr).toContain("soyadınızı");
+      expect(promptTr).toContain("yaşınızı");
+      expect(promptTr).toContain("cinsiyetinizi");
+      expect(promptTr).not.toContain("tek bir mesajda");
     });
 
     it("asks for all four fields in English too", () => {
@@ -165,8 +166,9 @@ describe("FeelinHealthy Group 1 intake regression", () => {
     });
 
     it("asks the extractor for a name only while Group 1 is open", () => {
-      expect(routeSource).toContain("const expectedIntakeSlot =");
-      expect(routeSource).toContain("evaluateFeelinHealthyIntake(ctx).group1Complete");
+      expect(routeSource).toContain("let expectedIntakeSlot");
+      expect(routeSource).toContain('expectedIntakeSlot = "patientName"');
+      expect(routeSource).toContain("shouldAllowLlmAssistForIntakeGate");
     });
   });
 
