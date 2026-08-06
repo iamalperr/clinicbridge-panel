@@ -421,7 +421,13 @@ function buildIntakeAction(
         : ("standard" as const);
   const composed = composeExplainBeforeAskIntakePrompt({
     status: intakeStatus,
-    context: promptContext,
+    context: {
+      ...promptContext,
+      // Prefer session treatment; fall back to derived state so post-KVKK
+      // acknowledgements still work when promptContext is sparse.
+      lastTreatmentCategory:
+        promptContext?.lastTreatmentCategory || state.treatment.branch || undefined,
+    },
     locale,
     variant,
   });
@@ -763,8 +769,13 @@ export function isHardGateAction(action: NextConversationAction): boolean {
  */
 export function shouldAllowLlmAssistForIntakeGate(
   action: NextConversationAction,
-  userMessage?: string | null
+  userMessage?: string | null,
+  options?: { isReplayedTreatmentRequest?: boolean } | null
 ): boolean {
+  // After KVKK accept we replay the original health command. That text is not an
+  // intake answer — never let the LLM re-ask treatment / restart discovery.
+  if (options?.isReplayedTreatmentRequest) return false;
+
   if (
     action.kind !== "intake" &&
     action.kind !== "ask_treatment" &&
@@ -777,6 +788,15 @@ export function shouldAllowLlmAssistForIntakeGate(
   // Affirmative / "değerlendirelim" after empty-match must stay on the structured
   // city card path — never let the model echo the same empty-match paragraph.
   if (action.kind === "location_negotiation" && isLocationExpansionAffirmative(text)) {
+    return false;
+  }
+  // Pure treatment-intent phrasing during Group intake is the original command
+  // (or a treatment switch), not name/email/phone — keep the hard intake gate.
+  if (
+    action.kind === "intake" &&
+    inferTreatmentFromText(text) &&
+    !/\b(\d{2}|yaş|yas|erkek|kadın|kadin|@|email|e-posta|telefon|\+\d)/i.test(text)
+  ) {
     return false;
   }
   return true;

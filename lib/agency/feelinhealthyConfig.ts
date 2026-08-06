@@ -910,6 +910,46 @@ export function getTreatmentClarificationPrompt(locale: string = "tr"): string {
     : "Şu ana kadar verdiğiniz bilgileri kaydettim. Hangi tedavi için bakıyorsunuz? Nasıl yazarsanız yazın yeterli — örneğin diş implantı, saç ekimi, meme büyütme, tüp bebek veya göz tedavisi. Tedaviyi netleştirince size uygun partner klinikleri getireceğim.";
 }
 
+/** Short acknowledgement when treatment was already captured (e.g. before KVKK). */
+export function getKnownTreatmentAcknowledgement(
+  rawCategory?: string | null,
+  locale: string = "tr"
+): string | null {
+  const category = String(rawCategory || "").trim();
+  if (!category) return null;
+  const isEn = locale.toLowerCase().startsWith("en");
+  const branchKey = normalizeTreatmentBranch(category);
+  const rule = FEELINHEALTHY_CURATED_RULES.find((b) => b.branchKey === branchKey);
+  const fallbackTr: Record<string, string> = {
+    aesthetic_surgery: "Estetik",
+    hair_transplant: "Saç ekimi",
+    dental: "Diş tedavisi",
+    implant: "İmplant",
+    ivf: "Tüp bebek",
+    eye_treatments: "Göz tedavisi",
+    obesity: "Obezite cerrahisi",
+    cardiology: "Kardiyoloji",
+    check_up: "Check-up",
+  };
+  const fallbackEn: Record<string, string> = {
+    aesthetic_surgery: "aesthetic",
+    hair_transplant: "hair transplant",
+    dental: "dental",
+    implant: "implant",
+    ivf: "IVF",
+    eye_treatments: "eye treatment",
+    obesity: "bariatric",
+    cardiology: "cardiology",
+    check_up: "check-up",
+  };
+  const label = isEn
+    ? rule?.categoryNameEn || fallbackEn[branchKey] || category.replace(/_/g, " ")
+    : rule?.categoryNameTr || fallbackTr[branchKey] || category.replace(/_/g, " ");
+  return isEn
+    ? `I've noted your ${label} request.`
+    : `${label} talebinizi not ettim.`;
+}
+
 /**
  * Empty match reply that advances the conversation instead of looping the same line.
  * Prefer {@link buildEmptyMatchCityEscalation} so the UI shows clickable city options.

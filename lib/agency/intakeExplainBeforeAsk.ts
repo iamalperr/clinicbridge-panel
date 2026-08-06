@@ -12,8 +12,10 @@ import { normalizeAgencySessionState } from "./agencySessionState";
 import {
   evaluateFeelinHealthyIntake,
   getGroupIntakePrompt,
+  getKnownTreatmentAcknowledgement,
   type IntakeGroupStatus,
 } from "./feelinhealthyConfig";
+import { getAgencyTreatmentContext } from "./agencySessionState";
 
 export type IntakeExplainLocale = "tr" | "en";
 export type IntakeExplainGroup = 1 | 2 | 3;
@@ -259,6 +261,14 @@ export function composeExplainBeforeAskIntakePrompt(params: {
   let includesProcessIntroduction = false;
   let includesPurposeExplanation = false;
   let purposeText = "";
+
+  // After KVKK (or any early treatment capture), never re-ask treatment —
+  // acknowledge it once when Group 1 process intro is shown.
+  const knownTreatment = getAgencyTreatmentContext(context).category;
+  if (group === 1 && !flags.process && knownTreatment) {
+    const ack = getKnownTreatmentAcknowledgement(knownTreatment, locale);
+    if (ack) parts.push(ack);
+  }
 
   if (group === 1 && !flags.process) {
     parts.push(getIntakeProcessIntroduction(locale));

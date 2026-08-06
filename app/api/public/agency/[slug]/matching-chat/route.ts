@@ -1108,8 +1108,27 @@ export async function POST(
 
         // Consent accepted — set flag and re-process pending message if available
         sessionContext.quoteConsent = true;
-        const pendingMsg = sessionContext.pendingUserMessage;
+        let pendingMsg =
+          sessionContext.pendingUserMessage || sessionContext.pendingHealthRequest || "";
+        // If client dropped pending fields, recover the original health command from history
+        // (last user turn that is not a consent accept/decline label).
+        if (!pendingMsg && Array.isArray(history)) {
+          const consentLabel =
+            /^(kabul ediyorum|reddediyorum|i accept|i decline|onaylıyorum|onayliyorum)$/i;
+          for (let i = history.length - 1; i >= 0; i--) {
+            const turn = history[i];
+            const role = String(turn?.role || "").toLowerCase();
+            const content = String(turn?.content || turn?.text || "").trim();
+            if ((role === "user" || role === "human") && content && !consentLabel.test(content)) {
+              pendingMsg = content;
+              break;
+            }
+          }
+        }
         if (pendingMsg) {
+          sessionContext.pendingHealthRequest =
+            sessionContext.pendingHealthRequest || pendingMsg;
+          Object.assign(sessionContext, ensureTreatmentFromPending(sessionContext, pendingMsg));
           finalMessage = pendingMsg;
           isReplayedTreatmentRequest = true;
           delete sessionContext.pendingUserMessage;
@@ -1768,7 +1787,8 @@ export async function POST(
           // SlotExtractor alone may miss them. Consent, city, side stay hard.
           const allowLlmIntakeAssist = shouldAllowLlmAssistForIntakeGate(
             nextAction,
-            userMsgForOrch
+            userMsgForOrch,
+            { isReplayedTreatmentRequest }
           );
           const informationalInterrupt =
             canInterruptHardGateForInformation(nextAction) &&
