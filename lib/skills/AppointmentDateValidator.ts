@@ -235,13 +235,57 @@ export class AppointmentDateValidator {
     result.resolvedWeekdayIndex = canonical.weekdayIndex;
 
     // Check Past Date
-    const isToday = isoDateStr === `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`;
+    const todayIso = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`;
+    const isToday = isoDateStr === todayIso;
     if (parsedDateObj.getTime() < new Date(currentYear, currentMonth, currentDay).getTime()) {
       result.hasConflict = true;
       result.conflictType = "PAST_DATE";
       result.requiresClarification = true;
       result.clarificationMessage = `Belirttiğiniz tarih (${isoDateStr}) geçmiş bir tarih. Lütfen geçerli bir tarih belirtir misiniz?`;
       return result;
+    }
+
+    // Past / current time on the same clinic-local day (PAST_TIME)
+    const resolvedTimeNorm = (() => {
+      const raw = (inferredTime || rawTimeText || "").trim();
+      if (!raw) return null;
+      const ampm = raw.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
+      if (ampm) {
+        let h = parseInt(ampm[1], 10);
+        const m = ampm[2] ? parseInt(ampm[2], 10) : 0;
+        const mer = ampm[3].toLowerCase();
+        if (mer === "pm" && h < 12) h += 12;
+        if (mer === "am" && h === 12) h = 0;
+        return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      }
+      const m24 = raw.match(/^(\d{1,2}):(\d{2})$/);
+      if (m24) {
+        return `${String(parseInt(m24[1], 10)).padStart(2, "0")}:${m24[2]}`;
+      }
+      const hourOnly = raw.match(/^(\d{1,2})$/);
+      if (hourOnly) {
+        return `${String(parseInt(hourOnly[1], 10)).padStart(2, "0")}:00`;
+      }
+      return null;
+    })();
+
+    if (resolvedTimeNorm) {
+      result.resolvedTime = resolvedTimeNorm;
+    }
+
+    if (isToday && resolvedTimeNorm) {
+      const [reqH, reqM] = resolvedTimeNorm.split(":").map((x) => parseInt(x, 10));
+      const reqMinutes = reqH * 60 + reqM;
+      const nowMinutes = currentHour * 60 + currentMinute;
+      if (reqMinutes <= nowMinutes) {
+        result.hasConflict = true;
+        result.conflictType = "PAST_TIME";
+        result.requiresClarification = true;
+        result.isValid = false;
+        result.clarificationMessage =
+          `Belirttiğiniz saat bugün için geçmiş görünüyor. Kliniğin çalışma saatlerine uygun ileri bir saat veya başka bir gün seçebiliriz.`;
+        return result;
+      }
     }
 
     // Check Mismatch

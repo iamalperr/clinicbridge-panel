@@ -384,6 +384,10 @@ export interface Appointment {
   preferredTimePeriod?: "morning" | "afternoon" | "evening" | "earliest_available" | null;
   preferredTimeText?: string | null;
   timezone?: string;
+  /** IANA clinic timezone used when the request was validated (e.g. Europe/Istanbul). */
+  clinicTimeZone?: string;
+  /** Absolute start instant (UTC ISO) for the requested clinic-local date/time. */
+  startsAtUtc?: string;
   appointmentDateTime?: string;
   status: "pending" | "PENDING_REVIEW" | "confirmed" | "cancelled" | "completed";
   source: "ai_chat" | "ai_chatbot" | "AI Chatbot" | "manual" | "widget" | string;

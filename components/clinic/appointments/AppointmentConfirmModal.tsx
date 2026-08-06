@@ -236,7 +236,16 @@ export default function AppointmentConfirmModal({
           <Info size={18} style={{ color: "#818cf8", marginTop: 2, flexShrink: 0 }} />
           <div style={{ fontSize: 13, color: UI_COLORS.textPrimary, lineHeight: 1.5 }}>
             <div style={{ fontWeight: 600, color: "#a5b4fc", marginBottom: 2 }}>Kayıtlı Talep:</div>
-            <div>Tarih: <strong>{schedule.requestedDate}</strong> &bull; Saat: <strong>{schedule.requestedTime}</strong></div>
+            <div>Tarih: <strong>{schedule.requestedDate}</strong> &bull; Saat: <strong>{schedule.requestedTime}</strong>
+              {(appointment?.clinicTimeZone || appointment?.timezone) ? (
+                <> &bull; Saat dilimi: <strong>{appointment.clinicTimeZone || appointment.timezone}</strong></>
+              ) : null}
+            </div>
+            {appointment?.startsAtUtc ? (
+              <div style={{ marginTop: 4, opacity: 0.85, fontSize: 12 }}>
+                UTC: {appointment.startsAtUtc}
+              </div>
+            ) : null}
           </div>
         </div>
 

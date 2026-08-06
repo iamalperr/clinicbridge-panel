@@ -8,6 +8,11 @@ import {
 import {
   sendClinicAppointmentEmail,
 } from "@/lib/appointment-notifications";
+import {
+  resolveClinicTimeZone,
+  validateAppointmentDateTime,
+} from "@/lib/appointment/appointmentDateTimePolicy";
+import { ClinicWorkingHoursResolver } from "@/lib/skills/ClinicWorkingHoursResolver";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -60,13 +65,15 @@ export async function POST(req: Request) {
 
     let clinicName  = "Klinik";
     let clinicEmail = "";
+    let clinicData: any = null;
 
     /* ── Fetch clinic info ──────────────────────────────────────────────── */
     if (adminDb) {
       const cSnap = await adminDb.collection("clinics").doc(clinicId).get();
       if (cSnap.exists) {
-        clinicName  = cSnap.data()!.name ?? "Klinik";
-        clinicEmail = cSnap.data()!.notificationEmail ?? cSnap.data()!.email ?? "";
+        clinicData = cSnap.data()!;
+        clinicName  = clinicData.name ?? "Klinik";
+        clinicEmail = clinicData.notificationEmail ?? clinicData.email ?? "";
       }
 
       // Fallback: get first admin/clinic user email
@@ -79,8 +86,9 @@ export async function POST(req: Request) {
     } else if (clientDb) {
       const cSnap = await getDoc(doc(clientDb, "clinics", clinicId));
       if (cSnap.exists()) {
-        clinicName  = cSnap.data()!.name ?? "Klinik";
-        clinicEmail = cSnap.data()!.notificationEmail ?? cSnap.data()!.email ?? "";
+        clinicData = cSnap.data()!;
+        clinicName  = clinicData.name ?? "Klinik";
+        clinicEmail = clinicData.notificationEmail ?? clinicData.email ?? "";
       }
 
       if (!clinicEmail) {
@@ -88,6 +96,38 @@ export async function POST(req: Request) {
           query(collection(clientDb, "users"), where("clinicId", "==", clinicId))
         );
         clinicEmail = uSnap.docs.map(d => d.data().email).filter(Boolean)[0] ?? "";
+      }
+    }
+
+    // Past / hours gate before any write or email
+    if (requestedDate && requestedTime) {
+      const tz = resolveClinicTimeZone(clinicData);
+      const clinicTimeZone = tz.confident ? tz.timeZone : "Europe/Istanbul";
+      const hours = ClinicWorkingHoursResolver.resolveClinicWorkingHours({
+        clinicId,
+        clinicData,
+      });
+      const policy = validateAppointmentDateTime({
+        localDate: requestedDate,
+        localTime: requestedTime,
+        rawUserInput: originalText || `${requestedDate} ${requestedTime}`,
+        clinicTimeZone,
+        now: new Date(),
+        workingHours: hours.schedule,
+        is24_7: hours.is24_7,
+        minimumNoticeMinutes: 0,
+        locale: "tr",
+      });
+      if (!policy.ok) {
+        return NextResponse.json(
+          {
+            error: policy.reason || "APPOINTMENT_DATETIME_REJECTED",
+            message: policy.message,
+            suggestedTimes: policy.suggestions,
+            appointmentCreated: false,
+          },
+          { status: 400, headers: CORS }
+        );
       }
     }
 

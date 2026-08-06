@@ -2,6 +2,11 @@ import { getAdminDb } from "@/lib/firebase-admin";
 import { sendClinicAppointmentEmail } from "@/lib/appointment-notifications";
 import { Appointment } from "@/lib/types";
 import { normalizeLegacyChannel } from "@/lib/services/channelPolicyService";
+import {
+  resolveClinicTimeZone,
+  validateAppointmentDateTime,
+} from "@/lib/appointment/appointmentDateTimePolicy";
+import { ClinicWorkingHoursResolver } from "@/lib/skills/ClinicWorkingHoursResolver";
 
 export interface CreateAppointmentPayload {
   clinicId: string;
@@ -22,6 +27,12 @@ export interface CreateAppointmentPayload {
   conversationId?: string;
   idempotencyKey?: string;
   notificationChannelToSave?: string;
+  /** Optional clinic document fields for timezone / hours enforcement. */
+  clinicData?: any;
+  /** Test-injectable clock; defaults to now. */
+  now?: Date;
+  clinicTimeZone?: string;
+  startsAtUtc?: string;
 }
 
 export function validateAppointmentPayload(payload: CreateAppointmentPayload): CreateAppointmentPayload {
@@ -29,6 +40,49 @@ export function validateAppointmentPayload(payload: CreateAppointmentPayload): C
   if (!payload.clinicId) throw new Error("Missing clinicId");
   if (!payload.patientName) throw new Error("Missing patientName");
   if (!payload.patientPhone) throw new Error("Missing patientPhone");
+
+  // Hard gate: never persist/notify a past clinic-local date-time.
+  if (payload.requestedDate && payload.requestedTime) {
+    const tzResolved = resolveClinicTimeZone(payload.clinicData);
+    const clinicTimeZone =
+      payload.clinicTimeZone ||
+      (tzResolved.confident ? tzResolved.timeZone : "Europe/Istanbul");
+    let workingHours = null;
+    let is24_7 = false;
+    try {
+      const hours = ClinicWorkingHoursResolver.resolveClinicWorkingHours({
+        clinicId: payload.clinicId,
+        clinicData: payload.clinicData,
+      });
+      workingHours = hours.schedule;
+      is24_7 = !!hours.is24_7;
+    } catch {
+      /* unresolved hours → still reject past */
+    }
+    const policy = validateAppointmentDateTime({
+      localDate: payload.requestedDate,
+      localTime: payload.requestedTime,
+      clinicTimeZone,
+      now: payload.now || new Date(),
+      workingHours,
+      is24_7,
+      minimumNoticeMinutes: 0,
+      locale: "tr",
+    });
+    if (!policy.ok) {
+      const err: any = new Error(policy.message || "APPOINTMENT_DATETIME_REJECTED");
+      err.code = policy.reason || "APPOINTMENT_DATETIME_REJECTED";
+      err.policy = policy;
+      throw err;
+    }
+    if (policy.resolved) {
+      payload.requestedDate = policy.resolved.localDate;
+      payload.requestedTime = policy.resolved.localTime;
+      payload.startsAtUtc = policy.resolved.startsAtUtc;
+      payload.clinicTimeZone = policy.resolved.clinicTimeZone;
+    }
+  }
+
   return payload;
 }
 
@@ -102,6 +156,8 @@ export async function createAppointmentRecord(payload: CreateAppointmentPayload)
     if (payload.conversationId) newAppointment.conversationId = payload.conversationId;
     if (payload.idempotencyKey) newAppointment.idempotencyKey = payload.idempotencyKey;
     if (payload.notificationChannelToSave) newAppointment.notificationChannel = payload.notificationChannelToSave;
+    if (payload.clinicTimeZone) newAppointment.clinicTimeZone = payload.clinicTimeZone;
+    if (payload.startsAtUtc) newAppointment.startsAtUtc = payload.startsAtUtc;
 
     await appointmentRef.set(newAppointment);
     
@@ -320,7 +376,20 @@ export async function createAppointmentAndNotify(draft: CreateAppointmentPayload
   stack?: string;
 }> {
   try {
-    const validatedPayload = validateAppointmentPayload(draft);
+    let validatedPayload: CreateAppointmentPayload;
+    try {
+      validatedPayload = validateAppointmentPayload(draft);
+    } catch (policyErr: any) {
+      console.error(`[APPOINTMENT_DATETIME_POLICY_BLOCKED] ${policyErr?.code || policyErr?.message}`);
+      return {
+        success: false,
+        code: policyErr?.code || "APPOINTMENT_DATETIME_REJECTED",
+        reason: policyErr?.message || "APPOINTMENT_DATETIME_REJECTED",
+        step_failed: "DATETIME_POLICY",
+        clinicNotificationStatus: "NOT_ATTEMPTED",
+        patientNotificationStatus: "NOT_ATTEMPTED",
+      };
+    }
     
     // ── INSTRUMENTATION LOG 6 ──
     console.log(JSON.stringify({ checkpoint: "APPT_06_DATABASE_INSERT_STARTED", clinicId: validatedPayload.clinicId, timestamp: new Date().toISOString() }));

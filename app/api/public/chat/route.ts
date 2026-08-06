@@ -3,6 +3,12 @@ import { trackableAIRequest } from "@/lib/services/aiGateway";
 import { resolveEffectiveAITemperature } from "@/lib/ai/temperaturePolicy";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { AppointmentDateValidator, ClinicWorkingHoursResolver } from "@/lib/skills";
+import {
+  resolveClinicTimeZone,
+  validateAppointmentDateTime,
+  evaluateRawAppointmentTimeZoneAmbiguity,
+  type AppointmentDateTimeValidationResult,
+} from "@/lib/appointment/appointmentDateTimePolicy";
 import { initializeApp, getApps } from "firebase/app";
 import {
   getFirestore, collection, query, where, getDocs,
@@ -1334,19 +1340,48 @@ export async function POST(req: Request) {
            }, basePersist({ appointmentState: nextSubState }));
          }
          
-         // 1.5 Final Strict Date & Time Hard Block
+         // 1.5 Final Strict Date & Time Hard Block (clinic TZ + past + working hours)
+         const clinicTzResolved = resolveClinicTimeZone(clinicData);
+         const clinicTimeZone = clinicTzResolved.confident
+           ? clinicTzResolved.timeZone
+           : "Europe/Istanbul";
+         const hoursResolutionFinal = ClinicWorkingHoursResolver.resolveClinicWorkingHours({
+           clinicId: actualClinicId || clinicId,
+           clinicData,
+           trainingDocs,
+         });
+
+         // Ambiguous TZ abbreviation on the confirmation turn itself
+         const abbrevGate = evaluateRawAppointmentTimeZoneAmbiguity(message, conversationLocale);
+         if (abbrevGate) {
+           await saveAppointmentState(adminDb, actualClinicId, convId, 0, "AWAITING_DATE_CLARIFICATION", loadedDraft, {
+             conversationLocale,
+           });
+           return respondWithVisibleReply({
+             success: true,
+             responseType: "appointment_date_clarification_required",
+             appointmentCreated: false,
+             reply: abbrevGate.message,
+           }, basePersist({ appointmentState: "AWAITING_DATE_CLARIFICATION" }));
+         }
+
          const finalDateValidation = AppointmentDateValidator.validateAppointmentDateConsistency({
             rawDateText: loadedDraft.requestedDate,
             rawTimeText: loadedDraft.requestedTime || null,
             inferredDate: loadedDraft.requestedDate || null,
             inferredTime: loadedDraft.requestedTime || null,
             currentClinicDateTime: new Date(),
-            timeZone: "Europe/Istanbul"
+            timeZone: clinicTimeZone
          });
 
          if (finalDateValidation.hasConflict || !finalDateValidation.isValid) {
             console.error(`[CONFIRMATION_BLOCKED] Final date validation failed before creation:`, JSON.stringify(finalDateValidation));
-            await saveAppointmentState(adminDb, actualClinicId, convId, 0, "AWAITING_DATE_CLARIFICATION", loadedDraft, {
+            const draftKeepFields = { ...loadedDraft };
+            if (finalDateValidation.conflictType === "PAST_DATE" || finalDateValidation.conflictType === "PAST_TIME") {
+              draftKeepFields.requestedDate = undefined as any;
+              draftKeepFields.requestedTime = undefined as any;
+            }
+            await saveAppointmentState(adminDb, actualClinicId, convId, 0, "AWAITING_DATE_CLARIFICATION", draftKeepFields, {
                dateAlternatives: finalDateValidation.alternatives,
                conversationLocale
             });
@@ -1361,9 +1396,46 @@ export async function POST(req: Request) {
             }, basePersist({ appointmentState: "AWAITING_DATE_CLARIFICATION" }));
          }
 
+         // Canonical past / hours / notice gate (does not trust LLM)
+         const policyValidation: AppointmentDateTimeValidationResult = validateAppointmentDateTime({
+           localDate: finalDateValidation.resolvedDate || loadedDraft.requestedDate,
+           localTime: finalDateValidation.resolvedTime || loadedDraft.requestedTime,
+           rawUserInput: `${loadedDraft.requestedDate || ""} ${loadedDraft.requestedTime || ""}`,
+           clinicTimeZone,
+           now: new Date(),
+           workingHours: hoursResolutionFinal.schedule,
+           is24_7: hoursResolutionFinal.is24_7,
+           // Product: no universal minimum-notice rule yet (default 0).
+           minimumNoticeMinutes: 0,
+           locale: conversationLocale,
+           resolutionSource: "deterministic_parser",
+         });
+
+         if (!policyValidation.ok) {
+           console.error(`[CONFIRMATION_BLOCKED] AppointmentDateTimePolicy rejected:`, policyValidation.reason);
+           const draftKeepFields = {
+             ...loadedDraft,
+             requestedDate: undefined as any,
+             requestedTime: undefined as any,
+           };
+           await saveAppointmentState(adminDb, actualClinicId, convId, 0, "COLLECTING_DATE", draftKeepFields, {
+             conversationLocale,
+           });
+           return respondWithVisibleReply({
+             success: true,
+             responseType: "appointment_date_clarification_required",
+             appointmentCreated: false,
+             reply: policyValidation.message,
+             suggestedTimes: policyValidation.suggestions,
+           }, basePersist({ appointmentState: "COLLECTING_DATE" }));
+         }
+
          // Override with canonical just to be absolutely sure
-         loadedDraft.requestedDate = finalDateValidation.resolvedDate || loadedDraft.requestedDate;
+         loadedDraft.requestedDate = policyValidation.resolved?.localDate || finalDateValidation.resolvedDate || loadedDraft.requestedDate;
+         loadedDraft.requestedTime = policyValidation.resolved?.localTime || finalDateValidation.resolvedTime || loadedDraft.requestedTime;
          (loadedDraft as any).requestedWeekday = conversationLocale.startsWith("en") ? (finalDateValidation.resolvedWeekdayEn || finalDateValidation.resolvedWeekday) : finalDateValidation.resolvedWeekday;
+         (loadedDraft as any).clinicTimeZone = clinicTimeZone;
+         (loadedDraft as any).startsAtUtc = policyValidation.resolved?.startsAtUtc;
 
           // 2. Call and await createAppointmentAndNotify
          try {
@@ -1393,7 +1465,10 @@ export async function POST(req: Request) {
                  createdBy: "ai_assistant",
                  conversationId: convId,
                  idempotencyKey: `${convId}_${loadedDraft.requestedDate}_${loadedDraft.requestedService}`,
-                 notificationChannelToSave: "email"
+                 notificationChannelToSave: "email",
+                 clinicData,
+                 clinicTimeZone: (loadedDraft as any).clinicTimeZone,
+                 startsAtUtc: (loadedDraft as any).startsAtUtc,
              });
 
              // 3. Require a real appointmentId
@@ -2168,8 +2243,26 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
       console.log(`[BEFORE_AFTER] treatment=${requestedTreatmentCode} found_url=${!!treatmentContext} clinic=${clinicId}`);
     }
 
-    /* ── PRE-FLIGHT: Deterministic Appointment Working Hours Validation ── */
+    /* ── PRE-FLIGHT: Deterministic Appointment Working Hours + Past-Time Validation ── */
     if (isAppointmentIntent && !isConfirmation(message)) {
+      const clinicTzResolved = resolveClinicTimeZone(clinicData);
+      const clinicTimeZone = clinicTzResolved.confident
+        ? clinicTzResolved.timeZone
+        : "Europe/Istanbul";
+
+      const abbrevGate = evaluateRawAppointmentTimeZoneAmbiguity(message, conversationLocale);
+      if (abbrevGate) {
+        return respondWithVisibleReply(
+          {
+            responseType: "CHAT_REPLY",
+            reply: abbrevGate.message,
+            conversationId: convId,
+            pendingAppointmentData: appointmentDraft,
+          },
+          basePersist({ appointmentState })
+        );
+      }
+
       const hoursResolution = ClinicWorkingHoursResolver.resolveClinicWorkingHours({
         clinicId: actualClinicId || clinicId,
         clinicData,
@@ -2182,7 +2275,9 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
         clinicId: actualClinicId || clinicId,
         source: hoursResolution.source,
         confidence: hoursResolution.confidence,
-        is24_7: !!hoursResolution.is24_7
+        is24_7: !!hoursResolution.is24_7,
+        clinicTimeZone,
+        clinicTimeZoneSource: clinicTzResolved.source,
       }));
 
       // Extract requested date/time either from conversationIntent entities, appointmentDraft, or message
@@ -2191,7 +2286,58 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
       const requestedWeekday = conversationIntent?.entities?.preferredWeekday || (appointmentDraft as any)?.requestedWeekday || null;
       const requestedWeekdayIndex = (conversationIntent?.entities as any)?.preferredWeekdayIndex ?? null;
 
-      if (requestedDate || requestedTime || requestedWeekday || requestedWeekdayIndex !== null) {
+      if (requestedDate && requestedTime) {
+        const policy = validateAppointmentDateTime({
+          localDate: requestedDate,
+          localTime: requestedTime,
+          rawUserInput: message,
+          clinicTimeZone,
+          now: new Date(),
+          workingHours: hoursResolution.schedule,
+          is24_7: hoursResolution.is24_7,
+          minimumNoticeMinutes: 0,
+          locale: conversationLocale,
+        });
+
+        console.log(JSON.stringify({
+          event: "APPOINTMENT_DATETIME_POLICY_CHECK",
+          traceId: activeTraceId,
+          clinicId: actualClinicId || clinicId,
+          ok: policy.ok,
+          reason: policy.reason,
+          clinicTimeZone,
+        }));
+
+        if (!policy.ok) {
+          // Keep treatment/contact; clear only invalid date/time for correction.
+          if (appointmentDraft) {
+            appointmentDraft.requestedDate = undefined as any;
+            appointmentDraft.requestedTime = undefined as any;
+          }
+          return respondWithVisibleReply(
+            {
+              responseType: "CHAT_REPLY",
+              reply: policy.message,
+              conversationId: convId,
+              pendingAppointmentData: appointmentDraft,
+              suggestedTimes: policy.suggestions,
+            },
+            basePersist({ appointmentState: "COLLECTING_DATE" })
+          );
+        }
+
+        // Store converted clinic-local values when EST→Istanbul conversion applied
+        if (policy.resolved) {
+          if (appointmentDraft) {
+            appointmentDraft.requestedDate = policy.resolved.localDate;
+            appointmentDraft.requestedTime = policy.resolved.localTime;
+          }
+          if (conversationIntent?.entities) {
+            conversationIntent.entities.preferredDate = policy.resolved.localDate;
+            conversationIntent.entities.preferredTime = policy.resolved.localTime;
+          }
+        }
+      } else if (requestedDate || requestedTime || requestedWeekday || requestedWeekdayIndex !== null) {
         const validation = ClinicWorkingHoursResolver.validateRequestedTime({
           requestedDate,
           requestedTime,
@@ -2744,7 +2890,8 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
 
     if (isConfirmSummary && pending.patientName && (pending.patientPhone || pending.patientEmail)) {
       
-      const timeZone = "Europe/Istanbul"; // Hardcoded fallback as requested, unless clinic.timezone exists
+      const tzResolved = resolveClinicTimeZone(clinicData);
+      const timeZone = tzResolved.confident ? tzResolved.timeZone : "Europe/Istanbul";
       const currentClinicDateTime = new Date();
 
       console.log(JSON.stringify({
@@ -2756,6 +2903,7 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
          inferredDate: pending.requestedDate,
          inferredTime: pending.requestedTime,
          timeZone,
+         clinicTimeZoneSource: tzResolved.source,
          currentClinicDateTime
       }));
 
@@ -2767,6 +2915,46 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
          currentClinicDateTime,
          timeZone
       });
+
+      // Additional policy gate before showing confirmation summary
+      if (dateValidation.isValid && !dateValidation.hasConflict && pending.requestedDate && pending.requestedTime) {
+        const hoursRes = ClinicWorkingHoursResolver.resolveClinicWorkingHours({
+          clinicId: actualClinicId || clinicId,
+          clinicData,
+          trainingDocs,
+        });
+        const policy = validateAppointmentDateTime({
+          localDate: dateValidation.resolvedDate || pending.requestedDate,
+          localTime: dateValidation.resolvedTime || pending.requestedTime,
+          rawUserInput: message,
+          clinicTimeZone: timeZone,
+          now: currentClinicDateTime,
+          workingHours: hoursRes.schedule,
+          is24_7: hoursRes.is24_7,
+          minimumNoticeMinutes: 0,
+          locale: conversationLocale,
+        });
+        if (!policy.ok) {
+          responsePayload.responseType = "appointment_date_clarification_required";
+          responsePayload.reply = policy.message;
+          responsePayload.pendingAppointmentData = {
+            ...pending,
+            requestedDate: undefined,
+            requestedTime: undefined,
+          };
+          appointmentState = "COLLECTING_DATE";
+          appointmentDraft = responsePayload.pendingAppointmentData;
+          return respondWithVisibleReply(responsePayload, basePersist({
+            appointmentState: "COLLECTING_DATE",
+          }));
+        }
+        if (policy.resolved) {
+          pending.requestedDate = policy.resolved.localDate;
+          pending.requestedTime = policy.resolved.localTime;
+          (pending as any).startsAtUtc = policy.resolved.startsAtUtc;
+          (pending as any).clinicTimeZone = policy.resolved.clinicTimeZone;
+        }
+      }
 
       console.log(JSON.stringify({
          event: "APPOINTMENT_DATE_VALIDATION_RESULT",
