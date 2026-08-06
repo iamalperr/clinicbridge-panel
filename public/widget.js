@@ -614,11 +614,14 @@
   }
 
   /* ─── Log conversation to Firestore ─── */
-  function logMessage(userMessage) {
+  function logMessage(userMessage, assistantMessage) {
+    var body = { clinicId: clinicId, sessionId: sessionId };
+    if (userMessage) body.userMessage = userMessage;
+    if (assistantMessage) body.assistantMessage = assistantMessage;
     fetch(API_BASE + '/api/public/conversation-log', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ clinicId: clinicId, sessionId: sessionId, userMessage: userMessage }),
+      body:    JSON.stringify(body),
     }).catch(function () {});
   }
 
@@ -725,8 +728,8 @@
       if (!text.trim()) return;
       appendMsg(shadow, text, true, '', false);
       
-      // Only log to conversation log if NOT in test mode (or optionally add isTest to it, but bypassing is safer)
-      if (!testMode) logMessage(text);
+      // Persistence is owned by /api/public/chat (awaited). Dual-write backup
+      // runs after a visible assistant reply so user+assistant stay paired.
       
       chatHistory.push({ role: 'user', content: text });
 
@@ -797,7 +800,7 @@
         body:    JSON.stringify({
           clinicId:              clinicId,
           message:               text,
-          history:               chatHistory.slice(-12),
+          history:               chatHistory.slice(-40),
           conversationId:        sessionId,
           language:              lang,
           pendingAppointmentData: pendingApptData || undefined,
@@ -859,6 +862,9 @@
 
         chatHistory.push({ role: 'assistant', content: reply });
         appendMsg(shadow, reply, false, '', false);
+
+        // Backup dual-write (idempotent with content-stable ids on conversationLogs).
+        if (reply) logMessage(text, reply);
 
         /* Show contextual actions if any */
         var q = shadow.getElementById('cbw-quick');

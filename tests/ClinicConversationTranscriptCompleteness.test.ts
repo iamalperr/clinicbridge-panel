@@ -162,6 +162,7 @@ describe("Clinic conversation transcript completeness", () => {
     // History sync + merge path must exist so a final logged turn materializes prior turns.
     const chat = readFileSync(resolve(REPO, "app/api/public/chat/route.ts"), "utf8");
     expect(chat).toContain("syncConversationLogMessagesFromHistory");
+    expect(chat).toContain("respondWithVisibleReply");
     expect(chat).toContain("history,");
     const turns = buildTurnsFromClientHistory({
       history: [
@@ -185,9 +186,9 @@ describe("Clinic conversation transcript completeness", () => {
     expect(resolver).not.toContain("mergeConversationTranscriptSources");
   });
 
-  it("stable history ids are deterministic for upserts", () => {
+  it("stable history ids are content-based (sequence does not change id)", () => {
     const a = stableHistoryMessageDocId("user", "Hello world", 0);
-    const b = stableHistoryMessageDocId("user", "Hello world", 0);
+    const b = stableHistoryMessageDocId("user", "Hello world", 99);
     const c = stableHistoryMessageDocId("assistant", "Hello world", 0);
     expect(a).toBe(b);
     expect(a).not.toBe(c);

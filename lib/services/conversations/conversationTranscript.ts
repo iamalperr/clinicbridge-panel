@@ -268,12 +268,17 @@ export function buildTurnsFromClientHistory(params: {
 
 /**
  * Stable doc id for synced history turns (idempotent upserts).
+ * Content+role based — sequence must NOT be part of the id, otherwise the same
+ * turn gets different ids when dual-written vs history-synced and assistants
+ * fall out of the client history window are never recovered.
  */
 export function stableHistoryMessageDocId(
   role: "user" | "assistant" | "system",
   content: string,
-  sequence: number
+  // Kept for call-site compatibility; intentionally unused so ids stay content-stable.
+  sequence?: number
 ): string {
+  void sequence;
   const fp = conversationMessageFingerprint(
     role === "user" ? "user" : role === "assistant" ? "assistant" : "system",
     content
@@ -284,5 +289,22 @@ export function stableHistoryMessageDocId(
     hash = (hash * 31 + fp.charCodeAt(i)) | 0;
   }
   const sender = role === "user" ? "u" : role === "assistant" ? "a" : "s";
-  return `hist_${sequence}_${sender}_${Math.abs(hash).toString(36)}`;
+  return `hist_${sender}_${Math.abs(hash).toString(36)}`;
+}
+
+/**
+ * Idempotency key for a visible user+assistant turn pair.
+ */
+export function visibleTurnIdempotencyKey(params: {
+  conversationId: string;
+  userMessage: string;
+  assistantMessage: string;
+  clientMessageId?: string | null;
+}): string {
+  if (params.clientMessageId && String(params.clientMessageId).trim()) {
+    return `turn_${String(params.clientMessageId).trim()}`;
+  }
+  const u = stableHistoryMessageDocId("user", params.userMessage);
+  const a = stableHistoryMessageDocId("assistant", params.assistantMessage);
+  return `turn_${params.conversationId}_${u}_${a}`;
 }

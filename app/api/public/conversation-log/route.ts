@@ -35,43 +35,53 @@ export async function POST(req: Request) {
       .doc(sessionId);
 
     const snap = await convRef.get();
+    const hasUser = Boolean(userMessage && String(userMessage).trim());
+    const hasAssistant = Boolean(assistantMessage && String(assistantMessage).trim());
+    const incrementBy = (hasUser ? 1 : 0) + (hasAssistant ? 1 : 0);
 
     if (!snap.exists) {
-      // Create new conversation document
       await convRef.set({
         clinicId,
         sessionId,
-        firstMessage: userMessage ?? "",
-        messageCount: 1,
+        firstMessage: hasUser ? String(userMessage) : "",
+        messageCount: Math.max(1, incrementBy),
         status: "open",
         createdAt: nowIso,
         updatedAt: nowIso,
         userName: "Visitor",
         durationSec: 0,
       });
-    } else {
-      // Increment message count and update timestamp
+    } else if (incrementBy > 0) {
       const data = snap.data()!;
       await convRef.update({
-        messageCount: (data.messageCount ?? 0) + 1,
+        messageCount: (data.messageCount ?? 0) + incrementBy,
         updatedAt: nowIso,
         status: "open",
       });
     }
 
-    const content = userMessage ?? assistantMessage ?? "";
-    const role = userMessage ? "user" : "assistant";
+    // Legacy conversations/messages (append-only; used as secondary source).
+    if (hasUser) {
+      await convRef.collection("messages").add({
+        role: "user",
+        content: String(userMessage),
+        createdAt: nowIso,
+      });
+    }
+    if (hasAssistant) {
+      await convRef.collection("messages").add({
+        role: "assistant",
+        content: String(assistantMessage),
+        createdAt: new Date(Date.now() + 1).toISOString(),
+      });
+    }
 
-    // Log individual message (legacy store)
-    await convRef.collection("messages").add({
-      role,
-      content,
-      createdAt: nowIso,
-    });
+    // Dual-write into conversationLogs with content-stable ids (idempotent upserts).
+    const turns: Array<{ role: "user" | "assistant"; content: string }> = [];
+    if (hasUser) turns.push({ role: "user", content: String(userMessage).trim() });
+    if (hasAssistant) turns.push({ role: "assistant", content: String(assistantMessage).trim() });
 
-    // Dual-write into conversationLogs so portal detail can see early turns
-    // even when /chat appointment early-returns skip logConversation.
-    if (content && String(content).trim()) {
+    if (turns.length > 0) {
       try {
         const logRef = adminDb
           .collection("clinics")
@@ -79,15 +89,45 @@ export async function POST(req: Request) {
           .collection("conversationLogs")
           .doc(sessionId);
         const logSnap = await logRef.get();
-        const existingCount = logSnap.exists
-          ? Number(logSnap.data()?.totalMessages || 0)
-          : 0;
-        const seq = existingCount;
-        const docId = stableHistoryMessageDocId(
-          role === "user" ? "user" : "assistant",
-          String(content),
-          seq
-        );
+        const messagesCol = logRef.collection("messages");
+        let maxSeq = -1;
+        let newWrites = 0;
+
+        for (let i = 0; i < turns.length; i++) {
+          const turn = turns[i];
+          const docId = stableHistoryMessageDocId(turn.role, turn.content);
+          const existing = await messagesCol.doc(docId).get();
+          if (existing.exists) {
+            const seq = existing.data()?.sequence;
+            if (typeof seq === "number" && seq > maxSeq) maxSeq = seq;
+            continue;
+          }
+          if (maxSeq < 0) {
+            // Lazily discover max sequence once when inserting.
+            const all = await messagesCol.select("sequence").get();
+            for (const d of all.docs) {
+              const seq = d.data()?.sequence;
+              if (typeof seq === "number" && seq > maxSeq) maxSeq = seq;
+            }
+          }
+          maxSeq += 1;
+          await messagesCol.doc(docId).set(
+            {
+              sender: turn.role === "user" ? "patient" : "assistant",
+              role: turn.role,
+              content: turn.content,
+              createdAt: new Date(Date.now() + i).toISOString(),
+              sequence: maxSeq,
+              wasAnswered: true,
+              needsTraining: false,
+              source: "conversation_log_dual_write",
+            },
+            { merge: true }
+          );
+          newWrites++;
+        }
+
+        const after = await messagesCol.get();
         await logRef.set(
           {
             clinicId,
@@ -99,26 +139,16 @@ export async function POST(req: Request) {
                   status: "open",
                   language: "tr",
                   convertedToAppointment: false,
-                  lastMessagePreview: String(content).slice(0, 100),
                 }),
-            totalMessages: existingCount + 1,
-            lastMessagePreview: String(content).slice(0, 100),
+            totalMessages: after.size,
+            lastMessagePreview: turns[turns.length - 1].content.slice(0, 100),
           },
           { merge: true }
         );
-        await logRef.collection("messages").doc(docId).set(
-          {
-            sender: role === "user" ? "patient" : "assistant",
-            role,
-            content: String(content),
-            createdAt: nowIso,
-            sequence: seq,
-            wasAnswered: true,
-            needsTraining: false,
-            source: "conversation_log_dual_write",
-          },
-          { merge: true }
-        );
+
+        if (newWrites === 0 && after.size === 0) {
+          /* nothing */
+        }
       } catch (dualErr: any) {
         console.warn("[conversation-log] dual-write skipped:", dualErr?.message);
       }

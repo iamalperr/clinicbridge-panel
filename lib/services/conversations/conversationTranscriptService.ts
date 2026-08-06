@@ -8,6 +8,7 @@ import {
   countVisibleConversationMessages,
   mergeConversationTranscriptSources,
   stableHistoryMessageDocId,
+  visibleTurnIdempotencyKey,
   type CanonicalConversationDetail,
   type RawTranscriptMessage,
 } from "./conversationTranscript";
@@ -203,23 +204,44 @@ export async function syncConversationLogMessagesFromHistory(
   });
 
   const base = Date.parse(params.baseIso || "") || Date.now();
+  // Preserve first-write timestamps: re-sync must not shuffle chronology.
+  const existingSnap = await logRef.collection("messages").get();
+  const existingById = new Map(existingSnap.docs.map((d) => [d.id, d.data() || {}]));
+  let nextSequence =
+    Math.max(
+      -1,
+      ...existingSnap.docs.map((d) => {
+        const seq = d.data()?.sequence;
+        return typeof seq === "number" ? seq : -1;
+      })
+    ) + 1;
+
   const batch = adminDb.batch();
   let writes = 0;
+  const now = Date.now();
 
   turns.forEach((turn, index) => {
     const docId = stableHistoryMessageDocId(turn.role, turn.content, index);
     const ref = logRef.collection("messages").doc(docId);
+    const prior = existingById.get(docId);
+    const isNew = !prior;
+    const createdAt =
+      typeof prior?.createdAt === "string" && prior.createdAt
+        ? prior.createdAt
+        : new Date(isNew ? now + index : base + index * 2).toISOString();
+    const sequence =
+      typeof prior?.sequence === "number" ? prior.sequence : nextSequence++;
     batch.set(
       ref,
       {
         sender: turn.role === "user" ? "patient" : "assistant",
         role: turn.role,
         content: turn.content,
-        createdAt: new Date(base + index).toISOString(),
-        sequence: index,
+        createdAt,
+        sequence,
         wasAnswered: true,
         needsTraining: false,
-        source: "history_sync",
+        source: prior?.source || "history_sync",
       },
       { merge: true }
     );
@@ -229,17 +251,22 @@ export async function syncConversationLogMessagesFromHistory(
   if (params.includeLiveSupportSystem) {
     const sysContent = "Canlı Destek Yönlendirmesi Gösterildi";
     const sysId = stableHistoryMessageDocId("system", sysContent, turns.length);
+    const prior = existingById.get(sysId);
     batch.set(
       logRef.collection("messages").doc(sysId),
       {
         sender: "system",
         role: "system",
         content: sysContent,
-        createdAt: new Date(base + turns.length).toISOString(),
-        sequence: turns.length,
+        createdAt:
+          typeof prior?.createdAt === "string" && prior.createdAt
+            ? prior.createdAt
+            : new Date(now + turns.length).toISOString(),
+        sequence:
+          typeof prior?.sequence === "number" ? prior.sequence : nextSequence++,
         wasAnswered: true,
         needsTraining: false,
-        source: "history_sync",
+        source: prior?.source || "history_sync",
       },
       { merge: true }
     );
@@ -253,4 +280,102 @@ export async function syncConversationLogMessagesFromHistory(
   // Count after sync (prefer counting synced turns; include existing extras).
   const after = await logRef.collection("messages").get();
   return after.size;
+}
+
+export interface PersistVisibleChatTurnParams {
+  clinicId: string;
+  conversationId: string;
+  userMessage: string;
+  assistantMessage: string;
+  responseType?: string;
+  clientMessageId?: string | null;
+  appointmentState?: string | null;
+  /** Prior widget history — best-effort backfill of missing earlier turns. */
+  history?: Array<{ role?: string; content?: string }> | null;
+  isLiveSupport?: boolean;
+  statusHint?: string;
+}
+
+/**
+ * Canonical persistence for one user-visible chat turn.
+ * Writes both sides exactly once (content-stable ids) and optionally
+ * backfills earlier history turns that fell out of prior writes.
+ */
+export async function persistVisibleChatTurn(
+  adminDb: Firestore,
+  params: PersistVisibleChatTurnParams
+): Promise<{ messageCount: number; persistedAssistant: boolean }> {
+  const userMessage = String(params.userMessage || "").trim();
+  const assistantMessage = String(params.assistantMessage || "").trim();
+  if (!params.clinicId || !params.conversationId) {
+    return { messageCount: 0, persistedAssistant: false };
+  }
+  // No user-visible assistant text → do not invent an assistant turn.
+  if (!assistantMessage) {
+    if (userMessage) {
+      // Still persist the user side if somehow orphaned.
+      await syncConversationLogMessagesFromHistory(adminDb, {
+        clinicId: params.clinicId,
+        conversationId: params.conversationId,
+        history: params.history,
+        userMessage,
+        aiReply: "",
+      });
+    }
+    return { messageCount: 0, persistedAssistant: false };
+  }
+
+  const nowIso = new Date().toISOString();
+  const logRef = adminDb
+    .collection("clinics")
+    .doc(params.clinicId)
+    .collection("conversationLogs")
+    .doc(params.conversationId);
+
+  // Backfill any history turns (idempotent), then ensure current pair exists.
+  const count = await syncConversationLogMessagesFromHistory(adminDb, {
+    clinicId: params.clinicId,
+    conversationId: params.conversationId,
+    history: params.history,
+    userMessage,
+    aiReply: assistantMessage,
+    baseIso: nowIso,
+    includeLiveSupportSystem: Boolean(params.isLiveSupport),
+  });
+
+  // Stamp response metadata on the assistant doc for diagnostics (no PII dump).
+  const asstId = stableHistoryMessageDocId("assistant", assistantMessage);
+  await logRef.collection("messages").doc(asstId).set(
+    {
+      responseType: params.responseType || "CHAT_REPLY",
+      turnKey: visibleTurnIdempotencyKey({
+        conversationId: params.conversationId,
+        userMessage,
+        assistantMessage,
+        clientMessageId: params.clientMessageId,
+      }),
+      updatedAt: nowIso,
+    },
+    { merge: true }
+  );
+
+  const patch: Record<string, unknown> = {
+    clinicId: params.clinicId,
+    updatedAt: nowIso,
+    totalMessages: count,
+    lastMessagePreview: userMessage.slice(0, 100) || assistantMessage.slice(0, 100),
+  };
+  if (params.appointmentState) patch.appointmentState = params.appointmentState;
+  if (params.statusHint) patch.status = params.statusHint;
+
+  const snap = await logRef.get();
+  if (!snap.exists) {
+    patch.createdAt = nowIso;
+    patch.convertedToAppointment = false;
+    patch.language = "tr";
+    patch.status = params.statusHint || "open";
+  }
+  await logRef.set(patch, { merge: true });
+
+  return { messageCount: count, persistedAssistant: true };
 }

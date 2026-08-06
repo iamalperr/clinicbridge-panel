@@ -871,28 +871,67 @@ async function logConversation(params: {
   }
 }
 
-/** Log a chat turn (with history sync) without changing status heuristics beyond appointmentState. */
-async function logChatTurn(params: {
-  clinicId: string;
-  convId: string;
-  userMessage: string;
-  aiReply: string;
-  history: any[];
-  appointmentState?: AppointmentState;
-  isLiveSupport?: boolean;
-}) {
-  await logConversation({
-    clinicId: params.clinicId,
-    convId: params.convId,
-    userMessage: params.userMessage,
-    aiReply: params.aiReply,
-    historyLength: params.history?.length || 0,
-    history: params.history,
-    appointmentState: params.appointmentState,
-    isLiveSupport: params.isLiveSupport,
-  });
-}
+/**
+ * Canonical response finalizer: persist the visible user+assistant turn, then return JSON.
+ * Every user-visible `reply` must go through this (or an equivalent awaited logConversation).
+ */
+async function respondWithVisibleReply(
+  payload: Record<string, any>,
+  persist: {
+    clinicId: string;
+    convId: string;
+    userMessage: string;
+    history?: Array<{ role?: string; content?: string }> | null;
+    apptData?: AppointmentData | null;
+    appointmentId?: string;
+    isAppointmentCreated?: boolean;
+    isLiveSupport?: boolean;
+    tenantId?: string;
+    widgetId?: string;
+    sourceDomain?: string;
+    detectedLanguage?: string;
+    promptVersionId?: string;
+    knowledgeBaseId?: string;
+    retrievedDocumentCount?: number;
+    fallbackReason?: string;
+    appointmentState?: AppointmentState;
+    /** When false, skip persistence (empty duplicate / no visible reply). Default true when reply non-empty. */
+    skipPersist?: boolean;
+  }
+) {
+  const reply = typeof payload.reply === "string" ? payload.reply : "";
+  const shouldPersist =
+    !persist.skipPersist && Boolean(persist.clinicId && persist.convId && reply.trim());
 
+  if (shouldPersist) {
+    await logConversation({
+      clinicId: persist.clinicId,
+      convId: persist.convId,
+      userMessage: persist.userMessage,
+      aiReply: reply,
+      historyLength: persist.history?.length || 0,
+      history: persist.history,
+      apptData: persist.apptData,
+      appointmentId: persist.appointmentId,
+      isAppointmentCreated: persist.isAppointmentCreated,
+      isLiveSupport: persist.isLiveSupport,
+      tenantId: persist.tenantId,
+      widgetId: persist.widgetId,
+      sourceDomain: persist.sourceDomain,
+      detectedLanguage: persist.detectedLanguage,
+      promptVersionId: persist.promptVersionId,
+      knowledgeBaseId: persist.knowledgeBaseId,
+      retrievedDocumentCount: persist.retrievedDocumentCount,
+      fallbackReason: persist.fallbackReason,
+      appointmentState: persist.appointmentState,
+    });
+  }
+
+  if (persist.convId && payload.conversationId === undefined) {
+    payload.conversationId = persist.convId;
+  }
+  return NextResponse.json(payload, { headers: CORS });
+}
 
 /* ═══════════════════════════════════════════════════════════════════════
    MAIN POST HANDLER
@@ -993,9 +1032,14 @@ export async function POST(req: Request) {
     }
 
     if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json(
+      return respondWithVisibleReply(
         { reply: "Yapay zeka servisi şu an yapılandırılmamış. Lütfen kliniğimizi arayın." },
-        { headers: CORS }
+        {
+          clinicId,
+          convId,
+          userMessage: message,
+          history,
+        }
       );
     }
 
@@ -1190,6 +1234,21 @@ export async function POST(req: Request) {
       clinicDefaultLocale: clinicLanguage
     });
 
+    /** Shared persistence context for every visible assistant reply on this request. */
+    const basePersist = (
+      extra: Partial<Parameters<typeof respondWithVisibleReply>[1]> = {}
+    ): Parameters<typeof respondWithVisibleReply>[1] => ({
+      clinicId: actualClinicId,
+      convId,
+      userMessage: message,
+      history,
+      widgetId: widgetId || body.widgetId,
+      detectedLanguage: conversationLocale,
+      tenantId: agencyIdForClinic || clinicId,
+      sourceDomain: body.originUrl || req.headers.get("origin") || req.headers.get("referer") || "unknown",
+      ...extra,
+    });
+
     console.log(JSON.stringify({
       checkpoint: "APPOINTMENT_LOCALE_RESOLUTION",
       traceId: activeTraceId,
@@ -1267,12 +1326,12 @@ export async function POST(req: Request) {
              missingDraftSlots,
              conversationLocale
            );
-           return NextResponse.json({ 
+           return respondWithVisibleReply({ 
              success: true, 
              responseType: "appointment_information_required", 
              appointmentCreated: false, 
              reply: missingPrompt 
-           }, { headers: CORS });
+           }, basePersist({ appointmentState: nextSubState }));
          }
          
          // 1.5 Final Strict Date & Time Hard Block
@@ -1294,12 +1353,12 @@ export async function POST(req: Request) {
             const clarificationFallback = conversationLocale.startsWith("en")
               ? "I noticed a discrepancy with the appointment date. Could you please confirm or specify the date again?"
               : "Tarih ile ilgili bir tutarsızlık fark ettim. Lütfen randevu tarihinizi tekrar onaylayın veya düzeltin.";
-            return NextResponse.json({ 
+            return respondWithVisibleReply({ 
                success: true, 
                responseType: "appointment_date_clarification_required", 
                appointmentCreated: false, 
                reply: finalDateValidation.clarificationMessage || clarificationFallback 
-            }, { headers: CORS });
+            }, basePersist({ appointmentState: "AWAITING_DATE_CLARIFICATION" }));
          }
 
          // Override with canonical just to be absolutely sure
@@ -1356,26 +1415,8 @@ export async function POST(req: Request) {
                    ? `شكراً لك. تم إرسال طلب الموعد المبدئي الخاص بك إلى ${clinicName}. سيقوم فريق العيادة بمراجعة طلبك والتواصل معك.`
                    : `Teşekkür ederim. Ön randevu talebiniz ${clinicName}'e iletildi. Klinik ekibi talebinizi değerlendirdikten sonra kayıtlı iletişim bilgileriniz üzerinden size bilgi verecektir.`;
 
-                 // LOG THE SUCCESSFUL APPOINTMENT CREATION
-                 await logConversation({
-                   clinicId: actualClinicId,
-                   convId,
-                   userMessage: message,
-                   aiReply: successReply,
-                   historyLength: history.length,
-                   history,
-                   apptData: loadedDraft,
-                   appointmentId: result.appointmentId,
-                   isAppointmentCreated: true,
-                   appointmentState: "APPOINTMENT_SUBMITTED",
-                   tenantId: "legacy",
-                   widgetId: body.widgetId,
-                   sourceDomain: body.originUrl || "unknown",
-                   detectedLanguage: conversationLocale
-                 });
-
-                 // 5. Return strict response
-                 return NextResponse.json({
+                 // LOG THE SUCCESSFUL APPOINTMENT CREATION (via respondWithVisibleReply)
+                 return respondWithVisibleReply({
                      success: true,
                      responseType: "appointment_created",
                      appointmentCreated: true,
@@ -1384,7 +1425,12 @@ export async function POST(req: Request) {
                      clinicNotificationSent: result.clinicNotificationStatus === "SENT" || result.clinicNotificationStatus === "ACCEPTED",
                      patientNotificationSent: result.patientNotificationStatus === "SENT" || result.patientNotificationStatus === "ACCEPTED",
                      reply: successReply
-                 }, { headers: CORS });
+                 }, basePersist({
+                   apptData: loadedDraft,
+                   appointmentId: result.appointmentId,
+                   isAppointmentCreated: true,
+                   appointmentState: "APPOINTMENT_SUBMITTED",
+                 }));
 
              } else {
                  await saveAppointmentState(adminDb, actualClinicId, convId, 0, "AWAITING_CONFIRMATION", loadedDraft, { conversationLocale });
@@ -1393,13 +1439,13 @@ export async function POST(req: Request) {
                    : conversationLocale.startsWith("de")
                    ? "Es tut uns leid, Ihre Terminanfrage konnte derzeit nicht gespeichert werden. Bitte versuchen Sie es später noch einmal."
                    : "Üzgünüm, ön randevu talebiniz şu anda sisteme kaydedilemedi. Lütfen daha sonra tekrar deneyin.";
-                 return NextResponse.json({
+                 return respondWithVisibleReply({
                      success: false,
                      responseType: "appointment_creation_failed",
                      appointmentCreated: false,
                      errorCode: "APPOINTMENT_CREATE_FAILED",
                      reply: failReply
-                 }, { headers: CORS });
+                 }, basePersist({ appointmentState: "AWAITING_CONFIRMATION" }));
              }
 
          } catch (err: any) {
@@ -1407,13 +1453,13 @@ export async function POST(req: Request) {
              const failReply = conversationLocale.startsWith("en")
                ? "I am sorry, your preliminary appointment request could not be saved at this time. Please try again later."
                : "Üzgünüm, ön randevu talebiniz şu anda sisteme kaydedilemedi. Lütfen daha sonra tekrar deneyin.";
-             return NextResponse.json({
+             return respondWithVisibleReply({
                  success: false,
                  responseType: "appointment_creation_failed",
                  appointmentCreated: false,
                  errorCode: "APPOINTMENT_CREATE_FAILED",
                  reply: failReply
-             }, { headers: CORS });
+             }, basePersist({ appointmentState: "AWAITING_CONFIRMATION" }));
          }
     } else if (positiveConfirmationDetected) {
          console.log("[CONFIRMATION_HANDLER_BYPASSED]", { reason: "state_not_awaiting_confirmation" });
@@ -1440,7 +1486,10 @@ export async function POST(req: Request) {
           
           if (processedMessageIds.includes(messageId)) {
              console.log(`[IDEMPOTENCY_SKIPPED] convId=${convId} messageId=${messageId}`);
-             return NextResponse.json({ responseType: "CHAT_REPLY", duplicate: true, reply: "" }, { headers: CORS });
+             return respondWithVisibleReply(
+               { responseType: "CHAT_REPLY", duplicate: true, reply: "" },
+               basePersist({ skipPersist: true })
+             );
           }
         }
       } catch (e: any) {
@@ -1543,12 +1592,15 @@ export async function POST(req: Request) {
         processedMessageIds: [...processedMessageIds, messageId]
       });
 
-      return NextResponse.json({
+      return respondWithVisibleReply({
         responseType: "CHAT_REPLY",
         reply: switchReply,
         detectedLanguage: newLocale,
         pendingAppointmentData: appointmentDraft
-      }, { headers: CORS });
+      }, basePersist({
+        detectedLanguage: newLocale,
+        appointmentState,
+      }));
     }
 
     // 2. Cancellation Intent
@@ -1567,32 +1619,32 @@ export async function POST(req: Request) {
         : conversationLocale.startsWith("ar")
         ? "لقد قمت بإلغاء طلب الموعد الخاص بك. كيف يمكنني مساعدتك أكثر؟"
         : "Randevu talebinizi iptal ettim. Size başka nasıl yardımcı olabilirim?";
-      return NextResponse.json({
+      return respondWithVisibleReply({
         responseType: "CHAT_REPLY",
         reply: cancelReply,
         pendingAppointmentData: null
-      }, { headers: CORS });
+      }, basePersist({ appointmentState: "IDLE" }));
     }
 
     // 3. Handle Contextual Clarification Needed (e.g. When? disambiguation)
     if (conversationIntent.clarificationNeeded && conversationIntent.clarificationPrompt) {
-      return NextResponse.json({
+      return respondWithVisibleReply({
         responseType: "CHAT_REPLY",
         reply: conversationIntent.clarificationPrompt,
         quickReplies: conversationIntent.suggestedOptions || [],
         pendingAppointmentData: appointmentDraft
-      }, { headers: CORS });
+      }, basePersist({ appointmentState }));
     }
 
     // 4. Handle Contact / Live Support Request (Preserves active appointment flow state)
     if (conversationIntent.intent === "contact_request" || conversationIntent.intent === "live_support_request") {
       const effectiveContactNumber = clinicWhatsapp || clinicData?.turkishContactNumber || clinicData?.internationalContactNumber || clinicData?.phone;
       const contactMsg = formatContactResponse(effectiveContactNumber, conversationIntent.entities?.contactTarget, conversationLocale);
-      return NextResponse.json({
+      return respondWithVisibleReply({
         responseType: "CHAT_REPLY",
         reply: contactMsg,
         pendingAppointmentData: appointmentDraft
-      }, { headers: CORS });
+      }, basePersist({ appointmentState, isLiveSupport: conversationIntent.intent === "live_support_request" }));
     }
 
     let isMidFlowInterruption = false;
@@ -1666,11 +1718,11 @@ export async function POST(req: Request) {
             const clarificationFail = conversationLocale.startsWith("en")
               ? "The date could not be understood. Please specify again."
               : "Tarih anlaşılamadı. Lütfen tekrar belirtin.";
-            return NextResponse.json({ 
+            return respondWithVisibleReply({ 
               responseType: "CHAT_REPLY", 
               reply: validationResult.clarificationMessage || clarificationFail, 
               pendingAppointmentData: appointmentDraft 
-            }, { headers: CORS });
+            }, basePersist({ appointmentState: "AWAITING_DATE_CLARIFICATION" }));
           }
         }
       } else if (appointmentState === "COLLECTING_PHONE" && !appointmentDraft.patientPhone) {
@@ -1684,19 +1736,11 @@ export async function POST(req: Request) {
           appointmentDraft.patientPhone = finalPhone;
         } else {
           const reply = ConversationStateEngine.generateNextSlotPrompt(appointmentDraft, ["phone"], conversationLocale);
-          await logChatTurn({
-            clinicId: actualClinicId,
-            convId,
-            userMessage: message,
-            aiReply: reply,
-            history,
-            appointmentState: "COLLECTING_PHONE",
-          });
-          return NextResponse.json({
+          return respondWithVisibleReply({
             responseType: "CHAT_REPLY",
             reply,
             pendingAppointmentData: appointmentDraft
-          }, { headers: CORS });
+          }, basePersist({ appointmentState: "COLLECTING_PHONE" }));
         }
       } else if (appointmentState === "COLLECTING_EMAIL" && !appointmentDraft.patientEmail) {
         const extractedEmail = SlotExtractor.parseEmail(message.trim());
@@ -1704,19 +1748,11 @@ export async function POST(req: Request) {
           appointmentDraft.patientEmail = extractedEmail;
         } else {
           const reply = ConversationStateEngine.generateNextSlotPrompt(appointmentDraft, ["email"], conversationLocale, undefined, "invalid_email");
-          await logChatTurn({
-            clinicId: actualClinicId,
-            convId,
-            userMessage: message,
-            aiReply: reply,
-            history,
-            appointmentState: "COLLECTING_EMAIL",
-          });
-          return NextResponse.json({
+          return respondWithVisibleReply({
             responseType: "CHAT_REPLY",
             reply,
             pendingAppointmentData: appointmentDraft
-          }, { headers: CORS });
+          }, basePersist({ appointmentState: "COLLECTING_EMAIL" }));
         }
       } else if (appointmentState === "COLLECTING_NAME" && !appointmentDraft.patientName) {
         const parsedName = SlotExtractor.parseName(message.trim());
@@ -1745,19 +1781,11 @@ export async function POST(req: Request) {
           appointmentData: appointmentDraft,
           clinicName
         });
-        await logChatTurn({
-          clinicId: actualClinicId,
-          convId,
-          userMessage: message,
-          aiReply: reviewMsg,
-          history,
-          appointmentState: "AWAITING_CONFIRMATION",
-        });
-        return NextResponse.json({
+        return respondWithVisibleReply({
           responseType: "CHAT_REPLY",
           reply: reviewMsg,
           pendingAppointmentData: appointmentDraft
-        }, { headers: CORS });
+        }, basePersist({ appointmentState: "AWAITING_CONFIRMATION", apptData: appointmentDraft as AppointmentData }));
       }
 
       const earliestMissing = missingSlots[0];
@@ -1790,20 +1818,11 @@ export async function POST(req: Request) {
         conversationIntent.allInfoProvidedIntent
       );
 
-      await logChatTurn({
-        clinicId: actualClinicId,
-        convId,
-        userMessage: message,
-        aiReply: nextSlotPrompt,
-        history,
-        appointmentState: nextSubState,
-      });
-
-      return NextResponse.json({
+      return respondWithVisibleReply({
         responseType: "CHAT_REPLY",
         reply: nextSlotPrompt,
         pendingAppointmentData: appointmentDraft
-      }, { headers: CORS });
+      }, basePersist({ appointmentState: nextSubState }));
     }
 
 
@@ -2202,18 +2221,11 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
               : `Belirttiğiniz ${validation.requestedTime || ""} saati kliniğimizin çalışma saatleri dışında kalmaktadır. Kliniğimizin çalışma saatleri: ${validation.scheduleSummary || ""}. Bu saatler içerisinden size uygun başka bir saat paylaşabilir misiniz?`
           );
 
-          await logConversation({
-            clinicId: actualClinicId,
-            convId,
-            userMessage: message,
-            aiReply: fallbackMsg,
-            historyLength: history.length,
-            history,
-            appointmentState,
-          });
-
           console.log("[widget-chat] Rejected appointment time:", { requestedDay: validation.requestedDay, requestedTime: validation.requestedTime });
-          return NextResponse.json({ responseType: "CHAT_REPLY", reply: fallbackMsg, conversationId: convId, pendingAppointmentData: appointmentDraft }, { headers: CORS });
+          return respondWithVisibleReply(
+            { responseType: "CHAT_REPLY", reply: fallbackMsg, conversationId: convId, pendingAppointmentData: appointmentDraft },
+            basePersist({ appointmentState })
+          );
         }
       }
     }
@@ -2321,18 +2333,10 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
       debugLog.push(`liveSupport=short-circuit wa=${!!clinicWhatsapp} tg=${!!clinicTelegram} lang=${lang}`);
       console.log("[widget-chat]", debugLog.join(" | "));
 
-      // Log the handoff event
-      await logConversation({
-        clinicId: actualClinicId,
-        convId,
-        userMessage: message,
-        aiReply: handoffMsg,
-        historyLength: history.length,
-        history,
+      return respondWithVisibleReply(handoffPayload, basePersist({
         isLiveSupport: true,
-      });
-
-      return NextResponse.json(handoffPayload, { headers: CORS });
+        appointmentState,
+      }));
     }
 
     /* ── Normal AI call ───────────────────────────────────────────────── */
@@ -2799,7 +2803,9 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
              nextState: "AWAITING_DATE_CLARIFICATION"
           }));
 
-          return NextResponse.json(responsePayload, { headers: CORS });
+          return respondWithVisibleReply(responsePayload, basePersist({
+            appointmentState: "AWAITING_DATE_CLARIFICATION",
+          }));
       }
 
       // V2 Validation passed or was automatically deterministically resolved
@@ -2863,25 +2869,6 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       }
     }
 
-    await logConversation({
-      clinicId: actualClinicId,
-      convId,
-      userMessage: message,
-      aiReply: responsePayload.reply,
-      historyLength: history.length,
-      history,
-      apptData: isConfirmSummary ? responsePayload.pendingAppointmentData : null,
-      tenantId: agencyIdForClinic || clinicId,
-      widgetId: widgetId || "unknown",
-      sourceDomain: req.headers.get("origin") || req.headers.get("referer") || "unknown",
-      detectedLanguage: conversationLocale,
-      promptVersionId: "production",
-      knowledgeBaseId: "default",
-      retrievedDocumentCount: trainingDocs.length,
-      fallbackReason: responsePayload.reply.includes("doğrulayamıyorum") ? "groundedness_failure" : "",
-      appointmentState,
-    });
-
     if (adminDb && actualClinicId && convId && (appointmentState !== "IDLE" || responsePayload.pendingAction)) {
         try {
             await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, appointmentState, appointmentDraft, {
@@ -2894,7 +2881,14 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
         }
     }
 
-    return NextResponse.json(responsePayload, { headers: CORS });
+    return respondWithVisibleReply(responsePayload, basePersist({
+      apptData: isConfirmSummary ? responsePayload.pendingAppointmentData : null,
+      promptVersionId: "production",
+      knowledgeBaseId: "default",
+      retrievedDocumentCount: trainingDocs.length,
+      fallbackReason: String(responsePayload.reply || "").includes("doğrulayamıyorum") ? "groundedness_failure" : "",
+      appointmentState,
+    }));
 
   } catch (err: any) {
     debugLog.push(`ERROR: ${err.message ?? err}`);
