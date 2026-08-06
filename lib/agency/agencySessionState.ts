@@ -1,5 +1,5 @@
 /**
- * Canonical agency chat session state (Phase 1 + Phase 2 alias policy).
+ * Canonical agency chat session state (Phase 1–5).
  *
  * Flat serialized shape — field names match current `sessionContext` JSON.
  * Nested v2 redesign is deferred until adapters exist.
@@ -7,9 +7,10 @@
  * VERSIONING / MIGRATION BOUNDARY
  * -------------------------------
  * - Version 1 keeps flat legacy aliases on the wire.
- * - Accessors below provide a canonical in-memory interpretation.
+ * - Accessors provide a canonical in-memory interpretation.
+ * - Phase 5 adds optional additive `fieldProvenance` (no Firestore migration).
  * - Future version 2 may serialize nested state through adapters.
- * - Old clients remain supported; no Firestore migration in Phase 2.
+ * - Old clients remain supported.
  *
  * CLIENT TRUST BOUNDARY
  * ---------------------
@@ -23,8 +24,10 @@
  * - clinic eligibility
  * - lead / quote persistence
  *
- * Client fields such as `quoteConsent`, `selectedClinicIds`, or
- * `quoteRequestLocked` must never authorize writes by themselves.
+ * Client fields such as `quoteConsent`, `selectedClinicIds`,
+ * `quoteRequestLocked`, or client-claimed `fieldProvenance` must never
+ * authorize writes by themselves. Client provenance is sanitized at the
+ * API boundary (`sanitizeClientAgencyFieldProvenance`).
  *
  * ALIAS PRECEDENCE (Phase 2)
  * --------------------------
@@ -38,6 +41,14 @@
  * 7. Normalization may mirror a missing canonical from a non-conflicting alias
  *    (additive only). It never manufactures consent, clinic selection, or
  *    quote locks.
+ *
+ * FIELD PROVENANCE (Phase 5)
+ * --------------------------
+ * Optional `fieldProvenance` records source/confidence for a scoped set of
+ * fields. Provenance is structural metadata only — never consent, eligibility,
+ * or persistence authorization. Source strength (strongest → weakest):
+ * backend_verified > structured_action > user_explicit > persisted_state >
+ * system_derived > llm_extracted > legacy_client.
  */
 
 /** Current canonical session state version (numeric). */
@@ -86,9 +97,61 @@ export type AgencyIstanbulSideSource =
 /** FeelinHealthy intake group number (serialized flat on session). */
 export type AgencyIntakeGroupNumber = 1 | 2 | 3 | "completed";
 
+// ─── Phase 5 field provenance ──────────────────────────────────────────────
+
+/** Where a scoped session field value originated. */
+export type AgencyFieldSource =
+  | "user_explicit"
+  | "llm_extracted"
+  | "structured_action"
+  | "backend_verified"
+  | "system_derived"
+  | "legacy_client"
+  | "persisted_state";
+
+/** Relative trust / certainty for a field value (structural only). */
+export type AgencyFieldConfidence = "low" | "medium" | "high" | "verified";
+
+/**
+ * Additive provenance for one field. JSON-serializable; ISO timestamps only.
+ * Never authorizes consent, eligibility, or persistence by itself.
+ */
+export type AgencyFieldProvenance = {
+  source: AgencyFieldSource;
+  confidence: AgencyFieldConfidence;
+  updatedAt?: string;
+  verifiedAt?: string;
+  actor?: string;
+  note?: string;
+};
+
+/**
+ * First-scope provenance fields (Phase 5).
+ * Likely sources (documentation only):
+ * - selectedCity: user_explicit | llm_extracted | structured_action | backend_verified
+ * - istanbul_side: user_explicit | structured_action | system_derived
+ * - patientName/email/phone: user_explicit | structured_action | legacy_client
+ * - lastTreatmentCategory / lastSubTreatment: user_explicit | llm_extracted | structured_action | backend_verified
+ * - travelDate: user_explicit | llm_extracted | structured_action
+ * - selectedClinicIds: structured_action | backend_verified | legacy_client
+ */
+export const AGENCY_PROVENANCE_SCOPED_FIELDS = [
+  "selectedCity",
+  "istanbul_side",
+  "patientName",
+  "patientEmail",
+  "patientPhone",
+  "lastTreatmentCategory",
+  "lastSubTreatment",
+  "travelDate",
+  "selectedClinicIds",
+] as const;
+
+export type AgencyProvenanceFieldKey = (typeof AGENCY_PROVENANCE_SCOPED_FIELDS)[number];
+
 /**
  * Known session fields, grouped for documentation only.
- * Serialization remains a flat object (no nested v2 shape in Phase 1/2).
+ * Serialization remains a flat object (no nested v2 shape in Phase 1–5).
  */
 export interface AgencySessionStateKnown {
   // ── identity / session metadata ──────────────────────────────────────────
@@ -103,6 +166,13 @@ export interface AgencySessionStateKnown {
   processingMode?: AgencyProcessingMode;
   /** Legacy persistence helper may read this; keep as unknown for Date/string. */
   createdAt?: string | unknown;
+
+  /**
+   * Optional additive provenance map (Phase 5).
+   * Keys are field names; unknown valid keys are preserved.
+   * Client-round-tripped claims are untrusted — sanitize at API boundary.
+   */
+  fieldProvenance?: Record<string, AgencyFieldProvenance>;
 
   // ── patient intake ───────────────────────────────────────────────────────
   /** Canonical full name. */
@@ -376,6 +446,14 @@ export function normalizeAgencySessionState(
   const existingVersion = out.stateVersion;
   if (typeof existingVersion !== "number" || !Number.isFinite(existingVersion)) {
     out.stateVersion = AGENCY_SESSION_STATE_VERSION;
+  }
+
+  // Structural provenance cleanup only — does not downgrade client trust claims
+  // (that happens in sanitizeClientAgencyFieldProvenance at the API boundary).
+  if (out.fieldProvenance !== undefined) {
+    const cleaned = sanitizeAgencyFieldProvenanceMap(out.fieldProvenance);
+    if (cleaned) out.fieldProvenance = cleaned;
+    else delete out.fieldProvenance;
   }
 
   return mirrorMissingAliases(out);
@@ -736,6 +814,436 @@ export function detectAgencySessionAliasConflicts(
       fields: ["patientGender", "gender"],
       detail: "patientGender outranks gender",
     });
+  }
+
+  return conflicts;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 5 — Field provenance (pure; never authorizes persistence)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const AGENCY_FIELD_SOURCE_STRENGTH: Record<AgencyFieldSource, number> = {
+  backend_verified: 70,
+  structured_action: 60,
+  user_explicit: 50,
+  persisted_state: 40,
+  system_derived: 30,
+  llm_extracted: 20,
+  legacy_client: 10,
+};
+
+const AGENCY_FIELD_CONFIDENCE_STRENGTH: Record<AgencyFieldConfidence, number> = {
+  verified: 40,
+  high: 30,
+  medium: 20,
+  low: 10,
+};
+
+const VALID_FIELD_SOURCES = new Set<string>(Object.keys(AGENCY_FIELD_SOURCE_STRENGTH));
+const VALID_FIELD_CONFIDENCES = new Set<string>(Object.keys(AGENCY_FIELD_CONFIDENCE_STRENGTH));
+
+function isAgencyFieldSource(value: unknown): value is AgencyFieldSource {
+  return typeof value === "string" && VALID_FIELD_SOURCES.has(value);
+}
+
+function isAgencyFieldConfidence(value: unknown): value is AgencyFieldConfidence {
+  return typeof value === "string" && VALID_FIELD_CONFIDENCES.has(value);
+}
+
+function isIsoTimestampString(value: unknown): value is string {
+  if (typeof value !== "string" || !value.trim()) return false;
+  const t = Date.parse(value);
+  return Number.isFinite(t);
+}
+
+/**
+ * Structural parse of one provenance entry. Returns undefined if malformed.
+ * Does not invent verified sources or elevate confidence.
+ */
+export function parseAgencyFieldProvenance(value: unknown): AgencyFieldProvenance | undefined {
+  if (!isPlainObject(value)) return undefined;
+  if (!isAgencyFieldSource(value.source)) return undefined;
+  if (!isAgencyFieldConfidence(value.confidence)) return undefined;
+  const out: AgencyFieldProvenance = {
+    source: value.source,
+    confidence: value.confidence,
+  };
+  if (isIsoTimestampString(value.updatedAt)) out.updatedAt = value.updatedAt.trim();
+  if (isIsoTimestampString(value.verifiedAt)) out.verifiedAt = value.verifiedAt.trim();
+  if (typeof value.actor === "string" && value.actor.trim()) {
+    out.actor = value.actor.trim().slice(0, 64);
+  }
+  if (typeof value.note === "string" && value.note.trim()) {
+    // Short structural note only — never store free-form patient PII here.
+    out.note = value.note.trim().slice(0, 120);
+  }
+  return out;
+}
+
+/**
+ * Sanitize a provenance map: keep structurally valid entries; drop the rest.
+ * Preserves unknown field keys when their entry is valid.
+ */
+export function sanitizeAgencyFieldProvenanceMap(
+  value: unknown
+): Record<string, AgencyFieldProvenance> | undefined {
+  if (!isPlainObject(value)) return undefined;
+  const out: Record<string, AgencyFieldProvenance> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (!key || typeof key !== "string") continue;
+    const parsed = parseAgencyFieldProvenance(entry);
+    if (parsed) out[key] = parsed;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * Combined source+confidence strength helper for diagnostics.
+ * Prefer `compareAgencyFieldProvenance` for overwrite decisions (source-first).
+ */
+export function agencyFieldProvenanceStrength(p: AgencyFieldProvenance): number {
+  return (
+    (AGENCY_FIELD_SOURCE_STRENGTH[p.source] || 0) * 100 +
+    (AGENCY_FIELD_CONFIDENCE_STRENGTH[p.confidence] || 0)
+  );
+}
+
+/**
+ * Compare two provenance records (source first, then confidence).
+ * Positive → a is stronger than b; negative → weaker; 0 → equal strength.
+ * Timestamps are not used (keeps comparison deterministic).
+ */
+export function compareAgencyFieldProvenance(
+  a: AgencyFieldProvenance,
+  b: AgencyFieldProvenance
+): number {
+  const sourceDiff =
+    (AGENCY_FIELD_SOURCE_STRENGTH[a.source] || 0) -
+    (AGENCY_FIELD_SOURCE_STRENGTH[b.source] || 0);
+  if (sourceDiff !== 0) return sourceDiff;
+  return (
+    (AGENCY_FIELD_CONFIDENCE_STRENGTH[a.confidence] || 0) -
+    (AGENCY_FIELD_CONFIDENCE_STRENGTH[b.confidence] || 0)
+  );
+}
+
+function isEffectivelyEmptyFieldValue(field: string, value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value === "string" && !value.trim()) return true;
+  // Explicit empty selectedClinicIds array is a valid "none selected" value —
+  // not treated as an erase attempt.
+  if (field === "selectedClinicIds" && Array.isArray(value)) return false;
+  if (Array.isArray(value) && value.length === 0) return true;
+  return false;
+}
+
+function readCurrentFieldValue(
+  state: AgencySessionStateInputMaybe,
+  field: string
+): unknown {
+  const r = asRecord(state);
+  return r[field];
+}
+
+export type ShouldReplaceAgencyFieldOptions = {
+  field: string;
+  currentValue: unknown;
+  currentProvenance?: AgencyFieldProvenance | null;
+  nextValue: unknown;
+  nextProvenance: AgencyFieldProvenance;
+  /** When true, bypass strength checks (still blocks empty-erase of non-empty). */
+  force?: boolean;
+};
+
+/**
+ * Decide whether nextValue may replace currentValue given provenance.
+ * Does not authorize persistence or consent.
+ */
+export function shouldReplaceAgencyFieldValue(
+  opts: ShouldReplaceAgencyFieldOptions
+): boolean {
+  const {
+    field,
+    currentValue,
+    currentProvenance,
+    nextValue,
+    nextProvenance,
+    force,
+  } = opts;
+
+  const nextEmpty = isEffectivelyEmptyFieldValue(field, nextValue);
+  const currentEmpty = isEffectivelyEmptyFieldValue(field, currentValue);
+
+  // Weaker/empty must not erase a stronger non-empty value.
+  if (nextEmpty && !currentEmpty) {
+    if (!currentProvenance) return false;
+    if (force) return true;
+    return compareAgencyFieldProvenance(nextProvenance, currentProvenance) > 0;
+  }
+
+  if (!currentProvenance) return true;
+  if (force) return true;
+
+  const cmp = compareAgencyFieldProvenance(nextProvenance, currentProvenance);
+  // Stronger or equal may replace (equal allows explicit user correction).
+  return cmp >= 0;
+}
+
+export function getAgencyFieldProvenance(
+  input: AgencySessionStateInputMaybe,
+  field: string
+): AgencyFieldProvenance | undefined {
+  const r = asRecord(input);
+  const map = r.fieldProvenance;
+  if (!isPlainObject(map)) return undefined;
+  return parseAgencyFieldProvenance(map[field]);
+}
+
+export type SetAgencyFieldProvenanceOptions = {
+  /** Injected ISO timestamp for deterministic tests. */
+  now?: string;
+};
+
+/**
+ * Write provenance for a field without changing the field value.
+ * Pure aside from optional `now` injection (defaults via wrapper below).
+ */
+export function setAgencyFieldProvenance(
+  state: AgencySessionStateInputMaybe,
+  field: string,
+  provenance: AgencyFieldProvenance,
+  opts?: SetAgencyFieldProvenanceOptions
+): AgencySessionState {
+  const base = normalizeAgencySessionState(state);
+  const parsed = parseAgencyFieldProvenance(provenance);
+  if (!parsed || !field) return base;
+
+  const updatedAt =
+    (opts?.now && isIsoTimestampString(opts.now) ? opts.now.trim() : undefined) ||
+    parsed.updatedAt;
+  const nextProv: AgencyFieldProvenance = {
+    ...parsed,
+    ...(updatedAt ? { updatedAt } : {}),
+  };
+  if (nextProv.source === "backend_verified" && nextProv.confidence === "verified") {
+    if (!nextProv.verifiedAt && updatedAt) nextProv.verifiedAt = updatedAt;
+  }
+
+  const map = {
+    ...(sanitizeAgencyFieldProvenanceMap(base.fieldProvenance) || {}),
+    [field]: nextProv,
+  };
+  return normalizeAgencySessionState({
+    ...(base as Record<string, unknown>),
+    fieldProvenance: map,
+  } as AgencySessionState);
+}
+
+export function clearAgencyFieldProvenance(
+  state: AgencySessionStateInputMaybe,
+  field: string
+): AgencySessionState {
+  const base = normalizeAgencySessionState(state);
+  const map = { ...(sanitizeAgencyFieldProvenanceMap(base.fieldProvenance) || {}) };
+  delete map[field];
+  const next = { ...(base as Record<string, unknown>) } as AgencySessionState;
+  if (Object.keys(map).length > 0) next.fieldProvenance = map;
+  else delete next.fieldProvenance;
+  return normalizeAgencySessionState(next);
+}
+
+export type UpdateAgencyFieldWithProvenanceResult = {
+  state: AgencySessionState;
+  applied: boolean;
+  reason?:
+    | "applied"
+    | "blocked_weaker_provenance"
+    | "blocked_empty_erase"
+    | "invalid_provenance";
+};
+
+/**
+ * Conditionally update a field and its provenance.
+ * Does not authorize persistence. Inject `now` for deterministic tests.
+ */
+export function updateAgencyFieldWithProvenance(
+  state: AgencySessionStateInputMaybe,
+  field: string,
+  value: unknown,
+  provenance: AgencyFieldProvenance,
+  opts?: SetAgencyFieldProvenanceOptions & { force?: boolean }
+): UpdateAgencyFieldWithProvenanceResult {
+  const parsed = parseAgencyFieldProvenance(provenance);
+  if (!parsed || !field) {
+    return {
+      state: normalizeAgencySessionState(state),
+      applied: false,
+      reason: "invalid_provenance",
+    };
+  }
+
+  const currentValue = readCurrentFieldValue(state, field);
+  const currentProvenance = getAgencyFieldProvenance(state, field);
+  const allow = shouldReplaceAgencyFieldValue({
+    field,
+    currentValue,
+    currentProvenance,
+    nextValue: value,
+    nextProvenance: parsed,
+    force: opts?.force,
+  });
+
+  if (!allow) {
+    const nextEmpty = isEffectivelyEmptyFieldValue(field, value);
+    const currentEmpty = isEffectivelyEmptyFieldValue(field, currentValue);
+    return {
+      state: normalizeAgencySessionState(state),
+      applied: false,
+      reason:
+        nextEmpty && !currentEmpty
+          ? "blocked_empty_erase"
+          : "blocked_weaker_provenance",
+    };
+  }
+
+  const base = normalizeAgencySessionState(state);
+  const withValue = {
+    ...(base as Record<string, unknown>),
+    [field]: value,
+  } as AgencySessionState;
+  const withProv = setAgencyFieldProvenance(withValue, field, parsed, {
+    now: opts?.now,
+  });
+  return { state: withProv, applied: true, reason: "applied" };
+}
+
+/**
+ * Convenience wrapper that stamps `updatedAt` with the current ISO time.
+ * Prefer `updateAgencyFieldWithProvenance(..., { now })` in tests.
+ */
+export function updateAgencyFieldWithProvenanceNow(
+  state: AgencySessionStateInputMaybe,
+  field: string,
+  value: unknown,
+  provenance: AgencyFieldProvenance,
+  opts?: { force?: boolean }
+): UpdateAgencyFieldWithProvenanceResult {
+  return updateAgencyFieldWithProvenance(state, field, value, provenance, {
+    ...opts,
+    now: new Date().toISOString(),
+  });
+}
+
+/**
+ * Downgrade untrusted client-round-tripped provenance at the API boundary.
+ * - backend_verified → legacy_client
+ * - confidence verified → high
+ * - verifiedAt stripped for non-backend sources after downgrade
+ * Never invents verified claims. Does not change field values.
+ */
+export function sanitizeClientAgencyFieldProvenance(
+  input: AgencySessionStateInputMaybe
+): AgencySessionState {
+  const base = normalizeAgencySessionState(input);
+  const map = sanitizeAgencyFieldProvenanceMap(base.fieldProvenance);
+  if (!map) {
+    const out = { ...(base as Record<string, unknown>) } as AgencySessionState;
+    delete out.fieldProvenance;
+    return normalizeAgencySessionState(out);
+  }
+
+  const sanitized: Record<string, AgencyFieldProvenance> = {};
+  for (const [key, entry] of Object.entries(map)) {
+    let source = entry.source;
+    let confidence = entry.confidence;
+    if (source === "backend_verified") source = "legacy_client";
+    if (confidence === "verified") confidence = "high";
+    const next: AgencyFieldProvenance = {
+      source,
+      confidence,
+    };
+    if (entry.updatedAt) next.updatedAt = entry.updatedAt;
+    if (entry.actor) next.actor = entry.actor;
+    if (entry.note) next.note = entry.note;
+    // Client cannot retain verifiedAt after downgrade.
+    sanitized[key] = next;
+  }
+
+  return normalizeAgencySessionState({
+    ...(base as Record<string, unknown>),
+    fieldProvenance: sanitized,
+  } as AgencySessionState);
+}
+
+export type AgencyFieldProvenanceConflictCode =
+  | "weaker_overwrite_attempt"
+  | "client_backend_verified_claim"
+  | "client_verified_confidence_claim"
+  | "same_strength_value_mismatch";
+
+export interface AgencyFieldProvenanceConflict {
+  code: AgencyFieldProvenanceConflictCode;
+  field: string;
+  detail: string;
+}
+
+/**
+ * Non-authoritative provenance diagnostics. Pure — no logging / no PII values.
+ */
+export function detectAgencyFieldProvenanceConflicts(
+  input: AgencySessionStateInputMaybe,
+  incoming?: {
+    field: string;
+    value?: unknown;
+    provenance?: AgencyFieldProvenance;
+  }
+): AgencyFieldProvenanceConflict[] {
+  const conflicts: AgencyFieldProvenanceConflict[] = [];
+  const map = sanitizeAgencyFieldProvenanceMap(asRecord(input).fieldProvenance) || {};
+
+  for (const [field, entry] of Object.entries(map)) {
+    if (entry.source === "backend_verified") {
+      conflicts.push({
+        code: "client_backend_verified_claim",
+        field,
+        detail: "client-round-tripped provenance claims backend_verified",
+      });
+    }
+    if (entry.confidence === "verified") {
+      conflicts.push({
+        code: "client_verified_confidence_claim",
+        field,
+        detail: "client-round-tripped provenance claims verified confidence",
+      });
+    }
+  }
+
+  if (incoming?.field && incoming.provenance) {
+    const current = getAgencyFieldProvenance(input, incoming.field);
+    const next = parseAgencyFieldProvenance(incoming.provenance);
+    if (current && next) {
+      const cmp = compareAgencyFieldProvenance(next, current);
+      if (cmp < 0) {
+        conflicts.push({
+          code: "weaker_overwrite_attempt",
+          field: incoming.field,
+          detail: "incoming provenance is weaker than current",
+        });
+      } else if (cmp === 0) {
+        const curVal = readCurrentFieldValue(input, incoming.field);
+        if (
+          incoming.value !== undefined &&
+          JSON.stringify(curVal) !== JSON.stringify(incoming.value)
+        ) {
+          conflicts.push({
+            code: "same_strength_value_mismatch",
+            field: incoming.field,
+            detail: "same-strength provenance with differing values",
+          });
+        }
+      }
+    }
   }
 
   return conflicts;

@@ -27,10 +27,12 @@ import {
 import { resolveAssistantRole, type AssistantRole } from "./assistantModes";
 import type { AgencySessionState, AgencySessionStateInput } from "./agencySessionState";
 import {
+  clearAgencyFieldProvenance,
   getAgencyIstanbulSide,
   getAgencySelectedCity,
   getAgencyTreatmentContext,
   normalizeAgencySessionState,
+  updateAgencyFieldWithProvenanceNow,
 } from "./agencySessionState";
 
 // ─── Stages ──────────────────────────────────────────────────────────────────
@@ -492,7 +494,7 @@ export function applyStructuredLocationAction(
     actionId?: string;
   }
 ): ApplyStructuredActionResult {
-  const next = { ...ctx };
+  let next = normalizeAgencySessionState(ctx);
   const clearedFields: string[] = [];
 
   // Idempotency: same actionId already processed.
@@ -515,9 +517,16 @@ export function applyStructuredLocationAction(
     if (cityValue === "undecided" || cityValue === "travel_help") {
       delete next.selectedCity;
       delete next.locationSelectionConfirmed;
+      next = clearAgencyFieldProvenance(next, "selectedCity");
       next.pendingCitySelection = true;
     } else if (cityValue) {
-      next.selectedCity = cityValue;
+      const cityUpdate = updateAgencyFieldWithProvenanceNow(
+        next,
+        "selectedCity",
+        cityValue,
+        { source: "structured_action", confidence: "high", note: "city_card" }
+      );
+      next = cityUpdate.state;
       next.locationSelectionConfirmed = true;
       next.pendingCitySelection = false;
       delete next.lastEmptyMatchKey;
@@ -530,6 +539,7 @@ export function applyStructuredLocationAction(
         delete next.istanbul_side_source;
         delete next.pendingSideClarification;
         delete next.sideSelectionConfirmed;
+        next = clearAgencyFieldProvenance(next, "istanbul_side");
       }
     }
   } else if (action.type === "side_selection" || action.type === "select_istanbul_side") {
@@ -541,9 +551,21 @@ export function applyStructuredLocationAction(
       return { ctx: next, idempotentSkip: true, clearedFields };
     }
     if (action.side === "european" || action.side === "anatolian") {
-      next.istanbul_side = action.side;
+      const sideUpdate = updateAgencyFieldWithProvenanceNow(
+        next,
+        "istanbul_side",
+        action.side,
+        { source: "structured_action", confidence: "high", note: "side_card" }
+      );
+      next = sideUpdate.state;
       next.istanbul_side_source = "structured_card";
-      next.selectedCity = "istanbul";
+      const cityUpdate = updateAgencyFieldWithProvenanceNow(
+        next,
+        "selectedCity",
+        "istanbul",
+        { source: "structured_action", confidence: "high", note: "side_card_city" }
+      );
+      next = cityUpdate.state;
       next.locationSelectionConfirmed = true;
       next.sideSelectionConfirmed = true;
       delete next.pendingSideClarification;
@@ -553,9 +575,21 @@ export function applyStructuredLocationAction(
       delete next.pendingLocationExpansionTarget;
       delete next.pendingLocationBranch;
     } else if (action.side === "unsure") {
-      next.istanbul_side = "unsure";
+      const sideUpdate = updateAgencyFieldWithProvenanceNow(
+        next,
+        "istanbul_side",
+        "unsure",
+        { source: "structured_action", confidence: "medium", note: "side_unsure" }
+      );
+      next = sideUpdate.state;
       next.istanbul_side_source = "structured_card";
-      next.selectedCity = "istanbul";
+      const cityUpdate = updateAgencyFieldWithProvenanceNow(
+        next,
+        "selectedCity",
+        "istanbul",
+        { source: "structured_action", confidence: "high", note: "side_unsure_city" }
+      );
+      next = cityUpdate.state;
       next.locationSelectionConfirmed = true;
       next.sideSelectionConfirmed = false;
       next.pendingSideGuidance = true;
@@ -565,9 +599,21 @@ export function applyStructuredLocationAction(
       if (next.istanbul_side === action.side && next.sideSelectionConfirmed === true) {
         return { ctx: next, idempotentSkip: true, clearedFields };
       }
-      next.istanbul_side = action.side;
+      const sideUpdate = updateAgencyFieldWithProvenanceNow(
+        next,
+        "istanbul_side",
+        action.side,
+        { source: "structured_action", confidence: "high", note: "branch_side_confirm" }
+      );
+      next = sideUpdate.state;
       next.istanbul_side_source = "structured_card";
-      next.selectedCity = "istanbul";
+      const cityUpdate = updateAgencyFieldWithProvenanceNow(
+        next,
+        "selectedCity",
+        "istanbul",
+        { source: "structured_action", confidence: "high", note: "branch_side_city" }
+      );
+      next = cityUpdate.state;
       next.locationSelectionConfirmed = true;
       next.sideSelectionConfirmed = true;
       delete next.pendingSideClarification;
@@ -577,6 +623,8 @@ export function applyStructuredLocationAction(
       delete next.istanbul_side;
       delete next.sideSelectionConfirmed;
       delete next.selectedCity;
+      next = clearAgencyFieldProvenance(next, "istanbul_side");
+      next = clearAgencyFieldProvenance(next, "selectedCity");
       delete next.locationSelectionConfirmed;
       delete next.pendingSideClarification;
       next.pendingCitySelection = true;

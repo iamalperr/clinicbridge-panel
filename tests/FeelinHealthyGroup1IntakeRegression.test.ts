@@ -68,9 +68,18 @@ describe("FeelinHealthy Group 1 intake regression", () => {
       const guardStart = routeSource.indexOf(
         "if (!isReplayedTreatmentRequest && !structuredLocationAction) {"
       );
-      const treatmentAssign = routeSource.indexOf("ctx.lastTreatmentCategory =");
-      expect(treatmentAssign).toBeGreaterThan(-1);
-      expect(treatmentAssign).toBeLessThan(guardStart);
+      const treatmentAssign = routeSource.indexOf(
+        'updateAgencyFieldWithProvenanceNow(\n          ctx,\n          "lastTreatmentCategory"'
+      );
+      const treatmentAssignAlt = routeSource.indexOf('"lastTreatmentCategory"');
+      const idx =
+        treatmentAssign > -1
+          ? treatmentAssign
+          : routeSource.indexOf("lastTreatmentCategory");
+      expect(idx).toBeGreaterThan(-1);
+      expect(idx).toBeLessThan(guardStart);
+      expect(treatmentAssignAlt).toBeGreaterThan(-1);
+      expect(routeSource).toContain("updateAgencyFieldWithProvenanceNow");
     });
   });
 

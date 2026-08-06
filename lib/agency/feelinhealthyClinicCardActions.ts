@@ -12,6 +12,7 @@ import {
   getAgencySelectedClinicIds,
   getAgencySessionId,
   normalizeAgencySessionState,
+  updateAgencyFieldWithProvenanceNow,
 } from "./agencySessionState";
 
 export const CLINIC_CARD_ACTIONS = [
@@ -278,7 +279,7 @@ export function prepareRequestQuote(params: {
 }): ClinicCardActionResult {
   const locale = (params.locale || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
   const limit = resolveGuestQuoteClinicLimit();
-  const next = normalizeAgencySessionState(params.sessionContext);
+  let next = normalizeAgencySessionState(params.sessionContext);
 
   const stage = String(next.leadStage || "");
   if (
@@ -346,6 +347,12 @@ export function prepareRequestQuote(params: {
   }
 
   next.selectedClinicIds = merged;
+  next = updateAgencyFieldWithProvenanceNow(
+    next,
+    "selectedClinicIds",
+    merged,
+    { source: "structured_action", confidence: "high", note: "request_quote" }
+  ).state;
   // Track quote target without switching into selected_clinic consultation mode.
   next.lastFocusedClinicId = params.clinicId;
   next.lastFocusedClinicName = params.clinicName || next.lastFocusedClinicName;
@@ -400,7 +407,7 @@ export function handleClinicSelectionPanelAction(params: {
 }): ClinicCardActionResult {
   const locale = (params.locale || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
   const limit = resolveGuestQuoteClinicLimit();
-  const next = normalizeAgencySessionState(params.sessionContext);
+  let next = normalizeAgencySessionState(params.sessionContext);
   const recommended = Array.from(
     new Set(
       [
@@ -420,7 +427,12 @@ export function handleClinicSelectionPanelAction(params: {
       const picked = recommended.slice(0, limit);
       next.clinicSelectionMode = "automatic";
       next.clinicSelectionStatus = "in_progress";
-      next.selectedClinicIds = picked;
+      next = updateAgencyFieldWithProvenanceNow(
+        next,
+        "selectedClinicIds",
+        picked,
+        { source: "structured_action", confidence: "high", note: "panel_automatic" }
+      ).state;
       if (picked[0]) {
         next.lastFocusedClinicId = picked[0];
       }
@@ -499,12 +511,18 @@ export function handleClinicSelectionPanelAction(params: {
     }
 
     next.selectedClinicIds = Array.from(current);
+    next = updateAgencyFieldWithProvenanceNow(
+      next,
+      "selectedClinicIds",
+      Array.from(current),
+      { source: "structured_action", confidence: "high", note: "panel_update" }
+    ).state;
     return {
       kind: "handled",
       reply:
         locale === "en"
-          ? `Selection updated (${next.selectedClinicIds.length}/${limit}).`
-          : `Seçiminiz güncellendi (${next.selectedClinicIds.length}/${limit}).`,
+          ? `Selection updated (${getAgencySelectedClinicIds(next).length}/${limit}).`
+          : `Seçiminiz güncellendi (${getAgencySelectedClinicIds(next).length}/${limit}).`,
       type: "text",
       sessionContext: next,
       showClinicCards: true,
@@ -533,14 +551,24 @@ export function handleClinicSelectionPanelAction(params: {
         shouldPersistQuote: false,
       };
     }
-    next.selectedClinicIds = fallback;
+    next = updateAgencyFieldWithProvenanceNow(
+      next,
+      "selectedClinicIds",
+      fallback,
+      { source: "structured_action", confidence: "high", note: "panel_complete_fallback" }
+    ).state;
   } else {
-    next.selectedClinicIds = selected;
+    next = updateAgencyFieldWithProvenanceNow(
+      next,
+      "selectedClinicIds",
+      selected,
+      { source: "structured_action", confidence: "high", note: "panel_complete" }
+    ).state;
   }
 
   next.clinicSelectionStatus = "completed";
   next.clinicSelectionMode = next.clinicSelectionMode || "manual";
-  next.lastFocusedClinicId = next.selectedClinicIds[0];
+  next.lastFocusedClinicId = getAgencySelectedClinicIds(next)[0];
   next.__fhQuoteRequestedByCardAction = true;
 
   const emailOk =
@@ -560,7 +588,7 @@ export function handleClinicSelectionPanelAction(params: {
       showClinicCards: false,
       shouldCreateNewLead: false,
       shouldPersistQuote: false,
-      clinicIdsForQuote: next.selectedClinicIds,
+      clinicIdsForQuote: getAgencySelectedClinicIds(next),
     };
   }
 
@@ -568,14 +596,14 @@ export function handleClinicSelectionPanelAction(params: {
     kind: "handled",
     reply:
       locale === "en"
-        ? `Great — I'll submit your quote request for ${next.selectedClinicIds.length} clinic(s) now.`
-        : `Harika — ${next.selectedClinicIds.length} klinik için teklif talebinizi şimdi oluşturuyorum.`,
+        ? `Great — I'll submit your quote request for ${getAgencySelectedClinicIds(next).length} clinic(s) now.`
+        : `Harika — ${getAgencySelectedClinicIds(next).length} klinik için teklif talebinizi şimdi oluşturuyorum.`,
     type: "text",
     sessionContext: next,
     showClinicCards: false,
     shouldCreateNewLead: false,
     shouldPersistQuote: true,
-    clinicIdsForQuote: next.selectedClinicIds,
+    clinicIdsForQuote: getAgencySelectedClinicIds(next),
   };
 }
 

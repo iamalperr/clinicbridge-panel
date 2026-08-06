@@ -39,6 +39,7 @@ import {
 import {
   normalizeAgencySessionState,
   serializeAgencySessionState,
+  sanitizeClientAgencyFieldProvenance,
   getAgencySessionId,
   getAgencyIstanbulSide,
   getAgencySelectedClinicIds,
@@ -46,6 +47,7 @@ import {
   getAgencyTreatmentContext,
   getAgencyTravelDate,
   getAgencySelectedCity,
+  updateAgencyFieldWithProvenanceNow,
   type AgencySessionState,
 } from "@/lib/agency/agencySessionState";
 import {
@@ -379,9 +381,10 @@ export async function POST(
 
     requestBody = await req.json();
     const { message, action, history = [] } = requestBody;
-    // Client round-tripped sessionContext is untrusted; normalize structure only.
-    const sessionContext: AgencySessionState = normalizeAgencySessionState(
-      requestBody.sessionContext || {}
+    // Client round-tripped sessionContext is untrusted; normalize structure and
+    // downgrade client provenance claims (never treat as backend_verified).
+    const sessionContext: AgencySessionState = sanitizeClientAgencyFieldProvenance(
+      normalizeAgencySessionState(requestBody.sessionContext || {})
     );
     requestBody.sessionContext = sessionContext;
     requestValidationMs = performance.now() - routeStart;
@@ -1214,7 +1217,15 @@ export async function POST(
     }
 
     if (agencySlotsExtracted.extracted.treatment && !ctx.lastTreatmentCategory) {
-      ctx.lastTreatmentCategory = agencySlotsExtracted.extracted.treatment;
+      Object.assign(
+        ctx,
+        updateAgencyFieldWithProvenanceNow(
+          ctx,
+          "lastTreatmentCategory",
+          agencySlotsExtracted.extracted.treatment,
+          { source: "llm_extracted", confidence: "medium", note: "slot_treatment" }
+        ).state
+      );
     }
     // Turkish "İmplant" must not lose treatment across consent / intake.
     if (isFeelinHealthy) {
@@ -1233,6 +1244,16 @@ export async function POST(
       Object.assign(ctx, treatmentUpdate.ctx);
       if (treatmentUpdate.changed) {
         (ctx as any).__forceClinicMatching = true;
+        Object.assign(
+          ctx,
+          updateAgencyFieldWithProvenanceNow(
+            ctx,
+            "lastTreatmentCategory",
+            ctx.lastTreatmentCategory,
+            { source: "user_explicit", confidence: "high", note: "treatment_switch" },
+            { force: true }
+          ).state
+        );
       }
     }
 
@@ -1240,7 +1261,15 @@ export async function POST(
     // write intake fields. City/side cards only update location state.
     if (!isReplayedTreatmentRequest && !structuredLocationAction) {
       if (agencySlotsExtracted.extracted.fullName && !ctx.patientName) {
-        ctx.patientName = agencySlotsExtracted.extracted.fullName;
+        Object.assign(
+          ctx,
+          updateAgencyFieldWithProvenanceNow(
+            ctx,
+            "patientName",
+            agencySlotsExtracted.extracted.fullName,
+            { source: "llm_extracted", confidence: "medium", note: "slot_name" }
+          ).state
+        );
       }
       if (agencySlotsExtracted.extracted.firstName) {
         ctx.firstName = agencySlotsExtracted.extracted.firstName;
@@ -1249,10 +1278,26 @@ export async function POST(
         ctx.lastName = agencySlotsExtracted.extracted.lastName;
       }
       if (agencySlotsExtracted.extracted.phone && !ctx.patientPhone) {
-        ctx.patientPhone = agencySlotsExtracted.extracted.phone;
+        Object.assign(
+          ctx,
+          updateAgencyFieldWithProvenanceNow(
+            ctx,
+            "patientPhone",
+            agencySlotsExtracted.extracted.phone,
+            { source: "llm_extracted", confidence: "medium", note: "slot_phone" }
+          ).state
+        );
       }
       if (agencySlotsExtracted.extracted.email && !ctx.patientEmail) {
-        ctx.patientEmail = agencySlotsExtracted.extracted.email;
+        Object.assign(
+          ctx,
+          updateAgencyFieldWithProvenanceNow(
+            ctx,
+            "patientEmail",
+            agencySlotsExtracted.extracted.email,
+            { source: "llm_extracted", confidence: "medium", note: "slot_email" }
+          ).state
+        );
       }
       if (agencySlotsExtracted.extracted.patientAge !== undefined && agencySlotsExtracted.extracted.patientAge !== null && ctx.patientAge === undefined) {
         ctx.patientAge = agencySlotsExtracted.extracted.patientAge;
@@ -1274,7 +1319,15 @@ export async function POST(
         ctx.patientCountry = agencySlotsExtracted.extracted.patientCountry;
       }
       if (agencySlotsExtracted.extracted.travelDate && !ctx.travelDate) {
-        ctx.travelDate = agencySlotsExtracted.extracted.travelDate;
+        Object.assign(
+          ctx,
+          updateAgencyFieldWithProvenanceNow(
+            ctx,
+            "travelDate",
+            agencySlotsExtracted.extracted.travelDate,
+            { source: "llm_extracted", confidence: "medium", note: "slot_travel" }
+          ).state
+        );
       }
     }
     if (agencySlotsExtracted.extracted.city && !ctx.lastLocation) {
