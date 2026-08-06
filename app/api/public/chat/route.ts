@@ -722,6 +722,8 @@ async function logConversation(params: {
   userMessage: string;
   aiReply: string;
   historyLength: number;
+  /** Prior turns from the widget (role/content). Synced into messages for full history. */
+  history?: Array<{ role?: string; content?: string }> | null;
   apptData?: AppointmentData | null;
   appointmentId?: string;
   isAppointmentCreated?: boolean;
@@ -741,6 +743,9 @@ async function logConversation(params: {
   if (!adminDb) return;
 
   try {
+    const { syncConversationLogMessagesFromHistory } = await import(
+      "@/lib/services/conversations/conversationTranscriptService"
+    );
     const logRef = adminDb.collection("clinics").doc(params.clinicId).collection("conversationLogs").doc(params.convId);
     
     // Check existing
@@ -770,11 +775,24 @@ async function logConversation(params: {
     }
 
     const nowStr = new Date().toISOString();
+
+    // Sync full visible history (client history + current turn) into messages.
+    // This prevents "14 mesaj" counts with only the last turn persisted.
+    const actualMessageCount = await syncConversationLogMessagesFromHistory(adminDb, {
+      clinicId: params.clinicId,
+      conversationId: params.convId,
+      history: params.history,
+      userMessage: params.userMessage,
+      aiReply: params.aiReply,
+      baseIso: existing?.createdAt || nowStr,
+      includeLiveSupportSystem: Boolean(params.isLiveSupport),
+    });
     
     const logData: any = {
       clinicId: params.clinicId,
       updatedAt: nowStr,
-      totalMessages: params.historyLength + 2,
+      // Prefer actual persisted message count over historyLength+2 heuristics.
+      totalMessages: actualMessageCount > 0 ? actualMessageCount : params.historyLength + 2,
       lastMessagePreview: params.userMessage.slice(0, 100),
       status,
       needsTraining,
@@ -846,41 +864,33 @@ async function logConversation(params: {
     // Write log doc
     await logRef.set(logData, { merge: true });
 
-    // Write user message
-    const userMsgRef = logRef.collection("messages").doc(`msg_${Date.now()}_u`);
-    await userMsgRef.set({
-      sender: "patient",
-      content: params.userMessage,
-      createdAt: nowStr,
-      wasAnswered: true,
-      needsTraining: false,
-    });
-
-    // Write AI message
-    const aiMsgRef = logRef.collection("messages").doc(`msg_${Date.now() + 1}_a`);
-    await aiMsgRef.set({
-      sender: "assistant",
-      content: params.aiReply,
-      createdAt: new Date(Date.now() + 1).toISOString(),
-      wasAnswered: status !== "unanswered",
-      needsTraining: needsTraining && status === "unanswered",
-    });
-
-    // Write system action log when live support is shown
-    if (params.isLiveSupport) {
-      const sysRef = logRef.collection("messages").doc(`msg_${Date.now() + 2}_sys`);
-      await sysRef.set({
-        sender: "system",
-        content: "Canlı Destek Yönlendirmesi Gösterildi",
-        createdAt: new Date(Date.now() + 2).toISOString(),
-        wasAnswered: true,
-        needsTraining: false,
-      });
-    }
+    // Message docs are upserted via syncConversationLogMessagesFromHistory above.
 
   } catch (err: any) {
     console.error("[logConversation] Error:", err.message);
   }
+}
+
+/** Log a chat turn (with history sync) without changing status heuristics beyond appointmentState. */
+async function logChatTurn(params: {
+  clinicId: string;
+  convId: string;
+  userMessage: string;
+  aiReply: string;
+  history: any[];
+  appointmentState?: AppointmentState;
+  isLiveSupport?: boolean;
+}) {
+  await logConversation({
+    clinicId: params.clinicId,
+    convId: params.convId,
+    userMessage: params.userMessage,
+    aiReply: params.aiReply,
+    historyLength: params.history?.length || 0,
+    history: params.history,
+    appointmentState: params.appointmentState,
+    isLiveSupport: params.isLiveSupport,
+  });
 }
 
 
@@ -1353,6 +1363,7 @@ export async function POST(req: Request) {
                    userMessage: message,
                    aiReply: successReply,
                    historyLength: history.length,
+                   history,
                    apptData: loadedDraft,
                    appointmentId: result.appointmentId,
                    isAppointmentCreated: true,
@@ -1672,9 +1683,18 @@ export async function POST(req: Request) {
         if (finalPhone) {
           appointmentDraft.patientPhone = finalPhone;
         } else {
+          const reply = ConversationStateEngine.generateNextSlotPrompt(appointmentDraft, ["phone"], conversationLocale);
+          await logChatTurn({
+            clinicId: actualClinicId,
+            convId,
+            userMessage: message,
+            aiReply: reply,
+            history,
+            appointmentState: "COLLECTING_PHONE",
+          });
           return NextResponse.json({
             responseType: "CHAT_REPLY",
-            reply: ConversationStateEngine.generateNextSlotPrompt(appointmentDraft, ["phone"], conversationLocale),
+            reply,
             pendingAppointmentData: appointmentDraft
           }, { headers: CORS });
         }
@@ -1683,9 +1703,18 @@ export async function POST(req: Request) {
         if (extractedEmail) {
           appointmentDraft.patientEmail = extractedEmail;
         } else {
+          const reply = ConversationStateEngine.generateNextSlotPrompt(appointmentDraft, ["email"], conversationLocale, undefined, "invalid_email");
+          await logChatTurn({
+            clinicId: actualClinicId,
+            convId,
+            userMessage: message,
+            aiReply: reply,
+            history,
+            appointmentState: "COLLECTING_EMAIL",
+          });
           return NextResponse.json({
             responseType: "CHAT_REPLY",
-            reply: ConversationStateEngine.generateNextSlotPrompt(appointmentDraft, ["email"], conversationLocale, undefined, "invalid_email"),
+            reply,
             pendingAppointmentData: appointmentDraft
           }, { headers: CORS });
         }
@@ -1715,6 +1744,14 @@ export async function POST(req: Request) {
           locale: conversationLocale,
           appointmentData: appointmentDraft,
           clinicName
+        });
+        await logChatTurn({
+          clinicId: actualClinicId,
+          convId,
+          userMessage: message,
+          aiReply: reviewMsg,
+          history,
+          appointmentState: "AWAITING_CONFIRMATION",
         });
         return NextResponse.json({
           responseType: "CHAT_REPLY",
@@ -1752,6 +1789,15 @@ export async function POST(req: Request) {
         conversationIntent.validationError,
         conversationIntent.allInfoProvidedIntent
       );
+
+      await logChatTurn({
+        clinicId: actualClinicId,
+        convId,
+        userMessage: message,
+        aiReply: nextSlotPrompt,
+        history,
+        appointmentState: nextSubState,
+      });
 
       return NextResponse.json({
         responseType: "CHAT_REPLY",
@@ -2162,6 +2208,7 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
             userMessage: message,
             aiReply: fallbackMsg,
             historyLength: history.length,
+            history,
             appointmentState,
           });
 
@@ -2281,6 +2328,7 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
         userMessage: message,
         aiReply: handoffMsg,
         historyLength: history.length,
+        history,
         isLiveSupport: true,
       });
 
@@ -2821,6 +2869,7 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       userMessage: message,
       aiReply: responsePayload.reply,
       historyLength: history.length,
+      history,
       apptData: isConfirmSummary ? responsePayload.pendingAppointmentData : null,
       tenantId: agencyIdForClinic || clinicId,
       widgetId: widgetId || "unknown",

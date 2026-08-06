@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Modal from "@/components/ui/Modal";
 import Badge from "@/components/ui/Badge";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { ConversationLog, ConversationMessage } from "./types";
 import { useI18n } from "@/lib/i18n-context";
-import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { auth } from "@/lib/firebase";
 import {
   normalizeConversationStatus,
   getConversationStatusLabel,
@@ -32,25 +31,90 @@ function formatTime(isoStr: string) {
 export default function ConversationLogDetailModal({ isOpen, onClose, log }: Props) {
   const { t, language } = useI18n();
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [messageCount, setMessageCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!isOpen || !log?.id || !log?.clinicId) return;
 
-    setLoading(true);
-    const q = query(
-      collection(db, "clinics", log.clinicId, "conversationLogs", log.id, "messages"),
-      orderBy("createdAt", "asc")
-    );
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      setMessages([]);
+      setMessageCount(null);
+      try {
+        const user = auth.currentUser;
+        if (!user) {
+          throw new Error(language === "en" ? "Not signed in." : "Oturum bulunamadı.");
+        }
+        const token = await user.getIdToken();
+        const res = await fetch(
+          `/api/clinics/${encodeURIComponent(log.clinicId)}/conversations/${encodeURIComponent(log.id)}/messages`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          }
+        );
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(
+            body?.error ||
+              (language === "en"
+                ? "Failed to load conversation messages."
+                : "Görüşme mesajları yüklenemedi.")
+          );
+        }
+        const data = await res.json();
+        if (cancelled) return;
+        const msgs = (Array.isArray(data.messages) ? data.messages : []).map(
+          (m: any, idx: number) =>
+            ({
+              id: m.id || `msg_${idx}`,
+              sender:
+                m.sender ||
+                (m.role === "user"
+                  ? "patient"
+                  : m.role === "system"
+                    ? "system"
+                    : "assistant"),
+              content: m.content || "",
+              createdAt: m.createdAt || "",
+              wasAnswered: m.wasAnswered !== false,
+              needsTraining: Boolean(m.needsTraining),
+            }) as ConversationMessage
+        );
+        // No last-two slicing — render the full canonical transcript.
+        setMessages(msgs);
+        setMessageCount(
+          typeof data.messageCount === "number" ? data.messageCount : msgs.length
+        );
+      } catch (err: any) {
+        if (!cancelled) {
+          setError(err?.message || "Error");
+          setMessages([]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
 
-    const unsub = onSnapshot(q, (snap) => {
-      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() } as ConversationMessage));
-      setMessages(msgs);
-      setLoading(false);
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, log?.id, log?.clinicId, language]);
+
+  useEffect(() => {
+    if (loading || messages.length === 0) return;
+    // After full list renders, scroll to newest message; user can scroll up for earlier turns.
+    requestAnimationFrame(() => {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     });
-
-    return () => unsub();
-  }, [isOpen, log?.id, log?.clinicId]);
+  }, [loading, messages.length]);
 
   if (!log) return null;
 
@@ -60,10 +124,11 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
   });
   const statusLabel = getConversationStatusLabel(normalizedStatus, language);
   const statusVariant = getConversationStatusVariant(normalizedStatus);
+  const displayCount = messageCount ?? log.totalMessages;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={t("logs.detailTitle") || (language === "en" ? "Conversation Details" : "Görüşme Detayı")} width={600}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 20, maxHeight: "min(80vh, 720px)" }}>
         
         {/* Header Info */}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
@@ -78,6 +143,9 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
             </div>
           )}
           <Badge variant={statusVariant} label={statusLabel} />
+          <span style={{ fontSize: 12, color: UI_COLORS.textMuted }}>
+            {displayCount} {t("logs.messages") || (language === "en" ? "messages" : "mesaj")}
+          </span>
           {isConversationManuallyConverted(log) ? (
             <span style={{
               display: "inline-flex", alignItems: "center", gap: 4,
@@ -157,8 +225,11 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
         )}
 
 
-        {/* Chat Area */}
-        <div style={{ 
+        {/* Chat Area — vertically scrollable; header stays above */}
+        <div
+          ref={chatScrollRef}
+          data-testid="conversation-detail-scroll"
+          style={{ 
           background: "var(--bg-app)", 
           border: `1px solid ${UI_COLORS.border}`, 
           borderRadius: UI_COMMON_STYLES.radius,
@@ -166,12 +237,18 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
           display: "flex",
           flexDirection: "column",
           gap: 16,
-          maxHeight: 400,
+          flex: 1,
+          minHeight: 280,
+          maxHeight: "min(55vh, 480px)",
           overflowY: "auto"
         }}>
           {loading ? (
             <div style={{ padding: 40, textAlign: "center", color: UI_COLORS.textMuted }}>
               <Loader2 size={32} style={{ margin: "0 auto", animation: "spin 1s linear infinite" }} />
+            </div>
+          ) : error ? (
+            <div style={{ padding: 40, textAlign: "center", color: UI_COLORS.danger, fontSize: 13.5 }}>
+              {error}
             </div>
           ) : messages.length === 0 ? (
             <div style={{ padding: 40, textAlign: "center", color: UI_COLORS.textMuted, fontSize: 13.5 }}>
@@ -197,84 +274,72 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
                 const badgeColor = isWhatsAppAction  ? "#25D366"
                   : isTelegramAction  ? "#26A5E4"
                   : isSurveySubmitted ? "#F59E0B"
-                  : isSurveyDisplayed ? "#D97706"
-                  : isLiveSupportGeneric ? "#10b981"
+                  : isSurveyDisplayed ? "#8B5CF6"
+                  : isLiveSupportGeneric ? "#3B82F6"
                   : UI_COLORS.textMuted;
 
-                const badgeBg = isWhatsAppAction  ? "rgba(37,211,102,0.08)"
-                  : isTelegramAction  ? "rgba(38,165,228,0.08)"
-                  : isSurveySubmitted ? "rgba(245,158,11,0.1)"
-                  : isSurveyDisplayed ? "rgba(217,119,6,0.08)"
-                  : isLiveSupportGeneric ? "rgba(16,185,129,0.08)"
-                  : UI_COLORS.bgCard;
-
-                const badgeBorder = isWhatsAppAction  ? "rgba(37,211,102,0.25)"
-                  : isTelegramAction  ? "rgba(38,165,228,0.25)"
-                  : isSurveySubmitted ? "rgba(245,158,11,0.35)"
-                  : isSurveyDisplayed ? "rgba(217,119,6,0.25)"
-                  : isLiveSupportGeneric ? "rgba(16,185,129,0.25)"
-                  : UI_COLORS.border;
-
-                const icon = isWhatsAppAction  ? "📱"
-                  : isTelegramAction  ? "✈️"
-                  : isSurveySubmitted ? "⭐"
-                  : isSurveyDisplayed ? "📋"
-                  : isLiveSupportGeneric ? "📡"
-                  : "⚙️";
-
                 return (
-                  <div key={msg.id} style={{ textAlign: "center", margin: "8px 0" }}>
-                    <span style={{
-                      fontSize: 11,
+                  <div key={msg.id} style={{ display: "flex", justifyContent: "center" }}>
+                    <div style={{
+                      fontSize: 11.5,
                       fontWeight: 600,
                       color: badgeColor,
-                      background: badgeBg,
+                      background: `${badgeColor}14`,
+                      border: `1px solid ${badgeColor}33`,
+                      borderRadius: 99,
                       padding: "4px 12px",
-                      borderRadius: 12,
-                      border: `1px solid ${badgeBorder}`,
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 5,
+                      textAlign: "center",
+                      maxWidth: "90%",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
                     }}>
-                      {icon} {msg.content}
-                    </span>
+                      {msg.content}
+                      {msg.createdAt && (
+                        <span style={{ marginLeft: 8, opacity: 0.7, fontWeight: 500 }}>
+                          {formatTime(msg.createdAt)}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 );
               }
+
               return (
-                <div key={msg.id} style={{ 
-                  display: "flex", 
-                  flexDirection: "column",
-                  alignItems: isPatient ? "flex-end" : "flex-start",
-                  gap: 4
-                }}>
-                  <div style={{ 
-                    background: isPatient ? UI_COLORS.brand : UI_COLORS.bgCard,
-                    color: isPatient ? "white" : UI_COLORS.textPrimary,
-                    padding: "10px 14px",
-                    borderRadius: isPatient ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
-                    border: isPatient ? "none" : `1px solid ${UI_COLORS.border}`,
-                    maxWidth: "80%",
-                    fontSize: 14,
-                    lineHeight: 1.5,
-                    position: "relative"
-                  }}>
+                <div
+                  key={msg.id}
+                  style={{
+                    display: "flex",
+                    justifyContent: isPatient ? "flex-end" : "flex-start",
+                  }}
+                >
+                  <div
+                    style={{
+                      maxWidth: "78%",
+                      padding: "10px 14px",
+                      borderRadius: 14,
+                      background: isPatient ? "rgba(16,185,129,0.15)" : UI_COLORS.bgCard,
+                      border: `1px solid ${isPatient ? "rgba(16,185,129,0.25)" : UI_COLORS.border}`,
+                      color: UI_COLORS.textPrimary,
+                      fontSize: 13.5,
+                      lineHeight: 1.5,
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    <div style={{ fontSize: 11, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 4 }}>
+                      {isPatient
+                        ? (language === "en" ? "Patient" : "Hasta")
+                        : (language === "en" ? "Assistant" : "Asistan")}
+                      {msg.createdAt ? ` · ${formatTime(msg.createdAt)}` : ""}
+                    </div>
                     {msg.content}
-                    {msg.needsTraining && !isPatient && (
-                      <div style={{ position: "absolute", top: -8, right: -8 }}>
-                        <AlertCircle size={16} fill={UI_COLORS.bgCard} color={UI_COLORS.danger} />
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 11, color: UI_COLORS.textMuted, padding: "0 4px" }}>
-                    {isPatient ? (t("logs.patient") || (language === "en" ? "Patient" : "Hasta")) : (t("logs.assistant") || (language === "en" ? "Assistant" : "Asistan"))} • {formatTime(msg.createdAt)}
                   </div>
                 </div>
               );
             })
           )}
+          <div ref={chatEndRef} />
         </div>
-
       </div>
     </Modal>
   );
