@@ -2070,7 +2070,7 @@ Eğer Bilgi Havuzunda doktor isimleri başlık olarak geçiyorsa şu kurallara K
 1. Her doktor başlığının altındaki bilgileri SADECE o doktora ait tek ve bağımsız bir kayıt olarak değerlendir.
 2. Uzmanlık alanlarını ASLA tahmin etme. Sadece açıkça yazan uzmanlık bilgisini kullan.
 3. "Kaç doktorunuz var?" sorusunda Bilgi Havuzu'ndaki doktor başlıklarını say.
-Eğer Bilgi Havuzunda da doktor bilgisi YOKSA: "Kliniğimizin güncel hekim kadrosuna ilişkin kayıtlı bir sayı bulunmuyor. Dilerseniz klinik ekibimizden teyit edilmesini sağlayabilirim."`;
+Eğer Bilgi Havuzunda da doktor bilgisi YOKSA: "Kliniğimizin güncel hekim kadrosuna ilişkin kayıtlı bir sayı bulunmuyor. Dilerseniz klinik ekibimizden teyit edilmesini sağlayabilirim." Asla başka klinik veya ağ iddiasında bulunma; yalnızca bu klinik kayıtlarına dayan.`;
       }
     }
 
@@ -2438,10 +2438,11 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
 - [ACTIONS: ...] etiketi DAİMA en sonda olsun ve tek satırda olsun.
 
 GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
-1. EĞİTİCİ GENEL BİLGİ (Global Dental Knowledge): Hasta genel bir diş/sağlık sorusu sorarsa (Örn: "Vidasız implant nedir?", "Kanal tedavisi ne kadar sürer?"), soruyu ÖNCE genel tıbbi bilgi havuzunla eğitici bir dille açıkla. Kesinlikle teşhis koyma ve tedavi önerme.
-2. KLİNİK BİLGİSİ DOĞRULAMA (Clinic Knowledge Base): Genel bilgiyi verdikten sonra kliniğin Bilgi Havuzuna bak. Eğer klinikte bu işlem/marka varsa "Kliniğimizde bu tedavi uygulanmaktadır" gibi doğal bir şekilde onayla.
-3. BİLİNMEYEN DURUM (Safety & Natural Fallback): Eğer klinikte yapıldığına dair net bir bilgi yoksa, ASLA sadece "Bu bilgiyi doğrulayamıyorum" deyip sohbeti sonlandırma. Bunun yerine "Genel olarak bu işlem böyledir ancak kliniğimizde özel olarak bu tekniğin/markanın kullanılıp kullanılmadığını şu anki bilgilerimden kesin doğrulayamıyorum." şeklinde dürüst ve doğal bir geçiş yap.
-4. YARDIMCI DEVAM (Helpful Continuation): Bilgi eksikliği durumunda bile sohbeti çıkmaza sokma (dead-end yapma). Daima "Dilerseniz kliniğimizde uygulanan implant seçenekleri hakkında bilgi verebilirim" veya "Bu detayı sizin için klinik ekibimize iletebilirim" diyerek hastayı yönlendir.`,
+1. EĞİTİCİ GENEL BİLGİ (Global Dental Knowledge): Hasta genel bir diş/sağlık sorusu sorarsa (Örn: "Vidasız implant nedir?", "Kanal tedavisi ne kadar sürer?"), soruyu ÖNCE genel tıbbi bilgi havuzunla eğitici bir dille açıkla. Kesinlikle teşhis koyma ve tedavi önerme. Genel bilgi, bu kliniğin o işlemi yaptığını kanıtlamaz.
+2. KLİNİK BİLGİSİ DOĞRULAMA (Clinic Knowledge Base / Overview): Klinik-spesifik iddialar (bu klinikte var mı, hangi doktor, fiyat, süre, marka) YALNIZCA Bilgi Havuzu, klinik overview/summary veya yapısal kayıtlardan doğrulansın. Doğrulandıysa doğal şekilde onayla.
+3. BİLİNMEYEN DURUM (Clinic-scoped Safety Fallback): Klinik kaydı yoksa ASLA "hiç bilgim yok" / "I have no information" deme ve ağ/başka klinik iddiası uydurma. Bunun yerine: "Genel olarak şöyle açıklanır; kliniğimizde bu tekniğin/markanın uygulanıp uygulanmadığını mevcut kayıtlarımızdan kesin doğrulayamıyorum. Dilerseniz klinik ekibimizden teyit edilmesini sağlayabilirim."
+4. YARDIMCI DEVAM (Helpful Continuation): Bilgi eksikliğinde sohbeti çıkmaza sokma. Randevu veya klinik ekibine iletim gibi tek bir yardımcı sonraki adım öner.
+5. ORTA AKIŞ KESİNTİSİ: Randevu bilgisi toplanırken soru gelirse önce soruyu yanıtla, sonra kaldığınız alandan nazikçe devam et.`,
     ].join("");
 
     debugLog.push("calling OpenAI...");
@@ -2588,7 +2589,10 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
         missingSlots,
         conversationLocale
       );
-      reply = `${reply}\n\n${resumePrompt}`;
+      const bridge = conversationLocale.startsWith("en")
+        ? "Whenever you're ready, we can continue from where we left off."
+        : "Hazır olduğunuzda kaldığımız yerden devam edebiliriz.";
+      reply = `${reply}\n\n${bridge}\n\n${resumePrompt}`;
     }
 
     debugLog.push(`OK reply="${reply.slice(0, 60)}" ms=${Date.now() - startTime}`);

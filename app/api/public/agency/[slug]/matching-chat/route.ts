@@ -89,6 +89,22 @@ import {
   handleClinicSelectionPanelAction,
   isClinicSelectionPanelAction,
 } from "@/lib/agency/feelinhealthyClinicCardActions";
+import {
+  classifyAgencyConversationTurn,
+  canInterruptHardGateForInformation,
+  mapStageToConversationMode,
+  buildAgencyWorkflowPausePlan,
+  applyAgencyWorkflowPause,
+  applyAgencyWorkflowResume,
+  composeInterruptedAgencyReply,
+  buildAgencyIntakeResumeCue,
+  getQuoteFlowPreamble,
+  getAppointmentFlowPreamble,
+  markQuoteFlowExplained,
+  markAppointmentFlowExplained,
+} from "@/lib/agency/conversationOrchestration";
+import { buildAgencyGroundedContext } from "@/lib/agency/agencyGroundedRetrieval";
+import type { NextConversationAction } from "@/lib/agency/feelinhealthyConversationMachine";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -156,6 +172,60 @@ function resolveDoctorFullName(doctor: any): string {
   const candidate =
     doctor?.doctorName || doctor?.full_name || doctor?.fullName || doctor?.name;
   return typeof candidate === "string" ? candidate.trim() : "";
+}
+
+/**
+ * Hard-gate reply that may compose an LLM answer + soft resume cue for
+ * interruptible intake gates. Consent / city / side cards stay authoritative.
+ */
+function buildComposedHardGatePayload(params: {
+  nextAction: NextConversationAction;
+  sessionContext: AgencySessionState;
+  locale: string;
+  answerText?: string | null;
+  quotePreamble?: string | null;
+  appointmentPreamble?: string | null;
+}): {
+  reply: string;
+  type: string;
+  sessionContext: AgencySessionState;
+  showClinicCards: boolean;
+  citySelectionCard?: any;
+  sideClarificationCard?: any;
+  stage: string;
+} | null {
+  const gate = buildGateResponseFromAction(params.nextAction, params.sessionContext);
+  if (!gate) return null;
+
+  let reply = gate.reply;
+  const interruptible = canInterruptHardGateForInformation(params.nextAction);
+  const answer = String(params.answerText || "").trim();
+  const paused = params.sessionContext.workflowPaused === true;
+
+  if (interruptible && answer) {
+    const resumeCue = paused
+      ? buildAgencyIntakeResumeCue({
+          locale: params.locale,
+          intakePrompt: gate.reply,
+        })
+      : gate.reply;
+    reply = composeInterruptedAgencyReply({ answer, resumeCue });
+  }
+
+  const preamble = String(params.quotePreamble || params.appointmentPreamble || "").trim();
+  if (preamble) {
+    reply = `${preamble}\n\n${reply}`;
+  }
+
+  return {
+    reply,
+    type: gate.type,
+    sessionContext: serializeAgencySessionState(gate.sessionContext),
+    showClinicCards: gate.showClinicCards,
+    citySelectionCard: gate.citySelectionCard,
+    sideClarificationCard: gate.sideClarificationCard,
+    stage: gate.stage,
+  };
 }
 
 function buildClinicContext(clinics: any[], pricing: any[], knowledgeRecords: any[] = [], aiConfigs: any[] = [], agencyKnowledge: any[] = [], showPriceRange: boolean = true): string {
@@ -1654,27 +1724,85 @@ export async function POST(
         ctx.conversationStage = fhStateEarly.stage;
         ctx.stateVersion = (Number(ctx.stateVersion) || 0) + 1;
 
+        const userMsgForOrch = finalMessage || message;
+        const turn = classifyAgencyConversationTurn({
+          message: userMsgForOrch,
+          sessionContext: ctx,
+          stage: fhStateEarly.stage,
+          nextAction,
+        });
+
+        // Continue phrases clear pause and resume the pending workflow.
+        if (turn.shouldResumeWorkflow) {
+          Object.assign(
+            ctx,
+            applyAgencyWorkflowResume(
+              ctx,
+              (ctx.pausedConversationMode as any) || mapStageToConversationMode(fhStateEarly.stage)
+            )
+          );
+        }
+
+        let quotePreamble: string | null = null;
+        let appointmentPreamble: string | null = null;
+        if (turn.needsQuotePreamble) {
+          Object.assign(ctx, markQuoteFlowExplained(ctx));
+          quotePreamble = getQuoteFlowPreamble(gateLang);
+        } else if (turn.needsAppointmentPreamble) {
+          Object.assign(ctx, markAppointmentFlowExplained(ctx));
+          appointmentPreamble = getAppointmentFlowPreamble(gateLang);
+        }
+
         if (isHardGateAction(nextAction)) {
           // Soft intake: let the model interpret natural / fuzzy answers when
-          // SlotExtractor alone may miss them. Consent, city, side, location stay hard.
+          // SlotExtractor alone may miss them. Consent, city, side stay hard.
           const allowLlmIntakeAssist = shouldAllowLlmAssistForIntakeGate(
             nextAction,
-            finalMessage || message
+            userMsgForOrch
           );
-          if (!allowLlmIntakeAssist) {
-            const gate = buildGateResponseFromAction(nextAction, ctx);
-            if (gate) {
+          const informationalInterrupt =
+            canInterruptHardGateForInformation(nextAction) &&
+            turn.kind === "informational_interruption";
+
+          if (informationalInterrupt) {
+            const pausePlan = buildAgencyWorkflowPausePlan({
+              currentMode: mapStageToConversationMode(fhStateEarly.stage),
+              message: userMsgForOrch,
+              resumeIntakeGroup:
+                nextAction.kind === "intake"
+                  ? nextAction.group
+                  : fhStateEarly.intake.currentGroup === "completed"
+                    ? "completed"
+                    : fhStateEarly.intake.currentGroup,
+              resumePromptKey: nextAction.kind,
+              pauseReason: turn.informationType || "informational_interruption",
+            });
+            Object.assign(ctx, applyAgencyWorkflowPause(ctx, pausePlan));
+            // Fall through to LLM — do not advance intake via hard-gate return.
+          } else if (!allowLlmIntakeAssist) {
+            const composed = buildComposedHardGatePayload({
+              nextAction,
+              sessionContext: ctx,
+              locale: gateLang,
+              quotePreamble,
+              appointmentPreamble,
+            });
+            if (composed) {
               return jsonResponse({
-                reply: gate.reply,
-                type: gate.type,
-                citySelectionCard: gate.citySelectionCard,
-                sideClarificationCard: gate.sideClarificationCard,
-                sessionContext: gate.sessionContext,
+                reply: composed.reply,
+                type: composed.type,
+                citySelectionCard: composed.citySelectionCard,
+                sideClarificationCard: composed.sideClarificationCard,
+                sessionContext: composed.sessionContext,
                 showClinicCards: false,
-                stage: gate.stage,
-                stateVersion: gate.sessionContext.stateVersion,
+                stage: composed.stage,
+                stateVersion: composed.sessionContext.stateVersion,
               }, { headers: CORS });
             }
+          } else if (quotePreamble || appointmentPreamble) {
+            // Soft LLM path: stash one-time preamble for post-LLM compose.
+            (ctx as any).__quoteFlowPreamble = quotePreamble;
+            (ctx as any).__appointmentFlowPreamble = appointmentPreamble;
           }
         }
         // match_clinics / clinic_selection / selected_clinic continue into matching or LLM.
@@ -1888,14 +2016,84 @@ export async function POST(
       assistantRole === "clinic_coordinator" && coordinatorClinicId
         ? filteredPricing.filter((p: any) => String(p.clinicId) === String(coordinatorClinicId))
         : filteredPricing;
-    const clinicContext = buildClinicContext(
-      clinicsForPrompt.length > 0 ? clinicsForPrompt : allClinics,
+    const clinicsForGrounded =
+      clinicsForPrompt.length > 0 ? clinicsForPrompt : allClinics;
+    const promptLocale = (agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en")
+      ? "en"
+      : "tr";
+    const groundedContext = buildAgencyGroundedContext({
+      agencyId,
+      agencyName: agencyData.name || "ClinicBridge",
+      locale: promptLocale,
+      assistantRole,
+      selectedClinicId: coordinatorClinicId || ctx.selectedClinicId || null,
+      userMessage: finalMessage || message,
+      clinics: clinicsForGrounded.map((c: any) => ({
+        id: c.id,
+        clinicId: c.id,
+        clinicName: c.clinicName,
+        clinicSlug: c.clinicSlug,
+        status: c.status,
+        overview: c.overview || c.shortDescription,
+        summary: c.summary,
+        description: c.description,
+        treatmentCategories: c.treatmentCategories || c.treatments,
+        treatments: c.subTreatments || c.treatments,
+        location: c.location,
+        supportedLanguages: c.supportedLanguages,
+      })),
+      doctors: (allDoctors || []).map((d: any) => ({
+        id: d.id,
+        clinicId: d.clinicId,
+        fullName: resolveDoctorFullName(d),
+        name: resolveDoctorFullName(d),
+        title: d.title || d.specialty,
+        specialties: d.specialties || (d.specialty ? [d.specialty] : []),
+        specialty: d.specialty,
+        languages: d.languages || d.supportedLanguages,
+        isActive: d.isActive,
+        isPublic: d.isPublic,
+      })),
+      pricing: pricingForPrompt.map((p: any) => ({
+        id: p.id,
+        clinicId: p.clinicId,
+        treatmentName: p.treatmentName,
+        subTreatmentName: p.subTreatmentName,
+        priceMin: p.priceMin,
+        priceMax: p.priceMax,
+        currency: p.currency,
+        isActive: p.isActive,
+      })),
+      clinicKnowledge: kbForPrompt.map((k: any) => ({
+        id: k.id,
+        clinicId: k.clinicId,
+        title: k.title,
+        content: k.content,
+        isActive: k.isActive,
+      })),
+      agencyKnowledge:
+        assistantRole === "clinic_coordinator"
+          ? []
+          : (agencyKbRecords || []).map((k: any) => ({
+              id: k.id,
+              clinicId: k.clinicId,
+              title: k.title,
+              content: k.content,
+              isActive: k.isActive !== false,
+              ownerType: "agency",
+            })),
+      showPriceRange,
+      maxClinics: Math.min(10, maxClinics || 10),
+    });
+    const detailedClinicContext = buildClinicContext(
+      clinicsForGrounded,
       pricingForPrompt,
       kbForPrompt,
       [],
       assistantRole === "clinic_coordinator" ? [] : agencyKbRecords,
       showPriceRange
     );
+    const clinicContext = `${groundedContext.contextText}\n\n---\n\n${detailedClinicContext}`;
     promptBuildMs = performance.now() - promptBuildStart;
 
     /* ── 3. Build session context hint ── */
@@ -1917,6 +2115,22 @@ export async function POST(
 `;
     if (ctx.lastFocusedClinicName) {
       contextHint += `- En son incelenen klinik: "${ctx.lastFocusedClinicName}" (ID: ${ctx.lastFocusedClinicId}).\n`;
+    }
+    if (ctx.workflowPaused) {
+      contextHint += `- workflowPaused: true (pauseReason: ${ctx.pauseReason || "informational_interruption"}). Answer the user's latest question fully using verified grounded context above, then add ONE soft resume line. Do not restart intake, do not invent doctors/prices, and do not advance city/side/consent.\n`;
+      if (ctx.lastAnsweredUserQuestion) {
+        contextHint += `- lastUserQuestion: "${ctx.lastAnsweredUserQuestion}"\n`;
+      }
+      if (ctx.resumeIntakeGroup) {
+        contextHint += `- resumeIntakeGroup: ${ctx.resumeIntakeGroup}\n`;
+      }
+    }
+    if (groundedContext.framing === "network") {
+      contextHint += `- groundingFraming: network — describe offerings as what our connected network includes.\n`;
+    } else if (groundedContext.framing === "named_clinic") {
+      contextHint += `- groundingFraming: named_clinic (${groundedContext.namedClinicId}) — answer only for that connected clinic.\n`;
+    } else if (groundedContext.framing === "selected_clinic") {
+      contextHint += `- groundingFraming: selected_clinic — answer only for the selected clinic coordinator context.\n`;
     }
 
     /* ── 4. OpenAI Call: Intent Extraction + Response ── */
@@ -1957,7 +2171,9 @@ export async function POST(
         languageMode: assistantPolicy.languagePolicy.mode,
       });
     } else {
-      const requiredNextAction = assistantPolicy.conversationState.treatmentKnown
+      const requiredNextAction = ctx.workflowPaused
+        ? "workflowPaused=true: Answer the user's latest informational question first using verified grounded context. Then one soft resume cue. Do not collect the next intake field in this turn unless the user is clearly answering intake. Never invent doctors, prices, or clinic capabilities."
+        : assistantPolicy.conversationState.treatmentKnown
         ? "Tedavi biliniyor; tedavi sorusunu tekrarlama. Backend intake/lokasyon state’ine uy."
         : "Backend state sıradaki adımı belirler. Toplanmış alanları tekrar sorma.";
       systemPrompt = buildAuthoritativeSystemPrompt({
@@ -2436,17 +2652,24 @@ export async function POST(
       newCtx.intakeStage = fhState.intake.currentGroup;
 
       if (isHardGateAction(nextAction)) {
-        const gate = buildGateResponseFromAction(nextAction, newCtx);
-        if (gate) {
+        const composed = buildComposedHardGatePayload({
+          nextAction,
+          sessionContext: newCtx,
+          locale: currentLang,
+          answerText: parsed.replyText,
+          quotePreamble: (ctx as any).__quoteFlowPreamble || null,
+          appointmentPreamble: (ctx as any).__appointmentFlowPreamble || null,
+        });
+        if (composed) {
           return jsonResponse({
-            reply: gate.reply,
-            type: gate.type,
-            citySelectionCard: gate.citySelectionCard,
-            sideClarificationCard: gate.sideClarificationCard,
-            sessionContext: gate.sessionContext,
+            reply: composed.reply,
+            type: composed.type,
+            citySelectionCard: composed.citySelectionCard,
+            sideClarificationCard: composed.sideClarificationCard,
+            sessionContext: composed.sessionContext,
             showClinicCards: false,
-            stage: gate.stage,
-            stateVersion: gate.sessionContext.stateVersion,
+            stage: composed.stage,
+            stateVersion: composed.sessionContext.stateVersion,
           }, { headers: CORS });
         }
       }
@@ -2535,16 +2758,23 @@ export async function POST(
           promptContext: newCtx,
         });
         if (isHardGateAction(matchNext)) {
-          const gate = buildGateResponseFromAction(matchNext, newCtx);
-          if (gate) {
+          const composed = buildComposedHardGatePayload({
+            nextAction: matchNext,
+            sessionContext: newCtx,
+            locale: currentLang,
+            answerText: parsed.replyText,
+            quotePreamble: (ctx as any).__quoteFlowPreamble || null,
+            appointmentPreamble: (ctx as any).__appointmentFlowPreamble || null,
+          });
+          if (composed) {
             return jsonResponse({
-              reply: gate.reply,
-              type: gate.type,
-              citySelectionCard: gate.citySelectionCard,
-              sideClarificationCard: gate.sideClarificationCard,
-              sessionContext: gate.sessionContext,
+              reply: composed.reply,
+              type: composed.type,
+              citySelectionCard: composed.citySelectionCard,
+              sideClarificationCard: composed.sideClarificationCard,
+              sessionContext: composed.sessionContext,
               showClinicCards: false,
-              stage: gate.stage,
+              stage: composed.stage,
             }, { headers: CORS });
           }
         }

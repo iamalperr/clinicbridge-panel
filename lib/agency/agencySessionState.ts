@@ -272,6 +272,23 @@ export interface AgencySessionStateKnown {
   /** FeelinHealthy clinic-card idempotency bag. */
   processedClinicCardActionIds?: string[];
 
+  /**
+   * Conversation Architecture V2 — additive UX metadata only.
+   * Does not authorize matching, consent, or persistence.
+   */
+  conversationMode?: string;
+  workflowPaused?: boolean;
+  pausedConversationMode?: string;
+  resumeIntakeGroup?: AgencyIntakeGroupNumber;
+  resumePromptKey?: string;
+  pauseReason?: string;
+  /** Short truncated question text for resume context — avoid storing full PII dumps. */
+  lastAnsweredUserQuestion?: string;
+  /** One-time quote-flow explanation already shown. */
+  quoteFlowExplained?: boolean;
+  /** One-time appointment-flow explanation already shown. */
+  appointmentFlowExplained?: boolean;
+
   // ── empty-match recovery ─────────────────────────────────────────────────
   pendingLocationExpansion?: boolean;
   pendingLocationExpansionTarget?: string;
