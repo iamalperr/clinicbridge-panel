@@ -57,22 +57,22 @@ export function getIntakeProcessIntroduction(locale?: string | null): string {
 export function getIntakeGroup1PurposeExplanation(locale?: string | null): string {
   const isEn = localeOf(locale) === "en";
   return isEn
-    ? "To prepare your request personally and allow the selected clinics to conduct an initial evaluation, we will first ask for your name, age and gender. You can share them together in one message when you are ready."
-    : "Talebinizi size özel oluşturabilmek ve seçtiğiniz kliniklerin ön değerlendirme yapabilmesini sağlamak için önce ad-soyad, yaş ve cinsiyet bilgilerinizi isteyeceğiz. Hazır olduğunuzda bu bilgileri tek mesajda paylaşabilirsiniz.";
+    ? "To prepare your request personally and allow selected clinics to run an initial evaluation, we need a few profile details."
+    : "Talebinizi size özel oluşturabilmek ve seçtiğiniz kliniklerin ön değerlendirme yapabilmesini sağlamak için birkaç profil bilgisine ihtiyacımız var.";
 }
 
 export function getIntakeGroup2PurposeExplanation(locale?: string | null): string {
   const isEn = localeOf(locale) === "en";
   return isEn
-    ? "In the next short step, we'll ask for your email, phone and country so your request and clinic responses can reach you. Country also helps with communication and travel coordination where supported."
-    : "Bir sonraki kısa adımda, talebinizin ve kliniklerden gelecek dönüşlerin size iletilebilmesi için e-posta, telefon ve ülke bilgilerinizi alacağız.";
+    ? "So your request and clinic responses can reach you, we need your contact details."
+    : "Talebinizin ve kliniklerden gelecek dönüşlerin size iletilebilmesi için iletişim bilgilerinize ihtiyacımız var.";
 }
 
 export function getIntakeGroup3PurposeExplanation(locale?: string | null): string {
   const isEn = localeOf(locale) === "en";
   return isEn
-    ? "Finally, we'd like to know your planned travel period. This helps clinics evaluate planning and availability — it is not a confirmed appointment date; final availability requires clinic confirmation."
-    : "Son olarak planladığınız seyahat dönemini öğrenmek istiyoruz. Bu bilgi kliniklerin planlama açısından talebinizi değerlendirmesine yardımcı olur; kesin randevu anlamına gelmez.";
+    ? "Finally, your planned travel period helps clinics evaluate planning — it is not a confirmed appointment date; final availability requires clinic confirmation."
+    : "Son olarak planladığınız seyahat dönemi kliniklerin planlama açısından talebinizi değerlendirmesine yardımcı olur; kesin randevu anlamına gelmez.";
 }
 
 export function getIntakeInterruptionReturnCopy(locale?: string | null): string {
@@ -143,6 +143,8 @@ export function getExplainBeforeAskSystemPolicyBlock(locale?: string | null): st
 - Before asking for Group 1/2/3 personal fields, a purpose explanation must already be present in the backend gate reply.
 - Do not invent legal mandates, diagnosis, medical assessment, or “mandatory fields” form language.
 - Answer informational questions first; do not repeat the same Group ask verbatim after every interruption.
+- Never re-ask the same intake fields in the same turn — the backend gate owns the single ask.
+- Keep each assistant turn to one short thank-you (optional), one purpose clause, and one field ask.
 - If the user prefers information only, pause personal-data collection.
 - Showing an explanation never creates a lead, quote, or appointment.`;
   }
@@ -150,6 +152,8 @@ export function getExplainBeforeAskSystemPolicyBlock(locale?: string | null): st
 - Grup 1/2/3 kişisel alanları istemeden önce amaç açıklaması backend kapı yanıtında bulunmalıdır.
 - Yasal zorunluluk, teşhis, tıbbi değerlendirme veya "zorunlu alan / form doldurun" dili uydurma.
 - Bilgi sorularını önce yanıtla; her kesintiden sonra aynı Grup sorusunu kelimesi kelimesine tekrarlama.
+- Aynı turda aynı intake alanlarını yeniden sorma — tek soru backend kapısına aittir.
+- Her asistan turu: isteğe bağlı kısa teşekkür + bir amaç cümlesi + bir alan sorusu.
 - Kullanıcı yalnızca bilgi istiyorsa kişisel veri toplamayı duraklat.
 - Açıklama gösterilmesi lead, teklif veya randevu oluşturmaz.`;
 }
@@ -167,8 +171,35 @@ function readExplainedFlags(ctx: AgencySessionStateInput | null | undefined) {
 }
 
 /**
+ * Weave purpose + field ask into one concise turn (no triple-ask / double thank-you).
+ */
+export function mergeIntakePurposeAndAsk(params: {
+  purpose: string;
+  ask: string;
+  locale?: string | null;
+}): string {
+  const purpose = String(params.purpose || "").trim();
+  const ask = String(params.ask || "").trim();
+  if (!purpose) return ask;
+  if (!ask) return purpose;
+
+  const thankYouRe =
+    /^(Teşekkür(?:ler| ederim)[^.!?\n]*[.!?]\s*|Thank you[^.!?\n]*[.!?]\s*)/i;
+  const thankMatch = ask.match(thankYouRe);
+  if (thankMatch) {
+    const thanks = thankMatch[1].trim();
+    const rest = ask.slice(thankMatch[0].length).trim();
+    // One paragraph: thanks → purpose → single ask (fields listed once in ask).
+    return `${thanks} ${purpose} ${rest}`.replace(/\s+/g, " ").trim();
+  }
+
+  return `${purpose} ${ask}`.replace(/\s+/g, " ").trim();
+}
+
+/**
  * Compose an intake gate message with required purpose explanations.
  * Never claims diagnosis or legal mandates. Never authorizes persistence.
+ * Never repeats the same field ask in multiple paragraphs.
  */
 export function composeExplainBeforeAskIntakePrompt(params: {
   status?: IntakeGroupStatus;
@@ -185,10 +216,7 @@ export function composeExplainBeforeAskIntakePrompt(params: {
     status.currentGroup === "completed"
       ? ("completed" as const)
       : (status.currentGroup as IntakeExplainGroup);
-  const askPrompt =
-    group === "completed"
-      ? getGroupIntakePrompt(status, context, locale)
-      : getGroupIntakePrompt(status, context, locale);
+  const askPrompt = getGroupIntakePrompt(status, context, locale);
   const askKey = buildIntakeAskKey(group, status.missingFieldsInCurrentGroup || []);
   const sessionPatch: Partial<AgencySessionState> = {};
 
@@ -209,7 +237,6 @@ export function composeExplainBeforeAskIntakePrompt(params: {
     // Soft return — do not repeat the full purpose block or the identical ask.
     const parts = [getIntakeInterruptionReturnCopy(locale)];
     if (flags.lastAskKey !== askKey && group !== "completed") {
-      // Brief reminder without re-stating the long purpose explanation.
       parts.push(
         locale === "en"
           ? "When you are ready, we can continue with the short details we still need."
@@ -217,7 +244,7 @@ export function composeExplainBeforeAskIntakePrompt(params: {
       );
     }
     return {
-      prompt: parts.join("\n\n"),
+      prompt: parts.join(" "),
       sessionPatch,
       includesPurposeExplanation: false,
       includesProcessIntroduction: false,
@@ -231,6 +258,7 @@ export function composeExplainBeforeAskIntakePrompt(params: {
   const parts: string[] = [];
   let includesProcessIntroduction = false;
   let includesPurposeExplanation = false;
+  let purposeText = "";
 
   if (group === 1 && !flags.process) {
     parts.push(getIntakeProcessIntroduction(locale));
@@ -239,23 +267,28 @@ export function composeExplainBeforeAskIntakePrompt(params: {
   }
 
   if (group === 1 && !flags.g1) {
-    parts.push(getIntakeGroup1PurposeExplanation(locale));
+    purposeText = getIntakeGroup1PurposeExplanation(locale);
     includesPurposeExplanation = true;
     sessionPatch.intakeGroup1Explained = true;
   } else if (group === 2 && !flags.g2) {
-    parts.push(getIntakeGroup2PurposeExplanation(locale));
+    purposeText = getIntakeGroup2PurposeExplanation(locale);
     includesPurposeExplanation = true;
     sessionPatch.intakeGroup2Explained = true;
   } else if (group === 3 && !flags.g3) {
-    parts.push(getIntakeGroup3PurposeExplanation(locale));
+    purposeText = getIntakeGroup3PurposeExplanation(locale);
     includesPurposeExplanation = true;
     sessionPatch.intakeGroup3Explained = true;
   }
 
-  parts.push(askPrompt);
+  if (purposeText) {
+    parts.push(mergeIntakePurposeAndAsk({ purpose: purposeText, ask: askPrompt, locale }));
+  } else {
+    parts.push(askPrompt);
+  }
   sessionPatch.lastIntakeAskKey = askKey;
 
   return {
+    // Process intro (once) may stay as its own short beat; purpose+ask are one paragraph.
     prompt: parts.filter(Boolean).join("\n\n"),
     sessionPatch,
     includesPurposeExplanation:

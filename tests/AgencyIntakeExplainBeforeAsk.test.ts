@@ -183,11 +183,11 @@ describe("Explain-Before-Ask intake policy", () => {
     }
   });
 
-  it("8. Group 2 explains contact purpose before asking", () => {
+  it("8. Group 2 explains contact purpose without stacking duplicate asks", () => {
     const ctx = {
-      patientName: "Ayşe Yılmaz",
-      patientAge: 30,
-      patientGender: "female",
+      patientName: "Alper Ozgul",
+      patientAge: 27,
+      patientGender: "male",
       intakeProcessExplained: true,
       intakeGroup1Explained: true,
     };
@@ -201,6 +201,12 @@ describe("Explain-Before-Ask intake policy", () => {
     expect(composed.includesPurposeExplanation).toBe(true);
     expect(composed.prompt).toContain(getIntakeGroup2PurposeExplanation("tr").slice(0, 30));
     expect(composed.prompt).toMatch(/e-posta|telefon/i);
+    const thanksCount = (composed.prompt.match(/Teşekkür/gi) || []).length;
+    expect(thanksCount).toBeLessThanOrEqual(1);
+    // Purpose no longer futures "we will ask for email/phone/country" as a separate beat.
+    expect(composed.prompt).not.toMatch(/Bir sonraki kısa adımda/);
+    // One cohesive paragraph for purpose+ask (no blank-line triple stack).
+    expect(composed.prompt.split(/\n\n+/).length).toBeLessThanOrEqual(2);
   });
 
   it("9. Group 3 explains travel date is not a confirmed appointment", () => {
@@ -230,8 +236,8 @@ describe("Explain-Before-Ask intake policy", () => {
   it("10. Turkish and English copies preserve the same meaning", () => {
     const tr1 = getIntakeGroup1PurposeExplanation("tr");
     const en1 = getIntakeGroup1PurposeExplanation("en");
-    expect(tr1).toMatch(/ad-soyad|yaş|cinsiyet/);
-    expect(en1.toLowerCase()).toMatch(/name|age|gender/);
+    expect(tr1).toMatch(/Talebinizi size özel oluşturabilmek|profil/);
+    expect(en1.toLowerCase()).toMatch(/prepare your request personally|profile/);
     expect(en1.toLowerCase()).toMatch(/initial evaluation|personally/);
 
     const tr3 = getIntakeGroup3PurposeExplanation("tr");

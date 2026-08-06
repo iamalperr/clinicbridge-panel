@@ -403,6 +403,8 @@ export function buildAgencyIntakeResumeCue(params: {
 /**
  * Compose informational answer + resume cue (single-clinic style).
  * If there is no answer, returns resume-only text.
+ * If the LLM answer already asks the same intake fields as the gate, prefer the
+ * authoritative gate only — never triple-ask in one turn.
  */
 export function composeInterruptedAgencyReply(params: {
   answer?: string | null;
@@ -410,8 +412,65 @@ export function composeInterruptedAgencyReply(params: {
 }): string {
   const answer = String(params.answer || "").trim();
   const resume = String(params.resumeCue || "").trim();
-  if (answer && resume) return `${answer}\n\n${resume}`;
-  return answer || resume;
+  if (!answer) return resume;
+  if (!resume) return answer;
+
+  if (intakeAskOverlapsGate(answer, resume)) {
+    return resume;
+  }
+
+  // Pure acknowledgement (thanks only) — gate already includes a thank-you + ask.
+  if (isBareIntakeAcknowledgement(answer)) {
+    return resume;
+  }
+
+  return `${answer}\n\n${resume}`;
+}
+
+/** True when LLM text is already soliciting the same intake fields as the gate. */
+export function intakeAskOverlapsGate(llmAnswer: string, gateReply: string): boolean {
+  const a = String(llmAnswer || "").toLowerCase();
+  const g = String(gateReply || "").toLowerCase();
+  if (!a.trim() || !g.trim()) return false;
+
+  const contactSignals = (t: string) => {
+    const email = /e-?posta|email|\bmail\b/.test(t);
+    const phone = /telefon|phone|whatsapp|\+\d/.test(t);
+    const country = /ülke|ulke|country|şehir|sehir|city you live|yaşadığınız/.test(t);
+    return { email, phone, country, score: Number(email) + Number(phone) + Number(country) };
+  };
+  const identitySignals = (t: string) => {
+    const name = /\b(ad(?:ınız|ini|ınızı)?|soyad|isim|name|surname)\b/.test(t);
+    const age = /\b(yaş|yas|age)\b/.test(t);
+    const gender = /\b(cinsiyet|gender|erkek|kadın|kadin|male|female)\b/.test(t);
+    return { name, age, gender, score: Number(name) + Number(age) + Number(gender) };
+  };
+  const travelSignals = (t: string) =>
+    /\b(seyahat|travel|ne zaman gel|when.*(travel|come)|planladığınız tarih)\b/.test(t);
+
+  const ac = contactSignals(a);
+  const gc = contactSignals(g);
+  if (gc.score >= 2 && ac.score >= 2) return true;
+
+  const ai = identitySignals(a);
+  const gi = identitySignals(g);
+  if (gi.score >= 2 && ai.score >= 2) return true;
+
+  if (travelSignals(g) && travelSignals(a) && /\?/.test(a)) return true;
+
+  return false;
+}
+
+function isBareIntakeAcknowledgement(text: string): boolean {
+  const t = String(text || "").trim();
+  if (!t) return false;
+  // Short thanks / noted without a real informational answer.
+  if (t.length > 160) return false;
+  const thanksOnly =
+    /^(teşekkür(?:ler| ederim)[^.!?]*[.!]?\s*)+$/i.test(t) ||
+    /^(thank you[^.!?]*[.!]?\s*)+$/i.test(t) ||
+    /^(noted|anlaşıldı|kaydettim|tamam)[.!]?$/i.test(t);
+  return thanksOnly;
 }
 
 /** Mark quote preamble as shown (once). Also marks process intro explained. */

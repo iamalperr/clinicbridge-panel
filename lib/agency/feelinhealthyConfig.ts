@@ -1790,7 +1790,7 @@ export function getGroupIntakePrompt(
 
   if (status.currentGroup === 2) {
     const name = context.patientName ? context.patientName.split(" ")[0] : "";
-    const greetingTr = name ? `Teşekkür ederim ${name}. ` : "";
+    const greetingTr = name ? `Teşekkürler ${name}. ` : "";
     const greetingEn = name ? `Thank you, ${name}. ` : "";
     const example = isEn ? GROUP2_EXAMPLE.en : GROUP2_EXAMPLE.tr;
 
@@ -1816,8 +1816,8 @@ export function getGroupIntakePrompt(
     }
 
     return isEn
-      ? `Could you share ${partsEn.join(" and ")}? A short natural answer is enough.`
-      : `${partsTr.join(" ve ")} paylaşabilir misiniz? Kısa ve doğal bir cevap yeterli.`;
+      ? `${greetingEn}Could you share ${partsEn.join(" and ")}? A short natural answer is enough.`
+      : `${greetingTr}${partsTr.join(" ve ")} paylaşabilir misiniz? Kısa ve doğal bir cevap yeterli.`;
   }
 
   if (status.currentGroup === 3) {

@@ -125,6 +125,27 @@ describe("AgencyConversationOrchestration", () => {
     expect(reply).not.toContain("Talebinizi size özel oluşturabilmek");
   });
 
+  it("drops redundant LLM contact ask when gate already asks the same fields", () => {
+    const gate =
+      "Teşekkürler Alper. Talebinizin ve kliniklerden gelecek dönüşlerin size iletilebilmesi için iletişim bilgilerinize ihtiyacımız var. E-posta, telefon ve yaşadığınız ülke bilgisini paylaşabilir misiniz?";
+    const llm =
+      "Teşekkürler Alper. Şimdi e-posta adresinizi, telefon numaranızı ve hangi ülkeden yazdığınızı paylaşabilir misiniz?";
+    const reply = composeInterruptedAgencyReply({ answer: llm, resumeCue: gate });
+    expect(reply).toBe(gate);
+    expect(reply.match(/e-posta/gi)?.length).toBeLessThanOrEqual(2);
+    expect(reply).not.toContain("Şimdi e-posta adresinizi");
+  });
+
+  it("keeps a real informational answer when it is not an intake re-ask", () => {
+    const gate =
+      "Teşekkürler Alper. E-posta, telefon ve yaşadığınız ülke bilgisini paylaşabilir misiniz?";
+    const llm =
+      "İmplant tedavisi genellikle birkaç ziyaret gerektirir; kesin plan klinik muayenesi sonrası netleşir.";
+    const reply = composeInterruptedAgencyReply({ answer: llm, resumeCue: gate });
+    expect(reply).toContain("İmplant tedavisi");
+    expect(reply).toContain("E-posta, telefon");
+  });
+
   it("only allows interruption on intake/treatment/location gates — not consent/city/side", () => {
     expect(
       canInterruptHardGateForInformation({
