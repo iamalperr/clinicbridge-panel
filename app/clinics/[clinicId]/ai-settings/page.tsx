@@ -13,6 +13,12 @@ import { Loader2, Save, PlayCircle } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
 import type { PromptSettings } from "@/lib/types";
 import AITestModal from "./AITestModal";
+import { TemperatureControl } from "@/components/ai/TemperatureControl";
+import {
+  AI_TEMPERATURE_DEFAULT,
+  normalizeAITemperature,
+  validateAITemperatureForAdminWrite,
+} from "@/lib/ai/temperaturePolicy";
 
 interface PageProps {
   params: Promise<{ clinicId: string }>;
@@ -23,7 +29,7 @@ const DEFAULT_SETTINGS: PromptSettings = {
   welcomeMessage: "Hello! How can I assist you today?",
   fallbackMessage: "I'm not sure I understood that. Could you rephrase? Or call us directly at our clinic number.",
   model: "gpt-4o",
-  temperature: 0.7,
+  temperature: AI_TEMPERATURE_DEFAULT,
   qualityCriteria: {
     accuracy: true,
     noGuessing: true,
@@ -51,6 +57,7 @@ export default function PromptStudioPage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [isTestModalOpen, setIsTestModalOpen] = useState(false);
   const [clinicName, setClinicName] = useState<string>("");
   const [clinicLanguage, setClinicLanguage] = useState<string>("tr");
@@ -66,9 +73,11 @@ export default function PromptStudioPage({ params }: PageProps) {
 
         if (promptSnap.exists()) {
           const data = promptSnap.data() as PromptSettings;
+          const normalizedTemp = normalizeAITemperature(data.temperature).value;
           setSettings({ 
             ...DEFAULT_SETTINGS, 
             ...data,
+            temperature: normalizedTemp,
             qualityCriteria: {
               ...(DEFAULT_SETTINGS.qualityCriteria as any),
               ...(data.qualityCriteria || {})
@@ -93,18 +102,35 @@ export default function PromptStudioPage({ params }: PageProps) {
 
   const handleSave = async () => {
     setIsSaving(true);
+    setSaveError(null);
+    setSaveSuccess(false);
     try {
+      const validated = validateAITemperatureForAdminWrite(settings.temperature);
+      if (!validated.ok) {
+        setSaveError(clinicLanguage.startsWith("en") ? validated.errorEn : validated.errorTr);
+        return;
+      }
+      const toSave: PromptSettings = {
+        ...settings,
+        temperature: validated.value,
+      };
       const docRef = doc(db, "promptSettings", clinicId);
       
       await setDoc(docRef, {
-        ...settings,
+        ...toSave,
         updatedAt: serverTimestamp(),
       });
       
+      setSettings(toSave);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
       console.error("Failed to save settings:", err);
+      setSaveError(
+        clinicLanguage.startsWith("en")
+          ? "Failed to save prompt settings."
+          : "Prompt ayarları kaydedilemedi."
+      );
     } finally {
       setIsSaving(false);
     }
@@ -226,27 +252,33 @@ export default function PromptStudioPage({ params }: PageProps) {
         </div>
       </SectionCard>
 
+      <SectionCard
+        title={t("aiSettings.conversationStyleTitle")}
+        subtitle={t("aiSettings.conversationStyleSubtitle")}
+      >
+        <TemperatureControl
+          value={settings.temperature}
+          onChange={(next) => setSettings({ ...settings, temperature: next })}
+          locale={clinicLanguage}
+          model={settings.model}
+          onReset={() => setSettings({ ...settings, temperature: AI_TEMPERATURE_DEFAULT })}
+        />
+      </SectionCard>
+
       <SectionCard title="Model & Behavior">
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20 }}>
           <Select 
             label="AI Model" 
             value={settings.model} 
             onChange={e => setSettings({ ...settings, model: e.target.value })} 
             options={modelOptions}
           />
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <label style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>
-              Temperature: {settings.temperature}
-            </label>
-            <input type="range" min="0" max="1" step="0.1" value={settings.temperature}
-              onChange={e => setSettings({ ...settings, temperature: Number(e.target.value) })}
-              style={{ width: "100%", accentColor: "var(--brand)", marginTop: 10 }} />
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--text-muted)", marginTop: 4 }}>
-              <span>Precise</span><span>Creative</span>
-            </div>
-          </div>
         </div>
       </SectionCard>
+
+      {saveError && (
+        <p style={{ color: "#ef4444", fontSize: 13, marginTop: 8 }}>{saveError}</p>
+      )}
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 12 }}>
         <Button 

@@ -65,6 +65,13 @@ export interface ClinicAIUsage {
   pricingStatus: AIPricingStatus;
   errorCode?: string;
 
+  /** Effective conversational temperature for this request (metadata only). */
+  effectiveTemperature?: number;
+  /** Where the temperature came from. */
+  temperatureSource?: "tenant_config" | "product_default" | "model_unsupported";
+  /** True when temperature was omitted because the model does not support it. */
+  temperatureOmitted?: boolean;
+
   createdAt: string; // ISO string
 }
 
@@ -275,6 +282,9 @@ export interface TrackableAIRequestParams {
   model: string;
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
   temperature?: number;
+  /** When true, do not send temperature to OpenAI (unsupported models). */
+  omitTemperature?: boolean;
+  temperatureSource?: "tenant_config" | "product_default" | "model_unsupported";
   maxTokens?: number;
   responseFormat?: { type: string };
   parentRequestId?: string;

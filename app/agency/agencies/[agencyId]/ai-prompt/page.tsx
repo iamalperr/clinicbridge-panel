@@ -31,6 +31,12 @@ import {
   FEELINHEALTHY_PROMPT_STUDIO_DEFAULTS,
   validateAgencyAIConfigConflicts,
 } from "@/lib/agency/assistantPolicy";
+import { TemperatureControl } from "@/components/ai/TemperatureControl";
+import {
+  AI_TEMPERATURE_DEFAULT,
+  normalizeAITemperature,
+  validateAITemperatureForAdminWrite,
+} from "@/lib/ai/temperaturePolicy";
 
 type StudioTab = "brand" | "policy" | "advanced";
 
@@ -144,6 +150,7 @@ export default function AgencyAIPromptPage() {
     languageBehavior: "user_lang",
     intakeInstructions: DEFAULT_INTAKE_INSTRUCTIONS,
     customSystemPrompt: FEELINHEALTHY_PROMPT_STUDIO_DEFAULTS.customSystemPrompt,
+    temperature: AI_TEMPERATURE_DEFAULT,
   });
 
   const [saving, setSaving] = useState(false);
@@ -159,6 +166,7 @@ export default function AgencyAIPromptPage() {
           setConfig((prev) => ({
             ...prev,
             ...cfg,
+            temperature: normalizeAITemperature(cfg.temperature).value,
             intakeInstructions: cfg.intakeInstructions?.length ? cfg.intakeInstructions : DEFAULT_INTAKE_INSTRUCTIONS,
           }));
         }
@@ -198,6 +206,10 @@ export default function AgencyAIPromptPage() {
       intakeInstructions: normalizeFeelinHealthyIntake(
         FEELINHEALTHY_PROMPT_STUDIO_DEFAULTS.intakeInstructions as AIIntakeInstruction[]
       ),
+      temperature:
+        typeof FEELINHEALTHY_PROMPT_STUDIO_DEFAULTS.temperature === "number"
+          ? FEELINHEALTHY_PROMPT_STUDIO_DEFAULTS.temperature
+          : AI_TEMPERATURE_DEFAULT,
     }));
     showToast("success", "Önerilen FeelinHealthy ayarları forma uygulandı. Kaydetmeyi unutmayın.");
     setTab("brand");
@@ -206,14 +218,20 @@ export default function AgencyAIPromptPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
+      const validated = validateAITemperatureForAdminWrite(config.temperature);
+      if (!validated.ok) {
+        showToast("error", validated.errorTr);
+        return;
+      }
       const payload: Partial<AgencyAIConfig> = isFeelinHealthy
         ? {
             ...config,
+            temperature: validated.value,
             intakeInstructions: normalizeFeelinHealthyIntake(config.intakeInstructions),
           }
-        : config;
+        : { ...config, temperature: validated.value };
       await updateAgencyAIConfig(agencyId, payload);
-      if (isFeelinHealthy) setConfig((p) => ({ ...p, ...payload }));
+      setConfig((p) => ({ ...p, ...payload, temperature: validated.value }));
       showToast("success", "AI ayarları başarıyla kaydedildi.");
     } catch (err) {
       console.error(err);
@@ -797,6 +815,19 @@ export default function AgencyAIPromptPage() {
 
       {/* TAB: Advanced */}
       {tab === "advanced" && (
+        <>
+        <SectionCard
+          icon={<Sparkles size={18} />}
+          title="Konuşma Tarzı / Conversation Style"
+          subtitle="Yalnızca ifade çeşitliliğini etkiler. Eşleştirme, KVKK, fiyat, teklif veya randevu kurallarını değiştirmez."
+        >
+          <TemperatureControl
+            value={typeof config.temperature === "number" ? config.temperature : AI_TEMPERATURE_DEFAULT}
+            onChange={(next) => setConfig((p) => ({ ...p, temperature: next }))}
+            locale="tr"
+            onReset={() => setConfig((p) => ({ ...p, temperature: AI_TEMPERATURE_DEFAULT }))}
+          />
+        </SectionCard>
         <SectionCard
           icon={<MessageSquare size={18} />}
           title="Gelişmiş — ton, kurallar ve özel prompt"
@@ -920,6 +951,7 @@ export default function AgencyAIPromptPage() {
             </p>
           </div>
         </SectionCard>
+        </>
       )}
 
       <div

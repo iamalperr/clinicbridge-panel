@@ -268,6 +268,11 @@ export interface AgencyAIConfig {
   pricingBehavior?: "show_exact" | "show_range" | "quote_only" | "fallback_quote";
   languageBehavior?: "user_lang" | "default_tr" | "default_en";
   customSystemPrompt?: string;
+  /**
+   * Conversational wording temperature (0–0.9). Optional for legacy docs.
+   * Does not affect matching, consent, lead/quote/appointment rules.
+   */
+  temperature?: number;
   createdAt?: any;
   updatedAt?: any;
 }

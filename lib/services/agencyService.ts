@@ -577,10 +577,21 @@ export async function updateAgencyAIConfig(
   agencyId: string,
   data: Partial<AgencyAIConfig>
 ): Promise<void> {
+  const payload: Partial<AgencyAIConfig> = { ...data };
+  if ("temperature" in payload) {
+    const { validateAITemperatureForAdminWrite } = await import(
+      "@/lib/ai/temperaturePolicy"
+    );
+    const validated = validateAITemperatureForAdminWrite(payload.temperature);
+    if (!validated.ok) {
+      throw new Error(validated.errorEn);
+    }
+    payload.temperature = validated.value;
+  }
   const docRef = doc(db, "agencies", agencyId, "aiConfig", "main");
   await setDoc(
     docRef,
-    { ...data, updatedAt: serverTimestamp() },
+    { ...payload, updatedAt: serverTimestamp() },
     { merge: true }
   );
 }

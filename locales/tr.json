@@ -857,6 +857,8 @@
     "systemInstructionHelper": "karakter · Bu alan sadece asistanın kimliğini belirler. Davranış kuralları için aşağıdaki bölümü kullanın.",
     "behaviorSettingsTitle": "Davranış ve Kalite Ayarları",
     "behaviorSettingsSubtitle": "Yapay zekanın hastalarla kuracağı iletişimin sınırlarını ve hedeflerini belirleyin.",
+    "conversationStyleTitle": "Konuşma Tarzı",
+    "conversationStyleSubtitle": "Yalnızca ifade çeşitliliğini kontrol eder — eşleştirme, KVKK, fiyat, teklif veya randevu kurallarını değiştirmez.",
     "criteria": {
       "accuracy": {
         "title": "Doğru ve Net Yanıt",

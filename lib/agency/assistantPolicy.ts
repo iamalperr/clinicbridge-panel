@@ -279,6 +279,7 @@ export const FEELINHEALTHY_PROMPT_STUDIO_DEFAULTS: Partial<AgencyAIConfig> = {
   pricingBehavior: "show_range",
   recommendationBehavior: "direct_recommend",
   languageBehavior: "user_lang",
+  temperature: 0.45,
   responseRules: [
     "Hastanın en son sorduğu bilgilendirme sorusunu önce yanıtla; sonra gerekirse bir sonraki intake alanını nazikçe iste.",
     "Danışman gibi konuş; asla 'Invalid input', 'Missing field', 'eksik alan' veya form-validasyon dili kullanma.",

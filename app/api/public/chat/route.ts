@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { trackableAIRequest } from "@/lib/services/aiGateway";
+import { resolveEffectiveAITemperature } from "@/lib/ai/temperaturePolicy";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { AppointmentDateValidator, ClinicWorkingHoursResolver } from "@/lib/skills";
 import { initializeApp, getApps } from "firebase/app";
@@ -2446,10 +2447,17 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
     ].join("");
 
     debugLog.push("calling OpenAI...");
+    const chatModel = promptSettings?.model ?? "gpt-4o-mini";
+    const temperatureResolved = resolveEffectiveAITemperature({
+      rawTemperature: promptSettings?.temperature,
+      model: chatModel,
+    });
     console.log("[widget-chat] capabilities:", {
       skills: Object.fromEntries(Object.entries(aiSkills).map(([k,v]) => [k, v ? "ON" : "OFF"])),
       guardrails: Object.fromEntries(Object.entries(guardrails).map(([k,v]: any) => [k, v?.enabled ? "ON" : "OFF"])),
       skillBlockCount: skillBlocks.length,
+      effectiveTemperature: temperatureResolved.effectiveTemperature,
+      temperatureSource: temperatureResolved.source,
     });
     const completion = await trackableAIRequest({
       clinicId,
@@ -2457,8 +2465,10 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       channel: "web_widget",
       requestType: "chat",
       language: "tr",
-      model:       promptSettings?.model ?? "gpt-4o-mini",
-      temperature: promptSettings?.temperature ?? 0.5,
+      model: chatModel,
+      temperature: temperatureResolved.temperature,
+      omitTemperature: temperatureResolved.omitFromRequest,
+      temperatureSource: temperatureResolved.source,
       maxTokens:   600,
       messages: [
         { role: "system", content: systemPrompt },

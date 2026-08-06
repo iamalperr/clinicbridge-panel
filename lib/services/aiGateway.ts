@@ -17,6 +17,11 @@ import type {
   AIUsageStatus,
   AIPricingStatus,
 } from "@/lib/types/aiUsage";
+import {
+  AI_TEMPERATURE_DEFAULT,
+  modelSupportsChatTemperature,
+  normalizeAITemperature,
+} from "@/lib/ai/temperaturePolicy";
 
 // Initialize OpenAI client lazily
 let openaiClient: OpenAI | null = null;
@@ -50,8 +55,29 @@ export async function trackableAIRequest(
   
   // Default values
   const model = params.model || "gpt-4o-mini";
-  const temperature = params.temperature ?? 0.7;
   const clinicId = params.clinicId; // may be undefined for pure system calls
+
+  // Temperature: preserve explicit 0; omit for unsupported models.
+  const supportsTemp = modelSupportsChatTemperature(model);
+  const omitTemperature = params.omitTemperature === true || !supportsTemp;
+  let temperatureSource =
+    params.temperatureSource ||
+    (params.temperature === undefined ? "product_default" : "tenant_config");
+  let effectiveTemperature: number;
+  if (params.temperature === undefined) {
+    effectiveTemperature = normalizeAITemperature(undefined, AI_TEMPERATURE_DEFAULT).value;
+    temperatureSource = "product_default";
+  } else {
+    effectiveTemperature = normalizeAITemperature(params.temperature).value;
+  }
+  if (!supportsTemp) {
+    temperatureSource = "model_unsupported";
+  }
+  if (omitTemperature && !supportsTemp) {
+    console.info(
+      `[aiGateway] Omitting temperature for unsupported model=${model} (effective=${effectiveTemperature})`
+    );
+  }
   
   let status: AIUsageStatus = "success";
   let errorCode: string | undefined;
@@ -75,14 +101,18 @@ export async function trackableAIRequest(
       try {
         const openai = getOpenAI();
         
-        // Make the actual API call
-        const completion = await openai.chat.completions.create({
+        const createParams: Record<string, unknown> = {
           model,
-          temperature,
           messages: params.messages as any,
           max_tokens: params.maxTokens,
           response_format: params.responseFormat as any,
-        });
+        };
+        if (!omitTemperature) {
+          createParams.temperature = effectiveTemperature;
+        }
+
+        // Make the actual API call
+        const completion = await openai.chat.completions.create(createParams as any);
 
         aiContent = completion.choices[0]?.message?.content || "";
         openaiRequestId = completion.id;
@@ -208,6 +238,9 @@ export async function trackableAIRequest(
     status,
     pricingStatus,
     errorCode,
+    effectiveTemperature,
+    temperatureSource,
+    temperatureOmitted: omitTemperature,
     
     createdAt: now.toISOString(),
   };

@@ -14,6 +14,7 @@ import {
   formatContactResponse
 } from "@/lib/conversation";
 import { ClinicWorkingHoursResolver } from "@/lib/skills";
+import { resolveEffectiveAITemperature } from "@/lib/ai/temperaturePolicy";
 
 export async function POST(req: Request) {
   const startTime = Date.now();
@@ -330,13 +331,20 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       ? `${guardrailRules}${settings.systemPrompt}${contactInfo}${knowledgeBlock}${criteriaRules}\n${hybridStrategy}\nDil kuralı: Kullanıcı hangi dilde soruyorsa (${clinicLanguage}) o dilde yanıt ver.`
       : `${guardrailRules}Sen ${clinicName}'nin dijital hasta asistanısın. Yardımsever ve profesyonel bir üslup kullan.${contactInfo}${knowledgeBlock}${criteriaRules}\n${hybridStrategy}\nDil kuralı: Kullanıcı hangi dilde soruyorsa (${clinicLanguage}) o dilde yanıt ver.`;
 
-    // ── 13. Call AI Gateway ──
+    // ── 13. Call AI Gateway (preview uses unsaved Studio temperature) ──
+    const previewModel = settings.model || "gpt-4o";
+    const temperatureResolved = resolveEffectiveAITemperature({
+      rawTemperature: settings.temperature,
+      model: previewModel,
+    });
     const completion = await trackableAIRequest({
       clinicId,
       channel: "admin",
       requestType: "admin_test",
-      model: settings.model || "gpt-4o",
-      temperature: settings.temperature !== undefined ? settings.temperature : 0.7,
+      model: previewModel,
+      temperature: temperatureResolved.temperature,
+      omitTemperature: temperatureResolved.omitFromRequest,
+      temperatureSource: temperatureResolved.source,
       language: clinicLanguage,
       messages: [
         { role: "system", content: systemInstruction },

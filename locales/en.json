@@ -820,6 +820,8 @@
     "systemInstructionHelper": "characters · This field only defines the assistant identity. Use the behavior rules below for response quality settings.",
     "behaviorSettingsTitle": "Behavior & Quality Settings",
     "behaviorSettingsSubtitle": "Define the assistant’s communication boundaries and goals when speaking with patients.",
+    "conversationStyleTitle": "Conversation Style",
+    "conversationStyleSubtitle": "Controls wording variation only — never matching, consent, pricing, quotes or appointments.",
     "criteria": {
       "accuracy": {
         "title": "Clear and Accurate Answer",

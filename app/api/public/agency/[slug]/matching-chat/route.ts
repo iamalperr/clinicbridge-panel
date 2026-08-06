@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { trackableAIRequest } from "@/lib/services/aiGateway";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { getCached, setCached } from "@/lib/services/agencyCache";
+import { resolveEffectiveAITemperature } from "@/lib/ai/temperaturePolicy";
 import {
   IntentRouter,
   SlotExtractor,
@@ -2359,13 +2360,23 @@ export async function POST(
           }, 8000);
         });
 
+        const agencyChatModel = "gpt-4o-mini";
+        const temperatureResolved = resolveEffectiveAITemperature({
+          rawTemperature: agencyAiConfig?.temperature,
+          model: agencyChatModel,
+        });
+        // NOTE: This call is dual-purpose (structured JSON slots + replyText).
+        // Backend hard-gates still own matching/consent/intake progression;
+        // temperature only varies natural-language wording in replyText.
         const completion = await Promise.race([
           trackableAIRequest({
             clinicId: ctx.selectedClinicId || undefined,
             channel: "portal",
             requestType: "chat",
-            model: "gpt-4o-mini", // Fast model for intake as requested
-            temperature: 0.3,
+            model: agencyChatModel,
+            temperature: temperatureResolved.temperature,
+            omitTemperature: temperatureResolved.omitFromRequest,
+            temperatureSource: temperatureResolved.source,
             maxTokens: 1200,
             responseFormat: { type: "json_object" },
             messages: [
