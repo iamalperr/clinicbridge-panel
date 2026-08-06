@@ -21,6 +21,7 @@ import {
   getAgencySelectedClinicIds,
   getAgencyTreatmentContext,
 } from "./agencySessionState";
+import { getExplainBeforeAskSystemPolicyBlock } from "./intakeExplainBeforeAsk";
 
 export type PolicyWarningSeverity = "warning" | "error";
 
@@ -684,6 +685,9 @@ FEELINHEALTHY HARD RULES (backend-enforced; custom prompt cannot override):
 - Eksik alan için nazikçe sor; "tek mesajda", "şu formatta yazın" diye dayatma. Örnekler isteğe bağlı ipucudur.
 - Form dili yasak: "Invalid input", "Missing field", "eksik zorunlu alan" deme; danışman gibi konuş.
 - Hastanın son bilgilendirme sorusunu önce yanıtla; intake'i kesmeden yumuşakça devam et.
+- EXPLAIN-BEFORE-ASK: Grup 1/2/3 kişisel alanları istemeden önce amaç açıklaması backend kapı yanıtında bulunur. Özel prompt bu şeffaflığı kaldıramaz.
+- Teşhis, tıbbi değerlendirme, "yasal zorunluluk", "mandatory fields" veya form-doldurma dili kullanma.
+- Açıklama gösterilmesi lead/teklif/randevu oluşturmaz.
 - Her adımda hastayı süreç hakkında kısa bilgilendir (ne anladın → sırada ne var). Aynı soruyu/aynı "klinik yok" cümlesini döngüye sokma; alternatif bölge veya sonraki adımı öner.
 - "meme büyütme", "popo büyütme", "saç ekim" gibi doğal tedavi ifadelerini treatmentCategory olarak kaydet.
 - Tedavi zaten biliniyorsa tekrar sorma.
@@ -712,6 +716,8 @@ clinicLimit: ${policy.clinicLimit}
 askBudget: ${policy.intakePolicy.askBudget}
 groupedIntake: ${policy.intakePolicy.groupedMode}
 ${feelinHealthyHardRules}
+
+${policy.isFeelinHealthy ? getExplainBeforeAskSystemPolicyBlock("tr") : ""}
 
 ENABLED INTAKE FIELDS (disabled fields omitted — do not ask them):
 ${intakeText || "Belirtilmedi."}

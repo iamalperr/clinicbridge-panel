@@ -288,6 +288,18 @@ export interface AgencySessionStateKnown {
   quoteFlowExplained?: boolean;
   /** One-time appointment-flow explanation already shown. */
   appointmentFlowExplained?: boolean;
+  /** Explain-before-ask: three-step process intro already shown. */
+  intakeProcessExplained?: boolean;
+  /** Explain-before-ask: Group 1 purpose explanation already shown. */
+  intakeGroup1Explained?: boolean;
+  /** Explain-before-ask: Group 2 purpose explanation already shown. */
+  intakeGroup2Explained?: boolean;
+  /** Explain-before-ask: Group 3 purpose explanation already shown. */
+  intakeGroup3Explained?: boolean;
+  /** Last Group ask fingerprint — avoid verbatim repeats after interruptions. */
+  lastIntakeAskKey?: string;
+  /** User prefers information-only; pause personal-data collection. */
+  intakeInformationOnly?: boolean;
 
   // ── empty-match recovery ─────────────────────────────────────────────────
   pendingLocationExpansion?: boolean;

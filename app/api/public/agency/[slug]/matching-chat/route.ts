@@ -102,8 +102,15 @@ import {
   getAppointmentFlowPreamble,
   markQuoteFlowExplained,
   markAppointmentFlowExplained,
+  isAgencyInformationOnlyPreference,
+  markIntakeInformationOnly,
 } from "@/lib/agency/conversationOrchestration";
 import { buildAgencyGroundedContext } from "@/lib/agency/agencyGroundedRetrieval";
+import {
+  getIntakePausedForInformationCopy,
+  composeExplainBeforeAskIntakePrompt,
+  applyIntakeExplainSessionPatch,
+} from "@/lib/agency/intakeExplainBeforeAsk";
 import type { NextConversationAction } from "@/lib/agency/feelinhealthyConversationMachine";
 
 const CORS = {
@@ -207,6 +214,8 @@ function buildComposedHardGatePayload(params: {
       ? buildAgencyIntakeResumeCue({
           locale: params.locale,
           intakePrompt: gate.reply,
+          sessionContext: params.sessionContext,
+          informationOnly: params.sessionContext.intakeInformationOnly === true,
         })
       : gate.reply;
     reply = composeInterruptedAgencyReply({ answer, resumeCue });
@@ -1778,7 +1787,40 @@ export async function POST(
               pauseReason: turn.informationType || "informational_interruption",
             });
             Object.assign(ctx, applyAgencyWorkflowPause(ctx, pausePlan));
+
+            // Information-only preference: pause personal-data asks; do not create lead/quote.
+            if (
+              turn.informationType === "information_only" ||
+              isAgencyInformationOnlyPreference(userMsgForOrch)
+            ) {
+              Object.assign(ctx, markIntakeInformationOnly(ctx, true));
+              const infoReply = getIntakePausedForInformationCopy(gateLang);
+              return jsonResponse({
+                reply: infoReply,
+                type: "text",
+                sessionContext: serializeAgencySessionState(ctx),
+                showClinicCards: false,
+                stage: fhStateEarly.stage,
+                stateVersion: ctx.stateVersion,
+              }, { headers: CORS });
+            }
             // Fall through to LLM — do not advance intake via hard-gate return.
+          } else if (ctx.intakeInformationOnly === true && nextAction.kind === "intake") {
+            // Stay in information-only mode until the user continues.
+            const pausedCopy = composeExplainBeforeAskIntakePrompt({
+              context: ctx,
+              locale: gateLang,
+              variant: "information_only_paused",
+            });
+            Object.assign(ctx, applyIntakeExplainSessionPatch(ctx, pausedCopy.sessionPatch));
+            return jsonResponse({
+              reply: pausedCopy.prompt,
+              type: "text",
+              sessionContext: serializeAgencySessionState(ctx),
+              showClinicCards: false,
+              stage: fhStateEarly.stage,
+              stateVersion: ctx.stateVersion,
+            }, { headers: CORS });
           } else if (!allowLlmIntakeAssist) {
             const composed = buildComposedHardGatePayload({
               nextAction,

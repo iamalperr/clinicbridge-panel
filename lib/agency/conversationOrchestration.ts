@@ -14,6 +14,13 @@ import type { AgencySessionState, AgencySessionStateInput } from "./agencySessio
 import { normalizeAgencySessionState } from "./agencySessionState";
 import type { FeelinHealthyStage } from "./feelinhealthyConversationMachine";
 import type { NextConversationAction } from "./feelinhealthyConversationMachine";
+import {
+  composeExplainBeforeAskIntakePrompt,
+  getIntakeProcessIntroduction,
+  getIntakePausedForInformationCopy,
+  isAgencyInformationOnlyPreference,
+  markIntakeInformationOnly,
+} from "./intakeExplainBeforeAsk";
 
 /** Conversation modes — session metadata, not prompts. */
 export type AgencyConversationMode =
@@ -205,6 +212,18 @@ export function classifyAgencyConversationTurn(params: {
     };
   }
 
+  if (isAgencyInformationOnlyPreference(params.message)) {
+    return {
+      kind: "informational_interruption",
+      mode: "information",
+      informationType: "information_only",
+      shouldPauseWorkflow: true,
+      shouldResumeWorkflow: false,
+      needsQuotePreamble: false,
+      needsAppointmentPreamble: false,
+    };
+  }
+
   if (isAgencyAppointmentRequestPhrase(params.message)) {
     return {
       kind: "appointment_request",
@@ -344,38 +363,41 @@ export function applyAgencyWorkflowResume(
   delete next.resumeIntakeGroup;
   delete next.resumePromptKey;
   delete next.pauseReason;
+  // Resuming the workflow exits information-only pause.
+  delete next.intakeInformationOnly;
   return normalizeAgencySessionState(next);
 }
 
 export function getQuoteFlowPreamble(locale: string = "tr"): string {
-  const isEn = locale.toLowerCase().startsWith("en");
-  return isEn
-    ? "We'll collect a few basic details so we can identify the most suitable clinics, prepare a personalized quote request and, if you wish, forward it to the clinics you select."
-    : "Size en uygun klinikleri belirleyebilmek, kişiselleştirilmiş bir teklif talebi hazırlayabilmek ve dilerseniz seçtiğiniz kliniklere iletebilmek için birkaç kısa bilgi alacağız.";
+  // Centralized process introduction (explain-before-ask).
+  return getIntakeProcessIntroduction(locale);
 }
 
 export function getAppointmentFlowPreamble(locale: string = "tr"): string {
-  const isEn = locale.toLowerCase().startsWith("en");
-  return isEn
-    ? "To help with an appointment request, we'll gather a few short details first so the right clinic team can follow up with you."
-    : "Randevu talebinizde yardımcı olabilmek için önce birkaç kısa bilgi alacağız; böylece ilgili klinik ekibi sizinle iletişime geçebilir.";
+  return getIntakeProcessIntroduction(locale);
 }
 
 /**
  * Soft resume cue after answering an interruption.
- * Never sounds like a form validation error.
+ * Never sounds like a form validation error; never repeats the full Group purpose.
  */
 export function buildAgencyIntakeResumeCue(params: {
   locale?: string;
   intakePrompt?: string | null;
+  sessionContext?: AgencySessionStateInput | null;
+  informationOnly?: boolean;
 }): string {
-  const isEn = (params.locale || "tr").toLowerCase().startsWith("en");
-  const prompt = String(params.intakePrompt || "").trim();
-  const bridge = isEn
-    ? "Whenever you're ready, we can continue from where we left off."
-    : "Hazır olduğunuzda kaldığımız yerden devam edebiliriz.";
-  if (!prompt) return bridge;
-  return `${bridge}\n\n${prompt}`;
+  const locale = params.locale || "tr";
+  if (params.informationOnly || params.sessionContext?.intakeInformationOnly === true) {
+    return getIntakePausedForInformationCopy(locale);
+  }
+  const soft = composeExplainBeforeAskIntakePrompt({
+    context: params.sessionContext || {},
+    locale,
+    variant: "soft_resume_after_interrupt",
+  });
+  // Prefer soft interruption return; do not append the verbatim prior ask.
+  return soft.prompt;
 }
 
 /**
@@ -392,13 +414,14 @@ export function composeInterruptedAgencyReply(params: {
   return answer || resume;
 }
 
-/** Mark quote preamble as shown (once). */
+/** Mark quote preamble as shown (once). Also marks process intro explained. */
 export function markQuoteFlowExplained(
   sessionContext: AgencySessionStateInput
 ): AgencySessionState {
   return normalizeAgencySessionState({
     ...normalizeAgencySessionState(sessionContext),
     quoteFlowExplained: true,
+    intakeProcessExplained: true,
     conversationMode: "quote",
   });
 }
@@ -409,6 +432,9 @@ export function markAppointmentFlowExplained(
   return normalizeAgencySessionState({
     ...normalizeAgencySessionState(sessionContext),
     appointmentFlowExplained: true,
+    intakeProcessExplained: true,
     conversationMode: "appointment",
   });
 }
+
+export { isAgencyInformationOnlyPreference, markIntakeInformationOnly };

@@ -15,7 +15,6 @@ import {
   decideFeelinHealthyLocationNextStep,
   evaluateFeelinHealthyIntake,
   getCitySelectionCard,
-  getGroupIntakePrompt,
   getIstanbulSideClarificationCard,
   getTreatmentClarificationPrompt,
   getUnsupportedLocationPrompt,
@@ -24,6 +23,10 @@ import {
   isLocationExpansionAffirmative,
   type LocationDecision,
 } from "./feelinhealthyConfig";
+import {
+  composeExplainBeforeAskIntakePrompt,
+  applyIntakeExplainSessionPatch,
+} from "./intakeExplainBeforeAsk";
 import { resolveAssistantRole, type AssistantRole } from "./assistantModes";
 import type { AgencySessionState, AgencySessionStateInput } from "./agencySessionState";
 import {
@@ -96,6 +99,8 @@ export type NextConversationAction =
       group: 1 | 2 | 3;
       missingFields: string[];
       prompt: string;
+      /** Explain-before-ask flags to merge when the gate reply is shown. */
+      sessionPatch?: Partial<AgencySessionState>;
     }
   | { kind: "ask_treatment"; prompt: string }
   | {
@@ -408,11 +413,24 @@ function buildIntakeAction(
     missingFieldsInCurrentGroup: state.intake.missingFields,
     allGroupsComplete: false,
   };
+  const variant =
+    promptContext?.intakeInformationOnly === true
+      ? ("information_only_paused" as const)
+      : promptContext?.__intakeExplainVariant === "soft_resume_after_interrupt"
+        ? ("soft_resume_after_interrupt" as const)
+        : ("standard" as const);
+  const composed = composeExplainBeforeAskIntakePrompt({
+    status: intakeStatus,
+    context: promptContext,
+    locale,
+    variant,
+  });
   return {
     kind: "intake",
     group,
     missingFields: state.intake.missingFields,
-    prompt: getGroupIntakePrompt(intakeStatus, promptContext, locale),
+    prompt: composed.prompt,
+    sessionPatch: composed.sessionPatch,
   };
 }
 
@@ -664,6 +682,9 @@ export function buildGateResponseFromAction(
       return null; // consent payload built by route (privacy settings)
     case "intake":
       ctx.intakeStage = action.group;
+      if (action.sessionPatch) {
+        Object.assign(ctx, applyIntakeExplainSessionPatch(ctx, action.sessionPatch));
+      }
       return {
         reply: action.prompt,
         type: "text",

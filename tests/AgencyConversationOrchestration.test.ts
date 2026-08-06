@@ -113,12 +113,16 @@ describe("AgencyConversationOrchestration", () => {
       answer: "Ağımızdaki klinikler saç ekimi sunabiliyor.",
       resumeCue: buildAgencyIntakeResumeCue({
         locale: "tr",
-        intakePrompt: "Yaşınızı öğrenebilir miyim?",
+        sessionContext: {
+          intakeProcessExplained: true,
+          intakeGroup1Explained: true,
+          lastIntakeAskKey: "1:patientAge",
+        },
       }),
     });
     expect(reply).toContain("saç ekimi");
-    expect(reply).toContain("Yaşınızı öğrenebilir miyim?");
-    expect(reply).toContain("kaldığımız yerden");
+    expect(reply).toContain("kaldığımız kısa adıma");
+    expect(reply).not.toContain("Talebinizi size özel oluşturabilmek");
   });
 
   it("only allows interruption on intake/treatment/location gates — not consent/city/side", () => {
