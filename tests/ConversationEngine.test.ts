@@ -66,11 +66,12 @@ describe('Unified Conversation Engine & Hardened Intent Resolution Suite', () =>
 
     it('A6: provides polite fallback when pricing is unknown without failure messages', () => {
       const trFallback = formatPricingFallback('implant', 'tr');
-      expect(trFallback).toContain('net fiyat');
+      expect(trFallback).toMatch(/hızlı ve memnuniyet odaklı|kişiye özel/i);
       expect(trFallback).not.toContain('doğrulayamıyorum');
+      expect(trFallback).not.toContain('bilgim yok');
 
       const enFallback = formatPricingFallback('implant', 'en');
-      expect(enFallback).toContain('final price');
+      expect(enFallback).toMatch(/quickly with clear pricing|personalized after/i);
       expect(enFallback).not.toContain('cannot verify');
     });
   });

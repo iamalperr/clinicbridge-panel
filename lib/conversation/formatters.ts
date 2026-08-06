@@ -652,21 +652,39 @@ export function formatPricingFallback(treatmentName?: string, locale: string = "
   const isDe = locale.toLowerCase().startsWith("de");
   const isFr = locale.toLowerCase().startsWith("fr");
   const isAr = locale.toLowerCase().startsWith("ar");
+  const treatment = String(treatmentName || "").trim();
 
   if (isEn) {
-    return "The final price for this treatment is confirmed after the clinic's evaluation. I can help you request a quote or arrange an appointment.";
+    const subject = treatment ? `for ${treatment}` : "for this treatment";
+    return (
+      `I don’t have a verified list price ${subject} on hand — the final amount is confirmed after the clinic’s evaluation. ` +
+      `Share the details we still need and we’ll get back to you quickly with clear pricing so you can decide with confidence.`
+    );
   }
   if (isDe) {
-    return "Der endgültige Preis für diese Behandlung wird nach der Untersuchung durch die Klinik festgelegt. Gerne erstelle ich ein Preisangebot für Sie oder helfe bei der Terminvereinbarung.";
+    return (
+      "Einen verifizierten Listenpreis habe ich gerade nicht vorliegen — der endgültige Preis wird nach der Untersuchung durch die Klinik festgelegt. " +
+      "Wenn Sie die noch fehlenden Angaben teilen, melden wir uns zügig mit einer klaren Preiseinschätzung bei Ihnen."
+    );
   }
   if (isFr) {
-    return "Le prix final pour ce traitement est confirmé après l'évaluation par la clinique. Je peux vous aider à demander un devis ou à planifier un rendez-vous.";
+    return (
+      "Je n’ai pas de tarif listé vérifié pour le moment — le montant final est confirmé après l’évaluation de la clinique. " +
+      "Partagez les informations encore nécessaires et nous vous répondrons rapidement avec une estimation claire."
+    );
   }
   if (isAr) {
-    return "يتم تحديد السعر النهائي لهذا العلاج بعد تقييم العيادة والفحص. يمكنني مساعدتك في طلب عرض أسعار أو ترتيب موعد.";
+    return (
+      "لا يتوفر لدي حالياً سعر قائمة موثوق — يتم تحديد المبلغ النهائي بعد تقييم العيادة. " +
+      "شاركنا التفاصيل الناقصة وسنعود إليك بسرعة بتوضيح واضح للأسعار."
+    );
   }
 
-  return "Bu tedavi için net fiyat, kliniğin muayene ve değerlendirmesi sonrasında belirlenmektedir. Dilerseniz fiyat teklifi talebi oluşturabilir veya randevu planlamanıza yardımcı olabilirim.";
+  const subject = treatment ? `${treatment} için` : "Bu tedavi için";
+  return (
+    `${subject} şu anda doğrulanmış bir liste fiyatı paylaşamıyorum; net tutar klinik değerlendirmesi sonrası kişiye özel belirleniyor. ` +
+    `Gerekli bilgilerinizi tamamlarsanız, fiyat konusunda size hızlı ve memnuniyet odaklı bir dönüş sağlarız.`
+  );
 }
 
 /**

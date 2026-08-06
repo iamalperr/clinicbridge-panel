@@ -289,6 +289,7 @@ export const FEELINHEALTHY_PROMPT_STUDIO_DEFAULTS: Partial<AgencyAIConfig> = {
     "Hastanın tedavi ihtiyacını anlamadan klinik önermeye çalışma.",
     "Hasta yeterli bilgi verdiyse klinik önerilerini sohbet içinde kartlarla göster.",
     "Klinik kartlarında yalnızca backend fiyatlarını kullan; yoksa uydurma.",
+    "Fiyat yoksa sohbeti kesme veya 'bilgim yok' deme: net tutarın değerlendirme sonrası kişiselleştiğini belirt, eksik hasta bilgilerini topla ve fiyat konusunda hızlı/memnuniyet odaklı dönüş sözü ver.",
     "Hasta bir klinik seçtiğinde aynı kartı sürekli tekrar gösterme.",
     "Klinik seçildikten sonra yalnızca seçilen klinik bağlamında cevap ver; keşfe geri dönme.",
     "FeelinHealthy için bütçe sorma.",
@@ -745,7 +746,7 @@ STANDART KURALLAR:
 2. Backend state otoriterdir: toplanmış alanları tekrar sorma, aşamayı geri alma, state’i yeniden başlatma.
 3. ${policy.intakePolicy.askBudget ? "Bütçe sorulabilir." : "Bütçe KESİNLİKLE SORULMAZ."}
 4. En fazla ${policy.clinicLimit} klinik öner. Backend sonucundan fazla klinik uydurma.
-5. Fiyat uydurma. showPriceRange=${policy.pricingPolicy.showPriceRange}.
+5. Fiyat uydurma. showPriceRange=${policy.pricingPolicy.showPriceRange}. Fiyat bağlamda yoksa: yanıtı kesme; değerlendirme sonrası kişiye özel fiyat + gerekli bilgileri toplama + hızlı/memnuniyet odaklı dönüş sözü ver.
 6. Türkçe mesaja Türkçe, İngilizce mesaja İngilizce yanıt ver (dil: ${policy.languagePolicy.mode}).
 7. Tıbbi teşhis koyma; kesin sonuç/fiyat garantisi verme.
 8. KVKK: kişisel/sağlık verisi için requiresConsent kurallarını uygula.

@@ -167,11 +167,48 @@ export function getApprovedNetworkFallback(locale: string = "tr"): string {
     : "Bağlı klinik ağımızın doğrulanmış profil bilgilerine dayanarak neler sunulduğunu paylaşabilirim. Tedavi veya şehir tercihizi söylerseniz daha da netleştirebiliriz.";
 }
 
-export function getApprovedPricingFallback(locale: string = "tr"): string {
+export type ApprovedPricingFallbackOptions = {
+  clinicName?: string | null;
+  treatmentHint?: string | null;
+  /** Soft next ask already known by backend (e.g. missing contact/treatment detail). */
+  nextAsk?: string | null;
+};
+
+/**
+ * Lexicon-approved reply when verified list pricing is missing.
+ * Never dead-ends with "I have no information" — collect what is needed and
+ * promise a quick, satisfaction-minded pricing follow-up.
+ */
+export function getApprovedPricingFallback(
+  locale: string = "tr",
+  options: ApprovedPricingFallbackOptions = {}
+): string {
   const isEn = locale.toLowerCase().startsWith("en");
-  return isEn
-    ? "I don't have a verified price for that item right now. After a short intake we can prepare a personalized quote request for the clinics you select."
-    : "Bu kalem için şu anda doğrulanmış bir fiyat bilgim yok. Kısa bir bilgi alışverişinden sonra seçtiğiniz kliniklere kişiselleştirilmiş teklif talebi hazırlayabiliriz.";
+  const clinic = String(options.clinicName || "").trim();
+  const treatment = String(options.treatmentHint || "").trim();
+  const nextAsk = String(options.nextAsk || "").trim();
+
+  if (isEn) {
+    const subject = treatment
+      ? `for ${treatment}`
+      : clinic
+        ? `with ${clinic}`
+        : "for this treatment";
+    const base =
+      `I don’t have a verified list price ${subject} on hand right now — the final amount is personalized after the clinic’s evaluation. ` +
+      `If you share the details we still need (treatment notes and your contact), we’ll get back to you quickly with clear pricing so you can decide with confidence.`;
+    return nextAsk ? `${base} ${nextAsk}` : base;
+  }
+
+  const subject = treatment
+    ? `${treatment} için`
+    : clinic
+      ? `${clinic} için`
+      : "bu tedavi için";
+  const base =
+    `${subject} şu anda doğrulanmış bir liste fiyatı paylaşamıyorum; net tutar klinik değerlendirmesi sonrası kişiye özel belirleniyor. ` +
+    `Gerekli bilgilerinizi (tedavi detayı ve iletişim) tamamlarsanız, fiyat konusunda size hızlı ve memnuniyet odaklı bir dönüş sağlarız.`;
+  return nextAsk ? `${base} ${nextAsk}` : base;
 }
 
 function pushAttr(
@@ -466,8 +503,8 @@ export function buildAgencyGroundedContext(
 
   blocks.push(
     isEn
-      ? "=== GROUNDING RULES ===\nUse only verified context above. Never invent doctors, prices, specialties, or clinic capabilities. If pricing is missing, say a personalized quote can be prepared after intake."
-      : "=== DAYANAK KURALLARI ===\nYalnızca yukarıdaki doğrulanmış bağlamı kullan. Doktor, fiyat, uzmanlık veya klinik yeteneği uydurma. Fiyat yoksa, intake sonrası kişiselleştirilmiş teklif hazırlanabileceğini söyle."
+      ? "=== GROUNDING RULES ===\nUse only verified context above. Never invent doctors, prices, specialties, or clinic capabilities. If pricing is missing: do NOT stop or say you have no information — briefly explain that pricing is personalized after evaluation, collect any missing patient details, and promise a quick satisfaction-minded pricing follow-up."
+      : "=== DAYANAK KURALLARI ===\nYalnızca yukarıdaki doğrulanmış bağlamı kullan. Doktor, fiyat, uzmanlık veya klinik yeteneği uydurma. Fiyat yoksa: yanıtı kesme veya 'bilgim yok' deme — fiyatın değerlendirme sonrası kişiselleştiğini kısaca belirt, eksik hasta bilgilerini topla ve fiyat konusunda hızlı/memnuniyet odaklı dönüş sözü ver."
   );
 
   return {

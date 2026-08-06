@@ -118,7 +118,9 @@ describe("AgencyGroundedRetrieval", () => {
     expect(result.contextText).not.toContain("Hospitadent");
     // Coordinator callers pass empty agency KB; if provided, builder still skips agency KB for coordinator.
     expect(result.usedAgencyKnowledge).toBe(false);
-    expect(getApprovedPricingFallback("en")).toMatch(/personalized quote/i);
+    expect(getApprovedPricingFallback("en")).toMatch(/quickly with clear pricing|personalized after/i);
+    expect(getApprovedPricingFallback("tr")).toMatch(/hızlı ve memnuniyet odaklı/i);
+    expect(getApprovedPricingFallback("tr")).not.toMatch(/bilgim yok/i);
   });
 
   it("never invents doctors when none exist — attributions omit doctor sources", () => {

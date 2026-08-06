@@ -106,7 +106,7 @@ import {
   isAgencyInformationOnlyPreference,
   markIntakeInformationOnly,
 } from "@/lib/agency/conversationOrchestration";
-import { buildAgencyGroundedContext } from "@/lib/agency/agencyGroundedRetrieval";
+import { buildAgencyGroundedContext, getApprovedPricingFallback } from "@/lib/agency/agencyGroundedRetrieval";
 import {
   getIntakePausedForInformationCopy,
   composeExplainBeforeAskIntakePrompt,
@@ -252,7 +252,7 @@ function buildClinicContext(clinics: any[], pricing: any[], knowledgeRecords: an
       ? cPrices.map((p: any) =>
         `  - ${p.subTreatmentName || p.treatmentName}: ${p.priceMin}${p.priceMin !== p.priceMax ? `–${p.priceMax}` : ""} ${p.currency || "EUR"}${p.duration ? ` (${p.duration})` : ""}`
       ).join("\n")
-      : "  (Fiyat bilgisi tanımlı değil)";
+      : "  (Fiyat bilgisi tanımlı değil — fiyat uydurma. Hastadan gerekli bilgileri topla; net tutarın değerlendirme sonrası kişiselleştiğini belirt ve hızlı/memnuniyet odaklı dönüş sözü ver.)";
 
     const loc = c.location ? `${c.location.city || ""}, ${c.location.country || ""}`.replace(/^, |, $/g, "") : "";
     const langs = (c.supportedLanguages || []).join(", ");
@@ -2438,6 +2438,8 @@ export async function POST(
     }
 
     // GROUNDEDNESS CHECK FOR RAG
+    // Pricing questions without verified price rows must NOT be replaced with a dead-end
+    // "cannot verify" message — use the approved pricing follow-up lexicon instead.
     if (relevantKbRecords && relevantKbRecords.length > 0 && 
         (parsed.intent === "clinic_question" || parsed.intent === "pricing_question" || parsed.intent === "doctor_question") &&
         parsed.replyText && !parsed.replyText.includes("doğrulamıyorum") && !parsed.replyText.includes("erişemediğim")) {
@@ -2448,7 +2450,18 @@ export async function POST(
         const validation = await validateGroundedness(parsed.replyText, contextStr);
         if (!validation.isGrounded) {
            console.warn(`[Groundedness Failed] Reason: ${validation.reason}\nReply: ${parsed.replyText}`);
-           parsed.replyText = "Bu bilgiyi şu anda sistemimizdeki klinik verilerinden güvenilir şekilde doğrulayamıyorum. Yanlış yönlendirmemek için klinik ekibinden teyit edilmesi gerekir.";
+           if (parsed.intent === "pricing_question") {
+             const locale =
+               parsed.language === "en" || String(ctx.language || "").toLowerCase().startsWith("en")
+                 ? "en"
+                 : "tr";
+             parsed.replyText = getApprovedPricingFallback(locale, {
+               clinicName: parsed.clinicName || ctx.selectedClinicName || ctx.lastFocusedClinicName,
+               treatmentHint: parsed.subTreatment || parsed.treatmentCategory || ctx.lastSubTreatment || ctx.lastTreatmentCategory,
+             });
+           } else {
+             parsed.replyText = "Bu bilgiyi şu anda sistemimizdeki klinik verilerinden güvenilir şekilde doğrulayamıyorum. Yanlış yönlendirmemek için klinik ekibinden teyit edilmesi gerekir.";
+           }
         }
     }
 
@@ -3684,8 +3697,32 @@ export async function POST(
         newCtx.lastFocusedClinicName = clinic.clinicName;
       }
 
+      const locale =
+        parsed.language === "en" || String(newCtx.language || "").toLowerCase().startsWith("en")
+          ? "en"
+          : "tr";
+      const hasVerifiedPrices = Array.isArray(relevantPricing) && relevantPricing.length > 0;
+      const replyWhenNoPrice = getApprovedPricingFallback(locale, {
+        clinicName: clinic?.clinicName || parsed.clinicName || newCtx.selectedClinicName || newCtx.lastFocusedClinicName,
+        treatmentHint:
+          parsed.subTreatment ||
+          parsed.treatmentCategory ||
+          newCtx.lastSubTreatment ||
+          newCtx.lastTreatmentCategory,
+      });
+      // Prefer LLM wording when prices exist; when missing, never leave a dead-end stub.
+      const reply =
+        hasVerifiedPrices
+          ? parsed.replyText || replyWhenNoPrice
+          : (parsed.replyText &&
+              !/bilgim yok|doğrulayamıyorum|no information|don't have (any )?information|cannot verify/i.test(
+                parsed.replyText
+              )
+              ? parsed.replyText
+              : replyWhenNoPrice);
+
       return jsonResponse({
-        reply: parsed.replyText || "Fiyat bilgisi.",
+        reply,
         type: "pricing_answer",
         clinics: miniCard,
         sessionContext: newCtx,
