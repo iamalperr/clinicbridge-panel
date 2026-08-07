@@ -60,6 +60,8 @@ export const FEELINHEALTHY_PRODUCTION_CLINIC_IDS = {
   anadoluMedicalCenter: "CnjF1vlliz4vM7IRRWKr",
   dunyagozAtakoy: "KY7x141fXMg5oIWHjBnQ",
   dunyagozAntalya: "l5zwxhtDlxSqqCu8AArk",
+  orionSurgeryCenter: "qFk6AAp46VM1ZUfyhpZg",
+  intermedNisantasi: "ptXjvS5XdF6lBKIamIKp",
 } as const;
 
 export interface CuratedClinicTarget {
@@ -80,7 +82,15 @@ export interface CuratedLocationRule {
 }
 
 export interface CuratedBranchRule {
-  branchKey: "dental" | "ivf" | "cardiology" | "check_up" | "eye_treatments" | string;
+  branchKey:
+    | "dental"
+    | "ivf"
+    | "cardiology"
+    | "check_up"
+    | "eye_treatments"
+    | "hair_transplant"
+    | "aesthetic_surgery"
+    | string;
   categoryNameTr: string;
   categoryNameEn: string;
   locations: CuratedLocationRule[];
@@ -452,6 +462,114 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
             slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.dunyagozAntalya,
             aliasPatterns: ["dunyagoz-antalya", "dunyagoz antalya", "dünyagöz antalya"],
             district: "Muratpaşa, Antalya",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    branchKey: "aesthetic_surgery",
+    categoryNameTr: "Estetik & Plastik Cerrahi",
+    categoryNameEn: "Aesthetic & Plastic Surgery",
+    locations: [
+      {
+        city: "istanbul",
+        side: "anatolian",
+        displayNameTr: "İstanbul Anadolu Yakası",
+        displayNameEn: "Istanbul Anatolian Side",
+        curatedClinics: [
+          {
+            name: "Orion Surgery Center",
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.orionSurgeryCenter,
+            aliasPatterns: [
+              "orion-surgery-center",
+              "orion surgery center",
+              "orion surgical center",
+              "orion cerrahi",
+              "orion",
+            ],
+            district: "İstanbul",
+          },
+          {
+            name: "Lokman Hekim İstanbul Hospital",
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.lokmanHekimIstanbul,
+            aliasPatterns: [
+              "lokman-hekim-istanbul-hospital",
+              "lokman-istanbul",
+              "lokman hekim istanbul",
+              "lokman hekim",
+            ],
+            district: "Kurtköy, Pendik",
+          },
+        ],
+      },
+      {
+        city: "istanbul",
+        side: "european",
+        displayNameTr: "İstanbul Avrupa Yakası",
+        displayNameEn: "Istanbul European Side",
+        curatedClinics: [
+          {
+            name: "BHT Clinic İstanbul TEMA Hospital",
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.bhtClinicIstanbulTema,
+            aliasPatterns: [
+              "bht-clinic-istanbul-tema-hastanesi",
+              "bht-clinic-istanbul-tema",
+              "bht clinic",
+              "bht tema",
+              "bht",
+            ],
+            district: "Halkalı / Küçükçekmece",
+          },
+          {
+            name: "Intermed Health Group Nişantaşı",
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.intermedNisantasi,
+            aliasPatterns: [
+              "intermed-health-group-nisantasi",
+              "intermed nisantasi",
+              "intermed nişantaşı",
+              "intermed health group nişantaşı",
+              "intermed",
+            ],
+            district: "Nişantaşı, Şişli",
+          },
+        ],
+      },
+      {
+        city: "antalya",
+        side: "any",
+        displayNameTr: "Antalya",
+        displayNameEn: "Antalya",
+        curatedClinics: [
+          {
+            name: "Memorial Hospital",
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.memorialAntalya,
+            aliasPatterns: [
+              "memorial-hospital",
+              "memorial antalya",
+              "memorial hospital antalya",
+              "memorial",
+            ],
+            district: "Antalya",
+          },
+        ],
+      },
+      {
+        city: "ankara",
+        side: "any",
+        displayNameTr: "Ankara",
+        displayNameEn: "Ankara",
+        curatedClinics: [
+          {
+            name: "Lokman Hekim University Ankara Hospital",
+            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.lokmanHekimAnkara,
+            aliasPatterns: [
+              "lokman-hekim-university-ankara-hospital",
+              "lokman hekim ankara",
+              "lokman-hekim-ankara",
+              "lokman hekim university ankara",
+            ],
+            district: "Ankara",
           },
         ],
       },
@@ -973,7 +1091,7 @@ export function getEmptyMatchProcessReply(params: {
     if (!alts.length) {
       return (
         `I've noted your treatment preference, but I can't show a partner clinic for this exact combination yet. ` +
-        `Our live partner network currently highlights dental, hair transplant, IVF, cardiology and eye care. ` +
+        `Our live partner network currently highlights dental, aesthetic & plastic surgery, hair transplant, IVF, cardiology and eye care. ` +
         `Tell me which of these you'd like to explore, or say "record my request" and I'll keep your details for the team.`
       );
     }
@@ -985,7 +1103,7 @@ export function getEmptyMatchProcessReply(params: {
   if (!alts.length) {
     return (
       `Tedavi tercihinizi not ettim; bu kombinasyon için henüz doğrudan gösterebileceğim bir partner klinik yok. ` +
-      `Canlı ağımızda öne çıkan alanlar: diş, saç ekimi, tüp bebek, kardiyoloji ve göz. ` +
+      `Canlı ağımızda öne çıkan alanlar: diş, estetik & plastik cerrahi, saç ekimi, tüp bebek, kardiyoloji ve göz. ` +
       `Bunlardan birini yazabilir veya "talebimi kaydet" diyerek ekibe iletmemi isteyebilirsiniz.`
     );
   }
@@ -1383,6 +1501,8 @@ export function normalizeTreatmentBranch(rawCategory?: string | null): string {
   if (
     lower.includes("estetik") ||
     lower.includes("aesthetic") ||
+    lower.includes("plastic_surgery") ||
+    lower.includes("plastik") ||
     lower.includes("rino") ||
     lower.includes("botoks") ||
     lower.includes("botox") ||
@@ -1397,7 +1517,9 @@ export function normalizeTreatmentBranch(rawCategory?: string | null): string {
     lower.includes("butt") ||
     lower.includes("augmentation") ||
     lower.includes("göğüs") ||
-    lower.includes("gogus")
+    lower.includes("gogus") ||
+    lower.includes("rhinoplast") ||
+    lower.includes("reconstructive")
   ) {
     return "aesthetic_surgery";
   }
