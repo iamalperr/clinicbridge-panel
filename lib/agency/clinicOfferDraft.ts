@@ -16,6 +16,11 @@ export interface PricingRowLike {
   packageDetails?: string;
   status?: string;
   allowQuoteRequest?: boolean;
+  /** Alternate field names seen in older / synced docs */
+  category?: string;
+  minPrice?: number | string;
+  maxPrice?: number | string;
+  price?: number | string;
 }
 
 export interface DraftOfferMatchInput {
@@ -49,21 +54,121 @@ function norm(value: unknown): string {
     .trim();
 }
 
+/** Coerce price fields that may arrive as strings ("1.200", "1200 EUR"). */
+export function parsePricingAmount(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (value == null || value === "") return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  // Keep digits / separators; drop currency letters and spaces.
+  const cleaned = raw
+    .replace(/[^\d.,-]/g, "")
+    .replace(/\.(?=\d{3}(?:\D|$))/g, "") // thousand sep with dot
+    .replace(/,(?=\d{3}(?:\D|$))/g, "") // thousand sep with comma
+    .replace(",", "."); // decimal comma
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Normalize a raw pricing document into the matcher shape.
+ * Safe for Firestore / sync / portal schema drift.
+ */
+export function normalizePricingRow(raw: Record<string, unknown> | PricingRowLike): PricingRowLike {
+  const row = raw as Record<string, unknown>;
+  const priceMin =
+    parsePricingAmount(row.priceMin) ??
+    parsePricingAmount(row.minPrice) ??
+    parsePricingAmount(row.price);
+  const priceMax =
+    parsePricingAmount(row.priceMax) ??
+    parsePricingAmount(row.maxPrice) ??
+    priceMin;
+  const treatmentName = String(row.treatmentName || row.subTreatmentName || "").trim();
+  const treatmentCategoryName = String(
+    row.treatmentCategoryName || row.priceGroup || row.category || ""
+  ).trim();
+  return {
+    id: row.id != null ? String(row.id) : undefined,
+    treatmentName: treatmentName || undefined,
+    treatmentCategoryName: treatmentCategoryName || undefined,
+    subTreatmentName: row.subTreatmentName != null ? String(row.subTreatmentName) : undefined,
+    priceGroup: row.priceGroup != null ? String(row.priceGroup) : undefined,
+    priceMin: priceMin ?? undefined,
+    priceMax: priceMax ?? undefined,
+    currency: row.currency != null ? String(row.currency) : undefined,
+    priceType: row.priceType != null ? String(row.priceType) : undefined,
+    notes: row.notes != null ? String(row.notes) : undefined,
+    packageDetails: row.packageDetails != null ? String(row.packageDetails) : undefined,
+    status: row.status != null ? String(row.status) : undefined,
+    allowQuoteRequest: row.allowQuoteRequest === false ? false : undefined,
+  };
+}
+
+/** Category aliases so intake keys match uploaded price groups (TR/EN). */
+function categoryAliases(cat: string): string[] {
+  const c = norm(cat);
+  if (!c) return [];
+  const aliases = new Set<string>([c]);
+  if (
+    c.includes("aesthetic") ||
+    c.includes("estetik") ||
+    c === "plastic surgery" ||
+    c.includes("aesthetic surgery")
+  ) {
+    ["aesthetic", "estetik", "aesthetic surgery", "plastik", "plastic"]
+      .map(norm)
+      .forEach((a) => aliases.add(a));
+  }
+  if (c.includes("implant") || c === "dental" || c.includes("dis")) {
+    ["implant", "dental", "dis", "diş"].map(norm).forEach((a) => aliases.add(a));
+  }
+  if (c.includes("hair") || c.includes("sac")) {
+    ["hair", "sac", "saç", "hair transplant"].map(norm).forEach((a) => aliases.add(a));
+  }
+  return Array.from(aliases).filter(Boolean);
+}
+
 function scorePricingRow(row: PricingRowLike, input: DraftOfferMatchInput): number {
-  const cat = norm(input.treatmentCategory);
+  const catAliases = categoryAliases(String(input.treatmentCategory || ""));
   const sub = norm(input.treatmentSubcategory);
   const name = norm(input.treatmentName);
   const rowCat = norm(row.treatmentCategoryName);
   const rowSub = norm(row.subTreatmentName);
   const rowName = norm(row.treatmentName);
   const rowGroup = norm(row.priceGroup);
+  const hay = `${rowCat} ${rowGroup} ${rowName} ${rowSub}`;
 
   let score = 0;
-  if (cat && (rowCat === cat || rowGroup === cat || rowName.includes(cat))) score += 5;
+  for (const cat of catAliases) {
+    if (cat && (rowCat === cat || rowGroup === cat || rowName.includes(cat) || hay.includes(cat))) {
+      score += 5;
+      break;
+    }
+  }
   if (sub && (rowSub === sub || rowName.includes(sub) || rowGroup.includes(sub))) score += 8;
   if (name && (rowName === name || rowName.includes(name) || name.includes(rowName))) score += 6;
-  if (cat && sub && rowCat === cat && rowSub === sub) score += 4;
+  if (catAliases[0] && sub && rowCat === catAliases[0] && rowSub === sub) score += 4;
   return score;
+}
+
+/**
+ * Firestore rejects `undefined` nested values. Build a write-safe offer object.
+ */
+export function sanitizeDraftClinicOffer(offer: DraftClinicOffer): DraftClinicOffer {
+  const out: DraftClinicOffer = {
+    clinicId: offer.clinicId,
+    clinicName: offer.clinicName,
+    treatmentName: offer.treatmentName,
+    priceMin: offer.priceMin,
+    priceMax: offer.priceMax,
+    currency: offer.currency,
+    draftedAt: offer.draftedAt,
+  };
+  if (offer.packageDetails) out.packageDetails = offer.packageDetails;
+  if (offer.notes) out.notes = offer.notes;
+  if (offer.sourcePricingId) out.sourcePricingId = offer.sourcePricingId;
+  return out;
 }
 
 /**
@@ -71,13 +176,16 @@ function scorePricingRow(row: PricingRowLike, input: DraftOfferMatchInput): numb
  * Returns null when nothing usable matches.
  */
 export function pickBestPricingForClinic(input: DraftOfferMatchInput): DraftClinicOffer | null {
-  const active = (input.pricingRows || []).filter((row) => {
+  const normalized = (input.pricingRows || []).map((row) =>
+    normalizePricingRow(row as PricingRowLike)
+  );
+  const active = normalized.filter((row) => {
     const status = String(row.status || "active").toLowerCase();
     if (status === "inactive" || status === "archived" || status === "disabled") return false;
     if (row.allowQuoteRequest === false) return false;
-    const min = Number(row.priceMin);
-    const max = Number(row.priceMax ?? row.priceMin);
-    return Number.isFinite(min) && min >= 0 && Number.isFinite(max);
+    const min = parsePricingAmount(row.priceMin);
+    const max = parsePricingAmount(row.priceMax ?? row.priceMin);
+    return min != null && min >= 0 && max != null && Number.isFinite(max);
   });
 
   if (active.length === 0) return null;
@@ -101,9 +209,9 @@ export function pickBestPricingForClinic(input: DraftOfferMatchInput): DraftClin
     best = active[0];
   }
 
-  const priceMin = Number(best.priceMin);
-  const priceMax = Number(best.priceMax ?? best.priceMin);
-  return {
+  const priceMin = parsePricingAmount(best.priceMin)!;
+  const priceMax = parsePricingAmount(best.priceMax ?? best.priceMin)!;
+  const draft: DraftClinicOffer = {
     clinicId: input.clinicId,
     clinicName: input.clinicName,
     treatmentName:
@@ -115,11 +223,12 @@ export function pickBestPricingForClinic(input: DraftOfferMatchInput): DraftClin
     priceMin,
     priceMax: priceMax >= priceMin ? priceMax : priceMin,
     currency: String(best.currency || "EUR").toUpperCase(),
-    packageDetails: best.packageDetails || undefined,
-    notes: best.notes || undefined,
-    sourcePricingId: best.id,
     draftedAt: new Date().toISOString(),
   };
+  if (best.packageDetails) draft.packageDetails = best.packageDetails;
+  if (best.notes) draft.notes = best.notes;
+  if (best.id) draft.sourcePricingId = best.id;
+  return sanitizeDraftClinicOffer(draft);
 }
 
 export function formatOfferPriceRange(offer: {

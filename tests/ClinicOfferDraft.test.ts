@@ -4,7 +4,9 @@ import { join } from "path";
 import {
   describeClinicOfferDraftError,
   formatOfferPriceRange,
+  parsePricingAmount,
   pickBestPricingForClinic,
+  sanitizeDraftClinicOffer,
 } from "../lib/agency/clinicOfferDraft";
 import { buildPatientOfferEmailContent } from "../lib/services/patientOfferEmailContent";
 
@@ -62,6 +64,61 @@ describe("clinic offer draft matching", () => {
     });
     expect(offer).toBeNull();
   });
+
+  it("never embeds undefined fields (Firestore write safety)", () => {
+    const offer = pickBestPricingForClinic({
+      clinicId: "c1",
+      clinicName: "Clinic",
+      treatmentCategory: "implant",
+      pricingRows: [
+        {
+          id: "p1",
+          treatmentName: "Implant",
+          treatmentCategoryName: "implant",
+          priceMin: 500,
+          priceMax: 500,
+          currency: "EUR",
+          status: "active",
+          // no packageDetails / notes
+        },
+      ],
+    });
+    expect(offer).not.toBeNull();
+    expect(Object.values(offer!).some((v) => v === undefined)).toBe(false);
+    expect("packageDetails" in offer!).toBe(false);
+    expect("notes" in offer!).toBe(false);
+    const sanitized = sanitizeDraftClinicOffer(offer!);
+    expect(JSON.stringify(sanitized)).not.toContain("undefined");
+  });
+
+  it("parses string prices and matches aesthetic_surgery to Estetik group", () => {
+    expect(parsePricingAmount("1.250")).toBe(1250);
+    expect(parsePricingAmount("1,250.50")).toBe(1250.5);
+
+    const offer = pickBestPricingForClinic({
+      clinicId: "c1",
+      clinicName: "Orion",
+      treatmentCategory: "aesthetic_surgery",
+      treatmentName: "aesthetic_surgery",
+      pricingRows: [
+        {
+          id: "a1",
+          treatmentName: "Rhinoplasty",
+          priceGroup: "Estetik",
+          treatmentCategoryName: "Estetik",
+          priceMin: "3500" as unknown as number,
+          priceMax: "4500" as unknown as number,
+          currency: "EUR",
+          status: "active",
+          notes: "Ortalama fiyat",
+        },
+      ],
+    });
+    expect(offer?.sourcePricingId).toBe("a1");
+    expect(offer?.priceMin).toBe(3500);
+    expect(offer?.notes).toBe("Ortalama fiyat");
+    expect(Object.values(offer!).some((v) => v === undefined)).toBe(false);
+  });
 });
 
 describe("patient offer email", () => {
@@ -112,6 +169,16 @@ describe("offer draft wiring", () => {
     expect(route).toContain("asClinicOfferDraftError");
     expect(route).toContain('name === "ClinicOfferDraftError"');
     expect(route).toContain("message: draftErr.message");
+  });
+
+  it("draft service strips undefined and resolves clinic ids safely", () => {
+    const service = readFileSync(
+      join(process.cwd(), "lib/services/clinicOfferDraftService.ts"),
+      "utf8"
+    );
+    expect(service).toContain("sanitizeDraftClinicOffer");
+    expect(service).toContain("normalizePricingRow");
+    expect(service).toContain("resolveSelectedClinicIds");
   });
 });
 

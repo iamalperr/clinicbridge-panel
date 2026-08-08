@@ -5,11 +5,32 @@
 
 import { getAdminDb } from "@/lib/firebase-admin";
 import {
+  normalizePricingRow,
   pickBestPricingForClinic,
+  sanitizeDraftClinicOffer,
   type DraftClinicOffer,
   type PricingRowLike,
 } from "@/lib/agency/clinicOfferDraft";
 import { pickOfficialClinicName } from "@/lib/services/agencyQuoteNotificationContent";
+
+/** Collect clinic ids from lead/quote shapes used across agency flows. */
+function resolveSelectedClinicIds(lead: Record<string, unknown>, quote: Record<string, unknown>): string[] {
+  const fromQuote = [
+    ...(Array.isArray(quote.selectedClinicIds) ? quote.selectedClinicIds : []),
+    quote.selectedClinicId,
+  ];
+  const fromLead = [
+    ...(Array.isArray(lead.clinicIds) ? lead.clinicIds : []),
+    lead.selectedClinicId,
+  ];
+  return Array.from(
+    new Set(
+      [...fromQuote, ...fromLead]
+        .map((id) => String(id || "").trim())
+        .filter(Boolean)
+    )
+  );
+}
 
 export class ClinicOfferDraftError extends Error {
   code: string;
@@ -84,16 +105,25 @@ export async function draftClinicOffersForLead(params: {
     };
   }
 
-  const clinicIds: string[] = Array.from(
-    new Set(
-      [
-        ...(Array.isArray(quote.selectedClinicIds) ? quote.selectedClinicIds : []),
-        ...(Array.isArray(lead.clinicIds) ? lead.clinicIds : []),
-      ]
-        .map((id) => String(id || "").trim())
-        .filter(Boolean)
-    )
-  );
+  let clinicIds = resolveSelectedClinicIds(lead as Record<string, unknown>, quote as Record<string, unknown>);
+
+  // Fallback: open clinic_requests for this lead (selection may live only there).
+  if (clinicIds.length === 0) {
+    const crSnap = await adminDb
+      .collection("agencies")
+      .doc(agencyId)
+      .collection("clinic_requests")
+      .where("leadId", "==", leadId)
+      .limit(20)
+      .get();
+    clinicIds = Array.from(
+      new Set(
+        crSnap.docs
+          .map((d) => String(d.data()?.clinicId || "").trim())
+          .filter(Boolean)
+      )
+    );
+  }
 
   if (clinicIds.length === 0) {
     throw new ClinicOfferDraftError(
@@ -132,10 +162,9 @@ export async function draftClinicOffersForLead(params: {
       .collection("pricing")
       .get();
 
-    const pricingRows: PricingRowLike[] = pricingSnap.docs.map((d) => ({
-      id: d.id,
-      ...d.data(),
-    })) as PricingRowLike[];
+    const pricingRows: PricingRowLike[] = pricingSnap.docs.map((d) =>
+      normalizePricingRow({ id: d.id, ...d.data() })
+    );
 
     const offer = pickBestPricingForClinic({
       clinicId,
@@ -150,7 +179,7 @@ export async function draftClinicOffersForLead(params: {
       missingClinicIds.push(clinicId);
       continue;
     }
-    clinicOffers.push(offer);
+    clinicOffers.push(sanitizeDraftClinicOffer(offer));
   }
 
   if (clinicOffers.length === 0) {
@@ -162,10 +191,18 @@ export async function draftClinicOffersForLead(params: {
   }
 
   const now = new Date().toISOString();
+  const nextStatus =
+    quote.status === "requested" || quote.status === "draft"
+      ? "offer_received"
+      : typeof quote.status === "string" && quote.status
+        ? quote.status
+        : "offer_received";
+
+  // Never write `undefined` — Firestore Admin rejects it (surfaced as INTERNAL_ERROR in UI).
   await quoteRef.set(
     {
       clinicOffers,
-      status: quote.status === "requested" || quote.status === "draft" ? "offer_received" : quote.status,
+      status: nextStatus,
       offerDraftedAt: now,
       offerDraftSource: "clinic_pricing",
       updatedAt: now,
