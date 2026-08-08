@@ -91,13 +91,12 @@ function SectionTitle({ icon, title }: { icon: React.ReactNode; title: string })
 }
 
 // ─── Tab Definition ─────────────────────────────────────────────────────────
-const TAB_KEYS = ["general", "overview", "treatments", "pricing", "doctors", "knowledgeBase", "faq", "location", "settings"] as const;
+const TAB_KEYS = ["general", "overview", "pricing", "doctors", "knowledgeBase", "faq", "location", "settings"] as const;
 type TabKey = typeof TAB_KEYS[number];
 
 const TAB_ICONS: Record<TabKey, React.ReactNode> = {
   general: <Building2 size={14} />,
   overview: <FileText size={14} />,
-  treatments: <Stethoscope size={14} />,
   pricing: <DollarSign size={14} />,
   doctors: <Stethoscope size={14} />,
   knowledgeBase: <FileText size={14} />,
@@ -109,7 +108,6 @@ const TAB_ICONS: Record<TabKey, React.ReactNode> = {
 const TAB_LABELS: Record<TabKey, { tr: string; en: string }> = {
   general: { tr: "Genel Bilgiler", en: "General" },
   overview: { tr: "Klinik Özeti", en: "Overview" },
-  treatments: { tr: "Tedaviler", en: "Treatments" },
   pricing: { tr: "Fiyatlandırma", en: "Pricing" },
   doctors: { tr: "Doktorlar", en: "Doctors" },
   knowledgeBase: { tr: "AI Bilgi Havuzu", en: "AI Knowledge" },
@@ -751,30 +749,6 @@ export default function ClinicProfilePage() {
 
             <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end" }}>
               <Button onClick={handleSaveOverview} isLoading={saving}><Save size={14} /> {t("portal.buttons.saveChanges")}</Button>
-            </div>
-          </div>
-        )}
-
-        {/* ═══ TAB: TREATMENTS ═══ */}
-        {activeTab === "treatments" && (
-          <div>
-            <SectionTitle icon={<Stethoscope size={18} />} title={t("portal.clinics.profile.tabs.treatments")} />
-            <p style={{ fontSize: 13, color: UI_COLORS.textMuted, marginBottom: 16 }}>
-              {t("portal.clinics.treatmentCategories")}
-            </p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {generalForm.treatmentCategories.map((cat) => (
-                <Badge key={cat} label={catLabel(cat)} variant="info" />
-              ))}
-              {generalForm.treatmentCategories.length === 0 && <span style={{ fontSize: 13, color: UI_COLORS.textMuted }}>—</span>}
-            </div>
-
-            <div style={{ marginTop: 16, padding: 14, borderRadius: 10, background: "rgba(99,102,241,0.04)", border: "1px solid rgba(99,102,241,0.1)" }}>
-              <p style={{ fontSize: 12, color: UI_COLORS.textMuted }}>
-                {language === "tr"
-                  ? "Tedavi kategorilerini Genel Bilgiler sekmesinden yönetebilirsiniz. Alt tedaviler klinik özeti ve AI Bilgi Havuzundan kullanılır."
-                  : "Manage treatment categories from the General Info tab. Sub-treatments come from clinic overview and the AI knowledge base."}
-              </p>
             </div>
           </div>
         )}
