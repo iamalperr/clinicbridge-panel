@@ -59,7 +59,6 @@ export function buildPatientOfferEmailContent(params: {
           <tbody>${offerRowsHtml}</tbody>
         </table>
         <p style="color:#64748b;font-size:13px;">Fiyatlar tahmini olup klinik değerlendirmesine göre değişebilir. Bu bir randevu onayı değildir.</p>
-        <p>Sorularınız için bu e-postaya yanıt verebilirsiniz.</p>
         <p style="margin-top:28px;color:#64748b;font-size:14px;">${escapeHtml(agencyName)} · ClinicBridge AI</p>
       </div>
     `;
@@ -100,7 +99,6 @@ export function buildPatientOfferEmailContent(params: {
         <tbody>${offerRowsHtml}</tbody>
       </table>
       <p style="color:#64748b;font-size:13px;">Prices are estimates and may change after clinical evaluation. This is not an appointment confirmation.</p>
-      <p>You can reply to this email with any questions.</p>
       <p style="margin-top:28px;color:#64748b;font-size:14px;">${escapeHtml(agencyName)} · ClinicBridge AI</p>
     </div>
   `;

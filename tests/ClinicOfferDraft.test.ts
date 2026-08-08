@@ -142,6 +142,9 @@ describe("patient offer email", () => {
     expect(html).toContain("İstanbul Diş Akademisi");
     expect(html).toContain("400");
     expect(text).toContain("400–700 EUR");
+    // noreply@ sender — do not invite replies
+    expect(html).not.toMatch(/bu e-postaya yanıt/i);
+    expect(html).not.toMatch(/reply to this email/i);
   });
 });
 
