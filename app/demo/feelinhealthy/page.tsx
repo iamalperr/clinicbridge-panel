@@ -1577,71 +1577,51 @@ export default function FeelinHealthyLive() {
                                   {lang === "tr" ? "Bu Klinikle Devam Et" : "Proceed with this Clinic"}
                                 </button>
                               )}
-                              <div style={{ display: "flex", gap: 6 }}>
-                                <button
-                                  disabled={aiTyping}
-                                  onClick={() => {
-                                    const clinicId = String(rec.clinicId || rec.id || "").trim();
-                                    if (!clinicId) return;
-                                    sendSystemAction({
-                                      action: "view_clinic_details",
-                                      clinicId,
-                                      clinicName: rec.clinicName || rec.name,
-                                      clinicSlug: rec.clinicSlug || rec.slug,
-                                      profilePath: rec.profilePath,
-                                      locale: lang,
-                                    });
-                                  }}
-                                  style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 11, fontWeight: 700, textAlign: "center", background: C.primaryBg, color: C.primary, border: `1px solid ${C.primaryBorder}`, cursor: aiTyping ? "not-allowed" : "pointer", opacity: aiTyping ? 0.6 : 1 }}
-                                >
-                                  {lang === "tr" ? "Daha Fazla Bilgi" : "More Info"}
-                                </button>
-                                <button
-                                  disabled={aiTyping || isQuoteRequestLocked(sessionCtx)}
-                                  onClick={() => {
-                                    if (isQuoteRequestLocked(sessionCtx)) return;
-                                    const clinicId = String(rec.clinicId || rec.id || "").trim();
-                                    if (!clinicId) return;
-                                    sendSystemAction({
-                                      action: "request_quote",
-                                      clinicId,
-                                      clinicName: rec.clinicName || rec.name,
-                                      clinicSlug: rec.clinicSlug || rec.slug,
-                                      locale: lang,
-                                    });
-                                  }}
-                                  style={{
-                                    flex: 1,
-                                    padding: "6px 0",
-                                    borderRadius: 6,
-                                    fontSize: 11,
-                                    fontWeight: 700,
-                                    background: isQuoteRequestLocked(sessionCtx) ? "#F1F5F9" : C.white,
-                                    color: isQuoteRequestLocked(sessionCtx) ? "#94A3B8" : C.navy,
-                                    border: `1px solid ${C.border}`,
-                                    cursor:
-                                      aiTyping || isQuoteRequestLocked(sessionCtx)
-                                        ? "not-allowed"
-                                        : "pointer",
-                                    opacity: aiTyping ? 0.6 : 1,
-                                  }}
-                                  title={
-                                    isQuoteRequestLocked(sessionCtx)
-                                      ? lang === "tr"
-                                        ? "Teklif talebiniz zaten alındı"
-                                        : "Quote request already submitted"
-                                      : undefined
-                                  }
-                                >
-                                  {isQuoteRequestLocked(sessionCtx)
+                              <button
+                                disabled={aiTyping || isQuoteRequestLocked(sessionCtx)}
+                                onClick={() => {
+                                  if (isQuoteRequestLocked(sessionCtx)) return;
+                                  const clinicId = String(rec.clinicId || rec.id || "").trim();
+                                  if (!clinicId) return;
+                                  sendSystemAction({
+                                    action: "request_quote",
+                                    clinicId,
+                                    clinicName: rec.clinicName || rec.name,
+                                    clinicSlug: rec.clinicSlug || rec.slug,
+                                    locale: lang,
+                                  });
+                                }}
+                                style={{
+                                  width: "100%",
+                                  padding: "6px 0",
+                                  borderRadius: 6,
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  background: isQuoteRequestLocked(sessionCtx) ? "#F1F5F9" : C.white,
+                                  color: isQuoteRequestLocked(sessionCtx) ? "#94A3B8" : C.navy,
+                                  border: `1px solid ${C.border}`,
+                                  cursor:
+                                    aiTyping || isQuoteRequestLocked(sessionCtx)
+                                      ? "not-allowed"
+                                      : "pointer",
+                                  opacity: aiTyping ? 0.6 : 1,
+                                }}
+                                title={
+                                  isQuoteRequestLocked(sessionCtx)
                                     ? lang === "tr"
-                                      ? "Teklif Alındı"
-                                      : "Quote Sent"
-                                    : lang === "tr"
-                                      ? "Teklif İste"
-                                      : "Request Quote"}
-                                </button>
-                              </div>
+                                      ? "Teklif talebiniz zaten alındı"
+                                      : "Quote request already submitted"
+                                    : undefined
+                                }
+                              >
+                                {isQuoteRequestLocked(sessionCtx)
+                                  ? lang === "tr"
+                                    ? "Teklif Alındı"
+                                    : "Quote Sent"
+                                  : lang === "tr"
+                                    ? "Teklif İste"
+                                    : "Request Quote"}
+                              </button>
                             </div>
                           </div>
                         ))}
