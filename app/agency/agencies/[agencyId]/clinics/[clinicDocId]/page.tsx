@@ -329,16 +329,30 @@ export default function ClinicProfilePage() {
     setSaving(true);
     try {
       let successCount = 0;
+      let failCount = 0;
       for (const r of kbRecords) {
-        await updateClinicKnowledgeRecord(agencyId, clinicDocId, r.id!, { embedding_status: "indexing", last_error: null });
-        await fetch("/api/admin/embeddings/generate", {
+        if (!r.id) continue;
+        await updateClinicKnowledgeRecord(agencyId, clinicDocId, r.id, { embedding_status: "indexing", last_error: null });
+        const res = await fetch("/api/admin/embeddings/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ docPath: `agencies/${agencyId}/clinics/${clinicDocId}/knowledgeBase/${r.id}` })
+          body: JSON.stringify({ docPath: `agencies/${agencyId}/clinics/${clinicDocId}/knowledgeBase/${r.id}` }),
         });
-        successCount++;
+        if (res.ok) successCount++;
+        else {
+          failCount++;
+          const payload = await res.json().catch(() => ({}));
+          await updateClinicKnowledgeRecord(agencyId, clinicDocId, r.id, {
+            embedding_status: "failed",
+            last_error: String(payload?.error || `HTTP ${res.status}`),
+          });
+        }
       }
-      showToast("success", `${successCount} kayıt başarıyla indekslendi.`);
+      if (failCount === 0) {
+        showToast("success", `${successCount} kayıt başarıyla indekslendi.`);
+      } else {
+        showToast("error", `${successCount} başarılı, ${failCount} başarısız. Başarısız satırlardan tekrar deneyin.`);
+      }
     } catch (err: any) {
       console.error(err);
       showToast("error", "İndeksleme sırasında bir hata oluştu.");
@@ -357,18 +371,26 @@ export default function ClinicProfilePage() {
       let targetId = editingKbId;
       if (editingKbId) {
         await updateClinicKnowledgeRecord(agencyId, clinicDocId, editingKbId, { ...kbForm, embedding_status: "indexing", last_error: null });
-        showToast("success", "Kayıt güncellendi");
       } else {
         targetId = await addClinicKnowledgeRecord(agencyId, clinicDocId, { ...kbForm, agencyId, clinicId: clinicDocId, embedding_status: "indexing", last_error: null });
-        showToast("success", "Kayıt eklendi");
       }
-      
+
       if (targetId) {
-        fetch("/api/admin/embeddings/generate", {
+        const res = await fetch("/api/admin/embeddings/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ docPath: `agencies/${agencyId}/clinics/${clinicDocId}/knowledgeBase/${targetId}` })
-        }).catch(console.error);
+          body: JSON.stringify({ docPath: `agencies/${agencyId}/clinics/${clinicDocId}/knowledgeBase/${targetId}` }),
+        });
+        if (!res.ok) {
+          const payload = await res.json().catch(() => ({}));
+          await updateClinicKnowledgeRecord(agencyId, clinicDocId, targetId, {
+            embedding_status: "failed",
+            last_error: String(payload?.error || `HTTP ${res.status}`),
+          });
+          showToast("error", "Kayıt kaydedildi ancak indeksleme başarısız. Tekrar deneyin.");
+        } else {
+          showToast("success", editingKbId ? "Kayıt güncellendi ve indekslendi" : "Kayıt eklendi ve indekslendi");
+        }
       }
 
       resetKbForm();
@@ -386,12 +408,21 @@ export default function ClinicProfilePage() {
         embedding_status: "indexing",
         last_error: null
       });
-      await fetch("/api/admin/embeddings/generate", {
+      const res = await fetch("/api/admin/embeddings/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ docPath: `agencies/${agencyId}/clinics/${clinicDocId}/knowledgeBase/${r.id}` })
       });
-      showToast("success", "Yeniden indeksleme başlatıldı.");
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        await updateClinicKnowledgeRecord(agencyId, clinicDocId, r.id!, {
+          embedding_status: "failed",
+          last_error: String(payload?.error || `HTTP ${res.status}`),
+        });
+        showToast("error", "Yeniden indeksleme başarısız.");
+        return;
+      }
+      showToast("success", "Yeniden indeksleme tamamlandı.");
     } catch (err: any) {
       console.error(err);
       showToast("error", "Yeniden indeksleme başlatılamadı.");

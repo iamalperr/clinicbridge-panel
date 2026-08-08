@@ -21,6 +21,7 @@ import fetch from "node-fetch";
 import { getAdminDb } from "../lib/firebase-admin";
 import * as admin from "firebase-admin";
 import { parsePricesAndServices } from "./utils/browserParser";
+import { indexKnowledgeDocument } from "../lib/services/knowledgeDocumentIndexing";
 
 const AGENCY_ID = "mFrKEjO9fNwUzbueW5rc";
 
@@ -623,16 +624,25 @@ async function upsertKnowledge(
       priority: doc.priority,
       sourceUrl: parsed.url,
       importBatch: "feelinhealthy-prices-services-sync",
-      embedding_status: "pending",
+      // Mark indexing in progress; never leave permanent pending without a job.
+      embedding_status: "indexing",
+      last_error: null,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
+    let ref: admin.firestore.DocumentReference;
     if (existing.empty) {
-      await kbCol.add({
+      ref = await kbCol.add({
         ...payload,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     } else {
-      await existing.docs[0].ref.set(payload, { merge: true });
+      ref = existing.docs[0].ref;
+      await ref.set(payload, { merge: true });
+    }
+
+    const indexResult = await indexKnowledgeDocument(db, ref.path);
+    if (!indexResult.ok) {
+      console.warn(`  KB index failed [${doc.title}]: ${indexResult.error}`);
     }
     written++;
   }
