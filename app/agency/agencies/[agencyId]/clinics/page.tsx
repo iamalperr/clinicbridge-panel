@@ -20,7 +20,7 @@ import Modal from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { UI_COLORS } from "@/components/ui/ui-shared";
 import {
-  Building2, Plus, Trash2, Loader2, MapPin, Globe, Stethoscope,
+  Building2, Plus, Trash2, Loader2, MapPin, Stethoscope,
   ExternalLink, Edit2, Shield, Star, Clock, Users2, DollarSign,
   Link2, ChevronRight, X, Check, FileText,
 } from "lucide-react";
@@ -31,8 +31,6 @@ import { TREATMENT_CATEGORIES } from "@/lib/types/agency";
 const CLINIC_TYPE_OPTIONS = [
   "dental", "hair", "aesthetic", "ivf", "hospital", "medicalCenter", "other",
 ] as const;
-
-const LANGUAGE_OPTIONS = ["en", "tr", "de", "ar", "es", "fr", "ru", "nl", "it"] as const;
 
 // ─── Form Default ───────────────────────────────────────────────────────────
 function emptyForm() {
@@ -52,13 +50,11 @@ function emptyForm() {
     whatsapp: "",
     shortDescription: "",
     longDescription: "",
-    subTreatments: "",
     leadCapacity: "",
     responseSLA: "24",
     priorityScore: "80",
     targetCountries: "",
     treatmentCategories: [] as TreatmentCategory[],
-    supportedLanguages: ["en", "tr"] as string[],
     quoteEnabled: true,
     quoteContactEmail: "",
     showInRecommendations: true,
@@ -219,13 +215,11 @@ export default function AgencyClinicsPage() {
       whatsapp: clinic.whatsapp || "",
       shortDescription: clinic.shortDescription || "",
       longDescription: clinic.longDescription || "",
-      subTreatments: (clinic.subTreatments || []).join(", "),
       leadCapacity: clinic.leadCapacity ? String(clinic.leadCapacity) : "",
       responseSLA: clinic.responseSLA ? String(clinic.responseSLA) : "24",
       priorityScore: String(clinic.priority || 80),
       targetCountries: (clinic.targetPatientCountries || []).join(", "),
       treatmentCategories: clinic.treatmentCategories || [],
-      supportedLanguages: clinic.supportedLanguages || ["en", "tr"],
       quoteEnabled: clinic.quoteEnabled ?? true,
       quoteContactEmail: clinic.quoteContactEmail || "",
       showInRecommendations: clinic.showInRecommendations ?? true,
@@ -260,11 +254,6 @@ export default function AgencyClinicsPage() {
       setModalTab(1);
       return;
     }
-    if (form.supportedLanguages.length === 0) {
-      setSaveError(t("portal.clinics.error.languageRequired") || "At least one language is required.");
-      setModalTab(1);
-      return;
-    }
 
     setSaving(true);
     const clinicSlug = form.clinicName
@@ -282,9 +271,7 @@ export default function AgencyClinicsPage() {
       clinicType: form.clinicType,
       category: form.category,
       location: { city: form.city, country: form.country },
-      supportedLanguages: form.supportedLanguages,
       treatmentCategories: form.treatmentCategories,
-      subTreatments: form.subTreatments ? form.subTreatments.split(",").map(s => s.trim()).filter(Boolean) : [],
       targetPatientCountries: form.targetCountries ? form.targetCountries.split(",").map(s => s.trim()).filter(Boolean) : [],
       status: "active",
       priority: Number(form.priorityScore) || 80,
@@ -390,15 +377,6 @@ export default function AgencyClinicsPage() {
     }));
   };
 
-  const toggleLang = (lang: string) => {
-    setForm((prev) => ({
-      ...prev,
-      supportedLanguages: prev.supportedLanguages.includes(lang)
-        ? prev.supportedLanguages.filter((l) => l !== lang)
-        : [...prev.supportedLanguages, lang],
-    }));
-  };
-
   const catLabel = (cat: string) => TREATMENT_CATEGORIES[cat as TreatmentCategory]?.[language === "tr" ? "tr" : "en"] || cat;
 
   // ─── Loading ──────────────────────────────────────────────────────────
@@ -414,7 +392,7 @@ export default function AgencyClinicsPage() {
   // ─── Tab components for modal ─────────────────────────────────────────
   const MODAL_TABS = [
     { key: "basic", label: t("portal.clinics.basicInfo") },
-    { key: "treatments", label: t("portal.clinics.treatmentsAndLangs") },
+    { key: "treatments", label: t("portal.clinics.treatmentCategories") },
     { key: "ai", label: t("portal.clinics.aiAndPricing") },
   ];
 
@@ -512,11 +490,6 @@ export default function AgencyClinicsPage() {
                 {(clinic.location?.city || clinic.location?.country) && (
                   <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: UI_COLORS.textSecondary }}>
                     <MapPin size={12} /> {clinic.location?.city}{clinic.location?.country ? `, ${clinic.location.country}` : ""}
-                  </div>
-                )}
-                {clinic.supportedLanguages && clinic.supportedLanguages.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: UI_COLORS.textSecondary }}>
-                    <Globe size={12} /> {clinic.supportedLanguages.map(l => l.toUpperCase()).join(", ")}
                   </div>
                 )}
                 {clinic.treatmentCategories && clinic.treatmentCategories.length > 0 && (
@@ -747,7 +720,7 @@ export default function AgencyClinicsPage() {
               </>
             )}
 
-            {/* TAB 1: Treatments & Languages */}
+            {/* TAB 1: Treatment categories */}
             {modalTab === 1 && (
               <>
                 <div>
@@ -755,17 +728,6 @@ export default function AgencyClinicsPage() {
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                     {Object.entries(TREATMENT_CATEGORIES).map(([key, val]) => (
                       <ToggleChip key={key} label={language === "tr" ? val.tr : val.en} selected={form.treatmentCategories.includes(key as TreatmentCategory)} onClick={() => toggleCategory(key as TreatmentCategory)} />
-                    ))}
-                  </div>
-                </div>
-
-                <Input label={t("portal.clinics.subTreatments")} value={form.subTreatments} onChange={(e) => setForm((p) => ({ ...p, subTreatments: e.target.value }))} placeholder={t("portal.clinics.subTreatmentsPlaceholder")} />
-
-                <div>
-                  <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 8 }}>{t("portal.clinics.supportedLanguages")}</p>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {LANGUAGE_OPTIONS.map((lang) => (
-                      <ToggleChip key={lang} label={lang.toUpperCase()} selected={form.supportedLanguages.includes(lang)} onClick={() => toggleLang(lang)} />
                     ))}
                   </div>
                 </div>
@@ -873,7 +835,7 @@ export default function AgencyClinicsPage() {
               </div>
             )}
 
-            {/* Treatment Categories & Languages */}
+            {/* Treatment Categories */}
             <div style={{ display: "flex", gap: 24, marginBottom: 20 }}>
               {detailClinic.treatmentCategories && detailClinic.treatmentCategories.length > 0 && (
                 <div>
@@ -885,29 +847,7 @@ export default function AgencyClinicsPage() {
                   </div>
                 </div>
               )}
-              {detailClinic.supportedLanguages && detailClinic.supportedLanguages.length > 0 && (
-                <div>
-                  <p style={{ fontSize: 11, color: UI_COLORS.textMuted, marginBottom: 6 }}>{t("portal.clinics.supportedLanguages")}</p>
-                  <div style={{ display: "flex", gap: 4 }}>
-                    {detailClinic.supportedLanguages.map((l) => (
-                      <Badge key={l} label={l.toUpperCase()} variant="default" />
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
-
-            {/* Sub-Treatments */}
-            {detailClinic.subTreatments && detailClinic.subTreatments.length > 0 && (
-              <div style={{ marginBottom: 20 }}>
-                <p style={{ fontSize: 11, color: UI_COLORS.textMuted, marginBottom: 6 }}>{t("portal.clinics.subTreatments")}</p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                  {detailClinic.subTreatments.map((st) => (
-                    <Badge key={st} label={st} variant="default" />
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* AI Matching Stats */}
             <div style={{

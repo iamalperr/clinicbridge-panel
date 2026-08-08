@@ -41,7 +41,6 @@ import type {
   AgencyKnowledgeCategory, AgencyKnowledgeLanguage, AgencyKnowledgePriority, AgencyKnowledgeRecord
 } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES } from "@/lib/types/agency";
-import { TREATMENT_REGISTRY } from "@/lib/constants/specializations";
 
 // ─── Shared Components ──────────────────────────────────────────────────────
 function ToggleSwitch({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
@@ -301,9 +300,7 @@ export default function ClinicProfilePage() {
         phone: generalForm.phone || undefined,
         whatsapp: generalForm.whatsapp || undefined,
         branch: generalForm.branch || undefined,
-        supportedLanguages: generalForm.supportedLanguages,
         treatmentCategories: generalForm.treatmentCategories,
-        subTreatments: generalForm.subTreatments,
         showInRecommendations: generalForm.showInRecommendations,
         showPriceRange: generalForm.showPriceRange,
         showProfileLink: generalForm.showProfileLink,
@@ -581,52 +578,34 @@ export default function ClinicProfilePage() {
 
   const handleToggleCategory = (key: string) => {
     const sel = generalForm.treatmentCategories.includes(key as TreatmentCategory);
-    
+
     if (sel) {
-      // Find sub-treatments that belong to this category and are currently selected
-      const subTreatmentsToRemove = TREATMENT_REGISTRY.filter(t => t.category === key && generalForm.subTreatments.includes(t.code));
-      
-      const hasPricing = subTreatmentsToRemove.some(st => 
-        pricing.some(p => p.subTreatmentName === st.code || p.treatmentName === st.code || p.subTreatmentName === st.labelTR || p.treatmentName === st.labelTR || p.subTreatmentName === st.labelEN || p.treatmentName === st.labelEN)
-      );
+      // Block removal when pricing rows still reference treatments in this category.
+      const catMeta = TREATMENT_CATEGORIES[key as TreatmentCategory];
+      const catLabels = [key, catMeta?.tr, catMeta?.en].filter(Boolean).map((s) => String(s).toLowerCase());
+      const hasPricing = pricing.some((p) => {
+        const hay = `${p.treatmentCategoryName || ""} ${p.priceGroup || ""} ${p.subTreatmentName || ""} ${p.treatmentName || ""}`.toLowerCase();
+        return catLabels.some((label) => label && hay.includes(label));
+      });
 
       if (hasPricing) {
-        showToast("error", "Bu kategoriye bağlı fiyatlandırılmış alt tedaviler bulunmaktadır. Önce fiyatlandırma kayıtlarını silmelisiniz.");
+        showToast(
+          "error",
+          language === "tr"
+            ? "Bu kategoriye bağlı fiyatlandırma kayıtları bulunmaktadır. Önce fiyatlandırma kayıtlarını silmelisiniz."
+            : "This category still has pricing records. Remove those pricing rows first."
+        );
         return;
       }
 
-      setGeneralForm(p => ({
+      setGeneralForm((p) => ({
         ...p,
-        treatmentCategories: p.treatmentCategories.filter(c => c !== key),
-        subTreatments: p.subTreatments.filter(stCode => !subTreatmentsToRemove.some(st => st.code === stCode))
+        treatmentCategories: p.treatmentCategories.filter((c) => c !== key),
       }));
     } else {
-      setGeneralForm(p => ({
+      setGeneralForm((p) => ({
         ...p,
         treatmentCategories: [...p.treatmentCategories, key as TreatmentCategory],
-      }));
-    }
-  };
-
-  const handleToggleSubTreatment = (code: string) => {
-    const sel = generalForm.subTreatments.includes(code);
-    if (sel) {
-      const st = TREATMENT_REGISTRY.find(t => t.code === code);
-      if (st) {
-        const hasPricing = pricing.some(p => p.subTreatmentName === st.code || p.treatmentName === st.code || p.subTreatmentName === st.labelTR || p.treatmentName === st.labelTR || p.subTreatmentName === st.labelEN || p.treatmentName === st.labelEN);
-        if (hasPricing) {
-          showToast("error", "Bu alt tedaviye bağlı fiyatlandırma kayıtları bulunmaktadır. Önce fiyatlandırma kayıtlarını silmelisiniz.");
-          return;
-        }
-      }
-      setGeneralForm(p => ({
-        ...p,
-        subTreatments: p.subTreatments.filter(c => c !== code)
-      }));
-    } else {
-      setGeneralForm(p => ({
-        ...p,
-        subTreatments: [...p.subTreatments, code]
       }));
     }
   };
@@ -738,48 +717,6 @@ export default function ClinicProfilePage() {
               </div>
             </div>
 
-            {generalForm.treatmentCategories.length > 0 && (
-              <div style={{ marginTop: 16 }}>
-                <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 8 }}>Alt Tedaviler (Sub-treatments)</p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {TREATMENT_REGISTRY.filter(t => t.category && generalForm.treatmentCategories.includes(t.category as TreatmentCategory)).map((st) => {
-                    const sel = generalForm.subTreatments.includes(st.code);
-                    return (
-                      <button key={st.code} type="button" onClick={() => handleToggleSubTreatment(st.code)} style={{
-                        padding: "5px 12px", borderRadius: 20, border: `1px solid ${sel ? "#10b981" : UI_COLORS.border}`,
-                        background: sel ? "rgba(16,185,129,0.1)" : "transparent",
-                        color: sel ? "#10b981" : UI_COLORS.textSecondary, fontSize: 12, fontWeight: 600, cursor: "pointer",
-                      }}>
-                        {language === "tr" ? st.labelTR : st.labelEN}
-                      </button>
-                    );
-                  })}
-                  {TREATMENT_REGISTRY.filter(t => t.category && generalForm.treatmentCategories.includes(t.category as TreatmentCategory)).length === 0 && (
-                    <span style={{ fontSize: 12, color: UI_COLORS.textMuted }}>Seçili kategorilere ait alt tedavi bulunamadı.</span>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div style={{ marginTop: 16 }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 8 }}>{t("portal.clinics.supportedLanguages")}</p>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {LANG_OPTIONS.map((lang) => {
-                  const sel = generalForm.supportedLanguages.includes(lang);
-                  return (
-                    <button key={lang} type="button" onClick={() => setGeneralForm(p => ({
-                      ...p,
-                      supportedLanguages: sel ? p.supportedLanguages.filter(l => l !== lang) : [...p.supportedLanguages, lang],
-                    }))} style={{
-                      padding: "5px 12px", borderRadius: 20, border: `1px solid ${sel ? "#10b981" : UI_COLORS.border}`,
-                      background: sel ? "rgba(16,185,129,0.1)" : "transparent",
-                      color: sel ? "#10b981" : UI_COLORS.textSecondary, fontSize: 12, fontWeight: 600, cursor: "pointer",
-                    }}>{lang.toUpperCase()}</button>
-                  );
-                })}
-              </div>
-            </div>
-
             <div style={{ marginTop: 16, borderRadius: 10, border: `1px solid ${UI_COLORS.border}`, padding: 14 }}>
               <ToggleSwitch label={t("portal.clinics.showInRecommendations")} checked={generalForm.showInRecommendations} onChange={(v) => setGeneralForm(p => ({ ...p, showInRecommendations: v }))} />
               <ToggleSwitch label={t("portal.clinics.showPriceRange")} checked={generalForm.showPriceRange} onChange={(v) => setGeneralForm(p => ({ ...p, showPriceRange: v }))} />
@@ -832,19 +769,11 @@ export default function ClinicProfilePage() {
               {generalForm.treatmentCategories.length === 0 && <span style={{ fontSize: 13, color: UI_COLORS.textMuted }}>—</span>}
             </div>
 
-            <div style={{ marginTop: 20 }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 8 }}>{t("portal.clinics.subTreatments")}</p>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {(clinic.subTreatments || []).map((st) => (
-                  <Badge key={st} label={st} variant="default" />
-                ))}
-                {(!clinic.subTreatments || clinic.subTreatments.length === 0) && <span style={{ fontSize: 13, color: UI_COLORS.textMuted }}>—</span>}
-              </div>
-            </div>
-
             <div style={{ marginTop: 16, padding: 14, borderRadius: 10, background: "rgba(99,102,241,0.04)", border: "1px solid rgba(99,102,241,0.1)" }}>
               <p style={{ fontSize: 12, color: UI_COLORS.textMuted }}>
-                {language === "tr" ? "Tedavi kategorilerini ve alt tedavileri Genel Bilgiler sekmesinden yönetebilirsiniz." : "Manage treatment categories and sub-treatments from the General Info tab."}
+                {language === "tr"
+                  ? "Tedavi kategorilerini Genel Bilgiler sekmesinden yönetebilirsiniz. Alt tedaviler klinik özeti ve AI Bilgi Havuzundan kullanılır."
+                  : "Manage treatment categories from the General Info tab. Sub-treatments come from clinic overview and the AI knowledge base."}
               </p>
             </div>
           </div>
@@ -862,7 +791,6 @@ export default function ClinicProfilePage() {
             </div>
 
             {showPricingForm && (() => {
-              const subTreatmentOptions = (clinic?.subTreatments || []);
               const ptMap: Record<string, string> = {
                 average: t("portal.clinics.pricing.average"),
                 starting_from: t("portal.clinics.pricing.startingFrom"),
@@ -878,31 +806,14 @@ export default function ClinicProfilePage() {
                     {editingPricingId ? t("portal.clinics.pricing.editPricing") : t("portal.clinics.pricing.addPricing")}
                   </h4>
 
-                  {/* Sub Treatment selection */}
+                  {/* Treatment / procedure name (free text — sourced from pricing / KB, not clinic sub-treatment chips) */}
                   <div style={{ marginBottom: 12 }}>
-                    <p style={{ fontSize: 12, fontWeight: 600, color: UI_COLORS.textMuted, marginBottom: 6 }}>{t("portal.clinics.pricing.subTreatment")}</p>
-                    {subTreatmentOptions.length > 0 ? (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-                        {subTreatmentOptions.map((st) => {
-                          const sel = pricingForm.subTreatmentName === st;
-                          return (
-                            <button key={st} type="button" onClick={() => setPricingForm(p => ({ ...p, subTreatmentName: st }))} style={{
-                              padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
-                              border: `1px solid ${sel ? "#10b981" : UI_COLORS.border}`,
-                              background: sel ? "rgba(16,185,129,0.1)" : "transparent",
-                              color: sel ? "#10b981" : UI_COLORS.textSecondary,
-                            }}>{st}</button>
-                          );
-                        })}
-                        <button type="button" onClick={() => setPricingForm(p => ({ ...p, subTreatmentName: "" }))} style={{
-                          padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
-                          border: `1px dashed ${UI_COLORS.border}`, background: "transparent", color: UI_COLORS.textMuted,
-                        }}>{t("portal.clinics.pricing.manualEntry")}</button>
-                      </div>
-                    ) : null}
-                    {(subTreatmentOptions.length === 0 || pricingForm.subTreatmentName === "") && (
-                      <Input label="" value={pricingForm.subTreatmentName} onChange={(e) => setPricingForm(p => ({ ...p, subTreatmentName: e.target.value }))} placeholder="All-on-4 Diş İmplantları" />
-                    )}
+                    <Input
+                      label={t("portal.clinics.pricing.subTreatment")}
+                      value={pricingForm.subTreatmentName}
+                      onChange={(e) => setPricingForm((p) => ({ ...p, subTreatmentName: e.target.value }))}
+                      placeholder="All-on-4 Diş İmplantları"
+                    />
                   </div>
 
                   {/* Price Group + Duration */}
