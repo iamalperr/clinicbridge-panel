@@ -28,6 +28,7 @@ import {
   applyIntakeExplainSessionPatch,
 } from "./intakeExplainBeforeAsk";
 import { resolveAssistantRole, type AssistantRole } from "./assistantModes";
+import { applyTreatmentQuoteCycleOnBranchChange } from "./treatmentQuoteCycle";
 import type { AgencySessionState, AgencySessionStateInput } from "./agencySessionState";
 import {
   clearAgencyFieldProvenance,
@@ -936,12 +937,16 @@ export function applyDetectedTreatmentUpdate(
   delete next.lastEmptyMatchKey;
   delete next.lastRecommendedClinicIds;
   next.__forceClinicMatching = true;
-  if (next.leadStage !== "quote_request_created" && next.leadStage !== "completed") {
-    next.leadStage = "recommendation";
-  }
+
+  // Treatment-scoped quote cycle: unlocking CTA for a new branch must not
+  // wipe historical quotes. Attribute any legacy single quote to previousBranch.
+  const cycled = applyTreatmentQuoteCycleOnBranchChange(next, {
+    previousBranch: prevBranch,
+    nextBranch,
+  });
 
   return {
-    ctx: next,
+    ctx: cycled,
     changed: true,
     previous,
     next: candidateRaw,

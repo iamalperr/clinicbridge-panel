@@ -21,6 +21,7 @@ import {
   isAgencyInformationOnlyPreference,
   markIntakeInformationOnly,
 } from "./intakeExplainBeforeAsk";
+import { isCurrentTreatmentQuoteLocked } from "./treatmentQuoteCycle";
 
 /** Conversation modes — session metadata, not prompts. */
 export type AgencyConversationMode =
@@ -323,16 +324,11 @@ export function isAgencyExplicitMatchingChangeRequest(message?: string | null): 
   return EXPLICIT_MATCHING_CHANGE_RE.test(lower) || IntentRouter.isAgencyMatchingQuery(lower);
 }
 
-/** Quote already persisted for this conversation (post-quote assistance mode). */
+/** Quote already persisted for the *current* treatment (post-quote assistance mode). */
 export function isAgencyQuoteCompletedSession(
   sessionContext?: AgencySessionStateInput | null
 ): boolean {
-  const ctx = normalizeAgencySessionState(sessionContext || {});
-  return (
-    ctx.quoteRequestLocked === true ||
-    ctx.leadStage === "quote_request_created" ||
-    ctx.leadStage === "completed"
-  );
+  return isCurrentTreatmentQuoteLocked(sessionContext);
 }
 
 /**

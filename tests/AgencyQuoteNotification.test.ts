@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildAgencyLeadNotificationJobId,
+  buildPatientLeadNotificationJobId,
   buildAgencyQuoteNotificationContent,
   buildQuoteRequestPortalUrl,
   collectQuoteNotificationRecipients,
@@ -75,6 +76,34 @@ describe("FeelinHealthy quote request email notifications", () => {
     };
     expect(isRetryableNotificationJob(job)).toBe(true);
     expect(buildAgencyLeadNotificationJobId("lead-3")).toBe("job_lead-3_agency_lead_submitted");
+  });
+
+  it("Test 3b – quote-scoped job ids differ per quote under the same lead", () => {
+    const lead = "lead-shared";
+    const q1 = buildAgencyLeadNotificationJobId(lead, "quote_rhino");
+    const q2 = buildAgencyLeadNotificationJobId(lead, "quote_implant");
+    const q1Retry = buildAgencyLeadNotificationJobId(lead, "quote_rhino");
+    expect(q1).toBe("job_lead-shared_agency_lead_submitted_quote_rhino");
+    expect(q2).toBe("job_lead-shared_agency_lead_submitted_quote_implant");
+    expect(q1).not.toBe(q2);
+    expect(q1Retry).toBe(q1);
+    // Legacy lead-only key remains for non-quote callers
+    expect(buildAgencyLeadNotificationJobId(lead)).toBe(
+      "job_lead-shared_agency_lead_submitted"
+    );
+  });
+
+  it("Test 3c – patient notification job ids are quote-scoped when quoteId present", () => {
+    const lead = "lead-shared";
+    const p1 = buildPatientLeadNotificationJobId(lead, "quote_rhino");
+    const p2 = buildPatientLeadNotificationJobId(lead, "quote_implant");
+    expect(p1).toBe("job_lead-shared_patient_request_received_quote_rhino");
+    expect(p2).toBe("job_lead-shared_patient_request_received_quote_implant");
+    expect(p1).not.toBe(p2);
+    expect(buildPatientLeadNotificationJobId(lead, "quote_rhino")).toBe(p1);
+    expect(buildPatientLeadNotificationJobId(lead)).toBe(
+      "job_lead-shared_patient_request_received"
+    );
   });
 
   it("Test 4 – retry is idempotent on same quoteRequestId + notificationType", () => {

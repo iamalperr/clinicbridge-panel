@@ -2,6 +2,7 @@ import { getAdminDb } from "@/lib/firebase-admin";
 import { Resend } from "resend";
 import { isLeadSubmittedForPatientNotification } from "@/lib/services/leadNotificationEligibility";
 import { pickOfficialClinicName } from "@/lib/services/agencyQuoteNotificationContent";
+import { buildPatientLeadNotificationJobId } from "@/lib/services/agencyQuoteNotificationContent";
 import {
   buildPatientRequestReceivedCopy,
   buildPatientRequestReceivedSubject,
@@ -11,14 +12,19 @@ const resend = new Resend(process.env.RESEND_API_KEY || "fallback_key");
 
 export { isLeadSubmittedForPatientNotification };
 
-export async function scheduleAndProcessPatientLeadNotification(agencyId: string, leadId: string) {
+export async function scheduleAndProcessPatientLeadNotification(
+  agencyId: string,
+  leadId: string,
+  opts?: { quoteId?: string | null }
+) {
   const adminDb = getAdminDb();
   if (!adminDb) return;
 
   const eventType = "patient_request_received";
   const channel = "email";
-  // Enforce unique constraint: job_{leadId}_{eventType}
-  const jobId = `job_${leadId}_${eventType}`;
+  const quoteId = String(opts?.quoteId || "").trim() || null;
+  // Quote-scoped when quoteId present; legacy lead-only callers stay lead-scoped.
+  const jobId = buildPatientLeadNotificationJobId(leadId, quoteId);
   const jobRef = adminDb.collection("agencies").doc(agencyId).collection("notification_jobs").doc(jobId);
 
   try {
@@ -56,6 +62,7 @@ export async function scheduleAndProcessPatientLeadNotification(agencyId: string
         id: jobId,
         agencyId,
         leadId,
+        ...(quoteId ? { quoteId } : {}),
         eventType,
         channel,
         templateKey: "patient_request_received",
@@ -260,6 +267,21 @@ export async function processPatientNotificationJob(agencyId: string, jobId: str
          .collection("leads")
          .doc(jobData.leadId)
          .set({ patientEmailSent: true, updatedAt: new Date().toISOString() }, { merge: true });
+       if (jobData.quoteId) {
+         await adminDb
+           .collection("agencies")
+           .doc(agencyId)
+           .collection("quotes")
+           .doc(String(jobData.quoteId))
+           .set(
+             {
+               patientRequestEmailSent: true,
+               patientRequestEmailSentAt: new Date().toISOString(),
+               updatedAt: new Date().toISOString(),
+             },
+             { merge: true }
+           );
+       }
        return;
     }
 
@@ -302,6 +324,21 @@ export async function processPatientNotificationJob(agencyId: string, jobId: str
         },
         { merge: true }
       );
+    if (jobData.quoteId) {
+      await adminDb
+        .collection("agencies")
+        .doc(agencyId)
+        .collection("quotes")
+        .doc(String(jobData.quoteId))
+        .set(
+          {
+            patientRequestEmailSent: true,
+            patientRequestEmailSentAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
+    }
     console.log(`[patientNotificationService] Successfully sent job ${jobId} to patient`);
 
   } catch (err: any) {

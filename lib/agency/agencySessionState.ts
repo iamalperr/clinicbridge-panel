@@ -259,6 +259,15 @@ export interface AgencySessionStateKnown {
   leadReference?: string;
   quoteRequestLocked?: boolean;
   /**
+   * Treatment-scoped quote history for this conversation.
+   * Key = normalizeTreatmentBranch(...). Enables a new quote cycle when the
+   * patient switches to a genuinely different treatment while preserving
+   * prior quotes under the same lead/conversation.
+   */
+  quotesByTreatmentKey?: Record<string, { quoteId: string; leadId?: string }>;
+  /** Canonical branch that owns the most recently recorded quote (legacy + UX). */
+  lastQuotedTreatmentKey?: string;
+  /**
    * After a successful quote, patient explicitly asked to search again / change
    * location or clinics. Historical lead/quote ids stay intact; matching
    * ephemeral state may be refreshed. Never authorizes a second auto-quote.

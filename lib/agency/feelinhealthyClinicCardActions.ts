@@ -14,6 +14,10 @@ import {
   normalizeAgencySessionState,
   updateAgencyFieldWithProvenanceNow,
 } from "./agencySessionState";
+import {
+  isCurrentTreatmentQuoteLocked,
+  syncQuoteLockForCurrentTreatment,
+} from "./treatmentQuoteCycle";
 
 export const CLINIC_CARD_ACTIONS = [
   "select_clinic",
@@ -280,25 +284,22 @@ export function prepareRequestQuote(params: {
   const locale = (params.locale || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
   const limit = resolveGuestQuoteClinicLimit();
   let next = normalizeAgencySessionState(params.sessionContext);
+  next = syncQuoteLockForCurrentTreatment(next);
 
-  const stage = String(next.leadStage || "");
-  if (
-    next.quoteRequestLocked === true ||
-    stage === "quote_request_created" ||
-    stage === "completed"
-  ) {
+  // Lock is treatment-scoped: a prior Rhinoplasty quote must not block Implant.
+  if (isCurrentTreatmentQuoteLocked(next)) {
     return {
       kind: "error",
       httpStatus: 409,
       reply:
         locale === "en"
-          ? "Your quote request is already registered. You don’t need to submit another one — ask here if you have questions about next steps."
-          : "Teklif talebiniz zaten kaydedildi. Yeniden göndermenize gerek yok — süreç hakkında sorularınız varsa buradan sorabilirsiniz.",
+          ? "Your quote request for this treatment is already registered. You don’t need to submit another one — ask here if you have questions about next steps."
+          : "Bu tedavi için teklif talebiniz zaten kaydedildi. Yeniden göndermenize gerek yok — süreç hakkında sorularınız varsa buradan sorabilirsiniz.",
       type: "text",
       sessionContext: {
         ...next,
         quoteRequestLocked: true,
-        leadStage: stage === "completed" ? "completed" : "quote_request_created",
+        leadStage: next.leadStage === "completed" ? "completed" : "quote_request_created",
       },
       showClinicCards: true,
       shouldCreateNewLead: false,
@@ -570,6 +571,23 @@ export function handleClinicSelectionPanelAction(params: {
   next.clinicSelectionMode = next.clinicSelectionMode || "manual";
   next.lastFocusedClinicId = getAgencySelectedClinicIds(next)[0];
   next.__fhQuoteRequestedByCardAction = true;
+  next = syncQuoteLockForCurrentTreatment(next);
+
+  if (isCurrentTreatmentQuoteLocked(next)) {
+    return {
+      kind: "error",
+      httpStatus: 409,
+      reply:
+        locale === "en"
+          ? "Your quote request for this treatment is already registered. You don’t need to submit another one."
+          : "Bu tedavi için teklif talebiniz zaten kaydedildi. Yeniden göndermenize gerek yok.",
+      type: "text",
+      sessionContext: next,
+      showClinicCards: true,
+      shouldCreateNewLead: false,
+      shouldPersistQuote: false,
+    };
+  }
 
   const emailOk =
     next.patientEmailStatus === "verified_format" ||

@@ -14,7 +14,12 @@ import { submitAgencyLead } from "@/lib/services/leadSubmissionService";
 import { pickOfficialClinicName } from "@/lib/services/agencyQuoteNotificationContent";
 import { scheduleAndProcessAgencyLeadNotification } from "@/lib/services/agencyNotificationService";
 import { scheduleAndProcessPatientLeadNotification } from "@/lib/services/patientNotificationService";
-import { FEELINHEALTHY_CONFIG } from "@/lib/agency/feelinhealthyConfig";
+import {
+  FEELINHEALTHY_CONFIG,
+  normalizeTreatmentBranch,
+  UNKNOWN_TREATMENT_BRANCH,
+} from "@/lib/agency/feelinhealthyConfig";
+import { resolveTreatmentQuoteKey } from "@/lib/agency/treatmentQuoteCycle";
 import {
   consentVerificationErrorCode,
   resolveAgencyConsentVersion,
@@ -49,6 +54,9 @@ export interface PersistAgencyQuoteRequestResult {
   quoteId?: string;
   agencyId?: string;
   status?: string;
+  /** True when a new quote document was created (not an idempotent hit). */
+  quoteCreated?: boolean;
+  treatmentCycleKey?: string | null;
   errorCode?: string;
   errorMessage?: string;
 }
@@ -145,27 +153,63 @@ export async function persistAgencyQuoteRequest(
     const clinicNames = await resolveClinicNames(input.agencyId, clinicIds);
     const now = new Date().toISOString();
 
-    // Idempotent quote: one quote doc per lead
-    const existingQuote = await adminDb
+    // Treatment-scoped idempotency: one quote per (conversation + treatment cycle).
+    // Same lead may hold multiple treatment-specific quote docs.
+    const treatmentCycleKey =
+      resolveTreatmentQuoteKey(input.treatmentCategory) ||
+      resolveTreatmentQuoteKey(input.treatmentName) ||
+      (input.treatmentCategory
+        ? normalizeTreatmentBranch(input.treatmentCategory)
+        : null);
+    const cycleKey =
+      treatmentCycleKey && treatmentCycleKey !== UNKNOWN_TREATMENT_BRANCH
+        ? treatmentCycleKey
+        : null;
+
+    const quotesCol = adminDb
       .collection("agencies")
       .doc(input.agencyId)
-      .collection("quotes")
-      .where("leadId", "==", leadId)
-      .limit(1)
+      .collection("quotes");
+
+    const conversationQuotes = await quotesCol
+      .where("conversationId", "==", input.conversationId)
       .get();
 
+    const matchingExisting = conversationQuotes.docs.find((doc) => {
+      const d = doc.data() || {};
+      const docKey =
+        resolveTreatmentQuoteKey(d.treatmentCycleKey) ||
+        resolveTreatmentQuoteKey(d.treatmentCategory) ||
+        resolveTreatmentQuoteKey(d.treatmentName);
+      if (cycleKey && docKey) return docKey === cycleKey;
+      // Legacy fallback: if no cycle key can be resolved, keep prior one-per-lead
+      // behavior only when this lead has exactly one quote and no cycle keys.
+      return false;
+    });
+
+    // Legacy one-quote-per-lead sessions without treatmentCycleKey: if this
+    // conversation already has a quote for the same lead and we cannot resolve
+    // a cycle key difference, reuse that quote for idempotent same-treatment retries.
+    const legacySameLeadQuote =
+      !matchingExisting && !cycleKey
+        ? conversationQuotes.docs.find((doc) => String(doc.data()?.leadId || "") === leadId) ||
+          null
+        : null;
+
+    const existingDoc = matchingExisting || legacySameLeadQuote;
+
     let quoteId: string;
-    if (!existingQuote.empty) {
-      quoteId = existingQuote.docs[0].id;
-      await existingQuote.docs[0].ref.set(
+    let quoteCreated = false;
+    if (existingDoc) {
+      quoteId = existingDoc.id;
+      // Idempotent retry — refresh contact/clinic metadata only; never rewrite
+      // historical treatment identity to a different cycle.
+      await existingDoc.ref.set(
         {
           patientName: input.patientName || null,
           patientEmail: input.patientEmail || null,
           patientPhone: input.patientPhone || null,
           patientCountry: input.country || null,
-          treatmentCategory: input.treatmentCategory || "other",
-          treatmentName: input.treatmentName || input.treatmentCategory || "",
-          subTreatment: input.treatmentSubcategory || null,
           selectedClinicIds: clinicIds,
           selectedClinicNames: clinicNames,
           selectedCity: input.selectedCity || null,
@@ -174,17 +218,15 @@ export async function persistAgencyQuoteRequest(
           conversationId: input.conversationId,
           consentStatus: "accepted",
           status: QUOTE_STATUS_AFTER_CREATE,
+          ...(cycleKey ? { treatmentCycleKey: cycleKey } : {}),
           updatedAt: now,
         },
         { merge: true }
       );
     } else {
-      const quoteRef = adminDb
-        .collection("agencies")
-        .doc(input.agencyId)
-        .collection("quotes")
-        .doc();
+      const quoteRef = quotesCol.doc();
       quoteId = quoteRef.id;
+      quoteCreated = true;
       await quoteRef.set({
         agencyId: input.agencyId,
         leadId,
@@ -194,6 +236,7 @@ export async function persistAgencyQuoteRequest(
         patientCountry: input.country || null,
         treatmentCategory: input.treatmentCategory || "other",
         treatmentName: input.treatmentName || input.treatmentCategory || "",
+        treatmentCycleKey: cycleKey,
         subTreatment: input.treatmentSubcategory || null,
         selectedClinicIds: clinicIds,
         selectedClinicNames: clinicNames,
@@ -219,6 +262,8 @@ export async function persistAgencyQuoteRequest(
       agencyId: input.agencyId,
       leadId,
       quoteId,
+      quoteCreated,
+      treatmentCycleKey: cycleKey,
       status: leadResult.status,
       clinicCount: clinicIds.length,
     });
@@ -240,18 +285,26 @@ export async function persistAgencyQuoteRequest(
           istanbulSide: input.istanbulSide,
           nowIso: now,
         }),
+        // Keep an array of quote ids when multiple treatment cycles exist.
+        quoteIds: Array.from(
+          new Set([
+            ...(Array.isArray(leadSnap.data()?.quoteIds) ? leadSnap.data()!.quoteIds : []),
+            ...(leadSnap.data()?.quoteId ? [leadSnap.data()!.quoteId] : []),
+            quoteId,
+          ])
+        ),
         statusHistory: [...previousHistory, buildLeadQuoteStatusHistoryEntry(now)],
       },
       { merge: true }
     );
 
-    // Notifications only after lead + quote are persisted. Await so serverless
-    // runtimes do not freeze mid-send (fire-and-forget left jobs stuck in
-    // `processing`). Email failure must not roll back the quote.
-    if (leadResult.status === "created") {
+    // Notify on first lead create OR on a newly created treatment quote under
+    // an existing lead. Idempotent same-treatment retries must not re-email.
+    // Job keys are quote-scoped so a second treatment under the same lead can notify.
+    if (leadResult.status === "created" || quoteCreated) {
       const settled = await Promise.allSettled([
-        scheduleAndProcessAgencyLeadNotification(input.agencyId, leadId),
-        scheduleAndProcessPatientLeadNotification(input.agencyId, leadId),
+        scheduleAndProcessAgencyLeadNotification(input.agencyId, leadId, { quoteId }),
+        scheduleAndProcessPatientLeadNotification(input.agencyId, leadId, { quoteId }),
       ]);
       for (const result of settled) {
         if (result.status === "rejected") {
@@ -269,6 +322,8 @@ export async function persistAgencyQuoteRequest(
       quoteId,
       agencyId: input.agencyId,
       status: LEAD_STATUS_AFTER_QUOTE,
+      quoteCreated,
+      treatmentCycleKey: cycleKey,
     };
   } catch (err: any) {
     const errorCode = err?.message || "PERSIST_FAILED";

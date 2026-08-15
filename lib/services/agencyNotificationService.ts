@@ -59,13 +59,18 @@ async function updateLeadNotificationState(
   }
 }
 
-export async function scheduleAndProcessAgencyLeadNotification(agencyId: string, leadId: string) {
+export async function scheduleAndProcessAgencyLeadNotification(
+  agencyId: string,
+  leadId: string,
+  opts?: { quoteId?: string | null }
+) {
   const adminDb = getAdminDb();
   if (!adminDb) return;
 
   const eventType = AGENCY_LEAD_NOTIFICATION_EVENT;
   const channel = "email";
-  const jobId = buildAgencyLeadNotificationJobId(leadId);
+  const quoteId = String(opts?.quoteId || "").trim() || null;
+  const jobId = buildAgencyLeadNotificationJobId(leadId, quoteId);
   const jobRef = adminDb.collection("agencies").doc(agencyId).collection("notification_jobs").doc(jobId);
 
   try {
@@ -94,10 +99,13 @@ export async function scheduleAndProcessAgencyLeadNotification(agencyId: string,
         id: jobId,
         agencyId,
         leadId,
+        ...(quoteId ? { quoteId } : {}),
         eventType,
         channel,
         notificationType: eventType,
-        idempotencyKey: `${leadId}:${eventType}`,
+        idempotencyKey: quoteId
+          ? `${leadId}:${eventType}:${quoteId}`
+          : `${leadId}:${eventType}`,
         templateKey: "agency_new_quote_request",
         status: "pending",
         attemptCount: 0,

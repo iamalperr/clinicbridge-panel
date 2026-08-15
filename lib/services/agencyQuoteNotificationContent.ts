@@ -34,8 +34,26 @@ export interface QuoteNotificationDelivery {
   configError?: string;
 }
 
-export function buildAgencyLeadNotificationJobId(leadId: string): string {
+export function buildAgencyLeadNotificationJobId(
+  leadId: string,
+  quoteId?: string | null
+): string {
+  const q = String(quoteId || "").trim();
+  // Quote-scoped when available so a second treatment quote under the same
+  // lead can notify once; retries of the same quoteId remain idempotent.
+  if (q) return `job_${leadId}_${AGENCY_LEAD_NOTIFICATION_EVENT}_${q}`;
   return `job_${leadId}_${AGENCY_LEAD_NOTIFICATION_EVENT}`;
+}
+
+/** Patient "request received" job id — quote-scoped when quoteId is known. */
+export function buildPatientLeadNotificationJobId(
+  leadId: string,
+  quoteId?: string | null
+): string {
+  const eventType = "patient_request_received";
+  const q = String(quoteId || "").trim();
+  if (q) return `job_${leadId}_${eventType}_${q}`;
+  return `job_${leadId}_${eventType}`;
 }
 
 export function buildQuoteRequestPortalUrl(agencyId: string, leadId: string): string {

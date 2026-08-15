@@ -38,6 +38,9 @@ describe("FeelinHealthy quote request persistence wiring", () => {
     // Notifications must be awaited (not fire-and-forget) so serverless does not freeze mid-send.
     expect(serviceSource).toContain("Promise.allSettled");
     expect(serviceSource).toContain("scheduleAndProcessAgencyLeadNotification");
+    expect(serviceSource).toContain("scheduleAndProcessPatientLeadNotification");
+    expect(serviceSource).toContain("{ quoteId }");
+    expect(serviceSource).toContain("treatmentCycleKey");
   });
 
   it("lead submission aligns consent version with matching-chat before persist", () => {

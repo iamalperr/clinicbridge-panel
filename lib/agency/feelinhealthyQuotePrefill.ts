@@ -14,6 +14,10 @@ import {
   getAgencyTravelDate,
   getAgencyTreatmentContext,
 } from "./agencySessionState";
+import {
+  isCurrentTreatmentQuoteLocked,
+  recordTreatmentQuoteSuccess,
+} from "./treatmentQuoteCycle";
 
 export const FEELINHEALTHY_QUOTE_PREFILL_KEY = "feelinhealthy_agent_quote_prefill_v1";
 
@@ -259,11 +263,7 @@ export function readAgentQuoteSubmitted(
 
 /** True when guest quote CTA must stay closed on clinic cards. */
 export function isQuoteRequestLocked(sessionContext: Record<string, any> | null | undefined): boolean {
-  const ctx = sessionContext || {};
-  const stage = String(ctx.leadStage || "");
-  if (stage === "quote_request_created" || stage === "completed") return true;
-  if (ctx.quoteRequestLocked === true) return true;
-  return false;
+  return isCurrentTreatmentQuoteLocked(sessionContext);
 }
 
 /** Merge a cross-tab submitted signal into agent session context. */
@@ -273,13 +273,16 @@ export function applyQuoteSubmittedSignalToSession(
 ): Record<string, any> {
   const existing = getAgencySelectedClinicIds(sessionContext);
   const merged = Array.from(new Set([...existing, ...(signal.clinicIds || [])]));
-  return {
+  const withIds = {
     ...sessionContext,
-    quoteRequestLocked: true,
-    leadStage: "quote_request_created",
     selectedClinicIds: merged,
     leadId: signal.leadId || sessionContext.leadId,
     quoteId: signal.quoteId || sessionContext.quoteId,
     clinicSelectionStatus: "completed",
   };
+  return recordTreatmentQuoteSuccess(withIds, {
+    treatment: getAgencyTreatmentContext(withIds).category,
+    quoteId: String(signal.quoteId || withIds.quoteId || ""),
+    leadId: signal.leadId || withIds.leadId,
+  });
 }

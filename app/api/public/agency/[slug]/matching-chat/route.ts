@@ -81,6 +81,7 @@ import {
   mergeFeelinHealthySession,
   applyDetectedTreatmentUpdate,
 } from "@/lib/agency/feelinhealthyConversationMachine";
+import { recordTreatmentQuoteSuccess } from "@/lib/agency/treatmentQuoteCycle";
 import {
   parseClinicCardAction,
   routeClinicCardAction,
@@ -721,10 +722,16 @@ export async function POST(
             );
           }
 
-          quoteCtx.leadStage = "quote_request_created";
-          quoteCtx.quoteRequestLocked = true;
-          quoteCtx.leadId = persistResult.leadId;
-          quoteCtx.quoteId = persistResult.quoteId;
+          Object.assign(
+            quoteCtx,
+            recordTreatmentQuoteSuccess(quoteCtx, {
+              treatment:
+                getAgencyTreatmentContext(quoteCtx).category ||
+                persistResult.treatmentCycleKey,
+              quoteId: persistResult.quoteId!,
+              leadId: persistResult.leadId,
+            })
+          );
           delete quoteCtx.__fhQuoteRequestedByCardAction;
 
           const membership = claimPostQuoteMembershipMessage({
@@ -928,11 +935,17 @@ export async function POST(
           );
         }
 
-        quoteCtx.leadStage = "quote_request_created";
-        quoteCtx.quoteRequestLocked = true;
+        Object.assign(
+          quoteCtx,
+          recordTreatmentQuoteSuccess(quoteCtx, {
+            treatment:
+              getAgencyTreatmentContext(quoteCtx).category ||
+              persistResult.treatmentCycleKey,
+            quoteId: persistResult.quoteId!,
+            leadId: persistResult.leadId,
+          })
+        );
         quoteCtx.clinicSelectionStatus = "completed";
-        quoteCtx.leadId = persistResult.leadId;
-        quoteCtx.quoteId = persistResult.quoteId;
         delete quoteCtx.__fhQuoteRequestedByCardAction;
 
         const membership = claimPostQuoteMembershipMessage({
