@@ -6,6 +6,7 @@ export * from "./types";
 export * from "./slotExtractor";
 export * from "./contextResolver";
 export * from "./intentRouter";
+export * from "./appointmentIntentGate";
 export * from "./stateEngine";
 export * from "./featureFlags";
 export * from "./logger";

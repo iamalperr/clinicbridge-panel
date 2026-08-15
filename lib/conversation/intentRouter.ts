@@ -21,6 +21,7 @@ import {
 import { SlotExtractor } from "./slotExtractor";
 import { ContextResolver } from "./contextResolver";
 import { PendingActionManager } from "./PendingActionManager";
+import { detectExplicitBookingIntent } from "./appointmentIntentGate";
 
 export class IntentRouter {
   /**
@@ -526,19 +527,12 @@ export class IntentRouter {
     return PendingActionManager.isRejection(lower);
   }
 
+  /**
+   * Booking intent detection is owned by the shared appointment gate so that the
+   * classifier and the appointment-entry gate can never disagree.
+   */
   public static isAppointmentStart(lower: string): boolean {
-    return (
-      // Turkish
-      /(?:randevu|randevu\s+almak|randevu\s+oluştur|randevu\s+olustur|muayene\s+olmak|rezervasyon|görüşme\s+talep)/i.test(lower) ||
-      // English
-      /(?:book\s+(?:an\s+)?appointment|make\s+(?:an\s+)?appointment|schedule\s+(?:an\s+)?appointment|book\s+a\s+visit|schedule\s+a\s+visit|appointment)/i.test(lower) ||
-      // German
-      /(?:termin\s+vereinbaren|termin\s+buchen|termin\s+ausmachen|einen\s+termin|termin)/i.test(lower) ||
-      // French
-      /(?:prendre\s+(?:un\s+)?rendez-vous|prendre\s+rdv|réservation|reserver\s+un\s+rdv|rendez-vous)/i.test(lower) ||
-      // Arabic
-      /(?:حجز\s+موعد|احجز\s+موعد|موعد)/i.test(lower)
-    );
+    return detectExplicitBookingIntent(lower).hasBookingIntent;
   }
 
   public static isPricingQuery(lower: string): boolean {

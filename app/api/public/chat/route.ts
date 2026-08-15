@@ -35,7 +35,8 @@ import {
   resolveConversationLocale,
   formatLocalizedDate,
   formatLocalizedTime,
-  formatLocalizedTreatment
+  formatLocalizedTreatment,
+  evaluateAppointmentCollectionGate
 } from "@/lib/conversation";
 
 const CORS = {
@@ -1724,21 +1725,25 @@ export async function POST(req: Request) {
 
     let isMidFlowInterruption = false;
     const isAppointmentFlowActive = appointmentState !== "IDLE" && appointmentState !== "APPOINTMENT_SUBMITTED";
-    const isStartingAppointment = conversationIntent.intent === "appointment_start" || conversationIntent.intent === "appointment_continuation";
-    const hasApptEntities = Boolean(
-      conversationIntent.entities?.treatment ||
-      conversationIntent.entities?.preferredDate ||
-      conversationIntent.entities?.preferredTime ||
-      conversationIntent.entities?.fullName ||
-      conversationIntent.entities?.phone ||
-      conversationIntent.entities?.email
-    );
+    // Authoritative gate: a treatment / doctor / specialty mention alone must never
+    // open appointment collection. Only genuine booking intent (or volunteered
+    // scheduling commitments) may start the flow.
+    const appointmentGate = evaluateAppointmentCollectionGate({
+      message,
+      intent: conversationIntent.intent,
+      isAppointmentFlowActive,
+      entities: conversationIntent.entities
+    });
+
+    if (!appointmentGate.allowed) {
+      console.log(`[APPOINTMENT_GATE] Collection not started (${appointmentGate.reason}) intent=${conversationIntent.intent}`);
+    }
 
     // 5. Interruption Handling during active Appointment Collection / Review
     if (conversationIntent.isInterruption && isAppointmentFlowActive) {
       isMidFlowInterruption = true;
       console.log(`[INTENT_ROUTER] Mid-flow interruption detected: ${conversationIntent.intent}. Answering question while preserving appointment state: ${appointmentState}`);
-    } else if (isAppointmentFlowActive || isStartingAppointment || hasApptEntities) {
+    } else if (appointmentGate.allowed) {
       // 6. Handle Slot Extractions and Corrections (e.g. email, phone, name, date, time, treatment)
       if (conversationIntent.entities) {
         if (conversationIntent.entities.preferredDate) {
