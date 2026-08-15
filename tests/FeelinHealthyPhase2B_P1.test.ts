@@ -156,11 +156,44 @@ describe("Fix 2 — Agency brand resolver matrix", () => {
     expect(brand.websiteUrl).toContain("feelinhealthy.com");
   });
 
-  it("another agency uses its own name", () => {
-    const brand = resolveAgencyBrand({ name: "MedTravel Istanbul" });
+  it("Reply-To prefers settings.supportEmail over contactEmail", () => {
+    const brand = resolveAgencyBrand({
+      name: "FeelinHealthy",
+      contactEmail: "contact@feelinhealthy.com",
+      settings: { supportEmail: "destek@feelinhealthy.com" },
+    });
+    expect(brand.fromHeader).toBe("FeelinHealthy <noreply@clinicbridge-ai.com>");
+    expect(brand.replyTo).toBe("destek@feelinhealthy.com");
+  });
+
+  it("Reply-To falls back to contactEmail when supportEmail is absent", () => {
+    const brand = resolveAgencyBrand({
+      name: "FeelinHealthy",
+      contactEmail: "info@feelinhealthy.com",
+    });
+    expect(brand.fromEmail).toBe("noreply@clinicbridge-ai.com");
+    expect(brand.replyTo).toBe("info@feelinhealthy.com");
+  });
+
+  it("emailSettings.replyTo is not a patient-mail Reply-To source", () => {
+    const brand = resolveAgencyBrand({
+      name: "FeelinHealthy",
+      // @ts-expect-error intentional non-canonical seed field
+      emailSettings: { replyTo: "seed-only@example.com" },
+    });
+    expect(brand.fromHeader).toBe("FeelinHealthy <noreply@clinicbridge-ai.com>");
+    expect(brand.replyTo).toBeUndefined();
+  });
+
+  it("another agency uses its own name and configured Reply-To", () => {
+    const brand = resolveAgencyBrand({
+      name: "MedTravel Istanbul",
+      contactEmail: "care@medtravel.example",
+    });
     expect(brand.displayName).toBe("MedTravel Istanbul");
     expect(brand.fromHeader).toContain("MedTravel Istanbul");
     expect(brand.fromEmail).toBe("noreply@clinicbridge-ai.com");
+    expect(brand.replyTo).toBe("care@medtravel.example");
   });
 
   it("missing agency falls back to ClinicBridge AI", () => {
@@ -168,6 +201,14 @@ describe("Fix 2 — Agency brand resolver matrix", () => {
     expect(brand.isAgencyBranded).toBe(false);
     expect(brand.displayName).toBe("ClinicBridge AI");
     expect(brand.fromHeader).toContain("ClinicBridge AI");
+    expect(brand.replyTo).toBeUndefined();
+  });
+
+  it("branded agency without Reply-To fields leaves replyTo unset", () => {
+    const brand = resolveAgencyBrand({ name: "FeelinHealthy" });
+    expect(brand.isAgencyBranded).toBe(true);
+    expect(brand.fromHeader).toBe("FeelinHealthy <noreply@clinicbridge-ai.com>");
+    expect(brand.replyTo).toBeUndefined();
   });
 
   it("offer email content uses agency footer without ClinicBridge AI suffix when branded", () => {
@@ -380,5 +421,13 @@ describe("Fix 6 — unknown treatment must not become dental", () => {
     expect(normalizeTreatmentBranch("")).toBe(UNKNOWN_TREATMENT_BRANCH);
     expect(normalizeTreatmentBranch("asdfqwerty123")).toBe(UNKNOWN_TREATMENT_BRANCH);
     expect(normalizeTreatmentBranch("xyz")).not.toBe("dental");
+  });
+});
+
+describe("Staging cert — preserve verified email when LLM proposes invalid", () => {
+  it("matching-chat must not wipe a prior valid email on invalid LLM extraction", () => {
+    expect(route).toContain("Never wipe a prior valid / verified email");
+    expect(route).toContain("priorOk");
+    expect(route).toMatch(/patientEmailStatus === "verified_format" \|\| isValidEmail\(priorNormalized\)/);
   });
 });

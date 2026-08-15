@@ -76,7 +76,9 @@ const TENANT_DATA = {
   },
   
   settings: {
-    maxClinicsPerTreatmentRequest: 3,
+    // FeelinHealthy guest recommendation / quote selection cap is 2
+    // (see FEELINHEALTHY_CONFIG.maxGuestClinics / guestQuoteClinicSelectionLimit).
+    maxClinicsPerTreatmentRequest: 2,
     multiClinicSelectionEnabled: true,
     patientEmailCollectionEnabled: true,
     patientSecurePortalEnabled: true,
@@ -86,8 +88,13 @@ const TENANT_DATA = {
     emailNotificationsEnabled: true,
     whatsappNotificationsEnabled: false,
     smsNotificationsEnabled: false,
-    extendedClinicRequestEnabled: true
+    extendedClinicRequestEnabled: true,
+    // Patient-email Reply-To (resolveAgencyBrand precedence).
+    supportEmail: "support@feelinhealthy.com",
   },
+
+  // Portal agency field; also used as Reply-To fallback after supportEmail.
+  contactEmail: "support@feelinhealthy.com",
   
   agentSettings: {
     name: "FeelinHealthy Assistant",
@@ -113,11 +120,6 @@ Behaviors:
 - Do NOT promise that documents are automatically shared with clinics without consent.
 - Do NOT promise updates via WhatsApp or SMS.
 - Do NOT state that an appointment is final or confirmed.`
-  },
-  
-  emailSettings: {
-    senderDisplayName: "FeelinHealthy",
-    replyTo: "support@feelinhealthy.com"
   },
   
   treatmentCategories: [

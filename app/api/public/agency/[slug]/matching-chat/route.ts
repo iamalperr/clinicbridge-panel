@@ -2584,7 +2584,9 @@ export async function POST(
     if (parsed.subTreatment) newCtx.lastSubTreatment = parsed.subTreatment;
     if (parsed.location) newCtx.lastLocation = parsed.location;
     
-    // Validate and update patient email from LLM if any
+    // Validate and update patient email from LLM if any.
+    // Never wipe a prior valid / verified email when the model proposes an invalid string —
+    // that blocked matching after completed intake during staging certification.
     if (parsed.patientEmail && parsed.patientEmail !== ctx.patientEmail) {
       const { normalizeEmail, isValidEmail } = await import("@/lib/utils/emailValidation");
       const normalized = normalizeEmail(parsed.patientEmail);
@@ -2592,16 +2594,24 @@ export async function POST(
         newCtx.patientEmail = normalized!;
         newCtx.patientEmailStatus = "verified_format";
       } else {
-        newCtx.patientEmail = undefined;
-        newCtx.patientEmailStatus = "invalid";
-        return jsonResponse({
-          reply: parsed.language === "tr"
-            ? "Bu e-posta adresinde küçük bir yazım hatası olabilir. Kontrol ederek yeniden paylaşabilir misiniz?"
-            : "There may be a small typo in this email address. Could you check it and share it again?",
-          type: "text",
-          sessionContext: newCtx,
-          showClinicCards: false
-        }, { headers: CORS });
+        const priorNormalized = normalizeEmail(ctx.patientEmail);
+        const priorOk =
+          ctx.patientEmailStatus === "verified_format" || isValidEmail(priorNormalized);
+        if (priorOk) {
+          newCtx.patientEmail = priorNormalized || ctx.patientEmail;
+          newCtx.patientEmailStatus = "verified_format";
+        } else {
+          newCtx.patientEmail = undefined;
+          newCtx.patientEmailStatus = "invalid";
+          return jsonResponse({
+            reply: parsed.language === "tr"
+              ? "Bu e-posta adresinde küçük bir yazım hatası olabilir. Kontrol ederek yeniden paylaşabilir misiniz?"
+              : "There may be a small typo in this email address. Could you check it and share it again?",
+            type: "text",
+            sessionContext: newCtx,
+            showClinicCards: false
+          }, { headers: CORS });
+        }
       }
     }
 
