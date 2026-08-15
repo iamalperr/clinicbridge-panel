@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "clinicbridge"
+    "default": "clinicbridge",
+    "production": "clinicbridge",
+    "staging": "clinicbridge-staging"
   }
 }
