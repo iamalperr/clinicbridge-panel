@@ -83,9 +83,20 @@ export async function hybridSearch(
 
   if (process.env.OPENAI_API_KEY) {
     try {
+      const rewriteStarted = performance.now();
       const rewritten = await rewriteQuery(userMessage, clinicName);
+      const rewriteMs = Math.round(performance.now() - rewriteStarted);
       queries = Array.from(new Set([...rewritten, userMessage]));
+      const embedStarted = performance.now();
       queryEmbeddings = await generateEmbeddings(queries);
+      const embedMs = Math.round(performance.now() - embedStarted);
+      console.log(JSON.stringify({
+        checkpoint: "RAG_PERF",
+        rewriteMs,
+        embedMs,
+        queryCount: queries.length,
+        clinicName: clinicName || undefined,
+      }));
     } catch (err) {
       console.warn("[retrievalService] OpenAI embedding/rewrite skipped, falling back to keyword search:", err);
       queries = [userMessage];

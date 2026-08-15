@@ -35,6 +35,11 @@ import {
   evaluateAppointmentCollectionGate,
   resolveConversationLocaleWithMeta
 } from "@/lib/conversation";
+import { RequestTimer } from "@/lib/performance/requestTimer";
+import {
+  getCachedClinicRuntime,
+  setCachedClinicRuntime,
+} from "@/lib/performance/clinicRuntimeCache";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -943,11 +948,15 @@ async function respondWithVisibleReply(
 export async function POST(req: Request) {
   const startTime = Date.now();
   const debugLog: string[] = [];
+  const perf = new RequestTimer({});
 
   try {
+    perf.start("parse_request");
     const body = await req.json();
     const { clinicId, widgetId, message, language, history = [], conversationId = "", pendingAppointmentData, _systemAction, traceId } = body;
     const convId = conversationId || `session_${Date.now()}`;
+    perf.end("parse_request");
+    perf.setContext({ conversationId: convId, clinicId, traceId });
     debugLog.push(`clinicId=${clinicId} msg="${message?.slice(0, 60)}"`);
 
     if (!clinicId || !message) {
@@ -1066,6 +1075,22 @@ export async function POST(req: Request) {
     let actualClinicId = clinicId; // Store the real document ID if it differs from the slug
 
     if (adminDb) {
+      perf.start("clinic_config_load");
+      const cachedRuntime = getCachedClinicRuntime(clinicId);
+      if (cachedRuntime) {
+        clinicData = cachedRuntime.clinicData;
+        clinicName = cachedRuntime.clinicName;
+        clinicWhatsapp = cachedRuntime.clinicWhatsapp;
+        clinicTelegram = cachedRuntime.clinicTelegram;
+        clinicLanguage = cachedRuntime.clinicLanguage;
+        promptSettings = cachedRuntime.promptSettings;
+        trainingDocs = cachedRuntime.trainingDocs;
+        debugLog.push(`[admin-cache] clinic="${clinicName}" docs=${trainingDocs.length}`);
+        perf.end("clinic_config_load", {
+          trainingDocCount: trainingDocs.length,
+          cacheHit: true,
+        });
+      } else {
       const [clinicSnap, promptSnap, materialsSnap] = await Promise.all([
         adminDb.collection("clinics").doc(clinicId).get(),
         adminDb.collection("promptSettings").doc(clinicId).get(),
@@ -1086,6 +1111,15 @@ export async function POST(req: Request) {
           content: d.data().content ?? "",
           embeddingChunks: d.data().embeddingChunks || []
         }));
+        setCachedClinicRuntime(clinicId, {
+          clinicData,
+          clinicName,
+          clinicWhatsapp,
+          clinicTelegram,
+          clinicLanguage,
+          promptSettings,
+          trainingDocs,
+        });
         debugLog.push(`[admin] clinic="${clinicName}" docs=${trainingDocs.length}`);
       } else {
         // Fallback for Agency Clinics
@@ -1130,7 +1164,17 @@ export async function POST(req: Request) {
           }
         }
       }
+      if (clinicData && !isAgencyClinic) {
+        // cache already set above for top-level clinics
+      }
+      perf.end("clinic_config_load", {
+        trainingDocCount: trainingDocs.length,
+        isAgencyClinic,
+        cacheHit: false,
+      });
+      }
     } else if (clientDb) {
+      perf.start("clinic_config_load");
       const [clinicSnap, promptSnap] = await Promise.all([
         getDoc(doc(clientDb, "clinics", clinicId)),
         getDoc(doc(clientDb, "promptSettings", clinicId)),
@@ -1153,6 +1197,10 @@ export async function POST(req: Request) {
         }));
         debugLog.push(`[client] clinic="${clinicName}" docs=${trainingDocs.length}`);
       }
+      perf.end("clinic_config_load", {
+        trainingDocCount: trainingDocs.length,
+        cacheHit: false,
+      });
     }
     
     if (!clinicData) {
@@ -1207,9 +1255,13 @@ export async function POST(req: Request) {
     let loadedAppointmentId: string | null = null;
     let loadedIsAppointmentCreated: boolean = false;
     let loadedConversationLocale: string | null = null;
+    let loadedAppointmentVersion = 0;
+    let loadedProcessedMessageIds: string[] = [];
+    let loadedConversationLogData: any = null;
 
     if (adminDb && convId) {
         try {
+            perf.start("conversation_state_load");
             const statePath = `clinics/${actualClinicId}/conversationLogs/${convId}`;
             const contextSnap = await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).get();
             const docExists = contextSnap.exists;
@@ -1218,6 +1270,7 @@ export async function POST(req: Request) {
             console.log(`[STATE_LOAD_DEBUG] path=${statePath} exists=${docExists} rawState=${rawState} rawDraftKeys=${JSON.stringify(rawDraftKeys)} widgetClinicId=${clinicId} resolvedClinicId=${actualClinicId}`);
             if (docExists) {
                 const lData = contextSnap.data();
+                loadedConversationLogData = lData || null;
                 if (lData?.appointmentState) loadedState = lData.appointmentState;
                 if (lData?.appointmentDraft) loadedDraft = lData.appointmentDraft;
                 if (lData?.pendingAction) loadedPendingAction = lData.pendingAction;
@@ -1226,14 +1279,19 @@ export async function POST(req: Request) {
                 if (lData?.conversationLocale || lData?.detectedLanguage || lData?.language) {
                   loadedConversationLocale = lData.conversationLocale || lData.detectedLanguage || lData.language;
                 }
+                if (typeof lData?.appointmentVersion === "number") loadedAppointmentVersion = lData.appointmentVersion;
+                if (Array.isArray(lData?.processedMessageIds)) loadedProcessedMessageIds = lData.processedMessageIds;
             }
+            perf.end("conversation_state_load", { exists: docExists, appointmentState: rawState || "IDLE" });
         } catch (e: any) {
+            perf.end("conversation_state_load", { error: true });
             console.error("[chat API] Error loading strict context:", e.message);
         }
     }
 
     // Resolve conversation locale following guarded priority (message language
     // beats widget browser language; explicit switches still win).
+    perf.start("locale_resolve");
     const localeResolution = resolveConversationLocaleWithMeta({
       requestLanguage: language,
       persistedLocale: loadedConversationLocale,
@@ -1244,6 +1302,7 @@ export async function POST(req: Request) {
     const conversationLocale = localeResolution.locale;
     activeLang = conversationLocale;
     clinicWhatsapp = resolveContactNumber(clinicData, activeLang, trainingDocs);
+    perf.end("locale_resolve", { locale: conversationLocale, reason: localeResolution.reason });
 
     /** Shared persistence context for every visible assistant reply on this request. */
     const basePersist = (
@@ -1556,14 +1615,16 @@ export async function POST(req: Request) {
 
     if (adminDb && convId) {
       try {
-        const logSnap = await adminDb.collection("clinics").doc(actualClinicId).collection("conversationLogs").doc(convId).get();
-        if (logSnap.exists) {
-          const lData = logSnap.data();
+        // Reuse the conversation log already loaded above (avoids a duplicate Firestore read).
+        const lData = loadedConversationLogData;
+        if (lData) {
           stateData = lData || {};
           if (lData?.appointmentState) appointmentState = lData.appointmentState;
           if (lData?.appointmentDraft) appointmentDraft = lData.appointmentDraft;
           if (typeof lData?.appointmentVersion === "number") appointmentVersion = lData.appointmentVersion;
+          else appointmentVersion = loadedAppointmentVersion;
           if (Array.isArray(lData?.processedMessageIds)) processedMessageIds = lData.processedMessageIds;
+          else processedMessageIds = loadedProcessedMessageIds;
           
           if (processedMessageIds.includes(messageId)) {
              console.log(`[IDEMPOTENCY_SKIPPED] convId=${convId} messageId=${messageId}`);
@@ -1598,6 +1659,7 @@ export async function POST(req: Request) {
       undefined;
 
     // Global Intent Router Evaluation
+    perf.start("intent_classify");
     const conversationIntent = IntentRouter.classifyConversationIntent({
       message,
       conversationHistory: history,
@@ -1621,6 +1683,7 @@ export async function POST(req: Request) {
       },
       locale: conversationLocale
     });
+    perf.end("intent_classify", { intent: conversationIntent.intent });
 
     // 1. Language Switch handling
     if (conversationIntent.intent === "language_switch" && conversationIntent.targetLocale) {
@@ -1733,11 +1796,17 @@ export async function POST(req: Request) {
     // Authoritative gate: a treatment / doctor / specialty mention alone must never
     // open appointment collection. Only genuine booking intent (or volunteered
     // scheduling commitments) may start the flow.
+    perf.start("appointment_gate");
     const appointmentGate = evaluateAppointmentCollectionGate({
       message,
       intent: conversationIntent.intent,
       isAppointmentFlowActive,
       entities: conversationIntent.entities
+    });
+    perf.end("appointment_gate", {
+      allowed: appointmentGate.allowed,
+      mode: appointmentGate.mode,
+      reason: appointmentGate.reason,
     });
 
     if (!appointmentGate.allowed) {
@@ -1927,6 +1996,13 @@ export async function POST(req: Request) {
         conversationIntent.validationError,
         conversationIntent.allInfoProvidedIntent
       );
+
+      perf.log({
+        path: "appointment_collection",
+        intent: conversationIntent.intent,
+        nextSubState,
+        historyTurns: Array.isArray(history) ? history.length : 0,
+      });
 
       return respondWithVisibleReply({
         responseType: "CHAT_REPLY",
@@ -2427,7 +2503,12 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
       searchMessage = "tedaviler uzmanlık alanları hizmetler işlemler servisler treatments procedures clinical specialties medical services";
     }
 
+    perf.start("rag_hybrid_search");
     const topDocs = await hybridSearch(searchMessage, trainingDocs, clinicName, sliceLimit);
+    perf.end("rag_hybrid_search", {
+      topK: topDocs.length,
+      trainingDocs: trainingDocs.length,
+    });
     
     let knowledgeContext = topDocs.length > 0
       ? topDocs.map(d => `## ${d.title}\n${d.text}`).join("\n\n---\n\n")
@@ -2692,6 +2773,7 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       effectiveTemperature: temperatureResolved.effectiveTemperature,
       temperatureSource: temperatureResolved.source,
     });
+    perf.start("llm_chat");
     const completion = await trackableAIRequest({
       clinicId,
       conversationId: convId,
@@ -2711,6 +2793,10 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
         })),
         { role: "user", content: message },
       ],
+    });
+    perf.end("llm_chat", {
+      model: chatModel,
+      durationMs: (completion as any).durationMs ?? null,
     });
 
     let reply = completion.content?.trim()
@@ -2828,7 +2914,9 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       const { validateGroundedness } = await import("@/lib/services/retrievalService");
       
       const fullContextForValidation = doctorContext ? `${knowledgeContext}\n\n${doctorContext}` : knowledgeContext;
+      perf.start("groundedness");
       const validation = await validateGroundedness(reply, fullContextForValidation);
+      perf.end("groundedness", { isGrounded: validation.isGrounded });
       if (!validation.isGrounded) {
          console.warn(`[Groundedness Failed] Reason: ${validation.reason}\nReply: ${reply}`);
          if (activeLang === "tr") {
@@ -2870,6 +2958,14 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
 
     debugLog.push(`OK reply="${reply.slice(0, 60)}" ms=${Date.now() - startTime}`);
     console.log("[widget-chat]", debugLog.join(" | "));
+    perf.log({
+      path: "llm_rag_response",
+      intent: conversationIntent.intent,
+      historyTurns: Array.isArray(history) ? history.length : 0,
+      trainingDocs: trainingDocs.length,
+      topDocs: topDocs.length,
+      wallClockMs: Date.now() - startTime,
+    });
 
     // ── AŞAMA 6: RESPONSE CONTRACT DEFAULTLARI ──
     const responsePayload: any = { 
