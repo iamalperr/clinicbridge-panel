@@ -687,7 +687,7 @@ export default function AgencyDemoPage() {
         id: Math.random().toString(36).substring(7),
         role: "ai",
         type: "text",
-        text: lang === "tr" ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin." : "We're experiencing a technical issue. Please try again."
+        text: lang === "tr" ? "Bir sorun oluştu. Lütfen kısa bir süre sonra yeniden deneyin." : "Something went wrong on our side. Please try again in a moment."
       }]);
     } finally {
       setAiTyping(false);
@@ -747,7 +747,7 @@ export default function AgencyDemoPage() {
         id: nextMsgId(),
         role: "ai",
         type: "text",
-        text: lang === "tr" ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin." : "We're experiencing a technical issue. Please try again."
+        text: lang === "tr" ? "Bir sorun oluştu. Lütfen kısa bir süre sonra yeniden deneyin." : "Something went wrong on our side. Please try again in a moment."
       }]);
     } finally {
       setAiTyping(false);
@@ -811,7 +811,7 @@ export default function AgencyDemoPage() {
         id: nextMsgId(),
         role: "ai",
         type: "text",
-        text: lang === "tr" ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin." : "We're experiencing a technical issue. Please try again."
+        text: lang === "tr" ? "Bir sorun oluştu. Lütfen kısa bir süre sonra yeniden deneyin." : "Something went wrong on our side. Please try again in a moment."
       }]);
     } finally {
       setAiTyping(false);
@@ -864,7 +864,7 @@ export default function AgencyDemoPage() {
       setAiMessages((prev) => [...prev, {
         id: Math.random().toString(36).substring(7),
         role: "ai",
-        text: lang === "tr" ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin." : "We're experiencing a technical issue. Please try again."
+        text: lang === "tr" ? "Bir sorun oluştu. Lütfen kısa bir süre sonra yeniden deneyin." : "Something went wrong on our side. Please try again in a moment."
       }]);
     } finally {
       setAiTyping(false);
@@ -910,7 +910,7 @@ export default function AgencyDemoPage() {
         id: nextMsgId(),
         role: "ai",
         type: "text",
-        text: lang === "tr" ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin." : "We're experiencing a technical issue. Please try again."
+        text: lang === "tr" ? "Bir sorun oluştu. Lütfen kısa bir süre sonra yeniden deneyin." : "Something went wrong on our side. Please try again in a moment."
       }]);
     } finally {
       setAiTyping(false);
@@ -1015,8 +1015,8 @@ export default function AgencyDemoPage() {
         return [...withoutTemp, {
           id: nextMsgId(), role: "ai", type: "text",
           text: lang === "tr"
-            ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin."
-            : "We're experiencing a technical issue. Please try again.",
+            ? "Bir sorun oluştu. Lütfen kısa bir süre sonra yeniden deneyin."
+            : "Something went wrong on our side. Please try again in a moment.",
         }];
       });
     } finally {

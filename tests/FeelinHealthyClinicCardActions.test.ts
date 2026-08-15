@@ -191,8 +191,11 @@ describe("FeelinHealthy clinic card action contracts", () => {
     expect(demo).not.toMatch(/up to 3 clinics/i);
     expect(demo).toMatch(/GUEST_CLINIC_LIMIT/);
     expect(demo).toContain('action: "select_clinic"');
-    expect(demo).toContain('action: "view_clinic_details"');
     expect(demo).toContain('action: "request_quote"');
+    // More Info / view_clinic_details was intentionally removed from recommendation
+    // cards (commit 2a171b1). Backend still supports the action; the demo no longer
+    // surfaces a patient-facing button that fires it.
+    expect(demo).not.toMatch(/action:\s*"view_clinic_details"/);
 
     expect(agencyDemo).not.toMatch(/En fazla 3 klinik/);
     expect(agencyDemo).not.toMatch(/Max 3 clinics/);

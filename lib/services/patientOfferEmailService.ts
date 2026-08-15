@@ -96,7 +96,9 @@ export async function sendPatientOfferEmailForLead(params: {
 
   const agencySnap = await adminDb.collection("agencies").doc(agencyId).get();
   const agencyData = agencySnap.data() || {};
-  const agencyName = agencyData.name || agencyData.branding?.displayName || "FeelinHealthy";
+  const { resolveAgencyBrand } = await import("@/lib/agency/resolveAgencyBrand");
+  const brand = resolveAgencyBrand(agencyData);
+  const agencyName = brand.displayName;
   const lang: "tr" | "en" = String(
     locale || lead.language || agencyData.settings?.defaultLocale || "tr"
   )
@@ -122,15 +124,16 @@ export async function sendPatientOfferEmailForLead(params: {
       notes: o.notes,
     })),
     customMessage,
+    footerBrand: brand.footerBrand,
   });
 
   if (!process.env.RESEND_API_KEY) {
     throw new PatientOfferEmailError("RESEND_API_KEY_MISSING", "Email provider not configured", 503);
   }
 
-  const replyTo = agencyData.settings?.supportEmail || agencyData.email;
+  const replyTo = brand.replyTo;
   const result = await resend.emails.send({
-    from: "ClinicBridge AI <noreply@clinicbridge-ai.com>",
+    from: brand.fromHeader,
     to: patientEmail,
     ...(replyTo ? { replyTo } : {}),
     subject: content.subject,
