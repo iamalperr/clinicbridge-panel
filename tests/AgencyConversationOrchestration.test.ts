@@ -11,6 +11,7 @@ import {
   getQuoteFlowPreamble,
   markQuoteFlowExplained,
   isAgencyContinueResumePhrase,
+  usesStructuredCardResumeCue,
 } from "../lib/agency/conversationOrchestration";
 import { normalizeAgencySessionState } from "../lib/agency/agencySessionState";
 import fs from "node:fs";
@@ -146,7 +147,7 @@ describe("AgencyConversationOrchestration", () => {
     expect(reply).toContain("E-posta, telefon");
   });
 
-  it("only allows interruption on intake/treatment/location gates — not consent/city/side", () => {
+  it("allows interruption on intake/treatment/location and city/side gates — never on consent", () => {
     expect(
       canInterruptHardGateForInformation({
         kind: "intake",
@@ -164,19 +165,32 @@ describe("AgencyConversationOrchestration", () => {
         prompt: "x",
       } as any)
     ).toBe(true);
-    expect(canInterruptHardGateForInformation({ kind: "consent" })).toBe(false);
+    // City/side questions are answered and re-asked in the same turn (P0: an
+    // informational digression must not be swallowed by the pending card).
     expect(
       canInterruptHardGateForInformation({
         kind: "ask_city",
         card: {} as any,
         availableCities: [],
       })
-    ).toBe(false);
+    ).toBe(true);
     expect(
       canInterruptHardGateForInformation({
         kind: "ask_side",
         card: {} as any,
       })
+    ).toBe(true);
+    // Consent is a legal precondition — still non-interruptible.
+    expect(canInterruptHardGateForInformation({ kind: "consent" })).toBe(false);
+  });
+
+  it("keeps the card message as the resume cue for city/side gates only", () => {
+    expect(
+      usesStructuredCardResumeCue({ kind: "ask_city", card: {} as any, availableCities: [] })
+    ).toBe(true);
+    expect(usesStructuredCardResumeCue({ kind: "ask_side", card: {} as any })).toBe(true);
+    expect(
+      usesStructuredCardResumeCue({ kind: "intake", group: 1, missingFields: [], prompt: "x" })
     ).toBe(false);
   });
 

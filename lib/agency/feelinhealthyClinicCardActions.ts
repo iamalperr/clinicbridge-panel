@@ -656,6 +656,86 @@ export function requestQuoteFailureCopy(locale: string): string {
 }
 
 /**
+ * Separate post-quote assistant bubble (guest comparison / membership CTA).
+ * Uses canonical guest recommendation limit — never hardcode "exactly 2".
+ */
+export function getPostQuoteMembershipMessage(params: {
+  locale?: string;
+  agencyDisplayName?: string;
+  maxClinics?: number;
+}): string {
+  const isEn = String(params.locale || "tr").toLowerCase().startsWith("en");
+  const max = Math.max(
+    1,
+    Number(params.maxClinics) || resolveGuestQuoteClinicLimit() || FEELINHEALTHY_CONFIG.maxGuestClinics || 2
+  );
+  const brand = String(params.agencyDisplayName || "FeelinHealthy").trim() || "FeelinHealthy";
+
+  if (isEn) {
+    return (
+      `The ${brand} AI assistant recommends up to ${max} clinics from our contracted partners ` +
+      `that match your treatment. To also receive offers from other suitable healthcare providers ` +
+      `and compare options, you can register for free.`
+    );
+  }
+
+  return (
+    `${brand} yapay zeka asistanı tedavinize uygun, anlaşmalı olduğumuz klinik seçenekleri ` +
+    `içerisinden en fazla ${max} klinik önerisinde bulunmaktadır. Tedavinize uygun diğer sağlık ` +
+    `kuruluşlarından da teklif almak ve seçenekleri karşılaştırmak için ücretsiz üye olabilirsiniz.`
+  );
+}
+
+/** Stable idempotency key for the post-quote membership bubble. */
+export function buildPostQuoteMembershipKey(params: {
+  conversationId?: string | null;
+  quoteId?: string | null;
+  leadId?: string | null;
+}): string {
+  const quote = String(params.quoteId || "").trim();
+  if (quote) return `pq_membership:quote:${quote}`;
+  const lead = String(params.leadId || "").trim();
+  if (lead) return `pq_membership:lead:${lead}`;
+  const conv = String(params.conversationId || "").trim() || "unknown";
+  return `pq_membership:conv:${conv}`;
+}
+
+/**
+ * Mark membership bubble as sent exactly once. Returns the message when newly
+ * emitted, otherwise null (retry / refresh / hydration safe).
+ */
+export function claimPostQuoteMembershipMessage(params: {
+  sessionContext: AgencySessionStateInput;
+  locale?: string;
+  agencyDisplayName?: string;
+  conversationId?: string | null;
+  quoteId?: string | null;
+  leadId?: string | null;
+}): { sessionContext: AgencySessionState; message: string | null } {
+  const next = normalizeAgencySessionState(params.sessionContext);
+  const key = buildPostQuoteMembershipKey({
+    conversationId: params.conversationId || getAgencySessionId(next),
+    quoteId: params.quoteId || next.quoteId,
+    leadId: params.leadId || next.leadId,
+  });
+
+  if (next.postQuoteMembershipMessageSent === true || next.postQuoteMembershipKey === key) {
+    return { sessionContext: next, message: null };
+  }
+
+  next.postQuoteMembershipMessageSent = true;
+  next.postQuoteMembershipKey = key;
+  return {
+    sessionContext: next,
+    message: getPostQuoteMembershipMessage({
+      locale: params.locale,
+      agencyDisplayName: params.agencyDisplayName,
+      maxClinics: resolveGuestQuoteClinicLimit(),
+    }),
+  };
+}
+
+/**
  * Top-level pure router for clinic card actions (before DB persist).
  */
 export function routeClinicCardAction(params: {

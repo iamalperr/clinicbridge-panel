@@ -521,18 +521,9 @@ export const FEELINHEALTHY_CURATED_RULES: CuratedBranchRule[] = [
             ],
             district: "Halkalı / Küçükçekmece",
           },
-          {
-            name: "Intermed Health Group Nişantaşı",
-            slugOrId: FEELINHEALTHY_PRODUCTION_CLINIC_IDS.intermedNisantasi,
-            aliasPatterns: [
-              "intermed-health-group-nisantasi",
-              "intermed nisantasi",
-              "intermed nişantaşı",
-              "intermed health group nişantaşı",
-              "intermed",
-            ],
-            district: "Nişantaşı, Şişli",
-          },
+          // Intermed Health Group Nişantaşı intentionally omitted from FH curated
+          // recommendations (agency request). Clinic record / ID may still exist
+          // for other agencies or non-recommendation references.
         ],
       },
       {
@@ -1133,7 +1124,11 @@ export function isLocationExpansionAffirmative(message?: string | null): boolean
 
 /**
  * Escalate empty-match / "değerlendirelim" into a clickable city selection card.
- * Clears stale location locks so re-picking Istanbul can change the side.
+ *
+ * An empty match is a matching outcome, not an invalidation of the patient's
+ * preference: confirmed city/side survive so the flow cannot loop back to
+ * "which city?" on its own. Only an explicit patient action to look elsewhere
+ * (`allowLocationReset`) unlocks the previous choice.
  */
 export function buildEmptyMatchCityEscalation(params: {
   locale?: string;
@@ -1141,6 +1136,8 @@ export function buildEmptyMatchCityEscalation(params: {
   availableClinics?: any[];
   sessionContext: Record<string, any>;
   supportedLocationLabels?: string[];
+  /** Patient explicitly asked to consider other locations. */
+  allowLocationReset?: boolean;
 }): {
   reply: string;
   type: "city_selection";
@@ -1162,14 +1159,17 @@ export function buildEmptyMatchCityEscalation(params: {
   delete next.pendingLocationExpansionTarget;
   delete next.pendingLocationBranch;
   delete next.lastEmptyMatchKey;
-  // Allow Istanbul to be chosen again so the patient can switch side.
-  delete next.selectedCity;
-  delete next.locationSelectionConfirmed;
-  delete next.istanbul_side;
-  delete next.istanbul_side_source;
-  delete next.sideSelectionConfirmed;
-  delete next.pendingSideClarification;
-  delete next.pendingSideGuidance;
+  if (params.allowLocationReset) {
+    // Explicit "let's look elsewhere": unlock the city so Istanbul can be re-picked
+    // with another side.
+    delete next.selectedCity;
+    delete next.locationSelectionConfirmed;
+    delete next.istanbul_side;
+    delete next.istanbul_side_source;
+    delete next.sideSelectionConfirmed;
+    delete next.pendingSideClarification;
+    delete next.pendingSideGuidance;
+  }
 
   const cityCard = getCitySelectionCard(branchKey || params.branchKey, cities, locale);
   const reply = getEmptyMatchProcessReply({
@@ -1448,12 +1448,16 @@ export function formatClinicCardLocation(clinic: any, locale: string = "tr"): st
 
 // ─── Treatment Branch Normalizer ─────────────────────────────────────────────
 
+/** Canonical branch when treatment cannot be mapped — never invent dental. */
+export const UNKNOWN_TREATMENT_BRANCH = "unknown";
+
 export function normalizeTreatmentBranch(rawCategory?: string | null): string {
-  if (!rawCategory) return "dental";
+  if (!rawCategory || !String(rawCategory).trim()) return UNKNOWN_TREATMENT_BRANCH;
   const lower = String(rawCategory)
     .toLocaleLowerCase("tr-TR")
     .replace(/\u0307/g, "")
-    .normalize("NFC");
+    .normalize("NFC")
+    .trim();
 
   if (
     lower.includes("diş") ||
@@ -1462,8 +1466,12 @@ export function normalizeTreatmentBranch(rawCategory?: string | null): string {
     lower.includes("implant") ||
     lower.includes("zirkon") ||
     lower.includes("smile") ||
+    lower.includes("all-on-4") ||
+    lower.includes("all on 4") ||
+    lower.includes("allon4") ||
     lower === "crown" ||
     lower === "veneers" ||
+    lower.includes("veneer") ||
     lower === "tooth_extraction" ||
     lower === "denture"
   ) {
@@ -1500,10 +1508,12 @@ export function normalizeTreatmentBranch(rawCategory?: string | null): string {
   }
   if (
     lower.includes("estetik") ||
+    lower.includes("estetigi") ||
     lower.includes("aesthetic") ||
     lower.includes("plastic_surgery") ||
     lower.includes("plastik") ||
     lower.includes("rino") ||
+    lower.includes("burun") ||
     lower.includes("botoks") ||
     lower.includes("botox") ||
     lower.includes("dolgu") ||
@@ -1526,7 +1536,19 @@ export function normalizeTreatmentBranch(rawCategory?: string | null): string {
   if (lower.includes("obez") || lower.includes("bariatrik") || lower.includes("tüp mide") || lower.includes("tup mide")) {
     return "obesity";
   }
-  return lower;
+  // Known branch keys pass through; anything else is unsupported — never dental.
+  const knownBranches = new Set([
+    "dental",
+    "ivf",
+    "cardiology",
+    "check_up",
+    "eye_treatments",
+    "hair_transplant",
+    "aesthetic_surgery",
+    "obesity",
+  ]);
+  if (knownBranches.has(lower)) return lower;
+  return UNKNOWN_TREATMENT_BRANCH;
 }
 
 // ─── Curated Clinics Filter & Rank ──────────────────────────────────────────

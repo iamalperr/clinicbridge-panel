@@ -258,6 +258,18 @@ export interface AgencySessionStateKnown {
   /** Soft display reference — weaker than leadId. */
   leadReference?: string;
   quoteRequestLocked?: boolean;
+  /**
+   * After a successful quote, patient explicitly asked to search again / change
+   * location or clinics. Historical lead/quote ids stay intact; matching
+   * ephemeral state may be refreshed. Never authorizes a second auto-quote.
+   */
+  postQuoteRematchRequested?: boolean;
+  /**
+   * Idempotency: membership/upsell assistant bubble already emitted for this
+   * conversation's successful quote (keyed by quoteId when available).
+   */
+  postQuoteMembershipMessageSent?: boolean;
+  postQuoteMembershipKey?: string;
   /** Internal card-action marker (FeelinHealthy). */
   __fhQuoteRequestedByCardAction?: boolean;
   /** Internal matching restart marker (FeelinHealthy). */

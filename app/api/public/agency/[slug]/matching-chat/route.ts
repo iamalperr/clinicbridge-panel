@@ -89,6 +89,7 @@ import {
   resolveClinicFromPool,
   handleClinicSelectionPanelAction,
   isClinicSelectionPanelAction,
+  claimPostQuoteMembershipMessage,
 } from "@/lib/agency/feelinhealthyClinicCardActions";
 import {
   classifyAgencyConversationTurn,
@@ -105,6 +106,12 @@ import {
   markAppointmentFlowExplained,
   isAgencyInformationOnlyPreference,
   markIntakeInformationOnly,
+  usesStructuredCardResumeCue,
+  shouldDeferMatchingForInformation,
+  shouldRouteAsPostQuoteAssistance,
+  beginPostQuoteRematch,
+  isAgencyExplicitMatchingChangeRequest,
+  isAgencyQuoteCompletedSession,
 } from "@/lib/agency/conversationOrchestration";
 import { buildAgencyGroundedContext, getApprovedPricingFallback } from "@/lib/agency/agencyGroundedRetrieval";
 import {
@@ -211,14 +218,17 @@ function buildComposedHardGatePayload(params: {
   const paused = params.sessionContext.workflowPaused === true;
 
   if (interruptible && answer) {
-    const resumeCue = paused
-      ? buildAgencyIntakeResumeCue({
-          locale: params.locale,
-          intakePrompt: gate.reply,
-          sessionContext: params.sessionContext,
-          informationOnly: params.sessionContext.intakeInformationOnly === true,
-        })
-      : gate.reply;
+    // City/side gates keep their own card copy as the resume cue — intake resume
+    // wording would replace the question the card is still asking.
+    const resumeCue =
+      paused && !usesStructuredCardResumeCue(params.nextAction)
+        ? buildAgencyIntakeResumeCue({
+            locale: params.locale,
+            intakePrompt: gate.reply,
+            sessionContext: params.sessionContext,
+            informationOnly: params.sessionContext.intakeInformationOnly === true,
+          })
+        : gate.reply;
     reply = composeInterruptedAgencyReply({ answer, resumeCue });
   }
 
@@ -717,9 +727,22 @@ export async function POST(
           quoteCtx.quoteId = persistResult.quoteId;
           delete quoteCtx.__fhQuoteRequestedByCardAction;
 
+          const membership = claimPostQuoteMembershipMessage({
+            sessionContext: quoteCtx,
+            locale,
+            agencyDisplayName: agencyData?.name || "FeelinHealthy",
+            conversationId: quoteCtx.sessionId,
+            quoteId: persistResult.quoteId,
+            leadId: persistResult.leadId,
+          });
+          Object.assign(quoteCtx, membership.sessionContext);
+
           return jsonResponse(
             {
               reply: requestQuoteSuccessCopy(locale, cardPayload.clinicName),
+              followUpReplies: membership.message
+                ? [{ role: "assistant", text: membership.message, type: "text" }]
+                : undefined,
               type: "text",
               sessionContext: quoteCtx,
               showClinicCards: false,
@@ -912,9 +935,22 @@ export async function POST(
         quoteCtx.quoteId = persistResult.quoteId;
         delete quoteCtx.__fhQuoteRequestedByCardAction;
 
+        const membership = claimPostQuoteMembershipMessage({
+          sessionContext: quoteCtx,
+          locale,
+          agencyDisplayName: agencyData?.name || "FeelinHealthy",
+          conversationId: quoteCtx.sessionId,
+          quoteId: persistResult.quoteId,
+          leadId: persistResult.leadId,
+        });
+        Object.assign(quoteCtx, membership.sessionContext);
+
         return jsonResponse(
           {
             reply: requestQuoteSuccessCopy(locale),
+            followUpReplies: membership.message
+              ? [{ role: "assistant", text: membership.message, type: "text" }]
+              : undefined,
             type: "text",
             sessionContext: quoteCtx,
             showClinicCards: false,
@@ -1506,6 +1542,8 @@ export async function POST(
           branchKey,
           availableClinics: [],
           sessionContext: ctx,
+          // Patient explicitly agreed to look at other locations.
+          allowLocationReset: true,
         });
         if (escalation) {
           Object.assign(ctx, escalation.sessionContext);
@@ -1744,22 +1782,73 @@ export async function POST(
       const fhStateEarly = deriveFeelinHealthyState(ctx);
       if (fhStateEarly.consentStatus === "accepted") {
         const gateLang = (agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
+        const userMsgForOrch = finalMessage || message;
+
+        // Explicit post-quote change / new search must unlock matching BEFORE
+        // nextAction resolution — otherwise the machine stays on {kind:"quote"}.
+        const earlyPostQuoteAssist = shouldRouteAsPostQuoteAssistance({
+          sessionContext: ctx,
+          message: userMsgForOrch,
+          isStructuredAction: structuredLocationAction,
+        });
+        if (
+          !structuredLocationAction &&
+          !earlyPostQuoteAssist &&
+          isAgencyQuoteCompletedSession(ctx) &&
+          isAgencyExplicitMatchingChangeRequest(userMsgForOrch) &&
+          ctx.postQuoteRematchRequested !== true
+        ) {
+          const locHint = resolveIstanbulSideFromText(userMsgForOrch || "");
+          Object.assign(
+            ctx,
+            beginPostQuoteRematch(ctx, {
+              nextCity: locHint.city,
+              nextSide:
+                locHint.side === "european" || locHint.side === "anatolian"
+                  ? locHint.side
+                  : null,
+              clearCity: !locHint.city,
+            })
+          );
+          if (locHint.city) {
+            ctx.lastLocation = getCityDisplayName(locHint.city, gateLang);
+          }
+          (ctx as any).__forceClinicMatching = true;
+        }
+
         const nextAction = resolveNextConversationAction(ctx, {
           availableClinics: fullAgencyClinics,
           locale: gateLang,
           isStructuredAction: structuredLocationAction,
           promptContext: ctx,
         });
-        ctx.conversationStage = fhStateEarly.stage;
+        ctx.conversationStage = deriveFeelinHealthyState(ctx).stage;
         ctx.stateVersion = (Number(ctx.stateVersion) || 0) + 1;
 
-        const userMsgForOrch = finalMessage || message;
         const turn = classifyAgencyConversationTurn({
           message: userMsgForOrch,
           sessionContext: ctx,
-          stage: fhStateEarly.stage,
+          stage: ctx.conversationStage,
           nextAction,
         });
+
+        // An informational question is answered on this turn; matching, city reset
+        // and lead/quote side effects wait for an explicit transactional turn.
+        const deferMatchingForInformation = shouldDeferMatchingForInformation({
+          turnKind: turn.kind,
+          message: userMsgForOrch,
+          isStructuredAction: structuredLocationAction,
+        });
+        const postQuoteAssistance = shouldRouteAsPostQuoteAssistance({
+          sessionContext: ctx,
+          message: userMsgForOrch,
+          isStructuredAction: structuredLocationAction,
+        });
+
+        if (deferMatchingForInformation || postQuoteAssistance) {
+          (ctx as any).__informationalDigression = true;
+          delete (ctx as any).__forceClinicMatching;
+        }
 
         // Continue phrases clear pause and resume the pending workflow.
         if (turn.shouldResumeWorkflow) {
@@ -1767,7 +1856,7 @@ export async function POST(
             ctx,
             applyAgencyWorkflowResume(
               ctx,
-              (ctx.pausedConversationMode as any) || mapStageToConversationMode(fhStateEarly.stage)
+              (ctx.pausedConversationMode as any) || mapStageToConversationMode(ctx.conversationStage)
             )
           );
         }
@@ -1796,7 +1885,7 @@ export async function POST(
 
           if (informationalInterrupt) {
             const pausePlan = buildAgencyWorkflowPausePlan({
-              currentMode: mapStageToConversationMode(fhStateEarly.stage),
+              currentMode: mapStageToConversationMode(ctx.conversationStage || fhStateEarly.stage),
               message: userMsgForOrch,
               resumeIntakeGroup:
                 nextAction.kind === "intake"
@@ -1821,7 +1910,7 @@ export async function POST(
                 type: "text",
                 sessionContext: serializeAgencySessionState(ctx),
                 showClinicCards: false,
-                stage: fhStateEarly.stage,
+                stage: ctx.conversationStage || fhStateEarly.stage,
                 stateVersion: ctx.stateVersion,
               }, { headers: CORS });
             }
@@ -1869,7 +1958,7 @@ export async function POST(
           }
         }
         // match_clinics / clinic_selection / selected_clinic continue into matching or LLM.
-        if (nextAction.kind === "match_clinics") {
+        if (nextAction.kind === "match_clinics" && !(ctx as any).__informationalDigression) {
           (ctx as any).__forceClinicMatching = true;
         }
       }
@@ -2762,6 +2851,7 @@ export async function POST(
 
       if (
         (nextAction.kind === "match_clinics" || (ctx as any).__forceClinicMatching) &&
+        !(ctx as any).__informationalDigression &&
         resolveAssistantRole(newCtx) !== "clinic_coordinator" &&
         !(newCtx.lastRecommendedClinicIds && newCtx.lastRecommendedClinicIds.length > 0)
       ) {
@@ -2825,8 +2915,11 @@ export async function POST(
     }
 
     // --- CLINIC MATCHING OR RECOMMENDATION (before lead/followup for FeelinHealthy) ---
+    // Informational and post-quote turns answer the question instead of rematching;
+    // the pending gate and confirmed location survive untouched.
     if (
       (parsed.intent === "clinic_matching" || parsed.intent === "clinic_recommendation" || (ctx as any).__forceClinicMatching) &&
+      !(isFeelinHealthy && (ctx as any).__informationalDigression) &&
       resolveAssistantRole(newCtx) !== "clinic_coordinator"
     ) {
       let recommendations: ClinicRecommendation[] = [];
@@ -3078,8 +3171,11 @@ export async function POST(
         }));
       }
 
-      // FeelinHealthy without readiness must not emit an empty clinic_recommendations payload.
-      const shouldEmitRecommendations = !isFeelinHealthy || feelinHealthyReady;
+      // FeelinHealthy must only report a matching outcome when matching actually ran.
+      // Otherwise (post-quote, clinic already selected) an untouched empty array
+      // would surface as "no partner clinic found".
+      const shouldEmitRecommendations =
+        !isFeelinHealthy || (feelinHealthyReady && allowFeelinHealthyMatch);
 
       if (shouldEmitRecommendations) {
         // Guest FeelinHealthy responses must never contain more than 2 clinics.
@@ -3124,6 +3220,26 @@ export async function POST(
           const supportLabels = (emptyCurated.supportedLocationsForBranch || []).map((l: any) =>
             replyLang === "en" ? l.displayNameEn : l.displayNameTr
           );
+
+          // Istanbul without a side is an unfinished location step, not a dead end:
+          // keep the city and finish side selection instead of re-asking the city.
+          if (emptyLocation.step === "ask_side") {
+            const sideCard = getIstanbulSideClarificationCard(
+              emptyLocation.treatmentBranch,
+              replyLang
+            );
+            newCtx.pendingSideClarification = true;
+            return jsonResponse({
+              reply: sideCard.message,
+              type: sideCard.type,
+              sideClarificationCard: sideCard,
+              sessionContext: newCtx,
+              showClinicCards: false,
+              shouldCreateNewLead: false,
+              shouldUpdateLead: false,
+            }, { headers: CORS });
+          }
+
           const escalation = buildEmptyMatchCityEscalation({
             locale: replyLang,
             branchKey: emptyBranchKey,

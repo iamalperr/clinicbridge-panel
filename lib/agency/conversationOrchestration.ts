@@ -284,7 +284,11 @@ export function classifyAgencyConversationTurn(params: {
 
 /**
  * Hard gates that may yield to an informational interruption (answer then resume).
- * Consent / city / side cards stay authoritative UI widgets.
+ *
+ * City / side cards are answered *and* re-rendered on the same turn: the pending
+ * question survives, so the patient can ask a treatment question without losing
+ * the gate. Consent stays non-interruptible — it is a legal precondition, not a
+ * conversational step.
  */
 export function canInterruptHardGateForInformation(
   action: NextConversationAction | null | undefined
@@ -293,8 +297,135 @@ export function canInterruptHardGateForInformation(
   return (
     action.kind === "intake" ||
     action.kind === "ask_treatment" ||
-    action.kind === "location_negotiation"
+    action.kind === "location_negotiation" ||
+    action.kind === "ask_city" ||
+    action.kind === "ask_side"
   );
+}
+
+/** Gates whose own card message is the resume cue (structured UI, not intake copy). */
+export function usesStructuredCardResumeCue(
+  action: NextConversationAction | null | undefined
+): boolean {
+  return action?.kind === "ask_city" || action?.kind === "ask_side";
+}
+
+const EXPLICIT_MATCHING_CHANGE_RE =
+  /(ba[sş]ka\s+(bir\s+)?(klinik|hastane|se[cç]enek|[sş]ehir)|yeni\s+(klinik|arama)|farkl[ıi]\s+(klinik|hastane|[sş]ehir|lokasyon)|klini[gğ]i\s*de[gğ]i[sş]tir|klinik\s*de[gğ]i[sş]tir|se[cç]imimi\s*de[gğ]i[sş]tir|se[cç]imi\s*de[gğ]i[sş]tir|[sş]ehri\s*de[gğ]i[sş]tir|de[gğ]i[sş]tirebilir\s+miyim|yerine|another\s+clinic|other\s+clinics|different\s+(clinic|hospital|city|location)|change\s+(my\s+)?(clinic|selection|city|location)|new\s+search|instead\s+of)/i;
+
+/**
+ * Explicit request to change the current match/selection or start a new search.
+ * Keeps post-quote and paused states transactional instead of answer-only.
+ */
+export function isAgencyExplicitMatchingChangeRequest(message?: string | null): boolean {
+  const lower = normalizeMsg(message);
+  if (!lower) return false;
+  return EXPLICIT_MATCHING_CHANGE_RE.test(lower) || IntentRouter.isAgencyMatchingQuery(lower);
+}
+
+/** Quote already persisted for this conversation (post-quote assistance mode). */
+export function isAgencyQuoteCompletedSession(
+  sessionContext?: AgencySessionStateInput | null
+): boolean {
+  const ctx = normalizeAgencySessionState(sessionContext || {});
+  return (
+    ctx.quoteRequestLocked === true ||
+    ctx.leadStage === "quote_request_created" ||
+    ctx.leadStage === "completed"
+  );
+}
+
+/**
+ * True when an informational turn must not trigger clinic matching.
+ * Structured widget turns and explicit clinic-search asks stay transactional.
+ */
+export function shouldDeferMatchingForInformation(params: {
+  turnKind: AgencyTurnKind;
+  message?: string | null;
+  isStructuredAction?: boolean;
+}): boolean {
+  if (params.isStructuredAction) return false;
+  if (params.turnKind !== "informational_interruption") return false;
+  return !isAgencyExplicitMatchingChangeRequest(params.message);
+}
+
+/**
+ * Post-quote turns default to Q&A: no rematch, no new lead/quote, no city reset.
+ * Explicit change / new-search intents still take the normal transactional path.
+ */
+export function shouldRouteAsPostQuoteAssistance(params: {
+  sessionContext?: AgencySessionStateInput | null;
+  message?: string | null;
+  isStructuredAction?: boolean;
+}): boolean {
+  if (params.isStructuredAction) return false;
+  if (!isAgencyQuoteCompletedSession(params.sessionContext)) return false;
+  const ctx = normalizeAgencySessionState(params.sessionContext || {});
+  // An explicit rematch cycle is already open — do not force Q&A-only mode.
+  if (ctx.postQuoteRematchRequested === true) return false;
+  return !isAgencyExplicitMatchingChangeRequest(params.message);
+}
+
+/**
+ * Open a controlled post-quote rematch cycle without rewriting historical
+ * lead/quote/consent/intake records. Only clears matching ephemeral fields.
+ */
+export function beginPostQuoteRematch(
+  sessionContext: AgencySessionStateInput,
+  opts?: {
+    /** When set, replace preferred city for the new search cycle. */
+    nextCity?: string | null;
+    nextSide?: "anatolian" | "european" | "any" | null;
+    clearCity?: boolean;
+  }
+): AgencySessionState {
+  const next = { ...normalizeAgencySessionState(sessionContext) } as AgencySessionState;
+  next.postQuoteRematchRequested = true;
+  // Ephemeral matching / selection only — never touch leadId/quoteId/leadStage.
+  delete next.lastRecommendedClinicIds;
+  delete next.selectedClinicIds;
+  delete next.selectedClinicId;
+  delete next.selectedClinicName;
+  delete next.lastFocusedClinicId;
+  delete next.lastFocusedClinicName;
+  delete next.clinicSelectionMode;
+  delete next.clinicSelectionStatus;
+  delete next.pendingCitySelection;
+  delete next.pendingSideClarification;
+  delete next.pendingSideGuidance;
+  delete next.lastEmptyMatchKey;
+  delete next.pendingLocationExpansion;
+  delete next.pendingLocationExpansionTarget;
+  delete next.pendingLocationBranch;
+  // Coordinator mode must not block rematch.
+  if ((next as any).assistantRole === "clinic_coordinator") {
+    delete (next as any).assistantRole;
+  }
+
+  if (opts?.clearCity) {
+    delete next.selectedCity;
+    delete next.locationSelectionConfirmed;
+    delete next.istanbul_side;
+    delete next.istanbul_side_source;
+    delete next.sideSelectionConfirmed;
+  } else if (opts?.nextCity) {
+    next.selectedCity = String(opts.nextCity).toLowerCase();
+    next.locationSelectionConfirmed = true;
+    if (opts.nextSide === "anatolian" || opts.nextSide === "european") {
+      next.istanbul_side = opts.nextSide;
+      next.sideSelectionConfirmed = true;
+    } else if (opts.nextCity.toLowerCase() !== "istanbul") {
+      delete next.istanbul_side;
+      delete next.istanbul_side_source;
+      delete next.sideSelectionConfirmed;
+    } else if (opts.nextSide == null) {
+      // Istanbul without side — ask side next.
+      delete next.istanbul_side;
+      delete next.sideSelectionConfirmed;
+    }
+  }
+
+  return normalizeAgencySessionState(next);
 }
 
 export function buildAgencyWorkflowPausePlan(params: {
@@ -369,7 +500,6 @@ export function applyAgencyWorkflowResume(
 }
 
 export function getQuoteFlowPreamble(locale: string = "tr"): string {
-  // Centralized process introduction (explain-before-ask).
   return getIntakeProcessIntroduction(locale);
 }
 
