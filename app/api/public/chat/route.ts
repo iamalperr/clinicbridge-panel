@@ -32,11 +32,8 @@ import {
   formatPricingFallback,
   formatContactResponse,
   buildAppointmentReviewMessage,
-  resolveConversationLocale,
-  formatLocalizedDate,
-  formatLocalizedTime,
-  formatLocalizedTreatment,
-  evaluateAppointmentCollectionGate
+  evaluateAppointmentCollectionGate,
+  resolveConversationLocaleWithMeta
 } from "@/lib/conversation";
 
 const CORS = {
@@ -1165,8 +1162,11 @@ export async function POST(req: Request) {
       }, { status: 404, headers: CORS });
     }
 
-    // Resolve dynamic contact number based on conversation language context
-    const activeLang = language || "tr";
+    // Soft initial language for early contact resolution; authoritative locale
+    // is computed after conversation state is loaded (see conversationLocale).
+    let activeLang = (typeof language === "string" && language.trim())
+      ? language.trim().toLowerCase().slice(0, 2)
+      : "tr";
     clinicWhatsapp = resolveContactNumber(clinicData, activeLang, trainingDocs);
 
     const messageId = body.messageId || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -1232,14 +1232,18 @@ export async function POST(req: Request) {
         }
     }
 
-    // Resolve conversation locale following strict priority
-    const conversationLocale = resolveConversationLocale({
+    // Resolve conversation locale following guarded priority (message language
+    // beats widget browser language; explicit switches still win).
+    const localeResolution = resolveConversationLocaleWithMeta({
       requestLanguage: language,
       persistedLocale: loadedConversationLocale,
       currentMessage: message,
       history,
       clinicDefaultLocale: clinicLanguage
     });
+    const conversationLocale = localeResolution.locale;
+    activeLang = conversationLocale;
+    clinicWhatsapp = resolveContactNumber(clinicData, activeLang, trainingDocs);
 
     /** Shared persistence context for every visible assistant reply on this request. */
     const basePersist = (
@@ -1263,7 +1267,8 @@ export async function POST(req: Request) {
       clinicId: actualClinicId,
       requestLanguage: language,
       persistedLocale: loadedConversationLocale,
-    resolvedLocale: conversationLocale,
+      resolvedLocale: conversationLocale,
+      localeReason: localeResolution.reason,
       clinicDefaultLocale: clinicLanguage,
     }));
     // ── INSTRUMENTATION LOG 2 & 3 ──
@@ -1736,7 +1741,32 @@ export async function POST(req: Request) {
     });
 
     if (!appointmentGate.allowed) {
-      console.log(`[APPOINTMENT_GATE] Collection not started (${appointmentGate.reason}) intent=${conversationIntent.intent}`);
+      console.log(JSON.stringify({
+        checkpoint: "APPOINTMENT_GATE_BLOCKED",
+        traceId: activeTraceId,
+        conversationId: convId,
+        clinicId: actualClinicId,
+        candidateIntent: conversationIntent.intent,
+        validatedIntent: conversationIntent.intent,
+        gateMode: appointmentGate.mode,
+        gateReason: appointmentGate.reason,
+        priorState: appointmentState,
+        locale: conversationLocale,
+        hasTreatmentEntity: Boolean(conversationIntent.entities?.treatment),
+      }));
+    } else {
+      console.log(JSON.stringify({
+        checkpoint: "APPOINTMENT_GATE_ALLOWED",
+        traceId: activeTraceId,
+        conversationId: convId,
+        clinicId: actualClinicId,
+        candidateIntent: conversationIntent.intent,
+        gateMode: appointmentGate.mode,
+        gateReason: appointmentGate.reason,
+        priorState: appointmentState,
+        nextStateHint: appointmentGate.mode === "continue" ? appointmentState : "APPOINTMENT_COLLECTION",
+        locale: conversationLocale,
+      }));
     }
 
     // 5. Interruption Handling during active Appointment Collection / Review
@@ -2732,10 +2762,40 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
 
     let isAiResponseFlowActive = false;
     if (reply.includes("[FLOW_ACTIVE]")) {
-      isAiResponseFlowActive = true;
-      reply = reply.replace("[FLOW_ACTIVE]", "").trim();
-      if (appointmentState === "IDLE") {
-        appointmentState = "COLLECTING_INFO";
+      // Strip the marker always so it never reaches the patient.
+      reply = reply.replace(/\[FLOW_ACTIVE\]/g, "").trim();
+
+      // LLM tags are phrasing hints only. They may not open appointment collection
+      // unless the shared gate would allow a start for this patient message.
+      const flowActiveGate = evaluateAppointmentCollectionGate({
+        message,
+        intent: conversationIntent.intent,
+        isAppointmentFlowActive: appointmentState !== "IDLE" && appointmentState !== "APPOINTMENT_SUBMITTED",
+        entities: conversationIntent.entities,
+      });
+
+      if (flowActiveGate.allowed) {
+        isAiResponseFlowActive = true;
+        if (appointmentState === "IDLE") {
+          appointmentState = "COLLECTING_INFO";
+        }
+        console.log(JSON.stringify({
+          checkpoint: "FLOW_ACTIVE_HONORED",
+          traceId: activeTraceId,
+          conversationId: convId,
+          clinicId: actualClinicId,
+          gateReason: flowActiveGate.reason,
+          appointmentState,
+        }));
+      } else {
+        console.log(JSON.stringify({
+          checkpoint: "FLOW_ACTIVE_IGNORED",
+          traceId: activeTraceId,
+          conversationId: convId,
+          clinicId: actualClinicId,
+          candidateIntent: conversationIntent.intent,
+          gateReason: flowActiveGate.reason,
+        }));
       }
     }
 

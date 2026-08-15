@@ -26,16 +26,47 @@ export interface LocaleResolutionParams {
   clinicDefaultLocale?: string | null;
 }
 
+export interface LocaleResolutionResult {
+  locale: string;
+  reason: string;
+}
+
+const SUPPORTED_LOCALES = new Set(["en", "tr", "de", "fr", "ar", "ru", "es", "it"]);
+
+function normalizeLocaleCode(value?: string | null): string | null {
+  if (!value || typeof value !== "string") return null;
+  const clean = value.trim().toLowerCase().slice(0, 2);
+  return SUPPORTED_LOCALES.has(clean) ? clean : null;
+}
+
+function wordCount(text?: string | null): number {
+  return String(text || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
+
 /**
- * Resolves the conversation locale according to strict priority:
- * 1. Explicit language switch command in current message
- * 2. Explicit requestLanguage from client payload (if provided and valid)
- * 3. Persisted conversation locale from existing session / Firestore
- * 4. Strongly detected message language from user content or history
- * 5. Clinic default locale fallback
+ * Resolves the conversation locale with an inspectable reason.
+ *
+ * Priority (product rule: patient message language must not be overridden by
+ * widget browser language / requestLanguage unless the user clearly switches):
+ * 1. Explicit language-switch command in the current message
+ * 2. Strong language detected from the current message
+ * 3. Persisted conversation locale (may follow a clear language change in #2)
+ * 4. Soft requestLanguage hint from the client / widget
+ * 5. Language detected from recent user history
+ * 6. Clinic default locale
+ * 7. "tr"
  */
-export function resolveConversationLocale(params: LocaleResolutionParams): string {
+export function resolveConversationLocaleWithMeta(
+  params: LocaleResolutionParams
+): LocaleResolutionResult {
   const currentMsg = (params.currentMessage || "").trim().toLowerCase();
+  const detectedFromMsg = detectTextLanguage(params.currentMessage || "");
+  const requestLang = normalizeLocaleCode(params.requestLanguage);
+  const persistedLang = normalizeLocaleCode(params.persistedLocale);
+  const clinicLang = normalizeLocaleCode(params.clinicDefaultLocale);
 
   // 1. Explicit command in current message
   if (
@@ -47,83 +78,78 @@ export function resolveConversationLocale(params: LocaleResolutionParams): strin
     currentMsg.includes("let's speak in english") ||
     currentMsg.includes("can we talk in english")
   ) {
-    return "en";
+    return { locale: "en", reason: "explicit_switch_command:en" };
   }
   if (
     currentMsg.includes("türkçe konuşalım") ||
     currentMsg.includes("türkçe lütfen") ||
     currentMsg.includes("türkçe devam edelim") ||
-    currentMsg.includes("türkçe") && (currentMsg.includes("geç") || currentMsg.includes("konuş"))
+    (currentMsg.includes("türkçe") && (currentMsg.includes("geç") || currentMsg.includes("konuş")))
   ) {
-    return "tr";
+    return { locale: "tr", reason: "explicit_switch_command:tr" };
   }
   if (currentMsg.includes("auf deutsch") || currentMsg.includes("deutsch bitte")) {
-    return "de";
+    return { locale: "de", reason: "explicit_switch_command:de" };
   }
   if (currentMsg.includes("en français") || currentMsg.includes("français s'il vous plaît")) {
-    return "fr";
+    return { locale: "fr", reason: "explicit_switch_command:fr" };
   }
   if (currentMsg.includes("باللغة العربية") || currentMsg.includes("تكلم بالعربية")) {
-    return "ar";
+    return { locale: "ar", reason: "explicit_switch_command:ar" };
   }
 
-  // 2. Explicit request payload language (if provided as a distinct standard code)
-  if (params.requestLanguage && typeof params.requestLanguage === "string") {
-    const cleanReqLang = params.requestLanguage.trim().toLowerCase().slice(0, 2);
-    if (["en", "de", "fr", "ar", "ru", "es", "it"].includes(cleanReqLang)) {
-      return cleanReqLang;
+  // 2. Strong message-content detection beats widget browser language.
+  //    A Turkish pricing question must stay Turkish even when navigator.language is "en".
+  if (detectedFromMsg && wordCount(params.currentMessage) >= 2) {
+    if (!persistedLang || persistedLang === detectedFromMsg) {
+      return { locale: detectedFromMsg, reason: `message_detected:${detectedFromMsg}` };
     }
-    // If requestLanguage is explicitly "tr", check if persisted is different or if explicit
-    if (cleanReqLang === "tr" && !params.persistedLocale) {
-      // Check if message itself is clearly in English before assuming "tr"
-      const detectedFromMsg = detectTextLanguage(params.currentMessage || "");
-      if (detectedFromMsg && detectedFromMsg !== "tr") {
-        return detectedFromMsg;
-      }
-      return "tr";
+    // Clear language change mid-conversation (e.g. persisted EN, user writes full TR)
+    if (wordCount(params.currentMessage) >= 3) {
+      return {
+        locale: detectedFromMsg,
+        reason: `message_overrides_persisted:${persistedLang}->${detectedFromMsg}`,
+      };
     }
   }
 
   // 3. Persisted conversation locale from existing session
-  if (params.persistedLocale && typeof params.persistedLocale === "string") {
-    const cleanPersisted = params.persistedLocale.trim().toLowerCase().slice(0, 2);
-    if (["en", "tr", "de", "fr", "ar", "ru", "es", "it"].includes(cleanPersisted)) {
-      // If persisted is English, keep English unless the user message is distinctly in Turkish
-      if (cleanPersisted === "en") {
-        const detectedFromMsg = detectTextLanguage(params.currentMessage || "");
-        if (detectedFromMsg === "tr" && (params.currentMessage || "").trim().split(/\s+/).length >= 3) {
-          return "tr";
-        }
-        return "en";
-      }
-      return cleanPersisted;
-    }
+  if (persistedLang) {
+    return { locale: persistedLang, reason: `persisted:${persistedLang}` };
   }
 
-  // 4. Strongly detected language from user content or history
-  const detectedFromMsg = detectTextLanguage(params.currentMessage || "");
-  if (detectedFromMsg) {
-    return detectedFromMsg;
+  // 4. Soft requestLanguage hint (widget UI / browser preference) — only when
+  //    the message itself does not clearly establish a different language.
+  if (requestLang) {
+    return { locale: requestLang, reason: `request_language:${requestLang}` };
   }
 
+  // 5. Recent user history detection
   if (params.history && Array.isArray(params.history) && params.history.length > 0) {
     for (let i = params.history.length - 1; i >= 0; i--) {
       const item = params.history[i];
       if (item && item.role === "user" && item.content) {
         const detectedFromHist = detectTextLanguage(item.content);
         if (detectedFromHist) {
-          return detectedFromHist;
+          return { locale: detectedFromHist, reason: `history_detected:${detectedFromHist}` };
         }
       }
     }
   }
 
-  // 5. Clinic default locale fallback
-  if (params.clinicDefaultLocale && typeof params.clinicDefaultLocale === "string") {
-    return params.clinicDefaultLocale.trim().toLowerCase().slice(0, 2);
+  // 6. Clinic default
+  if (clinicLang) {
+    return { locale: clinicLang, reason: `clinic_default:${clinicLang}` };
   }
 
-  return "tr";
+  return { locale: "tr", reason: "fallback:tr" };
+}
+
+/**
+ * Resolves the conversation locale according to the guarded priority above.
+ */
+export function resolveConversationLocale(params: LocaleResolutionParams): string {
+  return resolveConversationLocaleWithMeta(params).locale;
 }
 
 /**

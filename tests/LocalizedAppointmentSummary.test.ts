@@ -13,18 +13,29 @@ describe('Localized Appointment Summary & Locale Resolution Suite', () => {
 
   // ── GROUP 1: Locale Resolution Priority Hierarchy ──
   describe('Group 1: Locale Resolution Priority Hierarchy', () => {
-    it('1.1: Request language parameter takes highest precedence', () => {
+    it('1.1: Strong Turkish message language beats widget/browser requestLanguage=en', () => {
       const resolved = resolveConversationLocale({
         requestLanguage: 'en',
+        persistedLocale: undefined,
+        currentMessage: 'Merhaba Plak temizleme - diş beyazlatma için fiyat öğrenebilir miyim',
+        history: [],
+        clinicDefaultLocale: 'tr'
+      });
+      expect(resolved).toBe('tr');
+    });
+
+    it('1.1b: Explicit English switch command still wins over Turkish content', () => {
+      const resolved = resolveConversationLocale({
+        requestLanguage: 'tr',
         persistedLocale: 'tr',
-        currentMessage: 'Merhaba randevu almak istiyorum',
+        currentMessage: 'Diş beyazlatma fiyatı nedir? Please answer in English.',
         history: [],
         clinicDefaultLocale: 'tr'
       });
       expect(resolved).toBe('en');
     });
 
-    it('1.2: Persisted conversation locale takes precedence over detected language or clinic default', () => {
+    it('1.2: Persisted conversation locale takes precedence for short affirmatives', () => {
       const resolved = resolveConversationLocale({
         requestLanguage: undefined,
         persistedLocale: 'en',
@@ -33,6 +44,17 @@ describe('Localized Appointment Summary & Locale Resolution Suite', () => {
         clinicDefaultLocale: 'tr'
       });
       expect(resolved).toBe('en');
+    });
+
+    it('1.2b: Clear Turkish message overrides a stale English persisted locale', () => {
+      const resolved = resolveConversationLocale({
+        requestLanguage: 'en',
+        persistedLocale: 'en',
+        currentMessage: 'Diş beyazlatma fiyatını öğrenebilir miyim?',
+        history: [],
+        clinicDefaultLocale: 'en'
+      });
+      expect(resolved).toBe('tr');
     });
 
     it('1.3: Message content language detection when request and persisted are empty', () => {
@@ -78,6 +100,17 @@ describe('Localized Appointment Summary & Locale Resolution Suite', () => {
         clinicDefaultLocale: 'tr'
       });
       expect(resolved).toBe('tr');
+    });
+
+    it('1.6: Soft requestLanguage is used only when message language is unclear', () => {
+      const resolved = resolveConversationLocale({
+        requestLanguage: 'en',
+        persistedLocale: null,
+        currentMessage: '05551234567',
+        history: [],
+        clinicDefaultLocale: 'tr'
+      });
+      expect(resolved).toBe('en');
     });
   });
 
