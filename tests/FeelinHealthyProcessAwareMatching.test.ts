@@ -73,7 +73,7 @@ describe("process-aware empty match + soft treatment ask", () => {
     expect(isLocationExpansionAffirmative("implant istiyorum")).toBe(false);
   });
 
-  it("empty match escalation returns clickable city card and clears location locks", () => {
+  it("empty match escalation offers city options without discarding the confirmed location", () => {
     const result = buildEmptyMatchCityEscalation({
       locale: "tr",
       branchKey: "dental",
@@ -89,9 +89,33 @@ describe("process-aware empty match + soft treatment ask", () => {
     expect(result).not.toBeNull();
     expect(result!.type).toBe("city_selection");
     expect(result!.citySelectionCard.options.length).toBeGreaterThan(0);
+    // A matching outcome must not invalidate what the patient already chose.
+    expect(result!.sessionContext.selectedCity).toBe("istanbul");
+    expect(result!.sessionContext.istanbul_side).toBe("european");
+    expect(result!.sessionContext.locationSelectionConfirmed).toBe(true);
+    expect(result!.sessionContext.sideSelectionConfirmed).toBe(true);
+    expect(result!.sessionContext.lastEmptyMatchKey).toBeUndefined();
+    expect(result!.sessionContext.pendingLocationExpansion).toBeUndefined();
+    expect(result!.sessionContext.pendingCitySelection).toBe(true);
+  });
+
+  it("clears location locks only when the patient explicitly explores other cities", () => {
+    const result = buildEmptyMatchCityEscalation({
+      locale: "tr",
+      branchKey: "dental",
+      allowLocationReset: true,
+      sessionContext: {
+        selectedCity: "istanbul",
+        istanbul_side: "european",
+        locationSelectionConfirmed: true,
+        sideSelectionConfirmed: true,
+        pendingLocationExpansion: true,
+      },
+    });
+    expect(result).not.toBeNull();
     expect(result!.sessionContext.selectedCity).toBeUndefined();
     expect(result!.sessionContext.istanbul_side).toBeUndefined();
-    expect(result!.sessionContext.lastEmptyMatchKey).toBeUndefined();
+    expect(result!.sessionContext.locationSelectionConfirmed).toBeUndefined();
     expect(result!.sessionContext.pendingCitySelection).toBe(true);
   });
 

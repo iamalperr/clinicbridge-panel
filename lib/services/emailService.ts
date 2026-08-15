@@ -116,23 +116,28 @@ export async function sendPatientLeadApprovalEmail({ agencyId, leadId, customMes
       return false;
     }
 
+    const { resolveAgencyBrand } = await import("@/lib/agency/resolveAgencyBrand");
+    const agencySnapForBrand = await adminDb!.collection("agencies").doc(agencyId).get();
+    const brand = resolveAgencyBrand(agencySnapForBrand.data() || {});
+
     const htmlContent = `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.6;">
         <h2 style="color: #0d9488;">Tedavi Talebiniz Hakkında</h2>
         <p>Sayın ${lead.patientName},</p>
-        <p>FeelinHealthy platformu üzerinden <strong>${lead.clinicName || "kliniğimiz"}</strong> için oluşturduğunuz tedavi talebi başarıyla tarafımıza ulaşmıştır.</p>
+        <p>${brand.displayName} platformu üzerinden <strong>${lead.clinicName || "kliniğimiz"}</strong> için oluşturduğunuz tedavi talebi başarıyla tarafımıza ulaşmıştır.</p>
         
         ${customMessage ? `<div style="padding: 16px; background-color: #f8fafc; border-left: 4px solid #0d9488; margin: 20px 0;">${customMessage.replace(/\n/g, "<br>")}</div>` : ""}
         
         <p>Sağlık turizmi danışmanlarımız kısa süre içinde sizinle iletişime geçecektir.</p>
-        <p>Sağlıklı günler dileriz,<br>FeelinHealthy Ekibi</p>
+        <p>Sağlıklı günler dileriz,<br>${brand.displayName} Ekibi</p>
       </div>
     `;
 
     await resend.emails.send({
-      from: "FeelinHealthy <noreply@clinicbridge-ai.com>",
+      from: brand.fromHeader,
       to: lead.patientEmail,
-      subject: `Tedavi Talebiniz Alındı - FeelinHealthy`,
+      ...(brand.replyTo ? { replyTo: brand.replyTo } : {}),
+      subject: `Tedavi Talebiniz Alındı - ${brand.displayName}`,
       html: htmlContent,
     });
 

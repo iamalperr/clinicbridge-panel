@@ -209,9 +209,11 @@ export async function processPatientNotificationJob(agencyId: string, jobId: str
         ? "en"
         : "tr";
     
-    // Resolve Agency Branding
-    const agencyName = agencyData.name || agencyData.branding?.displayName || "FeelinHealthy";
-    const replyTo = agencyData.settings?.supportEmail || agencyData.email;
+    // Resolve Agency Branding (canonical white-label)
+    const { resolveAgencyBrand } = await import("@/lib/agency/resolveAgencyBrand");
+    const brand = resolveAgencyBrand(agencyData);
+    const agencyName = brand.displayName;
+    const replyTo = brand.replyTo;
 
     const createdRaw = lead.createdAt?.toDate?.() || lead.createdAt || new Date().toISOString();
     const createdDate = new Date(createdRaw);
@@ -262,7 +264,7 @@ export async function processPatientNotificationJob(agencyId: string, jobId: str
     }
 
     const emailPayload: any = {
-      from: "ClinicBridge AI <noreply@clinicbridge-ai.com>",
+      from: brand.fromHeader,
       to: lead.patientEmail,
       subject: subject,
       html: htmlContent,

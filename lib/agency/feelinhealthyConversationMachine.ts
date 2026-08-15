@@ -287,9 +287,17 @@ export function resolveNextConversationAction(
   }
 
   const promptCtx = options.promptContext || {};
+  const rawCtx = isConversationState(stateOrCtx)
+    ? options.promptContext || {}
+    : (stateOrCtx as Record<string, any>);
+  const rematchRequested = Boolean(
+    (rawCtx as any)?.postQuoteRematchRequested === true ||
+      (promptCtx as any)?.postQuoteRematchRequested === true
+  );
 
   // Selected-clinic / quote terminal modes short-circuit discovery.
-  if (state.quoteCreated) return { kind: "quote" };
+  // Explicit post-quote rematch unlocks matching while preserving historical quote.
+  if (state.quoteCreated && !rematchRequested) return { kind: "quote" };
   if (state.assistantRole === "clinic_coordinator") {
     if (!state.intake.allComplete) {
       return buildIntakeAction(

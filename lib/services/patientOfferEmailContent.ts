@@ -20,8 +20,11 @@ export function buildPatientOfferEmailContent(params: {
   treatmentLabel: string;
   offers: PatientOfferEmailOffer[];
   customMessage?: string;
+  /** Patient-visible footer brand (agency when known). */
+  footerBrand?: string;
 }): { subject: string; html: string; text: string } {
   const { lang, agencyName, patientName, treatmentLabel, offers, customMessage } = params;
+  const footerBrand = String(params.footerBrand || agencyName || "ClinicBridge AI").trim();
   const firstName = patientName?.split(" ")[0] || (lang === "tr" ? "Değerli Hastamız" : "Dear Patient");
 
   const offerRowsHtml = offers
@@ -59,7 +62,7 @@ export function buildPatientOfferEmailContent(params: {
           <tbody>${offerRowsHtml}</tbody>
         </table>
         <p style="color:#64748b;font-size:13px;">Fiyatlar tahmini olup klinik değerlendirmesine göre değişebilir. Bu bir randevu onayı değildir.</p>
-        <p style="margin-top:28px;color:#64748b;font-size:14px;">${escapeHtml(agencyName)} · ClinicBridge AI</p>
+        <p style="margin-top:28px;color:#64748b;font-size:14px;">${escapeHtml(footerBrand)}</p>
       </div>
     `;
     const text = [
@@ -73,7 +76,7 @@ export function buildPatientOfferEmailContent(params: {
       offerLinesText,
       ``,
       `Fiyatlar tahmini olup klinik değerlendirmesine göre değişebilir.`,
-      `${agencyName} · ClinicBridge AI`,
+      `${footerBrand}`,
     ]
       .filter((l) => l !== "")
       .join("\n");
@@ -99,7 +102,7 @@ export function buildPatientOfferEmailContent(params: {
         <tbody>${offerRowsHtml}</tbody>
       </table>
       <p style="color:#64748b;font-size:13px;">Prices are estimates and may change after clinical evaluation. This is not an appointment confirmation.</p>
-      <p style="margin-top:28px;color:#64748b;font-size:14px;">${escapeHtml(agencyName)} · ClinicBridge AI</p>
+      <p style="margin-top:28px;color:#64748b;font-size:14px;">${escapeHtml(footerBrand)}</p>
     </div>
   `;
   const text = [
@@ -113,7 +116,7 @@ export function buildPatientOfferEmailContent(params: {
     offerLinesText,
     ``,
     `Prices are estimates and may change after clinical evaluation.`,
-    `${agencyName} · ClinicBridge AI`,
+    `${footerBrand}`,
   ]
     .filter((l) => l !== "")
     .join("\n");

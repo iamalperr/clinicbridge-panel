@@ -33,11 +33,32 @@ import {
   getAgencySelectedCity,
   type AgencySessionState,
 } from "@/lib/agency/agencySessionState";
+import { resolveClientCatchFailure } from "@/lib/agency/patientFacingErrors";
+import { resolveAgencyBrand } from "@/lib/agency/resolveAgencyBrand";
 
 const GUEST_CLINIC_LIMIT =
   FEELINHEALTHY_CONFIG.guestQuoteClinicSelectionLimit ||
   FEELINHEALTHY_CONFIG.maxGuestClinics ||
   2;
+
+function clientCatchReply(
+  lang: string,
+  operation: "chat" | "quote" | "lead" | "consent" | "selection" | "unknown",
+  agency: { name?: string; website?: string; contactEmail?: string; settings?: any; branding?: any } | null
+): string {
+  const brand = resolveAgencyBrand({
+    name: agency?.name || "FeelinHealthy",
+    website: agency?.website || "https://www.feelinhealthy.com",
+    contactEmail: agency?.contactEmail,
+    settings: agency?.settings,
+    branding: agency?.branding,
+  });
+  return resolveClientCatchFailure({
+    locale: lang,
+    operation,
+    brand,
+  }).reply;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -705,6 +726,12 @@ export default function FeelinHealthyLive() {
         if (replyMsg.text || replyMsg.type === "email_request") {
           setAiMsgs((p) => [...p, replyMsg]);
         }
+        const followUps = Array.isArray(data.followUpReplies) ? data.followUpReplies : [];
+        for (const fu of followUps) {
+          const text = String(fu?.text || fu?.content || "").trim();
+          if (!text) continue;
+          setAiMsgs((p) => [...p, { role: "ai", text, type: fu?.type || "text" }]);
+        }
       }
 
       if (data.sessionContext) {
@@ -831,9 +858,15 @@ export default function FeelinHealthyLive() {
       }
     } catch (err) {
       console.error("[CB-DEMO] ERROR:", err);
+      const op =
+        payload?.action === "request_quote" || payload?.type === "clinic_selection_complete"
+          ? "quote"
+          : payload?.type === "clinic_selection_update"
+            ? "selection"
+            : "unknown";
       setAiMsgs((p) => [...p, {
         role: "ai",
-        text: lang === "tr" ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin." : "We're experiencing a technical issue. Please try again."
+        text: clientCatchReply(lang, op as any, agency)
       }]);
     } finally {
       if (isClinicCardAction) {
@@ -901,7 +934,7 @@ export default function FeelinHealthyLive() {
       console.error("[CB-DEMO] ERROR:", err);
       setAiMsgs((p) => [...p, {
         role: "ai",
-        text: lang === "tr" ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin." : "We're experiencing a technical issue. Please try again."
+        text: clientCatchReply(lang, "unknown", agency)
       }]);
     } finally {
       setAiTyping(false);
@@ -964,7 +997,7 @@ export default function FeelinHealthyLive() {
       console.error("[CB-DEMO] ERROR:", err);
       setAiMsgs((p) => [...p, {
         role: "ai",
-        text: lang === "tr" ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin." : "We're experiencing a technical issue. Please try again."
+        text: clientCatchReply(lang, "unknown", agency)
       }]);
     } finally {
       setAiTyping(false);
@@ -1018,7 +1051,7 @@ export default function FeelinHealthyLive() {
       console.error("[CB-DEMO] ERROR:", err);
       setAiMsgs((p) => [...p, {
         role: "ai",
-        text: lang === "tr" ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin." : "We're experiencing a technical issue. Please try again."
+        text: clientCatchReply(lang, "unknown", agency)
       }]);
     } finally {
       setAiTyping(false);
@@ -1064,7 +1097,7 @@ export default function FeelinHealthyLive() {
       console.error("[CB-DEMO] ERROR:", err);
       setAiMsgs((p) => [...p, {
         role: "ai",
-        text: lang === "tr" ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin." : "We're experiencing a technical issue. Please try again."
+        text: clientCatchReply(lang, "unknown", agency)
       }]);
     } finally {
       setAiTyping(false);
@@ -1118,6 +1151,12 @@ export default function FeelinHealthyLive() {
         conversionData: data.conversionData,
       };
       setAiMsgs((p) => [...p, replyMsg]);
+      const followUps = Array.isArray(data.followUpReplies) ? data.followUpReplies : [];
+      for (const fu of followUps) {
+        const text = String(fu?.text || fu?.content || "").trim();
+        if (!text) continue;
+        setAiMsgs((p) => [...p, { role: "ai", text, type: fu?.type || "text" }]);
+      }
       if (data.sessionContext) commitSessionCtx(data.sessionContext);
       if (data.shouldCreateNewLead) {
         const nextCtx = data.sessionContext || sessionCtxRef.current;
@@ -1131,9 +1170,7 @@ export default function FeelinHealthyLive() {
       console.error("[CB-DEMO] ERROR:", err);
       setAiMsgs((p) => [...p, {
         role: "ai",
-        text: lang === "tr"
-          ? "Şu an teknik bir sorun yaşıyoruz. Lütfen tekrar deneyin."
-          : "We're experiencing a technical issue. Please try again."
+        text: clientCatchReply(lang, "chat", agency)
       }]);
     } finally {
       setAiTyping(false);

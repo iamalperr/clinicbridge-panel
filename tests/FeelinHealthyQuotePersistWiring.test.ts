@@ -61,8 +61,10 @@ describe("FeelinHealthy quote request persistence wiring", () => {
 
   it("demo uses structured clinic card actions (not shared lead_capture path)", () => {
     expect(demoSource).toContain('action: "select_clinic"');
-    expect(demoSource).toContain('action: "view_clinic_details"');
     expect(demoSource).toContain('action: "request_quote"');
+    // view_clinic_details button intentionally removed from recommendation cards
+    // (2a171b1). Profile links on the marketplace directory remain separate.
+    expect(demoSource).not.toMatch(/action:\s*"view_clinic_details"/);
     expect(demoSource).not.toContain('type: "lead_capture"');
   });
 
