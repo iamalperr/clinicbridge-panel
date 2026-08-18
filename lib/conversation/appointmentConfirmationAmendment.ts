@@ -16,6 +16,12 @@ import {
   type AppointmentDateTimeValidationResult,
 } from "@/lib/appointment/appointmentDateTimePolicy";
 import type { WeeklySchedule } from "@/lib/skills/ClinicWorkingHoursResolver";
+import {
+  applyDoctorPreferenceToDraft,
+  looksLikeDoctorPreference,
+  type ClinicDoctorMatchInput,
+  type RequestedDoctorPreference,
+} from "@/lib/appointment/requestedDoctorPreference";
 
 export type ConfirmationAmendmentField =
   | "preferredDate"
@@ -23,7 +29,9 @@ export type ConfirmationAmendmentField =
   | "email"
   | "phone"
   | "fullName"
-  | "treatment";
+  | "treatment"
+  | "requestedDoctor"
+  | "notes";
 
 export type AppointmentDraftLike = {
   patientName?: string;
@@ -34,6 +42,8 @@ export type AppointmentDraftLike = {
   requestedTime?: string | null;
   preferredDateDisplay?: string;
   requestedWeekday?: string;
+  requestedDoctor?: RequestedDoctorPreference;
+  notes?: string;
 };
 
 export type ConfirmationAmendmentOutcome =
@@ -50,6 +60,8 @@ export type ConfirmationAmendmentResult = {
   validationReason?: string;
   message?: string;
   suggestions?: AppointmentDateTimeValidationResult["suggestions"];
+  doctorAck?: string;
+  doctorClarification?: string;
 };
 
 const PRESERVED_FIELD_KEYS = [
@@ -59,6 +71,8 @@ const PRESERVED_FIELD_KEYS = [
   "requestedService",
   "requestedDate",
   "requestedTime",
+  "requestedDoctor",
+  "notes",
 ] as const;
 
 const DATETIME_AMENDMENT_RE =
@@ -115,10 +129,15 @@ function preservedFieldList(
     phone: "patientPhone",
     fullName: "patientName",
     treatment: "requestedService",
+    requestedDoctor: "requestedDoctor",
+    notes: "notes",
   };
   const changedKeys = new Set(amended.map((f) => mapped[f]));
   return PRESERVED_FIELD_KEYS.filter((key) => {
     if (changedKeys.has(key)) return false;
+    if (key === "requestedDoctor") {
+      return JSON.stringify(before.requestedDoctor || null) === JSON.stringify(after.requestedDoctor || null);
+    }
     return String(before[key] ?? "") === String(after[key] ?? "");
   });
 }
@@ -144,6 +163,7 @@ export function applyConfirmationAmendment(params: {
   now?: Date;
   workingHours?: WeeklySchedule | null;
   is24_7?: boolean;
+  doctors?: ClinicDoctorMatchInput[];
 }): ConfirmationAmendmentResult {
   const locale = params.locale || "tr";
   const original = cloneDraft(params.draft);
@@ -168,7 +188,11 @@ export function applyConfirmationAmendment(params: {
   }
 
   const question = IntentRouter.isInformationalQuestion(raw.toLowerCase());
-  if (question.isQuestion) {
+  if (
+    question.isQuestion &&
+    !looksLikeDateTimeAmendment(raw) &&
+    !looksLikeDoctorPreference(raw)
+  ) {
     return {
       outcome: "none",
       nextDraft: original,
@@ -183,8 +207,14 @@ export function applyConfirmationAmendment(params: {
       : SlotExtractor.extractSlots(raw, {}, locale, params.clinicTimeZone || "Europe/Istanbul").extracted;
 
   const amendedFields = detectConfirmationAmendmentFields(extracted);
+  const doctorPref = applyDoctorPreferenceToDraft({
+    draft: original,
+    message: raw,
+    doctors: params.doctors || [],
+    locale,
+  });
 
-  if (amendedFields.length === 0) {
+  if (amendedFields.length === 0 && !doctorPref.changed && !doctorPref.clarification) {
     if (looksLikeDateTimeAmendment(raw)) {
       return {
         outcome: "unparsed_datetime",
@@ -203,7 +233,15 @@ export function applyConfirmationAmendment(params: {
     };
   }
 
-  const nextDraft = applySlotsToDraft(original, extracted);
+  const nextDraft = applySlotsToDraft(
+    { ...original, requestedDoctor: doctorPref.draft.requestedDoctor, notes: doctorPref.draft.notes },
+    extracted
+  );
+  if (doctorPref.changed) {
+    if (doctorPref.outcome.kind === "matched") amendedFields.push("requestedDoctor");
+    if (doctorPref.outcome.kind === "unresolved_note") amendedFields.push("notes");
+  }
+
   const dateOrTimeChanged =
     amendedFields.includes("preferredDate") || amendedFields.includes("preferredTime");
 
@@ -242,5 +280,8 @@ export function applyConfirmationAmendment(params: {
     nextDraft,
     amendedFields,
     preservedFields: preservedFieldList(original, nextDraft, amendedFields),
+    doctorAck: doctorPref.ack,
+    doctorClarification: doctorPref.clarification,
+    message: doctorPref.clarification,
   };
 }

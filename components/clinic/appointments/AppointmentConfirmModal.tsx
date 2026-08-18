@@ -213,6 +213,18 @@ export default function AppointmentConfirmModal({
               </span>
             </div>
           ) : null}
+          {appointment.requestedDoctor?.name ? (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 13, color: UI_COLORS.textMuted }}>Talep Edilen Doktor:</span>
+              <span style={{ fontSize: 13, color: UI_COLORS.textPrimary }}>{appointment.requestedDoctor.name}</span>
+            </div>
+          ) : null}
+          {appointment.notes ? (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+              <span style={{ fontSize: 13, color: UI_COLORS.textMuted, flexShrink: 0 }}>Randevu Notu:</span>
+              <span style={{ fontSize: 13, color: UI_COLORS.textPrimary, textAlign: "right" }}>{appointment.notes}</span>
+            </div>
+          ) : null}
           {patientEmail && (
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontSize: 13, color: UI_COLORS.textMuted }}>Bildirim E-postası:</span>

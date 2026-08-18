@@ -16,6 +16,8 @@ export interface AppointmentSummaryInput {
   preferredTimeDisplay?: string | null;
   visitType?: string | null;
   clinicName?: string | null;
+  requestedDoctor?: { id?: string; name: string } | null;
+  notes?: string | null;
 }
 
 export interface LocaleResolutionParams {
@@ -531,6 +533,32 @@ export function buildAppointmentReviewMessage(
 
   const rawTime = draft.preferredTimeDisplay || draft.requestedTime || "-";
   const localizedTime = formatLocalizedTime(rawTime, locale);
+  const preferredDoctor = String(draft.requestedDoctor?.name || "").trim();
+  const noteText = String(draft.notes || "").trim();
+  const showNote =
+    Boolean(noteText) &&
+    !(preferredDoctor && noteText.toLocaleLowerCase("tr-TR").includes(preferredDoctor.toLocaleLowerCase("tr-TR")));
+
+  const doctorLineEn = preferredDoctor
+    ? `Preferred doctor: ${preferredDoctor}\n(The clinic will confirm availability when reviewing the request.)\n`
+    : "";
+  const noteLineEn = showNote ? `Appointment note: ${noteText}\n` : "";
+  const doctorLineTr = preferredDoctor
+    ? `Talep edilen doktor: ${preferredDoctor}\n(Müsaitliği klinik, talebi değerlendirirken teyit edecektir.)\n`
+    : "";
+  const noteLineTr = showNote ? `Randevu notu: ${noteText}\n` : "";
+  const doctorLineDe = preferredDoctor
+    ? `Gewünschter Arzt: ${preferredDoctor}\n(Die Klinik bestätigt die Verfügbarkeit bei der Prüfung der Anfrage.)\n`
+    : "";
+  const noteLineDe = showNote ? `Terminhinweis: ${noteText}\n` : "";
+  const doctorLineFr = preferredDoctor
+    ? `Médecin souhaité: ${preferredDoctor}\n(La clinique confirmera la disponibilité lors de l'examen de la demande.)\n`
+    : "";
+  const noteLineFr = showNote ? `Note de rendez-vous: ${noteText}\n` : "";
+  const doctorLineAr = preferredDoctor
+    ? `الطبيب المطلوب: ${preferredDoctor}\n(ستؤكد العيادة التوفر عند مراجعة الطلب.)\n`
+    : "";
+  const noteLineAr = showNote ? `ملاحظة الموعد: ${noteText}\n` : "";
 
   if (isEn) {
     return (
@@ -539,9 +567,11 @@ export function buildAppointmentReviewMessage(
       `Phone: ${phone}\n` +
       `Email: ${email}\n` +
       `Treatment: ${treatment}\n` +
+      doctorLineEn +
       `Preferred date: ${localizedDate}\n` +
-      `Preferred time: ${localizedTime}\n\n` +
-      `Would you like me to submit this preliminary appointment request to the clinic for review?`
+      `Preferred time: ${localizedTime}\n` +
+      noteLineEn +
+      `\nWould you like me to submit this preliminary appointment request to the clinic for review?`
     );
   }
 
@@ -552,9 +582,11 @@ export function buildAppointmentReviewMessage(
       `Telefon: ${phone}\n` +
       `E-Mail: ${email}\n` +
       `Behandlung: ${treatment}\n` +
+      doctorLineDe +
       `Bevorzugtes Datum: ${localizedDate}\n` +
-      `Bevorzugte Uhrzeit: ${localizedTime}\n\n` +
-      `Möchten Sie, dass ich diese vorläufige Terminanfrage zur Überprüfung an die Klinik weiterleite?`
+      `Bevorzugte Uhrzeit: ${localizedTime}\n` +
+      noteLineDe +
+      `\nMöchten Sie, dass ich diese vorläufige Terminanfrage zur Überprüfung an die Klinik weiterleite?`
     );
   }
 
@@ -565,9 +597,11 @@ export function buildAppointmentReviewMessage(
       `Téléphone: ${phone}\n` +
       `E-mail: ${email}\n` +
       `Traitement: ${treatment}\n` +
+      doctorLineFr +
       `Date souhaitée: ${localizedDate}\n` +
-      `Heure souhaitée: ${localizedTime}\n\n` +
-      `Souhaitez-vous que je transmette cette demande de rendez-vous préliminaire à la clinique pour examen ?`
+      `Heure souhaitée: ${localizedTime}\n` +
+      noteLineFr +
+      `\nSouhaitez-vous que je transmette cette demande de rendez-vous préliminaire à la clinique pour examen ?`
     );
   }
 
@@ -578,9 +612,11 @@ export function buildAppointmentReviewMessage(
       `الهاتف: ${phone}\n` +
       `البريد الإلكتروني: ${email}\n` +
       `العلاج: ${treatment}\n` +
+      doctorLineAr +
       `التاريخ المفضل: ${localizedDate}\n` +
-      `الوقت المفضل: ${localizedTime}\n\n` +
-      `هل تود أن أقوم بإرسال طلب الموعد المبدئي هذا إلى العيادة لمراجعته؟`
+      `الوقت المفضل: ${localizedTime}\n` +
+      noteLineAr +
+      `\nهل تود أن أقوم بإرسال طلب الموعد المبدئي هذا إلى العيادة لمراجعته؟`
     );
   }
 
@@ -591,9 +627,11 @@ export function buildAppointmentReviewMessage(
     `Telefon: ${phone}\n` +
     `E-posta: ${email}\n` +
     `Hizmet: ${treatment}\n` +
+    doctorLineTr +
     `Tercih Edilen Tarih: ${localizedDate}\n` +
-    `Tercih Edilen Saat: ${localizedTime}\n\n` +
-    `Bu bilgilerle ön randevu talebinizi kliniğin değerlendirmesine iletmemi onaylıyor musunuz?`
+    `Tercih Edilen Saat: ${localizedTime}\n` +
+    noteLineTr +
+    `\nBu bilgilerle ön randevu talebinizi kliniğin değerlendirmesine iletmemi onaylıyor musunuz?`
   );
 }
 

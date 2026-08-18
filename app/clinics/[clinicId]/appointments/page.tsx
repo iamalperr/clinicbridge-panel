@@ -440,6 +440,16 @@ export default function AppointmentsPage({ params }: PageProps) {
                             <Stethoscope size={16} color={UI_COLORS.textMuted} />
                             {displayService}
                           </div>
+                          {apt.requestedDoctor?.name ? (
+                            <div style={{ marginTop: 4, fontSize: 12, color: UI_COLORS.textMuted }}>
+                              Talep Edilen Doktor: {apt.requestedDoctor.name}
+                            </div>
+                          ) : null}
+                          {apt.notes ? (
+                            <div style={{ marginTop: 4, fontSize: 12, color: UI_COLORS.textMuted }}>
+                              Randevu Notu: {apt.notes}
+                            </div>
+                          ) : null}
                         </td>
                         <td style={{ padding: "16px 24px" }}>
                           {isConfirmed ? (

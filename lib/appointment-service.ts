@@ -7,6 +7,7 @@ import {
   validateAppointmentDateTime,
 } from "@/lib/appointment/appointmentDateTimePolicy";
 import { ClinicWorkingHoursResolver } from "@/lib/skills/ClinicWorkingHoursResolver";
+import { toPersistedRequestedDoctor } from "@/lib/appointment/requestedDoctorPreference";
 
 export interface CreateAppointmentPayload {
   clinicId: string;
@@ -21,6 +22,10 @@ export interface CreateAppointmentPayload {
   preferredTimeStart?: string;
   preferredTimeEnd?: string;
   notes?: string;
+  requestedDoctor?: {
+    id?: string;
+    name: string;
+  };
   source: string;
   status: string;
   createdBy: string;
@@ -158,6 +163,8 @@ export async function createAppointmentRecord(payload: CreateAppointmentPayload)
     if (payload.notificationChannelToSave) newAppointment.notificationChannel = payload.notificationChannelToSave;
     if (payload.clinicTimeZone) newAppointment.clinicTimeZone = payload.clinicTimeZone;
     if (payload.startsAtUtc) newAppointment.startsAtUtc = payload.startsAtUtc;
+    const persistedDoctor = toPersistedRequestedDoctor(payload.requestedDoctor);
+    if (persistedDoctor) newAppointment.requestedDoctor = persistedDoctor;
 
     await appointmentRef.set(newAppointment);
     
@@ -269,6 +276,7 @@ export async function sendClinicNewAppointmentNotification(appointment: Partial<
       preferredTimeEnd: appointment.preferredTimeEnd,
       appointmentId: appointment.id!,
       notes: appointment.notes,
+      requestedDoctor: appointment.requestedDoctor,
       source: appointment.source!,
       status: appointment.status!
     });

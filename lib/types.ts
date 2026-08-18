@@ -391,6 +391,11 @@ export interface Appointment {
   appointmentDateTime?: string;
   status: "pending" | "PENDING_REVIEW" | "confirmed" | "cancelled" | "completed";
   source: "ai_chat" | "ai_chatbot" | "AI Chatbot" | "manual" | "widget" | string;
+  /** Optional patient-requested doctor. Never required; omit on legacy documents. */
+  requestedDoctor?: {
+    id?: string;
+    name: string;
+  };
   notes?: string;
   originalText?: string;
   rawConversationSummary?: string;

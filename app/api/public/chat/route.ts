@@ -36,6 +36,11 @@ import {
   resolveConversationLocaleWithMeta,
   applyConfirmationAmendment,
 } from "@/lib/conversation";
+import {
+  applyDoctorPreferenceToDraft,
+  mapClinicDoctorRecords,
+  type ClinicDoctorMatchInput,
+} from "@/lib/appointment/requestedDoctorPreference";
 import { RequestTimer } from "@/lib/performance/requestTimer";
 import {
   getCachedClinicRuntime,
@@ -50,6 +55,36 @@ const CORS = {
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS });
+}
+
+/* ── Active clinic doctors for appointment requested-doctor matching ── */
+async function fetchClinicDoctorMatchInputs(params: {
+  adminDb: any;
+  clinicId?: string;
+  actualClinicId?: string;
+  isAgencyClinic?: boolean;
+  agencyIdForClinic?: string | null;
+}): Promise<ClinicDoctorMatchInput[]> {
+  const { adminDb, clinicId, actualClinicId, isAgencyClinic, agencyIdForClinic } = params;
+  if (!adminDb) return [];
+  const docId = actualClinicId || clinicId;
+  if (!docId) return [];
+  try {
+    const snap =
+      isAgencyClinic && agencyIdForClinic
+        ? await adminDb
+            .collection("agencies")
+            .doc(agencyIdForClinic)
+            .collection("clinics")
+            .doc(docId)
+            .collection("doctors")
+            .where("is_active", "==", true)
+            .get()
+        : await adminDb.collection("clinics").doc(docId).collection("doctors").where("is_active", "==", true).get();
+    return mapClinicDoctorRecords(snap.docs.map((d: any) => ({ id: d.id, ...d.data() })));
+  } catch {
+    return [];
+  }
 }
 
 /* ── Client-side Firebase (for READS only — reads work without auth in most rules) ── */
@@ -245,6 +280,11 @@ export interface AppointmentData {
   timezone?: string;
   originalText: string;
   emailValidationFails?: number;
+  requestedDoctor?: {
+    id?: string;
+    name: string;
+  };
+  notes?: string;
 }
 
 /* ── Resolve relative/weekday date expressions to ISO date ──────────── */
@@ -854,7 +894,8 @@ async function logConversation(params: {
         treatmentType: params.apptData.requestedService || "",
         preferredDate: params.apptData.requestedDate || "",
         preferredTime: params.apptData.requestedTime || "",
-        notes: ""
+        notes: params.apptData.notes || "",
+        requestedDoctor: params.apptData.requestedDoctor || undefined
       };
       activeIntent = "appointment";
       appointmentStatus = "readyToCreate";
@@ -1525,7 +1566,8 @@ export async function POST(req: Request) {
                  preferredTimePeriod: loadedDraft.preferredTimePeriod,
                  preferredTimeStart: loadedDraft.preferredTimeStart,
                  preferredTimeEnd: loadedDraft.preferredTimeEnd,
-                 notes: "",
+                 notes: loadedDraft.notes || "",
+                 requestedDoctor: loadedDraft.requestedDoctor,
                  source: "ai_chatbot",
                  status: "PENDING_REVIEW",
                  createdBy: "ai_assistant",
@@ -1645,6 +1687,19 @@ export async function POST(req: Request) {
     if (appointmentState !== "AWAITING_CONFIRMATION") {
       appointmentDraft = safeMergeDraft(appointmentDraft, pendingAppointmentData);
     }
+
+    let clinicDoctorsForMatch: ClinicDoctorMatchInput[] | null = null;
+    const getClinicDoctorsForMatch = async () => {
+      if (clinicDoctorsForMatch) return clinicDoctorsForMatch;
+      clinicDoctorsForMatch = await fetchClinicDoctorMatchInputs({
+        adminDb,
+        clinicId,
+        actualClinicId,
+        isAgencyClinic,
+        agencyIdForClinic,
+      });
+      return clinicDoctorsForMatch;
+    };
 
 
 
@@ -1785,6 +1840,7 @@ export async function POST(req: Request) {
       });
 
       perf.start("confirmation_amendment");
+      const doctors = await getClinicDoctorsForMatch();
       const amendment = applyConfirmationAmendment({
         message,
         locale: conversationLocale,
@@ -1797,11 +1853,14 @@ export async function POST(req: Request) {
           requestedTime: appointmentDraft.requestedTime,
           preferredDateDisplay: appointmentDraft.preferredDateDisplay,
           requestedWeekday: (appointmentDraft as any).requestedWeekday,
+          requestedDoctor: appointmentDraft.requestedDoctor,
+          notes: appointmentDraft.notes,
         },
         clinicTimeZone,
         now: new Date(),
         workingHours: hoursResolution.schedule,
         is24_7: hoursResolution.is24_7,
+        doctors,
       });
       perf.end("confirmation_amendment", {
         outcome: amendment.outcome,
@@ -1843,9 +1902,12 @@ export async function POST(req: Request) {
           clinicName,
           timeZone: clinicTimeZone,
         });
+        const reply = amendment.doctorClarification
+          ? `${amendment.doctorClarification}\n\n${reviewMsg}`
+          : reviewMsg;
         return respondWithVisibleReply({
           responseType: "CHAT_REPLY",
-          reply: reviewMsg,
+          reply,
           pendingAppointmentData: appointmentDraft,
         }, basePersist({
           appointmentState: "AWAITING_CONFIRMATION",
@@ -1973,6 +2035,55 @@ export async function POST(req: Request) {
           appointmentDraft.requestedService = conversationIntent.entities.treatment;
         }
         console.log(`[INTENT_ROUTER] Appointment slots updated:`, conversationIntent.entities);
+      }
+
+      if (appointmentGate.allowed) {
+        const doctors = await getClinicDoctorsForMatch();
+        const doctorPref = applyDoctorPreferenceToDraft({
+          draft: {
+            requestedDoctor: appointmentDraft.requestedDoctor,
+            notes: appointmentDraft.notes,
+          },
+          message,
+          doctors,
+          locale: conversationLocale,
+        });
+        appointmentDraft.requestedDoctor = doctorPref.draft.requestedDoctor;
+        appointmentDraft.notes = doctorPref.draft.notes;
+        if (doctorPref.clarification && !ConversationStateEngine.getMissingSlots({
+          treatment: appointmentDraft.requestedService || undefined,
+          preferredDate: appointmentDraft.requestedDate || undefined,
+          preferredTime: appointmentDraft.requestedTime || undefined,
+          fullName: appointmentDraft.patientName || undefined,
+          phone: appointmentDraft.patientPhone || undefined,
+          email: appointmentDraft.patientEmail || undefined
+        }).length) {
+          await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, {
+            processedMessageIds: [...processedMessageIds, messageId],
+            conversationLocale,
+          });
+          const reviewMsg = buildAppointmentReviewMessage({
+            locale: conversationLocale,
+            appointmentData: appointmentDraft,
+            clinicName
+          });
+          return respondWithVisibleReply({
+            responseType: "CHAT_REPLY",
+            reply: `${doctorPref.clarification}\n\n${reviewMsg}`,
+            pendingAppointmentData: appointmentDraft
+          }, basePersist({ appointmentState: "AWAITING_CONFIRMATION", apptData: appointmentDraft as AppointmentData }));
+        }
+        if (doctorPref.clarification) {
+          await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, appointmentState, appointmentDraft, {
+            processedMessageIds: [...processedMessageIds, messageId],
+            conversationLocale,
+          });
+          return respondWithVisibleReply({
+            responseType: "CHAT_REPLY",
+            reply: doctorPref.clarification,
+            pendingAppointmentData: appointmentDraft
+          }, basePersist({ appointmentState }));
+        }
       }
 
       // Handle specific sub-state parsing fallbacks
@@ -3120,6 +3231,8 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       preferredTimePeriod: parsedTime.preferredTimePeriod,
       preferredTimeText: parsedTime.preferredTimeText,
       originalText:     reply,
+      requestedDoctor:  appointmentDraft.requestedDoctor,
+      notes:            appointmentDraft.notes,
     };
 
     const appointmentDataComplete = 

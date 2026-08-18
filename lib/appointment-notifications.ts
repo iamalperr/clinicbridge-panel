@@ -48,19 +48,40 @@ export interface AppointmentEmailPayload {
   preferredTimeText?: string | null;
   appointmentId: string;
   notes?: string;
+  requestedDoctor?: {
+    id?: string;
+    name: string;
+  };
   source?: string;
   status?: string;
 }
 
-export async function sendClinicAppointmentEmail(
-  payload: AppointmentEmailPayload
-): Promise<{ success: boolean; error?: string }> {
+function clinicEmailNotes(payload: AppointmentEmailPayload): string {
+  const notes = String(payload.notes || "").trim();
+  if (!notes) return "";
+  const doctorName = payload.requestedDoctor?.name;
+  if (doctorName) {
+    const fold = (v: string) =>
+      v
+        .toLocaleLowerCase("tr-TR")
+        .replace(/ı/g, "i")
+        .replace(/ğ/g, "g")
+        .replace(/ü/g, "u")
+        .replace(/ş/g, "s")
+        .replace(/ö/g, "o")
+        .replace(/ç/g, "c");
+    if (fold(notes).includes(fold(doctorName))) return "";
+  }
+  return notes;
+}
+
+function clinicEmailTimeFields(payload: AppointmentEmailPayload): { timeLabel: string; timeValue: string } {
   let timeLabel = "Tercih Edilen Saat";
   let timeValue = payload.requestedTime || "Saat belirtilmedi";
   if (payload.preferredTimeText && payload.preferredTimeText.toLowerCase() !== "belirtilmedi" && payload.preferredTimeText.toLowerCase() !== "belirtilmemiş") {
     timeValue = payload.preferredTimeText;
   }
-  
+
   if (payload.preferredTimePeriod) {
     timeLabel = "Tercih Edilen Zaman";
     const periodMap: Record<string, string> = {
@@ -74,6 +95,12 @@ export async function sendClinicAppointmentEmail(
     timeLabel = "Tercih Edilen Saat Aralığı";
     timeValue = `${payload.preferredTimeStart} - ${payload.preferredTimeEnd}`;
   }
+  return { timeLabel, timeValue };
+}
+
+/** Testable clinic-notification HTML. Optional doctor/note rows are omitted when empty. */
+export function buildClinicAppointmentRequestEmailHtml(payload: AppointmentEmailPayload): string {
+  const { timeLabel, timeValue } = clinicEmailTimeFields(payload);
 
   const sourceMap: Record<string, string> = {
     manual: "Manuel",
@@ -82,15 +109,17 @@ export async function sendClinicAppointmentEmail(
     api: "API"
   };
   const displaySource = payload.source ? (sourceMap[payload.source] || payload.source) : "AI Chatbot";
-  
+
   const statusMap: Record<string, string> = {
     "PENDING_REVIEW": "Ön Değerlendirme Bekliyor",
     "pending": "Bekliyor",
     "confirmed": "Onaylandı"
   };
   const displayStatus = payload.status ? (statusMap[payload.status] || payload.status) : "Ön Değerlendirme Bekliyor";
+  const requestedDoctorName = String(payload.requestedDoctor?.name || "").trim();
+  const notes = clinicEmailNotes(payload);
 
-  const html = `
+  return `
     <div style="font-family:sans-serif;max-width:560px;margin:0 auto;line-height:1.6;">
       <h2 style="color:#6366f1">Yeni Randevu Talebi - ClinicBridge AI</h2>
       <p>Merhaba,</p>
@@ -101,12 +130,13 @@ export async function sendClinicAppointmentEmail(
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Telefon</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.patientPhone}</td></tr>
         ${payload.patientEmail ? `<tr><td style="padding:10px;background:#f8fafc;font-weight:600">E-posta</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.patientEmail}</td></tr>` : ''}
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Hizmet / İşlem</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedService}</td></tr>
+        ${requestedDoctorName ? `<tr><td style="padding:10px;background:#f8fafc;font-weight:600">Talep Edilen Doktor</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${requestedDoctorName}</td></tr>` : ''}
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Tercih Edilen Tarih</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.requestedDate}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">${timeLabel}</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${timeValue}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Kaynak</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${displaySource}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Durum</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${displayStatus}</td></tr>
         <tr><td style="padding:10px;background:#f8fafc;font-weight:600">Randevu ID</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.appointmentId}</td></tr>
-        ${payload.notes ? `<tr><td style="padding:10px;background:#f8fafc;font-weight:600">Notlar</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${payload.notes}</td></tr>` : ''}
+        ${notes ? `<tr><td style="padding:10px;background:#f8fafc;font-weight:600">Randevu Notu</td><td style="padding:10px;border-bottom:1px solid #e2e8f0">${notes}</td></tr>` : ''}
       </table>
       <p style="color:#64748b;font-size:14px">
         Lütfen <a href="https://app.clinicbridge-ai.com" style="color:#6366f1">ClinicBridge panelinizden</a> randevu talebini kontrol ediniz.
@@ -115,6 +145,12 @@ export async function sendClinicAppointmentEmail(
       <p style="color:#94a3b8;font-size:12px">ClinicBridge AI</p>
     </div>
   `;
+}
+
+export async function sendClinicAppointmentEmail(
+  payload: AppointmentEmailPayload
+): Promise<{ success: boolean; error?: string }> {
+  const html = buildClinicAppointmentRequestEmailHtml(payload);
 
   let allSuccess = true;
   let lastError: string | undefined;
