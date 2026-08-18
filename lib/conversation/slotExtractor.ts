@@ -473,6 +473,14 @@ export class SlotExtractor {
         slots.preferredWeekday = dateRes.weekday;
         return { isCorrection: true, slotKey: "preferredDate", slots };
       }
+
+      const timeRes = this.parseTime(targetPhrase, targetPhrase.toLowerCase());
+      if (timeRes) {
+        slots.preferredTime = timeRes.time;
+        slots.time = timeRes.time;
+        slots.rawTimeText = timeRes.rawText;
+        return { isCorrection: true, slotKey: "preferredTime", slots };
+      }
     }
 
     return { isCorrection: false, slots: {} };
@@ -722,9 +730,21 @@ export class SlotExtractor {
       return { time: `${String(h).padStart(2, "0")}:${m}`, rawText: exactMatch[0], timePreference: "specific" };
     }
 
-    // Exact hour: "saat 14", "saat 2'de", "at 2 PM", "at 14:00"
+    // Hour + meridiem without minutes: "12pm", "12 pm", "9am", "9 a.m."
+    // Same 12-hour rules as ClinicWorkingHoursResolver.normalizeTime.
+    const ampmBareMatch = raw.match(/\b(1[0-2]|0?[1-9])\s*(a\.?m\.?|p\.?m\.?)\b/i);
+    if (ampmBareMatch) {
+      let h = parseInt(ampmBareMatch[1], 10);
+      const meridiem = ampmBareMatch[2].replace(/\./g, "").toLowerCase();
+      if (meridiem === "pm" && h < 12) h += 12;
+      if (meridiem === "am" && h === 12) h = 0;
+      return { time: `${String(h).padStart(2, "0")}:00`, rawText: ampmBareMatch[0], timePreference: "specific" };
+    }
+
+    // Exact hour: "saat 14", "saat 2'de", "at 2 PM", "at 14:00", "12 o'clock"
     const hourMatch = lower.match(/\bsaat\s*([01]?\d|2[0-3])(?:\s*(?:de|da|te|ta|civarı))?\b/i) ||
-      lower.match(/\bat\s*([01]?\d|2[0-3])\s*(am|pm)?\b/i);
+      lower.match(/\bat\s*([01]?\d|2[0-3])\s*(am|pm)?\b/i) ||
+      lower.match(/\b(1[0-2]|0?[1-9])\s*o['’]?clock\b/i);
     if (hourMatch) {
       let h = parseInt(hourMatch[1], 10);
       if (hourMatch[2] && hourMatch[2].toLowerCase() === "pm" && h < 12) {

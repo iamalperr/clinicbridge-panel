@@ -33,7 +33,8 @@ import {
   formatContactResponse,
   buildAppointmentReviewMessage,
   evaluateAppointmentCollectionGate,
-  resolveConversationLocaleWithMeta
+  resolveConversationLocaleWithMeta,
+  applyConfirmationAmendment,
 } from "@/lib/conversation";
 import { RequestTimer } from "@/lib/performance/requestTimer";
 import {
@@ -1770,6 +1771,112 @@ export async function POST(req: Request) {
       }, basePersist({ appointmentState: "IDLE" }));
     }
 
+    // 2b. Confirmation-stage draft amendment (not yes/no-only).
+    // Date/time changes reuse validateAppointmentDateTime; unrelated fields stay intact.
+    if (isAwaitingConfirmation && adminDb) {
+      const clinicTzResolved = resolveClinicTimeZone(clinicData);
+      const clinicTimeZone = clinicTzResolved.confident
+        ? clinicTzResolved.timeZone
+        : "Europe/Istanbul";
+      const hoursResolution = ClinicWorkingHoursResolver.resolveClinicWorkingHours({
+        clinicId: actualClinicId || clinicId,
+        clinicData,
+        trainingDocs,
+      });
+
+      perf.start("confirmation_amendment");
+      const amendment = applyConfirmationAmendment({
+        message,
+        locale: conversationLocale,
+        draft: {
+          patientName: appointmentDraft.patientName,
+          patientPhone: appointmentDraft.patientPhone,
+          patientEmail: appointmentDraft.patientEmail,
+          requestedService: appointmentDraft.requestedService,
+          requestedDate: appointmentDraft.requestedDate,
+          requestedTime: appointmentDraft.requestedTime,
+          preferredDateDisplay: appointmentDraft.preferredDateDisplay,
+          requestedWeekday: (appointmentDraft as any).requestedWeekday,
+        },
+        clinicTimeZone,
+        now: new Date(),
+        workingHours: hoursResolution.schedule,
+        is24_7: hoursResolution.is24_7,
+      });
+      perf.end("confirmation_amendment", {
+        outcome: amendment.outcome,
+        fields: amendment.amendedFields.join(","),
+      });
+
+      console.log(JSON.stringify({
+        checkpoint: "APPT_CONFIRMATION_AMENDMENT",
+        traceId: activeTraceId,
+        conversationId: convId,
+        clinicId: actualClinicId,
+        appointmentStateBefore: "AWAITING_CONFIRMATION",
+        appointmentStateAfter: "AWAITING_CONFIRMATION",
+        detectedIntent: conversationIntent.intent,
+        amendmentFields: amendment.amendedFields,
+        outcome: amendment.outcome,
+        errorCode: amendment.validationReason || null,
+        responseGenerated: amendment.outcome !== "none",
+        responsePersisted: amendment.outcome !== "none",
+      }));
+
+      if (amendment.outcome === "applied") {
+        Object.assign(appointmentDraft, amendment.nextDraft);
+        await saveAppointmentState(
+          adminDb,
+          actualClinicId,
+          convId,
+          appointmentVersion,
+          "AWAITING_CONFIRMATION",
+          appointmentDraft,
+          {
+            processedMessageIds: [...processedMessageIds, messageId],
+            conversationLocale,
+          }
+        );
+        const reviewMsg = buildAppointmentReviewMessage({
+          locale: conversationLocale,
+          appointmentData: appointmentDraft,
+          clinicName,
+          timeZone: clinicTimeZone,
+        });
+        return respondWithVisibleReply({
+          responseType: "CHAT_REPLY",
+          reply: reviewMsg,
+          pendingAppointmentData: appointmentDraft,
+        }, basePersist({
+          appointmentState: "AWAITING_CONFIRMATION",
+          apptData: appointmentDraft as AppointmentData,
+        }));
+      }
+
+      if (amendment.outcome === "invalid" || amendment.outcome === "unparsed_datetime") {
+        await saveAppointmentState(
+          adminDb,
+          actualClinicId,
+          convId,
+          appointmentVersion,
+          "AWAITING_CONFIRMATION",
+          appointmentDraft,
+          {
+            processedMessageIds: [...processedMessageIds, messageId],
+            conversationLocale,
+          }
+        );
+        return respondWithVisibleReply({
+          success: true,
+          responseType: "appointment_date_clarification_required",
+          appointmentCreated: false,
+          reply: amendment.message,
+          suggestedTimes: amendment.suggestions,
+          pendingAppointmentData: appointmentDraft,
+        }, basePersist({ appointmentState: "AWAITING_CONFIRMATION" }));
+      }
+    }
+
     // 3. Handle Contextual Clarification Needed (e.g. When? disambiguation)
     if (conversationIntent.clarificationNeeded && conversationIntent.clarificationPrompt) {
       return respondWithVisibleReply({
@@ -2800,7 +2907,7 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
     });
 
     let reply = completion.content?.trim()
-      ?? "Üzgünüm, şu an yanıt üretemiyorum.";
+      || "Üzgünüm, şu an yanıt üretemiyorum.";
 
     // Strip markdown formatting characters (**, *, #) as requested
     reply = reply.replace(/\*\*|\*|#/g, '');

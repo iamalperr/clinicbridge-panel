@@ -12,3 +12,4 @@ export * from "./featureFlags";
 export * from "./logger";
 export * from "./formatters";
 export * from "./PendingActionManager";
+export * from "./appointmentConfirmationAmendment";
