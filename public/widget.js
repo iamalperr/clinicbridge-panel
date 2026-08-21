@@ -6,12 +6,13 @@
  *   <script src="..." data-clinic-id="CLINIC_ID" async></script>
  *   <script src="..." data-clinic-id="CLINIC_ID" data-language="tr" async></script>
  *   <script src="..." data-clinic-id="CLINIC_ID" data-language="en" data-debug="true" async></script>
+ *   <script src="..." data-clinic-id="CLINIC_ID" data-locale="en" async></script>
  *
- * What's new in v6.0:
- *   - Shadow DOM: widget is 100% isolated from host page CSS
- *   - Single resolvedLang drives ALL text (greeting, placeholder, quick actions, system strings)
- *   - data-debug="true" logs diagnostics to console
- *   - CSS reset inside shadow root prevents host-site style bleed
+ * What's new in v6.3.0:
+ *   - Host page locale (<html lang>) beats browser language
+ *   - data-language / data-locale explicit embed locale
+ *   - ClinicBridgeWidget.setLang() for SPA language switches
+ *   - Single resolvedLang drives privacy/KVKK + chrome + greetings
  */
 (function (w, d) {
   'use strict';
@@ -31,17 +32,18 @@
 
   var scriptEl  = d.currentScript || d.querySelector('script[data-clinic-id]');
   var clinicId  = (scriptEl && scriptEl.dataset.clinicId) || 'demo';
-  var embedLang = (scriptEl && scriptEl.dataset.language) || null;   // "tr" | "en" | null
+  // Explicit embed locale: data-language or data-locale ("tr" | "en")
+  var embedLang = (scriptEl && (scriptEl.dataset.language || scriptEl.dataset.locale)) || null;
   var embedTestMode = (scriptEl && scriptEl.dataset.testMode) === 'true';
   var debugMode = scriptEl && scriptEl.dataset.debug === 'true';
   var API_BASE  = 'https://app.clinicbridge-ai.com';
   var POLL_MS   = 5000;
-  var VERSION   = '6.2.0';
+  var VERSION   = '6.3.0';
   /* ── Session ID ── */
   var sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
 
   console.log('[WIDGET_VERSION]', {
-    commit: '7b4cb09',
+    commit: 'locale-host-priority',
     apiHost: API_BASE,
     widgetScriptUrl: scriptEl ? scriptEl.src : 'unknown',
     testMode: embedTestMode
@@ -55,23 +57,80 @@
     console.log.apply(console, args);
   }
 
-  /* ── Language resolver ────────────────────────────────────────────────────────
-     Priority: data-language attr → config.defaultLanguage → browser lang      */
-  function resolveLang(cfg) {
-    var source, lang;
-    if (embedLang === 'tr' || embedLang === 'en') {
-      source = 'embed-attr (data-language="' + embedLang + '")';
-      lang = embedLang;
-    } else if (cfg && cfg.defaultLanguage && cfg.defaultLanguage !== 'auto') {
-      source = 'config.defaultLanguage="' + cfg.defaultLanguage + '"';
-      lang = cfg.defaultLanguage;
-    } else {
-      var nav = (navigator.language || (navigator.languages && navigator.languages[0]) || 'en');
-      lang = nav.slice(0, 2).toLowerCase() === 'tr' ? 'tr' : 'en';
-      source = 'browser lang (' + nav + ')';
+  /* ── Language resolver (mirrors lib/widget/resolveWidgetLocale.ts) ───────────
+     Priority:
+       1. explicit user selection (session)
+       2. data-language / data-locale embed attr
+       3. host document <html lang>
+       4. browser preferred language(s)
+       5. clinic defaultLanguage (when not "auto")
+       6. product default ("en")
+  ──────────────────────────────────────────────────────────────────────────── */
+  function normalizeLocale(raw) {
+    if (!raw || typeof raw !== 'string') return null;
+    var primary = raw.trim().toLowerCase().replace(/_/g, '-').split('-')[0];
+    if (primary === 'tr' || primary === 'en') return primary;
+    return null;
+  }
+
+  function readHostDocumentLocale() {
+    try {
+      var lang = d.documentElement && d.documentElement.lang;
+      return (typeof lang === 'string' && lang.trim()) ? lang.trim() : null;
+    } catch (e) {
+      return null;
     }
-    dbg('Language resolved:', lang, '| source:', source);
-    return lang;
+  }
+
+  function readBrowserLocales() {
+    var list = [];
+    try {
+      if (navigator.languages && navigator.languages.length) {
+        for (var i = 0; i < navigator.languages.length; i++) list.push(navigator.languages[i]);
+      } else if (navigator.language) {
+        list.push(navigator.language);
+      }
+    } catch (e) { /* ignore */ }
+    return list;
+  }
+
+  /** @type {string|null} session-locked user choice inside the widget */
+  var userSelectedLang = null;
+
+  function resolveLang(cfg) {
+    var productDefault = 'en';
+
+    var user = normalizeLocale(userSelectedLang);
+    if (user) {
+      return { lang: user, source: 'user-selected' };
+    }
+
+    var explicit = normalizeLocale(embedLang);
+    if (explicit) {
+      return { lang: explicit, source: 'embed-attr (data-language/data-locale="' + embedLang + '")' };
+    }
+
+    var host = normalizeLocale(readHostDocumentLocale());
+    if (host) {
+      return { lang: host, source: 'host-document (html[lang])' };
+    }
+
+    var browsers = readBrowserLocales();
+    for (var i = 0; i < browsers.length; i++) {
+      var b = normalizeLocale(browsers[i]);
+      if (b) {
+        return { lang: b, source: 'browser (' + browsers[i] + ')' };
+      }
+    }
+
+    if (cfg && cfg.defaultLanguage && cfg.defaultLanguage !== 'auto') {
+      var clinic = normalizeLocale(cfg.defaultLanguage);
+      if (clinic) {
+        return { lang: clinic, source: 'clinic-default="' + cfg.defaultLanguage + '"' };
+      }
+    }
+
+    return { lang: productDefault, source: 'product-default' };
   }
 
   /* ── System strings (locale-aware) ── */
@@ -476,8 +535,8 @@
             '<polyline points="14 2 14 8 20 8"></polyline>',
             '<path d="M9 15l2 2 4-4"></path>',
           '</svg>',
-          '<h3 style="margin:0 0 12px;font-size:16px;color:#0f172a;font-family:inherit;">' + sys.consentTitle + '</h3>',
-          '<p style="margin:0 0 24px;font-size:13px;color:#475569;line-height:1.5;font-family:inherit;">' + 
+          '<h3 id="cbw-consent-title" style="margin:0 0 12px;font-size:16px;color:#0f172a;font-family:inherit;">' + sys.consentTitle + '</h3>',
+          '<p id="cbw-consent-text" style="margin:0 0 24px;font-size:13px;color:#475569;line-height:1.5;font-family:inherit;">' + 
             sys.consentText.replace('{LINK}', '<a href="' + ((s.privacy && s.privacy.privacyUrl) || 'https://app.clinicbridge-ai.com/kvkk') + '" target="_blank" rel="noopener noreferrer" style="color:' + s.primaryColor + ';text-decoration:underline;font-weight:500;">' + sys.consentLinkText + '</a>') + 
           '</p>',
           '<button id="cbw-consent-accept" style="width:100%;padding:12px;background:' + s.primaryColor + ';color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;margin-bottom:8px;transition:opacity .2s;font-family:inherit;">' + sys.consentAccept + '</button>',
@@ -639,6 +698,9 @@
     var chatHistory  = [];
     var pendingApptData = null;
     var currentPendingAction = null;
+    var latestSettings = null;
+    var latestRawCfg = null;
+    var hostLangObserver = null;
 
     /* Create host element (Shadow DOM container) */
     var hostEl = d.createElement('div');
@@ -647,10 +709,128 @@
 
     dbg('Boot | clinicId:', clinicId, '| embedLang:', embedLang, '| embedTestMode:', embedTestMode, '| debug:', debugMode, '| version:', VERSION);
 
+    function currentSys() {
+      return SYS[resolvedLang] || SYS.en;
+    }
+
+    function refreshLocaleDependentCopy() {
+      if (!shadow || !latestSettings) return;
+      var sys = currentSys();
+      testModeMsg = (latestSettings.testModeMessage && latestSettings.testModeMessage[resolvedLang])
+        || DEF.testModeMessage[resolvedLang]
+        || DEF.testModeMessage.en;
+      applySettings(shadow, latestSettings, resolvedLang, sys, false);
+      updateConsentCopy(shadow, latestSettings, sys);
+
+      /* Keep chrome + pre-chat copy aligned when host locale changes before interaction */
+      var hasInteracted = w.sessionStorage.getItem('cbw_hasUserInteracted_' + clinicId) === 'true';
+      if (!hasInteracted) {
+        var locale = getLocale(latestSettings, resolvedLang);
+        var quickEl = shadow.getElementById('cbw-quick');
+        if (quickEl && locale.quickActions && locale.quickActions.length > 0) {
+          var initialActions = locale.quickActions.slice(0, 4);
+          quickEl.innerHTML = initialActions.map(function (qa) {
+            return '<button class="cbw-qbtn">' + qa + '</button>';
+          }).join('');
+          quickEl.style.setProperty('display', 'flex', 'important');
+          quickEl.className = '';
+        }
+        var msgs = shadow.getElementById('cbw-msgs');
+        if (msgs) {
+          var bots = msgs.querySelectorAll('.cbw-msg.cbw-bot');
+          if (bots.length === 1) {
+            var bubble = bots[0].querySelector('.cbw-bubble-msg');
+            if (bubble) bubble.textContent = locale.greetingMessage;
+          } else if (bots.length === 0) {
+            appendMsg(shadow, locale.greetingMessage, false, sys.justNow, true);
+          }
+        }
+      }
+    }
+
+    function updateConsentCopy(shadowRoot, s, sys) {
+      var title = shadowRoot.getElementById('cbw-consent-title');
+      if (title) title.textContent = sys.consentTitle;
+      var text = shadowRoot.getElementById('cbw-consent-text');
+      if (text) {
+        var privacyUrl = (s.privacy && s.privacy.privacyUrl) || 'https://app.clinicbridge-ai.com/kvkk';
+        text.innerHTML = sys.consentText.replace(
+          '{LINK}',
+          '<a href="' + privacyUrl + '" target="_blank" rel="noopener noreferrer" style="color:' + s.primaryColor + ';text-decoration:underline;font-weight:500;">' + sys.consentLinkText + '</a>'
+        );
+      }
+      var accept = shadowRoot.getElementById('cbw-consent-accept');
+      if (accept) accept.textContent = sys.consentAccept;
+      var decline = shadowRoot.getElementById('cbw-consent-decline');
+      if (decline) decline.textContent = sys.consentDecline;
+      var online = shadowRoot.getElementById('cbw-online-text');
+      if (online) online.textContent = sys.online;
+      var powered = shadowRoot.getElementById('cbw-powered');
+      if (powered) {
+        powered.innerHTML = '<a href="https://clinicbridge-ai.com" target="_blank" rel="noopener">' + sys.powered + '</a>';
+      }
+      var closeBtn = shadowRoot.getElementById('cbw-close');
+      if (closeBtn) closeBtn.setAttribute('aria-label', sys.closeAria);
+      var launcher = shadowRoot.getElementById('cbw-launcher');
+      if (launcher) launcher.setAttribute('aria-label', sys.openAria);
+      var sendBtn = shadowRoot.getElementById('cbw-send');
+      if (sendBtn) sendBtn.setAttribute('aria-label', sys.send);
+    }
+
+    /**
+     * Apply a new UI locale. When lockUserSelection is true, host/browser
+     * changes will not override until the page reloads.
+     */
+    function applyResolvedLocale(nextLang, source, lockUserSelection) {
+      var normalized = normalizeLocale(nextLang);
+      if (!normalized) return false;
+      if (!lockUserSelection && userSelectedLang) {
+        dbg('Locale locked by user selection; ignoring', nextLang, '| source:', source);
+        return false;
+      }
+      if (normalized === resolvedLang && !lockUserSelection) {
+        dbg('Locale unchanged:', normalized, '| source:', source);
+        return false;
+      }
+      if (lockUserSelection) userSelectedLang = normalized;
+      resolvedLang = normalized;
+      dbg('Locale applied:', resolvedLang, '| source:', source, '| locked:', !!userSelectedLang);
+      refreshLocaleDependentCopy();
+      return true;
+    }
+
+    function recomputeFromHost(reason) {
+      if (userSelectedLang) return; // respect explicit in-widget lock
+      if (normalizeLocale(embedLang)) return; // explicit embed attr wins over host changes
+      var meta = resolveLang(latestRawCfg || {});
+      if (meta.lang !== resolvedLang) {
+        applyResolvedLocale(meta.lang, reason || meta.source, false);
+      }
+    }
+
+    function watchHostLocale(rawCfg) {
+      latestRawCfg = rawCfg || latestRawCfg;
+      try {
+        if (hostLangObserver) hostLangObserver.disconnect();
+        hostLangObserver = new MutationObserver(function () {
+          recomputeFromHost('host-document-mutation');
+        });
+        if (d.documentElement) {
+          hostLangObserver.observe(d.documentElement, { attributes: true, attributeFilter: ['lang'] });
+        }
+      } catch (e) {
+        dbg('Host locale observer unavailable', e && e.message);
+      }
+    }
+
     /* ── Initial fetch ── */
     fetchCfg(function (raw) {
       var s = mergeConfig(raw);
-      resolvedLang = resolveLang(raw);
+      latestRawCfg = raw;
+      latestSettings = s;
+      var localeMeta = resolveLang(raw);
+      resolvedLang = localeMeta.lang;
+      dbg('Language resolved:', resolvedLang, '| source:', localeMeta.source);
       var sys = SYS[resolvedLang] || SYS.en;
 
       isTestMode = embedTestMode || !!s.testMode;
@@ -659,10 +839,11 @@
       var consentKey = 'clinicbridge_consent_' + clinicId;
       var hasConsent = w.localStorage.getItem(consentKey) === 'true';
 
-      dbg('Config loaded:', { 
-        title: s.title, 
-        color: s.primaryColor, 
-        resolvedLang: resolvedLang, 
+      dbg('Config loaded:', {
+        title: s.title,
+        color: s.primaryColor,
+        resolvedLang: resolvedLang,
+        localeSource: localeMeta.source,
         testMode: isTestMode,
         consentAccepted: hasConsent,
         avatar: s.avatarType || 'default',
@@ -674,59 +855,64 @@
       applySettings(shadow, s, resolvedLang, sys, true);
       lastHash = JSON.stringify(raw);
 
-      wireEvents(shadow, s, resolvedLang, sys, isTestMode, testModeMsg);
+      wireEvents(shadow);
       startBubbles(shadow);
       startPolling(shadow);
+      watchHostLocale(raw);
     });
 
-    /* ── Wire events ── */
-    function wireEvents(shadow, initSettings, lang, sys, testMode, testMsg) {
-      shadow.getElementById('cbw-launcher').addEventListener('click', function () {
-        isOpen ? closePanel(shadow) : openPanel(shadow);
+    /* ── Wire events — always read current resolvedLang (not a stale closure) ── */
+    function wireEvents(shadowRoot) {
+      shadowRoot.getElementById('cbw-launcher').addEventListener('click', function () {
+        isOpen ? closePanel(shadowRoot) : openPanel(shadowRoot);
       });
-      shadow.getElementById('cbw-close').addEventListener('click', function () {
-        closePanel(shadow);
+      shadowRoot.getElementById('cbw-close').addEventListener('click', function () {
+        closePanel(shadowRoot);
       });
-      shadow.getElementById('cbw-send').addEventListener('click', function () {
-        sendFromInput(shadow, lang, sys, testMode, testMsg);
+      shadowRoot.getElementById('cbw-send').addEventListener('click', function () {
+        sendFromInput(shadowRoot);
       });
-      shadow.getElementById('cbw-input').addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') sendFromInput(shadow, lang, sys, testMode, testMsg);
+      shadowRoot.getElementById('cbw-input').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') sendFromInput(shadowRoot);
       });
-      shadow.getElementById('cbw-quick').addEventListener('click', function (e) {
+      shadowRoot.getElementById('cbw-quick').addEventListener('click', function (e) {
         var btn = e.target.closest('.cbw-qbtn');
-        if (btn) send(shadow, btn.textContent.trim(), lang, sys, testMode, testMsg);
+        if (btn) send(shadowRoot, btn.textContent.trim());
       });
-      
-      var consentAccept = shadow.getElementById('cbw-consent-accept');
+
+      var consentAccept = shadowRoot.getElementById('cbw-consent-accept');
       if (consentAccept) {
         consentAccept.addEventListener('click', function () {
           w.localStorage.setItem('clinicbridge_consent_' + clinicId, 'true');
-          shadow.getElementById('cbw-consent').style.display = 'none';
-          shadow.getElementById('cbw-chat').style.display = 'flex';
-          var inp = shadow.getElementById('cbw-input');
+          shadowRoot.getElementById('cbw-consent').style.display = 'none';
+          shadowRoot.getElementById('cbw-chat').style.display = 'flex';
+          var inp = shadowRoot.getElementById('cbw-input');
           if (inp) inp.focus();
         });
       }
-      var consentDecline = shadow.getElementById('cbw-consent-decline');
+      var consentDecline = shadowRoot.getElementById('cbw-consent-decline');
       if (consentDecline) {
         consentDecline.addEventListener('click', function () {
-          closePanel(shadow);
+          closePanel(shadowRoot);
         });
       }
     }
 
-    function sendFromInput(shadow, lang, sys, testMode, testMsg) {
-      var inp = shadow.getElementById('cbw-input');
+    function sendFromInput(shadowRoot) {
+      var inp = shadowRoot.getElementById('cbw-input');
       if (!inp) return;
       var v = inp.value.trim();
       inp.value = '';
-      if (v) send(shadow, v, lang, sys, testMode, testMsg);
+      if (v) send(shadowRoot, v);
     }
 
-    function send(shadow, text, lang, sys, testMode, testMsg) {
+    function send(shadowRoot, text) {
+      var lang = resolvedLang;
+      var sys = currentSys();
+      var testMode = isTestMode;
+      var testMsg = testModeMsg;
       if (!text.trim()) return;
-      appendMsg(shadow, text, true, '', false);
+      appendMsg(shadowRoot, text, true, '', false);
       
       // Persistence is owned by /api/public/chat (awaited). Dual-write backup
       // runs after a visible assistant reply so user+assistant stay paired.
@@ -737,9 +923,9 @@
       w.sessionStorage.setItem('cbw_hasUserInteracted_' + clinicId, 'true');
 
       /* Hide any quick or contextual actions */
-      var q = shadow.getElementById('cbw-quick');
+      var q = shadowRoot.getElementById('cbw-quick');
       if (q) q.style.setProperty('display', 'none', 'important');
-      var msgs = shadow.getElementById('cbw-msgs');
+      var msgs = shadowRoot.getElementById('cbw-msgs');
       if (msgs) {
         var contextuals = msgs.querySelectorAll('.cbw-contextual');
         for (var i = 0; i < contextuals.length; i++) {
@@ -748,7 +934,7 @@
       }
 
       /* Typing indicator */
-      var msgs = shadow.getElementById('cbw-msgs');
+      msgs = shadowRoot.getElementById('cbw-msgs');
       var typing = d.createElement('div');
       typing.id = 'cbw-typing';
       typing.className = 'cbw-msg cbw-bot cbw-typing';
@@ -760,9 +946,9 @@
       /* If Test Mode, bypass API and return static response */
       if (testMode) {
         setTimeout(function () {
-          var t = shadow.getElementById('cbw-typing'); if (t) t.remove();
+          var t = shadowRoot.getElementById('cbw-typing'); if (t) t.remove();
           chatHistory.push({ role: 'assistant', content: testMsg });
-          appendMsg(shadow, testMsg, false, '', false);
+          appendMsg(shadowRoot, testMsg, false, '', false);
         }, 800);
         return;
       }
@@ -836,7 +1022,7 @@
           traceId: traceId
         });
         
-        var t = shadow.getElementById('cbw-typing'); if (t) t.remove();
+        var t = shadowRoot.getElementById('cbw-typing'); if (t) t.remove();
         var reply = "";
 
         if (data && data.responseType === "appointment_created") {
@@ -861,13 +1047,13 @@
         }
 
         chatHistory.push({ role: 'assistant', content: reply });
-        appendMsg(shadow, reply, false, '', false);
+        appendMsg(shadowRoot, reply, false, '', false);
 
         // Backup dual-write (idempotent with content-stable ids on conversationLogs).
         if (reply) logMessage(text, reply);
 
         /* Show contextual actions if any */
-        var q = shadow.getElementById('cbw-quick');
+        var q = shadowRoot.getElementById('cbw-quick');
         if (q && data && data.suggestedActions && data.suggestedActions.length > 0) {
           q.innerHTML = data.suggestedActions.map(function(sa) {
             return '<button class="cbw-qbtn">' + sa + '</button>';
@@ -878,8 +1064,8 @@
       })
       .catch(function (err) {
         console.log('[WIDGET_REQUEST_FAILED]', err);
-        var t = shadow.getElementById('cbw-typing'); if (t) t.remove();
-        appendMsg(shadow, sys.connErr, false, '', false);
+        var t = shadowRoot.getElementById('cbw-typing'); if (t) t.remove();
+        appendMsg(shadowRoot, sys.connErr, false, '', false);
       });
     }
 
@@ -948,28 +1134,38 @@
     }
 
     /* ── Polling ── */
-    function startPolling(shadow) {
+    function startPolling(shadowRoot) {
       pollTimer = setInterval(function () {
         fetchCfg(function (raw) {
+          latestRawCfg = raw;
           var hash = JSON.stringify(raw);
-          if (hash === lastHash) return;
+          if (hash === lastHash) {
+            recomputeFromHost('host-poll-check');
+            return;
+          }
           lastHash = hash;
           var s = mergeConfig(raw);
+          latestSettings = s;
+          recomputeFromHost('config-refresh');
           var sys = SYS[resolvedLang] || SYS.en;
-          
+
           /* Check if test mode toggled via backend */
           isTestMode = embedTestMode || !!s.testMode;
           testModeMsg = (s.testModeMessage && s.testModeMessage[resolvedLang]) || DEF.testModeMessage[resolvedLang] || DEF.testModeMessage.en;
 
-          applySettings(shadow, s, resolvedLang, sys, false);
-          clearBubbles(shadow);
-          if (!isOpen && w.__cbwBubblesEnabled) setTimeout(function () { showBubble(shadow); }, 1000);
+          applySettings(shadowRoot, s, resolvedLang, sys, false);
+          updateConsentCopy(shadowRoot, s, sys);
+          clearBubbles(shadowRoot);
+          if (!isOpen && w.__cbwBubblesEnabled) setTimeout(function () { showBubble(shadowRoot); }, 1000);
         });
       }, POLL_MS);
     }
 
     w.addEventListener('beforeunload', function () {
       clearInterval(pollTimer);
+      if (hostLangObserver) {
+        try { hostLangObserver.disconnect(); } catch (e) { /* ignore */ }
+      }
       if (shadow) clearBubbles(shadow);
     });
 
@@ -980,6 +1176,18 @@
       clinicId: clinicId,
       version:  VERSION,
       lang:     function () { return resolvedLang; },
+      /**
+       * Sync UI locale with host site language switch.
+       * @param {string} lang - e.g. "en", "tr", "en-US"
+       * @param {{ lock?: boolean }} [opts] - lock:true treats as explicit user selection
+       */
+      setLang:  function (lang, opts) {
+        var lock = !!(opts && opts.lock);
+        return applyResolvedLocale(lang, lock ? 'user-selected (setLang)' : 'host-api (setLang)', lock);
+      },
+      localeSource: function () {
+        return resolveLang(latestRawCfg || {}).source;
+      },
     };
   }
 
