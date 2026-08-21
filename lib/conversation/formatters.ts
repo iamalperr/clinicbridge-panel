@@ -14,6 +14,9 @@ export interface AppointmentSummaryInput {
   requestedWeekday?: string | null;
   requestedTime?: string | null;
   preferredTimeDisplay?: string | null;
+  preferredTimeText?: string | null;
+  preferredTimeStart?: string | null;
+  preferredTimePeriod?: string | null;
   visitType?: string | null;
   clinicName?: string | null;
   requestedDoctor?: { id?: string; name: string } | null;
@@ -531,8 +534,11 @@ export function buildAppointmentReviewMessage(
   const rawDate = draft.preferredDateDisplay || draft.requestedDate || "-";
   const localizedDate = formatLocalizedDate(rawDate, locale, timeZone);
 
-  const rawTime = draft.preferredTimeDisplay || draft.requestedTime || "-";
-  const localizedTime = formatLocalizedTime(rawTime, locale);
+  const rawTime = draft.preferredTimeText || draft.preferredTimeDisplay || draft.requestedTime || "-";
+  const localizedTime =
+    draft.preferredTimeText && String(draft.preferredTimeText).trim()
+      ? String(draft.preferredTimeText).trim()
+      : formatLocalizedTime(rawTime, locale);
   const preferredDoctor = String(draft.requestedDoctor?.name || "").trim();
   const noteText = String(draft.notes || "").trim();
   const showNote =

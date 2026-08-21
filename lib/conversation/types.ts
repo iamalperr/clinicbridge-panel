@@ -114,6 +114,8 @@ export interface ConversationSlots {
   // Treatment & Clinical
   treatment?: string; // Canonical treatment identifier (e.g. "composite_filling", "implant", "zirconium", "root_canal")
   rawTreatmentText?: string;
+  /** Additional canonical treatment ids when the patient names multiple procedures */
+  additionalTreatments?: string[];
   doctor?: string;
   clinic?: string;
   selectedClinicId?: string;
@@ -136,7 +138,7 @@ export interface ConversationSlots {
   time?: string; // e.g. "14:00"
   preferredTime?: string; // e.g. "14:00", "sabah", "öğleden sonra", "morning"
   rawTimeText?: string;
-  timePreference?: "morning" | "afternoon" | "evening" | "specific" | string;
+  timePreference?: "morning" | "afternoon" | "evening" | "specific" | "after" | "before" | string;
 
   // Patient & Contact
   fullName?: string;

@@ -476,6 +476,20 @@ function parseTimeText(text: string) {
     result.preferredTime = t.match(/([01]?\d|2[0-3]):?([0-5]\d)/)?.[0] || null;
   }
 
+  // Preserve after/before windows extracted from summaries or free text
+  const afterClock = lower.match(/\b(?:anytime\s+)?after\s+([01]?\d|2[0-3])(?::([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?)?\b/i);
+  if (afterClock) {
+    let h = parseInt(afterClock[1], 10);
+    const m = afterClock[2] || "00";
+    const ampm = afterClock[3]?.replace(/\./g, "").toLowerCase();
+    if (ampm === "pm" && h < 12) h += 12;
+    if (ampm === "am" && h === 12) h = 0;
+    const clock = `${String(h).padStart(2, "0")}:${m}`;
+    result.preferredTime = clock;
+    result.preferredTimeStart = clock;
+    result.preferredTimeText = `Anytime after ${clock}`;
+  }
+
   return result;
 }
 
@@ -877,8 +891,15 @@ async function logConversation(params: {
     let trainingTopic = existing?.trainingTopic || "";
     
     const replyLower = params.aiReply.toLowerCase();
+    const alreadyConverted =
+      Boolean(params.isAppointmentCreated) ||
+      Boolean(existing?.convertedToAppointment) ||
+      existing?.appointmentStatus === "created" ||
+      existing?.appointmentState === "APPOINTMENT_SUBMITTED" ||
+      (typeof existing?.appointmentId === "string" && existing.appointmentId.trim().length > 0);
 
-    if (params.isAppointmentCreated) {
+    if (alreadyConverted || params.isAppointmentCreated) {
+      // Appointment conversion is durable; live-support / chat may coexist.
       status = "appointment";
     } else if (params.isLiveSupport) {
       status = "liveSupport";
@@ -892,6 +913,11 @@ async function logConversation(params: {
       status = "liveSupport";
     } else {
       status = "answered";
+    }
+
+    if (params.isLiveSupport || /\bwhatsapp\b/i.test(params.userMessage) || /\bwhatsapp\b/i.test(params.aiReply)) {
+      // Independent support flag — never erases appointment conversion.
+      // Written below onto logData.
     }
 
     const nowStr = new Date().toISOString();
@@ -987,6 +1013,32 @@ async function logConversation(params: {
     logData.activeIntent = activeIntent;
     logData.appointmentStatus = appointmentStatus;
     logData.status = status;
+
+    if (
+      params.isLiveSupport ||
+      /\bwhatsapp\b/i.test(params.userMessage || "") ||
+      /\bwhatsapp\b/i.test(params.aiReply || "")
+    ) {
+      logData.liveSupportRequested = true;
+      logData.supportStatus = "requested";
+      if (/\bwhatsapp\b/i.test(params.userMessage || "")) {
+        logData.preferredContactChannel = "whatsapp";
+      }
+    }
+
+    // Preserve terminal appointment fields even when this turn is support/chat.
+    if (alreadyConverted) {
+      logData.convertedToAppointment = true;
+      if (existing?.appointmentId || params.appointmentId) {
+        logData.appointmentId = params.appointmentId || existing?.appointmentId;
+      }
+      if (!params.appointmentState && existing?.appointmentState === "APPOINTMENT_SUBMITTED") {
+        logData.appointmentState = "APPOINTMENT_SUBMITTED";
+      }
+      if (appointmentStatus !== "created") {
+        logData.appointmentStatus = "created";
+      }
+    }
 
     // Write log doc — strip undefined so Firestore cannot silently reject the whole update
     await logRef.set(stripUndefinedDeep(logData), { merge: true });
@@ -1475,10 +1527,24 @@ export async function POST(req: Request) {
     // Recover a complete draft from Firestore and/or client pending payload. A prior
     // bug could show the patient a confirmation summary while appointmentDraft failed
     // to persist (Firestore undefined rejection), leaving state stuck in COLLECTING_*.
-    const confirmationDraft = mergeAppointmentDraftSources(
+    // Also reconstruct from the last assistant summary in history when needed so
+    // "Yes please" still finalizes even if client pending payload is missing.
+    let confirmationDraft = mergeAppointmentDraftSources(
       loadedDraft,
       pendingAppointmentData as Partial<AppointmentData> | undefined
     );
+    if (!isAppointmentDraftComplete(confirmationDraft) && Array.isArray(history) && history.length > 0) {
+      const fromHistory = extractAppointmentFromHistory(history);
+      if (fromHistory) {
+        confirmationDraft = mergeAppointmentDraftSources(confirmationDraft, fromHistory);
+        console.log(JSON.stringify({
+          checkpoint: "APPT_DRAFT_RECOVERED_FROM_HISTORY",
+          conversationId: convId,
+          clinicId: actualClinicId,
+          recoveredKeys: Object.keys(fromHistory),
+        }));
+      }
+    }
     const draftCompleteForConfirm = isAppointmentDraftComplete(confirmationDraft);
     const apptPermitted = PendingActionManager.isAppointmentSubmissionPermitted({
       appointmentState: loadedState,
@@ -2156,6 +2222,26 @@ export async function POST(req: Request) {
         }
         if (conversationIntent.entities.preferredTime) {
           appointmentDraft.requestedTime = conversationIntent.entities.preferredTime;
+          const pref = String(conversationIntent.entities.timePreference || "");
+          if (pref === "after") {
+            appointmentDraft.preferredTimeStart = conversationIntent.entities.preferredTime;
+            appointmentDraft.preferredTimeText =
+              conversationLocale.startsWith("en")
+                ? `Anytime after ${conversationIntent.entities.preferredTime}`
+                : `${conversationIntent.entities.preferredTime} sonrası herhangi bir saat`;
+          } else if (pref === "before") {
+            appointmentDraft.preferredTimeEnd = conversationIntent.entities.preferredTime;
+            appointmentDraft.preferredTimeText =
+              conversationLocale.startsWith("en")
+                ? `Anytime before ${conversationIntent.entities.preferredTime}`
+                : `${conversationIntent.entities.preferredTime} öncesi herhangi bir saat`;
+          } else if (pref === "morning" || pref === "afternoon" || pref === "evening") {
+            appointmentDraft.preferredTimePeriod = pref as any;
+            appointmentDraft.preferredTimeText =
+              conversationIntent.entities.rawTimeText || conversationIntent.entities.preferredTime;
+          } else {
+            appointmentDraft.preferredTimeText = conversationIntent.entities.preferredTime;
+          }
         }
         if (conversationIntent.entities.fullName) {
           appointmentDraft.patientName = conversationIntent.entities.fullName;
@@ -2167,7 +2253,20 @@ export async function POST(req: Request) {
           appointmentDraft.patientEmail = conversationIntent.entities.email;
         }
         if (conversationIntent.entities.treatment) {
-          appointmentDraft.requestedService = conversationIntent.entities.treatment;
+          const treatmentIds = [
+            conversationIntent.entities.treatment,
+            ...(((conversationIntent.entities as any).additionalTreatments as string[]) || []),
+          ].filter(Boolean);
+          const primaryId = treatmentIds[0];
+          const label = SlotExtractor.formatMultiTreatmentLabel(treatmentIds, conversationLocale);
+          const primaryLabel = SlotExtractor.formatMultiTreatmentLabel([primaryId], conversationLocale);
+          appointmentDraft.requestedService = primaryLabel || primaryId;
+          if (treatmentIds.length > 1) {
+            const proceduresNote = conversationLocale.startsWith("en")
+              ? `Requested procedures: ${label}`
+              : `Talep edilen işlemler: ${label}`;
+            appointmentDraft.notes = [appointmentDraft.notes, proceduresNote].filter(Boolean).join("\n");
+          }
         }
         console.log(`[INTENT_ROUTER] Appointment slots updated:`, conversationIntent.entities);
       }
@@ -2916,7 +3015,12 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
       // The decision must use the conversation’s currently selected or detected language
       const lang = activeLang;
       const contactNumber = clinicWhatsapp || "";
-      
+      const appointmentAlreadySubmitted =
+        appointmentState === "APPOINTMENT_SUBMITTED" ||
+        loadedState === "APPOINTMENT_SUBMITTED" ||
+        loadedIsAppointmentCreated ||
+        Boolean(loadedAppointmentId);
+
       let handoffMsg = "";
       if (lang === "tr") {
          handoffMsg = `Sizi canlı destek ekibimize yönlendirebilirim. Aşağıdaki kanallardan biriyle ${clinicName} ekibine ulaşabilirsiniz.`;
@@ -2935,6 +3039,40 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
          }
       }
 
+      if (appointmentAlreadySubmitted) {
+        const confirmNote = lang.startsWith("tr")
+          ? `\n\nNot: Ön randevu talebiniz zaten kliniğe iletildi. WhatsApp tercihini klinik ekibine de iletebilirsiniz.`
+          : `\n\nNote: Your preliminary appointment request has already been submitted to the clinic. You can also share your WhatsApp preference with the clinic team.`;
+        handoffMsg = `${handoffMsg}${confirmNote}`;
+      }
+
+      // Persist WhatsApp preference on an already-submitted appointment when possible
+      if (appointmentAlreadySubmitted && adminDb && loadedAppointmentId) {
+        try {
+          const apptRef = adminDb
+            .collection("clinics")
+            .doc(actualClinicId)
+            .collection("appointments")
+            .doc(loadedAppointmentId);
+          const existingAppt = (await apptRef.get()).data() || {};
+          const noteLine = "Preferred contact method: WhatsApp";
+          const prevNotes = String(existingAppt.notes || "");
+          const notes = prevNotes.includes(noteLine)
+            ? prevNotes
+            : [prevNotes, noteLine].filter(Boolean).join("\n");
+          await apptRef.set(
+            stripUndefinedDeep({
+              preferredContactChannel: "whatsapp",
+              notes,
+              updatedAt: new Date().toISOString(),
+            }),
+            { merge: true }
+          );
+        } catch (e: any) {
+          console.error("[LIVE_SUPPORT] Failed to annotate appointment contact preference:", e?.message);
+        }
+      }
+
       const handoffPayload: any = {
         reply: handoffMsg,
         conversationId: convId,
@@ -2945,12 +3083,15 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
       if (clinicWhatsapp) handoffPayload.whatsappNumber = clinicWhatsapp;
       if (clinicTelegram) handoffPayload.telegramLink   = clinicTelegram;
 
-      debugLog.push(`liveSupport=short-circuit wa=${!!clinicWhatsapp} tg=${!!clinicTelegram} lang=${lang}`);
+      debugLog.push(`liveSupport=short-circuit wa=${!!clinicWhatsapp} tg=${!!clinicTelegram} lang=${lang} apptSubmitted=${appointmentAlreadySubmitted}`);
       console.log("[widget-chat]", debugLog.join(" | "));
 
       return respondWithVisibleReply(handoffPayload, basePersist({
         isLiveSupport: true,
-        appointmentState,
+        // Do not rewind a submitted appointment into collecting/idle.
+        appointmentState: appointmentAlreadySubmitted ? "APPOINTMENT_SUBMITTED" : appointmentState,
+        appointmentId: loadedAppointmentId || undefined,
+        isAppointmentCreated: appointmentAlreadySubmitted || undefined,
       }));
     }
 

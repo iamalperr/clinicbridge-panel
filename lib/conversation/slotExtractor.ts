@@ -111,7 +111,8 @@ export const CANONICAL_TREATMENTS: CanonicalTreatment[] = [
     id: "tooth_extraction",
     displayName: { tr: "Diş Çekimi", en: "Tooth Extraction" },
     keywords: [
-      "diş çekimi", "dis cekimi", "tooth extraction", "20lik diş", "20'lik diş", "yirmilik diş", "wisdom tooth",
+      "diş çekimi", "dis cekimi", "tooth extraction", "extraction", "extractions", "çekim", "cekim",
+      "20lik diş", "20'lik diş", "yirmilik diş", "wisdom tooth",
       "zahnextraktion", "zahn ziehen", "weisheitszahn", "extraction dentaire", "dent de sagesse",
       "خلع الأسنان", "قلع الضرس", "ضرس العقل"
     ]
@@ -303,12 +304,15 @@ export class SlotExtractor {
       }
     }
 
-    // 6. Treatment Entity Extraction (Canonicalized)
+    // 6. Treatment Entity Extraction (Canonicalized) — preserve all mentioned procedures
     if (!extracted.treatment) {
-      const treatmentRes = this.parseCanonicalTreatment(lower);
-      if (treatmentRes) {
-        extracted.treatment = treatmentRes.id;
-        extracted.rawTreatmentText = treatmentRes.matchedRaw;
+      const treatments = this.parseAllCanonicalTreatments(lower);
+      if (treatments.length > 0) {
+        extracted.treatment = treatments[0].id;
+        extracted.rawTreatmentText = treatments.map((t) => t.matchedRaw).join(", ");
+        if (treatments.length > 1) {
+          extracted.additionalTreatments = treatments.slice(1).map((t) => t.id);
+        }
       }
     }
 
@@ -502,31 +506,177 @@ export class SlotExtractor {
   }
 
   public static parseCanonicalTreatment(lower: string): { id: string; matchedRaw: string } | null {
+    const all = SlotExtractor.parseAllCanonicalTreatments(lower);
+    return all.length > 0 ? all[0] : null;
+  }
+
+  /**
+   * Match all canonical treatments mentioned in text, ordered by first appearance.
+   * Prevents catalog-order "last/first wins" from silently discarding procedures
+   * (e.g. "Crown, root canal, extraction and whitening" → only whitening).
+   */
+  public static parseAllCanonicalTreatments(
+    lower: string
+  ): Array<{ id: string; matchedRaw: string; index: number }> {
     const haystack = SlotExtractor.normalizeForKeywordMatch(lower);
-    // Check specific/longer keywords first to avoid prefix shadowing
+    const found = new Map<string, { id: string; matchedRaw: string; index: number }>();
+
     for (const t of CANONICAL_TREATMENTS) {
       for (const kw of t.keywords) {
         const kwLower = SlotExtractor.normalizeForKeywordMatch(kw);
         const isArabic = /[\u0600-\u06FF]/.test(kwLower);
+        let idx = -1;
 
         if (isArabic) {
-          if (haystack.includes(kwLower)) {
-            return { id: t.id, matchedRaw: kw };
-          }
+          idx = haystack.indexOf(kwLower);
         } else {
-          const idx = haystack.indexOf(kwLower);
-          if (idx !== -1) {
-            // Check boundaries: character before and after must not be letters or numbers
-            const charBefore = idx > 0 ? haystack[idx - 1] : " ";
-            const charAfter = idx + kwLower.length < haystack.length ? haystack[idx + kwLower.length] : " ";
+          const probe = haystack.indexOf(kwLower);
+          if (probe !== -1) {
+            const charBefore = probe > 0 ? haystack[probe - 1] : " ";
+            const charAfter = probe + kwLower.length < haystack.length ? haystack[probe + kwLower.length] : " ";
             const isWordChar = (c: string) => /[\p{L}\p{N}]/u.test(c);
             if (!isWordChar(charBefore) && !isWordChar(charAfter)) {
-              return { id: t.id, matchedRaw: kw };
+              idx = probe;
             }
           }
         }
+
+        if (idx === -1) continue;
+        const prev = found.get(t.id);
+        if (!prev || idx < prev.index) {
+          found.set(t.id, { id: t.id, matchedRaw: kw, index: idx });
+        }
       }
     }
+
+    return Array.from(found.values()).sort((a, b) => a.index - b.index);
+  }
+
+  /**
+   * Human-readable multi-treatment label for notes / clinic notification.
+   */
+  public static formatMultiTreatmentLabel(
+    treatmentIds: string[],
+    locale: string = "en"
+  ): string {
+    const isTr = locale.toLowerCase().startsWith("tr");
+    return treatmentIds
+      .map((id) => {
+        const t = CANONICAL_TREATMENTS.find((c) => c.id === id);
+        if (!t) return id;
+        return isTr ? t.displayName.tr : t.displayName.en;
+      })
+      .filter(Boolean)
+      .join(", ");
+  }
+
+  /**
+   * Parse time preference (exact 24h clock, e.g. 14:00, or fuzzy: sabah, öğleden sonra, morning, afternoon)
+   */
+  public static parseTime(
+    raw: string,
+    lower: string
+  ): { time: string; rawText: string; timePreference?: string } | null {
+    // Constraint windows: "anytime after 9 AM", "after 14:00", "before 11"
+    // Must not be collapsed to an exact clock time without preserving the constraint.
+    const afterMatch =
+      lower.match(/\b(?:anytime\s+)?(?:after|sonra)\s*(?:saat\s*)?([01]?\d|2[0-3])(?::([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?)?\b/i) ||
+      lower.match(/\b([01]?\d|2[0-3])(?::([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?)?\s*(?:(?:'|;|,)?\s*)?(?:sonra|dan sonra|den sonra)\b/i);
+    if (afterMatch) {
+      let h = parseInt(afterMatch[1], 10);
+      const m = afterMatch[2] || "00";
+      const ampm = afterMatch[3]?.replace(/\./g, "").toLowerCase();
+      if (ampm === "pm" && h < 12) h += 12;
+      if (ampm === "am" && h === 12) h = 0;
+      const time = `${String(h).padStart(2, "0")}:${m}`;
+      return { time, rawText: afterMatch[0], timePreference: "after" };
+    }
+
+    const beforeMatch =
+      lower.match(/\b(?:anytime\s+)?(?:before|önce|once)\s*(?:saat\s*)?([01]?\d|2[0-3])(?::([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?)?\b/i);
+    if (beforeMatch) {
+      let h = parseInt(beforeMatch[1], 10);
+      const m = beforeMatch[2] || "00";
+      const ampm = beforeMatch[3]?.replace(/\./g, "").toLowerCase();
+      if (ampm === "pm" && h < 12) h += 12;
+      if (ampm === "am" && h === 12) h = 0;
+      const time = `${String(h).padStart(2, "0")}:${m}`;
+      return { time, rawText: beforeMatch[0], timePreference: "before" };
+    }
+
+    // Exact clock time: "14:00", "14.30", "09:15", "9:00", "2:00 PM", "14:00'te"
+    const exactMatch = raw.match(/\b([01]?\d|2[0-3])[:.]([0-5]\d)(?:\s*(am|pm))?\b/i);
+    if (exactMatch) {
+      let h = parseInt(exactMatch[1], 10);
+      const m = exactMatch[2];
+      const ampm = exactMatch[3]?.toLowerCase();
+      if (ampm === "pm" && h < 12) h += 12;
+      if (ampm === "am" && h === 12) h = 0;
+      return { time: `${String(h).padStart(2, "0")}:${m}`, rawText: exactMatch[0], timePreference: "specific" };
+    }
+
+    // Comma decimal (TR): "11,00", "11,30 sabah" — must beat fuzzy "sabah"→10:00
+    const commaMatch = raw.match(/\b([01]?\d|2[0-3]),([0-5]\d)\b/);
+    if (commaMatch) {
+      const h = parseInt(commaMatch[1], 10);
+      const m = commaMatch[2];
+      return { time: `${String(h).padStart(2, "0")}:${m}`, rawText: commaMatch[0], timePreference: "specific" };
+    }
+
+    // Hour + meridiem without minutes: "12pm", "12 pm", "9am", "9 a.m."
+    // Same 12-hour rules as ClinicWorkingHoursResolver.normalizeTime.
+    const ampmBareMatch = raw.match(/\b(1[0-2]|0?[1-9])\s*(a\.?m\.?|p\.?m\.?)\b/i);
+    if (ampmBareMatch) {
+      let h = parseInt(ampmBareMatch[1], 10);
+      const meridiem = ampmBareMatch[2].replace(/\./g, "").toLowerCase();
+      if (meridiem === "pm" && h < 12) h += 12;
+      if (meridiem === "am" && h === 12) h = 0;
+      return { time: `${String(h).padStart(2, "0")}:00`, rawText: ampmBareMatch[0], timePreference: "specific" };
+    }
+
+    // Exact hour: "saat 14", "saat 2'de", "at 2 PM", "at 14:00", "12 o'clock"
+    const hourMatch = lower.match(/\bsaat\s*([01]?\d|2[0-3])(?:\s*(?:de|da|te|ta|civarı))?\b/i) ||
+      lower.match(/\bat\s*([01]?\d|2[0-3])\s*(am|pm)?\b/i) ||
+      lower.match(/\b(1[0-2]|0?[1-9])\s*o['’]?clock\b/i);
+    if (hourMatch) {
+      let h = parseInt(hourMatch[1], 10);
+      if (hourMatch[2] && hourMatch[2].toLowerCase() === "pm" && h < 12) {
+        h += 12;
+      }
+      return { time: `${String(h).padStart(2, "0")}:00`, rawText: hourMatch[0], timePreference: "specific" };
+    }
+
+    // Bare hour with optional period word: "11", "11 sabah", "sabah 11"
+    // Numeric hour always wins over fuzzy period defaults (e.g. sabah→10:00).
+    const bareHourOnly = lower.trim().match(/^([01]?\d|2[0-3])$/);
+    if (bareHourOnly) {
+      const h = parseInt(bareHourOnly[1], 10);
+      return { time: `${String(h).padStart(2, "0")}:00`, rawText: bareHourOnly[0], timePreference: "specific" };
+    }
+    if (/\b(sabah|morning|öğleden\s+sonra|ogleden\s+sonra|afternoon|akşam|aksam|evening)\b/i.test(lower)) {
+      const hourInPeriod = lower.match(/\b([01]?\d|2[0-3])\b/);
+      if (hourInPeriod) {
+        const h = parseInt(hourInPeriod[1], 10);
+        if (h >= 0 && h <= 23) {
+          return { time: `${String(h).padStart(2, "0")}:00`, rawText: hourInPeriod[0], timePreference: "specific" };
+        }
+      }
+    }
+
+    // Fuzzy Time: Turkish — only when no explicit hour was present
+    if (/\b(sabah|sabahları|öğleden önce|ogleden once|morning)\b/i.test(lower)) {
+      return { time: "10:00", rawText: "sabah", timePreference: "morning" };
+    }
+    if (/\b(öğle|ogle|öğlen|oglen|noon|midday)\b/i.test(lower)) {
+      return { time: "12:00", rawText: "öğlen", timePreference: "afternoon" };
+    }
+    if (/\b(öğleden sonra|ogleden sonra|afternoon)\b/i.test(lower)) {
+      return { time: "14:00", rawText: "öğleden sonra", timePreference: "afternoon" };
+    }
+    if (/\b(akşam|aksam|akşamüstü|aksamustu|evening)\b/i.test(lower)) {
+      return { time: "17:00", rawText: "akşam", timePreference: "evening" };
+    }
+
     return null;
   }
 
@@ -707,89 +857,6 @@ export class SlotExtractor {
         const weekdayInfo = AppointmentDateValidator.getCanonicalWeekday({ isoDate: iso, timeZone });
         return { isoDate: iso, rawText: matchEn2[0], weekday: weekdayInfo.weekdayTr };
       }
-    }
-
-    return null;
-  }
-
-  /**
-   * Parse time preference (exact 24h clock, e.g. 14:00, or fuzzy: sabah, öğleden sonra, morning, afternoon)
-   */
-  public static parseTime(
-    raw: string,
-    lower: string
-  ): { time: string; rawText: string; timePreference?: string } | null {
-    // Exact clock time: "14:00", "14.30", "09:15", "9:00", "2:00 PM", "14:00'te"
-    const exactMatch = raw.match(/\b([01]?\d|2[0-3])[:.]([0-5]\d)(?:\s*(am|pm))?\b/i);
-    if (exactMatch) {
-      let h = parseInt(exactMatch[1], 10);
-      const m = exactMatch[2];
-      const ampm = exactMatch[3]?.toLowerCase();
-      if (ampm === "pm" && h < 12) h += 12;
-      if (ampm === "am" && h === 12) h = 0;
-      return { time: `${String(h).padStart(2, "0")}:${m}`, rawText: exactMatch[0], timePreference: "specific" };
-    }
-
-    // Comma decimal (TR): "11,00", "11,30 sabah" — must beat fuzzy "sabah"→10:00
-    const commaMatch = raw.match(/\b([01]?\d|2[0-3]),([0-5]\d)\b/);
-    if (commaMatch) {
-      const h = parseInt(commaMatch[1], 10);
-      const m = commaMatch[2];
-      return { time: `${String(h).padStart(2, "0")}:${m}`, rawText: commaMatch[0], timePreference: "specific" };
-    }
-
-    // Hour + meridiem without minutes: "12pm", "12 pm", "9am", "9 a.m."
-    // Same 12-hour rules as ClinicWorkingHoursResolver.normalizeTime.
-    const ampmBareMatch = raw.match(/\b(1[0-2]|0?[1-9])\s*(a\.?m\.?|p\.?m\.?)\b/i);
-    if (ampmBareMatch) {
-      let h = parseInt(ampmBareMatch[1], 10);
-      const meridiem = ampmBareMatch[2].replace(/\./g, "").toLowerCase();
-      if (meridiem === "pm" && h < 12) h += 12;
-      if (meridiem === "am" && h === 12) h = 0;
-      return { time: `${String(h).padStart(2, "0")}:00`, rawText: ampmBareMatch[0], timePreference: "specific" };
-    }
-
-    // Exact hour: "saat 14", "saat 2'de", "at 2 PM", "at 14:00", "12 o'clock"
-    const hourMatch = lower.match(/\bsaat\s*([01]?\d|2[0-3])(?:\s*(?:de|da|te|ta|civarı))?\b/i) ||
-      lower.match(/\bat\s*([01]?\d|2[0-3])\s*(am|pm)?\b/i) ||
-      lower.match(/\b(1[0-2]|0?[1-9])\s*o['’]?clock\b/i);
-    if (hourMatch) {
-      let h = parseInt(hourMatch[1], 10);
-      if (hourMatch[2] && hourMatch[2].toLowerCase() === "pm" && h < 12) {
-        h += 12;
-      }
-      return { time: `${String(h).padStart(2, "0")}:00`, rawText: hourMatch[0], timePreference: "specific" };
-    }
-
-    // Bare hour with optional period word: "11", "11 sabah", "sabah 11"
-    // Numeric hour always wins over fuzzy period defaults (e.g. sabah→10:00).
-    const bareHourOnly = lower.trim().match(/^([01]?\d|2[0-3])$/);
-    if (bareHourOnly) {
-      const h = parseInt(bareHourOnly[1], 10);
-      return { time: `${String(h).padStart(2, "0")}:00`, rawText: bareHourOnly[0], timePreference: "specific" };
-    }
-    if (/\b(sabah|morning|öğleden\s+sonra|ogleden\s+sonra|afternoon|akşam|aksam|evening)\b/i.test(lower)) {
-      const hourInPeriod = lower.match(/\b([01]?\d|2[0-3])\b/);
-      if (hourInPeriod) {
-        const h = parseInt(hourInPeriod[1], 10);
-        if (h >= 0 && h <= 23) {
-          return { time: `${String(h).padStart(2, "0")}:00`, rawText: hourInPeriod[0], timePreference: "specific" };
-        }
-      }
-    }
-
-    // Fuzzy Time: Turkish — only when no explicit hour was present
-    if (/\b(sabah|sabahları|öğleden önce|ogleden once|morning)\b/i.test(lower)) {
-      return { time: "10:00", rawText: "sabah", timePreference: "morning" };
-    }
-    if (/\b(öğle|ogle|öğlen|oglen|noon|midday)\b/i.test(lower)) {
-      return { time: "12:00", rawText: "öğlen", timePreference: "afternoon" };
-    }
-    if (/\b(öğleden sonra|ogleden sonra|afternoon)\b/i.test(lower)) {
-      return { time: "14:00", rawText: "öğleden sonra", timePreference: "afternoon" };
-    }
-    if (/\b(akşam|aksam|akşamüstü|aksamustu|evening)\b/i.test(lower)) {
-      return { time: "17:00", rawText: "akşam", timePreference: "evening" };
     }
 
     return null;
