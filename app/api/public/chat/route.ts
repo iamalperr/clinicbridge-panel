@@ -42,6 +42,7 @@ import {
   type ClinicDoctorMatchInput,
 } from "@/lib/appointment/requestedDoctorPreference";
 import { RequestTimer } from "@/lib/performance/requestTimer";
+import { stripUndefinedDeep } from "@/lib/firestore/stripUndefined";
 import {
   getCachedClinicRuntime,
   setCachedClinicRuntime,
@@ -152,13 +153,79 @@ async function saveAppointmentState(
 ): Promise<boolean> {
   const logRef = adminDb.collection("clinics").doc(clinicId).collection("conversationLogs").doc(convId);
   try {
-    await logRef.set({ appointmentState: newState, appointmentDraft: newDraft, ...extras }, { merge: true });
-    console.log(`[STATE_SAVED] convId=${convId} state=${newState}`);
+    // Firestore rejects `undefined` nested fields; a failed write here previously
+    // left conversations stuck in COLLECTING_* without appointmentDraft while the
+    // patient still saw the in-memory confirmation summary.
+    const payload = stripUndefinedDeep({
+      appointmentState: newState,
+      appointmentDraft: newDraft || {},
+      ...extras,
+    });
+    await logRef.set(payload, { merge: true });
+    console.log(JSON.stringify({
+      checkpoint: "APPT_STATE_SAVED",
+      conversationId: convId,
+      clinicId,
+      stateAfter: newState,
+      draftKeys: Object.keys(newDraft || {}),
+      hasDraft: Boolean(newDraft && Object.keys(newDraft).length > 0),
+    }));
     return true;
   } catch (e: any) {
-    console.error(`[STATE_SAVE_FAILED] convId=${convId} error=${e.message}`);
+    console.error(JSON.stringify({
+      checkpoint: "APPT_STATE_SAVE_FAILED",
+      conversationId: convId,
+      clinicId,
+      stateAttempted: newState,
+      error: e?.message || String(e),
+    }));
     return false;
   }
+}
+
+function normalizeIncomingAppointmentDraft(
+  raw: Record<string, any> | null | undefined
+): Partial<AppointmentData> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Partial<AppointmentData> = { ...raw } as Partial<AppointmentData>;
+  if (!out.requestedService && (raw.treatmentType || raw.treatment || raw.service)) {
+    out.requestedService = raw.treatmentType || raw.treatment || raw.service;
+  }
+  if (!out.requestedDate && (raw.preferredDate || raw.date)) {
+    out.requestedDate = raw.preferredDate || raw.date;
+  }
+  if (out.requestedTime == null && (raw.preferredTime || raw.time)) {
+    out.requestedTime = raw.preferredTime || raw.time;
+  }
+  if (!out.patientEmail && raw.email) out.patientEmail = raw.email;
+  if (!out.patientPhone && raw.phone) out.patientPhone = raw.phone;
+  if (!out.patientName && (raw.fullName || raw.name)) {
+    out.patientName = raw.fullName || raw.name;
+  }
+  return out;
+}
+
+function isAppointmentDraftComplete(draft: Partial<AppointmentData> | null | undefined): boolean {
+  if (!draft) return false;
+  return ConversationStateEngine.getMissingSlots({
+    treatment: draft.requestedService || undefined,
+    preferredDate: draft.requestedDate || undefined,
+    preferredTime: draft.requestedTime || undefined,
+    fullName: draft.patientName || undefined,
+    phone: draft.patientPhone || undefined,
+    email: draft.patientEmail || undefined,
+  }).length === 0;
+}
+
+function mergeAppointmentDraftSources(
+  ...sources: Array<Partial<AppointmentData> | Record<string, any> | null | undefined>
+): Partial<AppointmentData> {
+  let merged: Partial<AppointmentData> = {};
+  for (const src of sources) {
+    if (!src) continue;
+    merged = safeMergeDraft(merged, normalizeIncomingAppointmentDraft(src));
+  }
+  return merged;
 }
 
 /* ── Firebase Anonymous Auth → get idToken ─────────────────────────────── */
@@ -231,7 +298,10 @@ async function firestoreRestAdd(
 const CONFIRM_KEYWORDS = [
   "evet", "yes", "onaylıyorum", "onayliyorum", "tamam", "olur",
   "kabul", "evet lütfen", "evet lutfen", "tamamdır", "tamamdir",
-  "harika", "ilerleyelim", "oluştur", "olustur", "yap", "e", "uygundur", "gönder", "kabul ediyorum", "confirm"
+  "harika", "ilerleyelim", "oluştur", "olustur", "yap", "e", "uygun", "uygundur",
+  "gönder", "gonder", "kabul ediyorum", "confirm", "doğru", "dogru",
+  "bilgiler doğru", "bilgiler dogru", "iletebilirsiniz",
+  "evet onaylıyorum", "evet onayliyorum",
 ];
 
 function normalizeConfirmationInput(value: string): string {
@@ -853,8 +923,11 @@ async function logConversation(params: {
     }
 
     if (params.apptData) {
-      logData.appointmentState = "AWAITING_CONFIRMATION";
-      logData.appointmentDraft = params.apptData;
+      // Only force review state when we are not already terminal / submitted.
+      if (!params.isAppointmentCreated && params.appointmentState !== "APPOINTMENT_SUBMITTED") {
+        logData.appointmentState = params.appointmentState || "AWAITING_CONFIRMATION";
+      }
+      logData.appointmentDraft = stripUndefinedDeep(params.apptData);
     }
 
     if (!existing) {
@@ -881,22 +954,22 @@ async function logConversation(params: {
     const intentKeywords = ["randevu", "görüşme almak", "doktora görünmek", "appointment", "consultation"];
     if (intentKeywords.some(k => userMessageLower.includes(k) || replyLower.includes(k))) {
       activeIntent = "appointment";
-      if (!existing?.convertedToAppointment && appointmentStatus !== "readyToCreate") {
+      if (!existing?.convertedToAppointment && appointmentStatus !== "readyToCreate" && appointmentStatus !== "created") {
         appointmentStatus = "collecting";
       }
     }
 
-    if (params.apptData) {
-      logData.pendingAppointmentData = {
+    if (params.apptData && !params.isAppointmentCreated) {
+      logData.pendingAppointmentData = stripUndefinedDeep({
         patientName: params.apptData.patientName || "",
         patientPhone: params.apptData.patientPhone || "",
-        patientEmail: "",
+        patientEmail: params.apptData.patientEmail || "",
         treatmentType: params.apptData.requestedService || "",
         preferredDate: params.apptData.requestedDate || "",
         preferredTime: params.apptData.requestedTime || "",
         notes: params.apptData.notes || "",
         requestedDoctor: params.apptData.requestedDoctor || undefined
-      };
+      });
       activeIntent = "appointment";
       appointmentStatus = "readyToCreate";
     }
@@ -907,13 +980,27 @@ async function logConversation(params: {
       appointmentStatus = "created";
       logData.convertedToAppointment = true;
       logData.appointmentId = params.appointmentId;
+      logData.appointmentState = "APPOINTMENT_SUBMITTED";
+      logData.isAppointmentCreated = true;
     }
 
     logData.activeIntent = activeIntent;
     logData.appointmentStatus = appointmentStatus;
+    logData.status = status;
 
-    // Write log doc
-    await logRef.set(logData, { merge: true });
+    // Write log doc — strip undefined so Firestore cannot silently reject the whole update
+    await logRef.set(stripUndefinedDeep(logData), { merge: true });
+
+    console.log(JSON.stringify({
+      checkpoint: "APPT_CONVERSATION_LOG_WRITTEN",
+      conversationId: params.convId,
+      clinicId: params.clinicId,
+      appointmentState: logData.appointmentState || null,
+      appointmentStatus: logData.appointmentStatus || null,
+      status: logData.status,
+      appointmentPersisted: Boolean(params.isAppointmentCreated && params.appointmentId),
+      appointmentId: params.appointmentId || null,
+    }));
 
     // Message docs are upserted via syncConversationLogMessagesFromHistory above.
 
@@ -1278,13 +1365,21 @@ export async function POST(req: Request) {
     const negativeConfirmationDetected = negativeConfirmationRegex.test(message.trim());
 
     const isConfirm = isConfirmation(message);
-    const positiveConfirmationWords = ["evet", "evet onaylıyorum", "onaylıyorum", "doğru", "bilgiler doğru", "iletebilirsiniz", "olur", "tamam", "uygun", "kabul ediyorum", "yes", "yes, i confirm", "confirmed", "correct", "the information is correct", "you may proceed", "please proceed"];
+    const positiveConfirmationWords = [
+      "evet", "evet onaylıyorum", "evet onayliyorum", "onaylıyorum", "onayliyorum",
+      "doğru", "dogru", "bilgiler doğru", "bilgiler dogru", "iletebilirsiniz",
+      "olur", "tamam", "uygun", "uygundur", "kabul ediyorum", "gönder", "gonder",
+      "yes", "yes, i confirm", "confirmed", "correct", "the information is correct",
+      "you may proceed", "please proceed",
+    ];
     
     let positiveConfirmationDetected = false;
     if (!negativeConfirmationDetected) {
+       const normalizedConfirm = normalizeConfirmationInput(message);
        positiveConfirmationDetected = isConfirm || 
-                                      positiveConfirmationWords.some(w => msgLower === w) || 
-                                      msgLower.includes("onaylıyorum") || 
+                                      positiveConfirmationWords.some(w => normalizedConfirm === w || normalizedConfirm.startsWith(w + " ")) || 
+                                      normalizedConfirm.includes("onaylıyorum") ||
+                                      normalizedConfirm.includes("onayliyorum") ||
                                       msgLower.startsWith("evet") || 
                                       msgLower.startsWith("yes");
     }
@@ -1377,7 +1472,14 @@ export async function POST(req: Request) {
     console.log(JSON.stringify({ checkpoint: "APPT_03_DRAFT_LOADED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, draftFields: Object.keys(loadedDraft), timestamp: new Date().toISOString() }));
 
     // ── AŞAMA 4: CONFIRMATION HANDLER GARANTİSİ (EFFECTIVE STATE & ACTION OWNERSHIP) ──
-    const effectiveAppointmentState = loadedState;
+    // Recover a complete draft from Firestore and/or client pending payload. A prior
+    // bug could show the patient a confirmation summary while appointmentDraft failed
+    // to persist (Firestore undefined rejection), leaving state stuck in COLLECTING_*.
+    const confirmationDraft = mergeAppointmentDraftSources(
+      loadedDraft,
+      pendingAppointmentData as Partial<AppointmentData> | undefined
+    );
+    const draftCompleteForConfirm = isAppointmentDraftComplete(confirmationDraft);
     const apptPermitted = PendingActionManager.isAppointmentSubmissionPermitted({
       appointmentState: loadedState,
       appointmentSubmitted: loadedIsAppointmentCreated || loadedState === "APPOINTMENT_SUBMITTED" || loadedState === "COMPLETED",
@@ -1385,25 +1487,44 @@ export async function POST(req: Request) {
       pendingAction: loadedPendingAction
     });
 
-    const isAwaitingConfirmation = effectiveAppointmentState === "AWAITING_CONFIRMATION" && apptPermitted.allowed;
+    const stateLooksLikeReview =
+      loadedState === "AWAITING_CONFIRMATION" ||
+      (draftCompleteForConfirm &&
+        (String(loadedState || "").startsWith("COLLECTING_") ||
+          loadedState === "AWAITING_DATE_CLARIFICATION" ||
+          loadedState === "IDLE" ||
+          !loadedState));
+
+    const isAwaitingConfirmation =
+      Boolean(adminDb) &&
+      positiveConfirmationDetected &&
+      !negativeConfirmationDetected &&
+      draftCompleteForConfirm &&
+      stateLooksLikeReview &&
+      apptPermitted.allowed;
 
     console.log(JSON.stringify({
       checkpoint: "APPT_CONFIRMATION_RECEIVED",
       traceId: activeTraceId,
       conversationId: convId,
       loadedState,
-      effectiveState: effectiveAppointmentState,
+      effectiveState: loadedState,
       apptPermitted: apptPermitted.allowed,
       guardReason: apptPermitted.reason,
       positiveConfirmationDetected,
       negativeConfirmationDetected,
+      draftCompleteForConfirm,
+      stateLooksLikeReview,
+      confirmationDetected: positiveConfirmationDetected,
       conversationLocale,
-      handlerWillRun: isAwaitingConfirmation && positiveConfirmationDetected && !negativeConfirmationDetected
+      handlerWillRun: isAwaitingConfirmation
     }));
 
-    if (isAwaitingConfirmation && positiveConfirmationDetected && !negativeConfirmationDetected && adminDb) {
+    if (isAwaitingConfirmation && adminDb) {
+         // Prefer merged complete draft for finalization
+         loadedDraft = confirmationDraft;
          // ── INSTRUMENTATION LOG 4 ──
-         console.log(JSON.stringify({ checkpoint: "APPT_04_CONFIRMATION_HANDLER_ENTERED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, conversationLocale, timestamp: new Date().toISOString() }));
+         console.log(JSON.stringify({ checkpoint: "APPT_04_CONFIRMATION_HANDLER_ENTERED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, conversationLocale, loadedStateBefore: loadedState, timestamp: new Date().toISOString() }));
          
          // 1. Validate all 6 required fields in persisted draft
          const missingDraftSlots = ConversationStateEngine.getMissingSlots({
@@ -1645,7 +1766,21 @@ export async function POST(req: Request) {
              }, basePersist({ appointmentState: "AWAITING_CONFIRMATION" }));
          }
     } else if (positiveConfirmationDetected) {
-         console.log("[CONFIRMATION_HANDLER_BYPASSED]", { reason: "state_not_awaiting_confirmation" });
+         console.log(JSON.stringify({
+           checkpoint: "CONFIRMATION_HANDLER_BYPASSED",
+           reason: !positiveConfirmationDetected
+             ? "not_positive_confirmation"
+             : !draftCompleteForConfirm
+             ? "draft_incomplete"
+             : !stateLooksLikeReview
+             ? "state_not_reviewable"
+             : !apptPermitted.allowed
+             ? apptPermitted.reason
+             : "unknown",
+           loadedState,
+           draftCompleteForConfirm,
+           positiveConfirmationDetected,
+         }));
     }
     /* ==================================================================== */
 

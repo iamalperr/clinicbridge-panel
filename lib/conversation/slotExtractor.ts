@@ -730,6 +730,14 @@ export class SlotExtractor {
       return { time: `${String(h).padStart(2, "0")}:${m}`, rawText: exactMatch[0], timePreference: "specific" };
     }
 
+    // Comma decimal (TR): "11,00", "11,30 sabah" — must beat fuzzy "sabah"→10:00
+    const commaMatch = raw.match(/\b([01]?\d|2[0-3]),([0-5]\d)\b/);
+    if (commaMatch) {
+      const h = parseInt(commaMatch[1], 10);
+      const m = commaMatch[2];
+      return { time: `${String(h).padStart(2, "0")}:${m}`, rawText: commaMatch[0], timePreference: "specific" };
+    }
+
     // Hour + meridiem without minutes: "12pm", "12 pm", "9am", "9 a.m."
     // Same 12-hour rules as ClinicWorkingHoursResolver.normalizeTime.
     const ampmBareMatch = raw.match(/\b(1[0-2]|0?[1-9])\s*(a\.?m\.?|p\.?m\.?)\b/i);
@@ -753,7 +761,24 @@ export class SlotExtractor {
       return { time: `${String(h).padStart(2, "0")}:00`, rawText: hourMatch[0], timePreference: "specific" };
     }
 
-    // Fuzzy Time: Turkish
+    // Bare hour with optional period word: "11", "11 sabah", "sabah 11"
+    // Numeric hour always wins over fuzzy period defaults (e.g. sabah→10:00).
+    const bareHourOnly = lower.trim().match(/^([01]?\d|2[0-3])$/);
+    if (bareHourOnly) {
+      const h = parseInt(bareHourOnly[1], 10);
+      return { time: `${String(h).padStart(2, "0")}:00`, rawText: bareHourOnly[0], timePreference: "specific" };
+    }
+    if (/\b(sabah|morning|öğleden\s+sonra|ogleden\s+sonra|afternoon|akşam|aksam|evening)\b/i.test(lower)) {
+      const hourInPeriod = lower.match(/\b([01]?\d|2[0-3])\b/);
+      if (hourInPeriod) {
+        const h = parseInt(hourInPeriod[1], 10);
+        if (h >= 0 && h <= 23) {
+          return { time: `${String(h).padStart(2, "0")}:00`, rawText: hourInPeriod[0], timePreference: "specific" };
+        }
+      }
+    }
+
+    // Fuzzy Time: Turkish — only when no explicit hour was present
     if (/\b(sabah|sabahları|öğleden önce|ogleden once|morning)\b/i.test(lower)) {
       return { time: "10:00", rawText: "sabah", timePreference: "morning" };
     }

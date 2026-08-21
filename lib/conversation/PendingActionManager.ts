@@ -75,8 +75,8 @@ export class PendingActionManager {
     
     // Turkish confirmations
     const trPatterns = [
-      /^(evet|evet lütfen|lütfen|olur|tamam|onaylıyorum|onay|tabii|tabi|kesinlikle|uygundur|kabul ediyorum|isterim|bilgi alayım|evet istiyorum|aynen|yes|yep|yup|sure|ok|okay|confirm|proceed|ja|ja bitte|gerne|d'accord|oui)\b/i,
-      /\b(evet lütfen|onaylıyorum|kabul ediyorum|randevuyu onayla|bilgi almak isterim|evet bilgi verin|hekimleri öğrenmek istiyorum|doktorları öğrenmek istiyorum)\b/i
+      /^(evet|evet lütfen|lütfen|olur|tamam|onaylıyorum|onayliyorum|onay|tabii|tabi|kesinlikle|uygun|uygundur|kabul ediyorum|isterim|bilgi alayım|evet istiyorum|aynen|doğru|dogru|bilgiler doğru|bilgiler dogru|iletebilirsiniz|gönder|gonder|yes|yep|yup|sure|ok|okay|confirm|proceed|ja|ja bitte|gerne|d'accord|oui)\b/i,
+      /\b(evet lütfen|onaylıyorum|onayliyorum|kabul ediyorum|randevuyu onayla|bilgi almak isterim|evet bilgi verin|hekimleri öğrenmek istiyorum|doktorları öğrenmek istiyorum|bilgiler doğru|iletebilirsiniz)\b/i
     ];
 
     if (trPatterns.some(p => p.test(clean))) {
