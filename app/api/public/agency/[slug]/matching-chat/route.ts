@@ -38,6 +38,10 @@ import {
   getAvailableCitiesForTreatment,
 } from "@/lib/agency/feelinhealthyConfig";
 import {
+  resolveAgencyClinicRecommendations,
+  type AgencyMatchingRule,
+} from "@/lib/agency/agencyMatchingRules";
+import {
   normalizeAgencySessionState,
   serializeAgencySessionState,
   sanitizeClientAgencyFieldProvenance,
@@ -1814,6 +1818,45 @@ export async function POST(
     }
     const fullAgencyClinics = [...(allClinics || [])];
 
+    // Agency-managed recommendation rules (AI Eşleştirme). TTL via agencyCache (3 min);
+    // clearAgencyCache invalidates on portal save.
+    const cacheKeyMatchingRules = `agency-matchingRules:${agencyId}`;
+    let agencyMatchingRules = getCached<AgencyMatchingRule[]>(cacheKeyMatchingRules);
+    if (!agencyMatchingRules) {
+      if (adminDb) {
+        try {
+          const rulesSnap = await adminDb
+            .collection("agencies")
+            .doc(agencyId)
+            .collection("matchingRules")
+            .get();
+          agencyMatchingRules = rulesSnap.docs.map((d) => {
+            const data = d.data() || {};
+            return {
+              id: d.id,
+              agencyId,
+              treatmentBranch: String(data.treatmentBranch || ""),
+              city: String(data.city || ""),
+              side: (data.side || "any") as AgencyMatchingRule["side"],
+              clinicIds: Array.isArray(data.clinicIds) ? data.clinicIds.map(String) : [],
+              enabled: data.enabled !== false,
+              schemaVersion: Number(data.schemaVersion || 1),
+              source: String(data.source || ""),
+              updatedAt: data.updatedAt,
+              updatedBy: data.updatedBy ?? null,
+              createdAt: data.createdAt,
+            } satisfies AgencyMatchingRule;
+          });
+        } catch (rulesErr) {
+          console.warn("[matching-chat] matchingRules load failed; using legacy curated fallback:", rulesErr);
+          agencyMatchingRules = [];
+        }
+      } else {
+        agencyMatchingRules = [];
+      }
+      setCached(cacheKeyMatchingRules, agencyMatchingRules, 30 * 1000);
+    }
+
     // ── FeelinHealthy authoritative state machine (pre-LLM) ──
     // Every FH request resolves next action here before the model can invent stage order.
     if (isFeelinHealthy) {
@@ -3065,7 +3108,16 @@ export async function POST(
 
         const effectiveCity = locationDecision.city;
         const effectiveSide = getAgencyIstanbulSide(newCtx) || locationDecision.side;
-        const curatedResult = getCuratedClinicsForFeelinHealthy(branchOrCat, effectiveCity, effectiveSide, fullAgencyClinics);
+        const curatedResult = resolveAgencyClinicRecommendations({
+          category: branchOrCat,
+          city: effectiveCity,
+          side: effectiveSide,
+          availableClinics: fullAgencyClinics,
+          agencyRules: agencyMatchingRules,
+          agencySlug: slug,
+          agencyId,
+          maxClinics: FEELINHEALTHY_CONFIG.maxGuestClinics,
+        });
 
         const linkedIds = fullAgencyClinics.map((c: any) => String(c.id));
         const activeIds = fullAgencyClinics
@@ -3090,7 +3142,9 @@ export async function POST(
         const sideMatchedIds = curatedResult.matchingCuratedClinics.map((c: any) => String(c.id));
 
         const isGuest = newCtx.isGuestUser !== false;
-        const displayLimit = isGuest ? FEELINHEALTHY_CONFIG.maxGuestClinics : maxClinics;
+        const displayLimit = isGuest
+          ? FEELINHEALTHY_CONFIG.maxGuestClinics
+          : Math.min(maxClinics, FEELINHEALTHY_CONFIG.maxGuestClinics);
         const displayedClinics = curatedResult.matchingCuratedClinics.slice(0, displayLimit);
 
         logFeelinHealthyMatchingDiagnostics(
@@ -3703,7 +3757,16 @@ export async function POST(
       if (locationDecision.step === "ready") {
         const effectiveCity = locationDecision.city;
         const effectiveSide = getAgencyIstanbulSide(newCtx) || locationDecision.side;
-        const curatedResult = getCuratedClinicsForFeelinHealthy(branchOrCat, effectiveCity, effectiveSide, fullAgencyClinics);
+        const curatedResult = resolveAgencyClinicRecommendations({
+          category: branchOrCat,
+          city: effectiveCity,
+          side: effectiveSide,
+          availableClinics: fullAgencyClinics,
+          agencyRules: agencyMatchingRules,
+          agencySlug: slug,
+          agencyId,
+          maxClinics: FEELINHEALTHY_CONFIG.maxGuestClinics,
+        });
         const displayedClinics = curatedResult.matchingCuratedClinics.slice(0, FEELINHEALTHY_CONFIG.maxGuestClinics);
         const currentLang = (parsed.language || agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en") ? "en" : "tr";
         const conv = calculateAdditionalCountAndConversion(curatedResult.allEligibleClinics.length, displayedClinics.length, currentLang);

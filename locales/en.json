@@ -544,7 +544,12 @@
       "clinicMapping": "Treatment → Clinic Mapping",
       "clinicMappingDesc": "Select which clinics are eligible for each treatment category. AI will only recommend clinics that are mapped here.",
       "noTreatmentsDefined": "No treatments defined yet. Add treatments in the Treatment Catalog first.",
-      "noClinicsAvailable": "No clinics available."
+      "noClinicsAvailable": "No clinics available.",
+      "recommendationRules": "Recommendation Rules",
+      "recommendationRulesDesc": "Manage which clinics AI recommends to patients. Set ordered clinics per treatment, city, and Istanbul side when relevant.",
+      "noRecommendationRules": "No recommendation rules yet. For FeelinHealthy, run the curated→dynamic migration to seed the live matrix here.",
+      "saveRule": "Save Rule",
+      "resetToDefault": "Reset to default"
     },
     "intakeFlow": {
       "title": "Intake Flow & AI Assistant",

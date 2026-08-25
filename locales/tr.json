@@ -581,7 +581,12 @@
       "clinicMapping": "Tedavi → Klinik Eşleştirmesi",
       "clinicMappingDesc": "Her tedavi kategorisi için uygun klinikleri seçin. AI yalnızca burada eşleştirilmiş klinikleri önerecektir.",
       "noTreatmentsDefined": "Henüz tedavi tanımlanmadı. Önce Tedavi Kataloğu'na tedavi ekleyin.",
-      "noClinicsAvailable": "Uygun klinik yok."
+      "noClinicsAvailable": "Uygun klinik yok.",
+      "recommendationRules": "Öneri Kuralları",
+      "recommendationRulesDesc": "AI'ın hastalara hangi klinikleri önereceğini buradan yönetebilirsiniz. Tedavi, şehir ve (gerekirse) İstanbul yakasına göre sıralı klinik seçin.",
+      "noRecommendationRules": "Henüz öneri kuralı yok. FeelinHealthy için staging/production migration çalıştırıldığında mevcut canlı matris burada görünür.",
+      "saveRule": "Kuralı Kaydet",
+      "resetToDefault": "Varsayılana dön"
     },
     "intakeFlow": {
       "title": "Ön Değerlendirme Akışı ve AI Asistan",

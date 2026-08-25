@@ -129,6 +129,28 @@ export interface TreatmentClinicRule {
   preferredClinicIds?: string[];
 }
 
+// ─── Agency recommendation rules (treatment + city + side → ordered clinics) ─
+// Firestore: agencies/{agencyId}/matchingRules/{ruleId}
+// Runtime: lib/agency/agencyMatchingRules.ts
+
+export type AgencyMatchingRuleSide = "anatolian" | "european" | "any";
+
+export interface AgencyMatchingRuleDoc {
+  id: string;
+  agencyId: string;
+  treatmentBranch: string;
+  city: string;
+  side: AgencyMatchingRuleSide;
+  /** Ordered clinic document IDs — authoritative identifiers (not names). */
+  clinicIds: string[];
+  enabled: boolean;
+  schemaVersion: number;
+  source: string;
+  updatedAt?: any;
+  updatedBy?: string | null;
+  createdAt?: any;
+}
+
 // ─── Recommended Clinic (AI output per lead) ────────────────────────────────
 
 export interface RecommendedClinic {

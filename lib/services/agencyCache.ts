@@ -40,4 +40,6 @@ export function clearAgencyCache(agencyId: string, slug?: string): void {
   cache.delete(`agency-doctors:${agencyId}`);
   cache.delete(`agency-kb:${agencyId}`);
   cache.delete(`agency-kb-main:${agencyId}`);
+  cache.delete(`agency-aiConfig:${agencyId}`);
+  cache.delete(`agency-matchingRules:${agencyId}`);
 }

@@ -18,6 +18,8 @@ import type { AIMatchingConfig, TreatmentClinicRule, TreatmentCatalogItem } from
 import type { TreatmentCategory, AgencyClinic } from "@/lib/types/agency";
 import { TREATMENT_CATEGORIES } from "@/lib/types/agency";
 import { useI18n } from "@/lib/i18n-context";
+import AgencyRecommendationRulesPanel from "@/components/agency/AgencyRecommendationRulesPanel";
+import { PLATFORM_MAX_RECOMMENDED_CLINICS } from "@/lib/agency/agencyMatchingRules";
 
 const DEFAULT_CONFIG: Omit<AIMatchingConfig, "id" | "agencyId" | "createdAt" | "updatedAt"> = {
   routingMode: "manual",
@@ -134,6 +136,13 @@ export default function MatchingPage() {
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        <AgencyRecommendationRulesPanel
+          agencyId={agencyId}
+          clinics={clinics}
+          language={language}
+          t={t}
+        />
+
         {/* Routing Mode */}
         <SectionCard title={t("portal.matching.routingMode")}>
           <p style={{ fontSize: 12.5, color: UI_COLORS.textMuted, marginBottom: 12 }}>
@@ -187,7 +196,11 @@ export default function MatchingPage() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <Select label={t("portal.matching.maxClinics")} value={config.maxClinicsToShow.toString()} onChange={(e) => setConfig({ ...config, maxClinicsToShow: Number(e.target.value) })}
               options={[1, 2, 3, 5, 10].map((n) => ({ label: n.toString(), value: n.toString() }))} />
-            <div />
+            <p style={{ fontSize: 12, color: UI_COLORS.textMuted, alignSelf: "end", paddingBottom: 8 }}>
+              {language === "tr"
+                ? `Not: Hasta öneri kartlarında platform limiti ${PLATFORM_MAX_RECOMMENDED_CLINICS} kliniktir.`
+                : `Note: Patient recommendation cards are capped at ${PLATFORM_MAX_RECOMMENDED_CLINICS} clinics.`}
+            </p>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
             {([
