@@ -76,7 +76,8 @@ export default function AgencyRecommendationRulesPanel({
 
   const activeClinics = useMemo(
     () =>
-      clinics.filter((c) => {
+      clinics.filter((c): c is AgencyClinic & { id: string } => {
+        if (!c.id) return false;
         const status = String((c as any).status || "active").toLowerCase();
         if (status !== "active") return false;
         if (FEELINHEALTHY_NEVER_RECOMMEND_CLINIC_IDS.has(c.id)) return false;
