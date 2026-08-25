@@ -195,6 +195,7 @@ export function classifyAgencyConversationTurn(params: {
     params.nextAction?.kind === "ask_treatment" ||
     params.nextAction?.kind === "ask_city" ||
     params.nextAction?.kind === "ask_side" ||
+    params.nextAction?.kind === "side_guidance" ||
     params.nextAction?.kind === "consent" ||
     params.nextAction?.kind === "location_negotiation" ||
     ctx.workflowPaused === true ||

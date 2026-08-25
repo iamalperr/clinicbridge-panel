@@ -16,6 +16,7 @@ import {
   evaluateFeelinHealthyIntake,
   getCitySelectionCard,
   getIstanbulSideClarificationCard,
+  getSideGuidancePrompt,
   getTreatmentClarificationPrompt,
   getUnsupportedLocationPrompt,
   getCuratedClinicsForFeelinHealthy,
@@ -112,6 +113,10 @@ export type NextConversationAction =
   | {
       kind: "ask_side";
       card: ReturnType<typeof getIstanbulSideClarificationCard>;
+    }
+  | {
+      kind: "side_guidance";
+      prompt: string;
     }
   | {
       kind: "location_negotiation";
@@ -334,6 +339,11 @@ export function resolveNextConversationAction(
       selectedCity: state.location.city,
       istanbul_side: state.location.istanbulSide,
       locationSelectionConfirmed: state.location.cityConfirmed,
+      pendingSideGuidance: Boolean(
+        (rawCtx as any)?.pendingSideGuidance === true ||
+          (promptCtx as any)?.pendingSideGuidance === true ||
+          state.location.istanbulSide === "unsure"
+      ),
     },
     clinics,
     locale
@@ -358,6 +368,14 @@ export function resolveNextConversationAction(
     return {
       kind: "ask_side",
       card: getIstanbulSideClarificationCard(location.treatmentBranch, locale),
+    };
+  }
+
+  // 7b. Guided side recommendation after "Emin Değilim" (never re-show the same card)
+  if (location.step === "side_guidance" && location.city === "istanbul") {
+    return {
+      kind: "side_guidance",
+      prompt: getSideGuidancePrompt(null, locale),
     };
   }
 
@@ -625,6 +643,8 @@ export function applyStructuredLocationAction(
       next = cityUpdate.state;
       next.locationSelectionConfirmed = true;
       next.sideSelectionConfirmed = false;
+      // Distinct guided mode — do not leave pendingSideClarification (would re-show card).
+      delete next.pendingSideClarification;
       next.pendingSideGuidance = true;
     }
   } else if (action.type === "branch_side_confirm") {
@@ -737,6 +757,18 @@ export function buildGateResponseFromAction(
         showClinicCards: false,
         stage: "istanbul_side_selection",
       };
+    case "side_guidance":
+      ctx.pendingSideGuidance = true;
+      delete ctx.pendingSideClarification;
+      if (ctx.selectedCity !== "istanbul") ctx.selectedCity = "istanbul";
+      if (!ctx.istanbul_side) ctx.istanbul_side = "unsure";
+      return {
+        reply: action.prompt,
+        type: "text",
+        sessionContext: ctx,
+        showClinicCards: false,
+        stage: "istanbul_side_selection",
+      };
     case "location_negotiation":
       ctx.pendingLocationExpansion = true;
       ctx.pendingLocationExpansionTarget = action.targetDisplayName;
@@ -767,6 +799,7 @@ export function isHardGateAction(action: NextConversationAction): boolean {
     action.kind === "ask_treatment" ||
     action.kind === "ask_city" ||
     action.kind === "ask_side" ||
+    action.kind === "side_guidance" ||
     action.kind === "location_negotiation"
   );
 }

@@ -907,6 +907,7 @@ export type LocationDecisionStep =
   | "ask_treatment"
   | "ask_city"
   | "ask_side"
+  | "side_guidance"
   | "ready";
 
 export interface LocationDecision {
@@ -928,6 +929,8 @@ export function decideFeelinHealthyLocationNextStep(
     lastLocation?: string | null;
     istanbul_side?: string | null;
     locationSelectionConfirmed?: boolean;
+    /** Patient asked for help choosing a side ("Emin Değilim"). */
+    pendingSideGuidance?: boolean;
   },
   availableClinics: any[] = [],
   locale: string = "tr"
@@ -987,6 +990,16 @@ export function decideFeelinHealthyLocationNextStep(
   if (city === "istanbul") {
     const avail = getBranchIstanbulSideAvailability(treatmentBranch);
     const sideKnown = side === "european" || side === "anatolian";
+    // "Emin Değilim" is a distinct guided-recommendation mode — not ask_side again.
+    if (context.pendingSideGuidance || side === "unsure") {
+      return {
+        step: "side_guidance",
+        treatmentBranch,
+        city,
+        side: "unsure",
+        availableCities,
+      };
+    }
     if (!sideKnown) {
       // Single-side branches still need an affirmative confirmation card.
       return {
@@ -1380,21 +1393,40 @@ export function getSideGuidancePrompt(airportOrDistrictCue?: string | null, loca
 
   if (airportOrDistrictCue) {
     const norm = normalizeLocString(airportOrDistrictCue);
-    if (norm.includes("ist") || norm.includes("istanbul havalimani") || norm.includes("istanbul airport")) {
+    if (
+      norm.includes("ist") ||
+      norm.includes("istanbul havalimani") ||
+      norm.includes("istanbul airport") ||
+      norm.includes("sisli") ||
+      norm.includes("taksim") ||
+      norm.includes("mecidiyekoy") ||
+      norm.includes("besiktas") ||
+      norm.includes("bakirkoy") ||
+      norm.includes("halkali")
+    ) {
       return isEn
-        ? "You mentioned using Istanbul Airport (IST). For travel convenience, clinics on the European Side (such as Mecidiyeköy and Halkalı) are usually more practical. Would you like to evaluate European Side options?"
-        : "İstanbul Havalimanı’nı (IST) kullanacağınızı belirttiniz. Ulaşım kolaylığı açısından Avrupa Yakası’ndaki klinikler (Mecidiyeköy ve Halkalı) genellikle daha pratiktir. Avrupa Yakası seçeneklerini değerlendirmek ister misiniz?";
+        ? "Based on Istanbul Airport (IST) / European-side location cues, clinics on the European Side are usually more practical for transfers and accommodation. I recommend continuing with European Side options."
+        : "İstanbul Havalimanı (IST) / Avrupa Yakası konum ipuçlarına göre Avrupa Yakası’ndaki klinikler ulaşım ve konaklama açısından genellikle daha pratiktir. Avrupa Yakası seçenekleriyle devam etmenizi öneririm.";
     }
-    if (norm.includes("saw") || norm.includes("sabiha")) {
+    if (
+      norm.includes("saw") ||
+      norm.includes("sabiha") ||
+      norm.includes("kadikoy") ||
+      norm.includes("atasehir") ||
+      norm.includes("camlica") ||
+      norm.includes("uskudar") ||
+      norm.includes("kurtkoy") ||
+      norm.includes("pendik")
+    ) {
       return isEn
-        ? "You mentioned using Sabiha Gökçen Airport (SAW). For travel convenience, clinics on the Anatolian Side (such as Çamlıca and Kurtköy) are usually closer. Would you like to evaluate Anatolian Side options?"
-        : "Sabiha Gökçen Havalimanı’nı (SAW) kullanacağınızı belirttiniz. Ulaşım kolaylığı açısından Anadolu Yakası’ndaki klinikler (Çamlıca ve Kurtköy) genellikle daha pratiktir. Anadolu Yakası seçeneklerini değerlendirmek ister misiniz?";
+        ? "Based on Sabiha Gökçen Airport (SAW) / Anatolian-side location cues, clinics on the Anatolian Side are usually closer and more practical. I recommend continuing with Anatolian Side options."
+        : "Sabiha Gökçen Havalimanı (SAW) / Anadolu Yakası konum ipuçlarına göre Anadolu Yakası’ndaki klinikler genellikle daha yakındır ve daha pratiktir. Anadolu Yakası seçenekleriyle devam etmenizi öneririm.";
     }
   }
 
   return isEn
-    ? "Istanbul is a large metropolis spanning two continents. Which airport will you use (Istanbul Airport (IST) or Sabiha Gökçen Airport (SAW)), or in which area will you stay?"
-    : "İstanbul iki kıtaya yayılan büyük bir metropol. Hangi havalimanını kullanacaksınız (İstanbul Havalimanı veya Sabiha Gökçen) veya hangi bölgede konaklayacaksınız?";
+    ? "Of course. If you share which Istanbul airport you will use (Istanbul Airport (IST) or Sabiha Gökçen Airport (SAW)) or which area you plan to stay in, I can recommend the more practical side for you."
+    : "Tabii. İstanbul’da hangi havalimanını kullanacağınızı (İstanbul Havalimanı veya Sabiha Gökçen) veya hangi bölgede konaklamayı düşündüğünüzü paylaşırsanız sizin için daha pratik yakayı önerebilirim.";
 }
 
 export function formatClinicCardLocation(clinic: any, locale: string = "tr"): string {
@@ -1756,6 +1788,7 @@ export function isReadyForClinicMatching(context: {
   if (location.step === "ask_treatment") missing.push("treatment");
   if (location.step === "ask_city") missing.push("city");
   if (location.step === "ask_side") missing.push("istanbul_side");
+  if (location.step === "side_guidance") missing.push("istanbul_side");
 
   // Deduplicate while preserving order.
   const uniqueMissing = Array.from(new Set(missing));
@@ -2060,8 +2093,8 @@ export function calculateAdditionalCountAndConversion(
     additionalCount,
     hasConversionOffer: additionalCount > 0,
     conversionMessage: isEn
-      ? `The FeelinHealthy AI assistant is currently showing ${shown} clinic suggestions from our partner network for your treatment. Create a free account to request quotes from all matching providers and compare your options.`
-      : `FeelinHealthy yapay zeka asistanı, tedavinize uygun anlaşmalı kliniklerden şu an ${shown} öneri sunuyor. Tüm uygun sağlık kuruluşlarından teklif alıp seçenekleri karşılaştırmak için ücretsiz üye olabilirsiniz.`,
+      ? `The FeelinHealthy AI assistant is currently showing ${shown} clinic suggestions from our partner network for your treatment. Create a free account with the Sign Up button in the top-right corner to request quotes from all matching providers and compare your options.`
+      : `FeelinHealthy yapay zeka asistanı, tedavinize uygun anlaşmalı kliniklerden şu an ${shown} öneri sunuyor. Tüm uygun sağlık kuruluşlarından teklif alıp seçenekleri karşılaştırmak için sağ üstteki Kayıt Ol butonuyla ücretsiz üye olabilirsiniz.`,
     ctaText: isEn ? "Get More Quotes" : "Daha Fazla Teklif Al",
     registrationUrl: FEELINHEALTHY_CONFIG.registrationUrl,
   };

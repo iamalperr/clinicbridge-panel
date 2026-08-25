@@ -91,6 +91,8 @@ import {
   handleClinicSelectionPanelAction,
   isClinicSelectionPanelAction,
   claimPostQuoteMembershipMessage,
+  isMembershipHowToIntent,
+  getOnSiteMembershipGuidance,
 } from "@/lib/agency/feelinhealthyClinicCardActions";
 import {
   classifyAgencyConversationTurn,
@@ -1279,6 +1281,30 @@ export async function POST(
       Object.assign(ctx, exitToNetworkAdvisor(ctx));
     }
 
+    // On-site membership / sign-up how-to (FeelinHealthy embed) — never "go to the website".
+    if (isFeelinHealthy && isMembershipHowToIntent(finalMessage || message)) {
+      const membershipLang = String(
+        (ctx as any).language || agencyData.defaultLanguage || "tr"
+      ).toLowerCase().startsWith("en")
+        ? "en"
+        : "tr";
+      const { resolveAgencyBrand } = await import("@/lib/agency/resolveAgencyBrand");
+      const brand = resolveAgencyBrand(agencyData);
+      return jsonResponse(
+        {
+          reply: getOnSiteMembershipGuidance({
+            locale: membershipLang,
+            agencyDisplayName: brand.displayName,
+          }),
+          type: "text",
+          sessionContext: ctx,
+          showClinicCards: false,
+          stage: (ctx as any).conversationStage || null,
+        },
+        { headers: CORS }
+      );
+    }
+
     // While Group 1 is open a bare full name is a legitimate answer, so the
     // extractor is told a name is expected. Never before consent — treatment
     // requests must not be parsed as names, and treatment must still extract.
@@ -1497,6 +1523,8 @@ export async function POST(
         }
       }
       if (sideRes.side === "european" || sideRes.side === "anatolian") {
+        const wasSideGuidance =
+          ctx.pendingSideGuidance === true || getAgencyIstanbulSide(ctx) === "unsure";
         ctx.istanbul_side = sideRes.side;
         ctx.istanbul_side_source = sideRes.source;
         ctx.selectedCity = "istanbul";
@@ -1505,6 +1533,13 @@ export async function POST(
         ctx.lastLocation = sideRes.side === "anatolian" ? "İstanbul Anadolu Yakası" : "İstanbul Avrupa Yakası";
         delete ctx.pendingSideClarification;
         delete ctx.pendingSideGuidance;
+        if (wasSideGuidance) {
+          (ctx as any).__sideGuidanceReply = getSideGuidancePrompt(
+            sideRes.cueName || sideRes.side,
+            agencyData.defaultLanguage || "tr"
+          );
+          (ctx as any).__forceClinicMatching = true;
+        }
       }
     }
 
@@ -2813,30 +2848,36 @@ export async function POST(
         }
       }
 
-      // Side guidance ("emin değilim") only after Istanbul is already selected.
+      // Side guidance ("Emin Değilim") — ask one travel/location follow-up; never re-show the side card.
+      const sideUnresolved =
+        getAgencyIstanbulSide(newCtx) === "unsure" ||
+        (!newCtx.sideSelectionConfirmed &&
+          getAgencyIstanbulSide(newCtx) !== "european" &&
+          getAgencyIstanbulSide(newCtx) !== "anatolian");
       if (
         getAgencySelectedCity(newCtx) === "istanbul" &&
+        sideUnresolved &&
         (newCtx.pendingSideGuidance ||
           /\b(fark etmez|emin degilim|emin değilim|bilmiyorum|kararsizim|kararsızım|neresi uygun|hangisi daha iyi|yardım|not sure|any|unsure|dont know|help me choose)\b/i.test(
             finalMessage || message || ""
           ))
       ) {
-        const sideCues = resolveIstanbulSideFromText(finalMessage || message || "");
-        const guidanceText = getSideGuidancePrompt(sideCues.cueName, currentLang);
-        const cardData = getIstanbulSideClarificationCard(
-          getAgencyTreatmentContext(newCtx).category || null,
-          currentLang
+        newCtx.pendingSideGuidance = true;
+        newCtx.istanbul_side = newCtx.istanbul_side || "unsure";
+        newCtx.selectedCity = "istanbul";
+        newCtx.locationSelectionConfirmed = true;
+        newCtx.sideSelectionConfirmed = false;
+        delete newCtx.pendingSideClarification;
+        return jsonResponse(
+          {
+            reply: getSideGuidancePrompt(null, currentLang),
+            type: "text",
+            sessionContext: newCtx,
+            showClinicCards: false,
+            stage: "istanbul_side_selection",
+          },
+          { headers: CORS }
         );
-        delete newCtx.pendingSideGuidance;
-        newCtx.pendingSideClarification = true;
-        return jsonResponse({
-          reply: guidanceText,
-          type: cardData.type,
-          sideClarificationCard: cardData,
-          sessionContext: newCtx,
-          showClinicCards: false,
-          stage: "istanbul_side_selection",
-        }, { headers: CORS });
       }
 
       const nextAction = resolveNextConversationAction(newCtx, {
@@ -3219,6 +3260,11 @@ export async function POST(
           : (parsed.replyText || (replyLang === "tr"
             ? `${parsed.subTreatment || "Tedaviniz"} için ${recommendations.length} uygun klinik buldum.`
             : `I found ${recommendations.length} suitable clinic(s) for ${parsed.subTreatment || "your treatment"}.`));
+
+        if ((newCtx as any).__sideGuidanceReply) {
+          readyReply = `${(newCtx as any).__sideGuidanceReply}\n\n${readyReply}`;
+          delete (newCtx as any).__sideGuidanceReply;
+        }
 
         // Empty match: always escalate to clickable city options (never text-only loop).
         if (isFeelinHealthy && recommendations.length === 0) {

@@ -676,6 +676,7 @@ export function requestQuoteFailureCopy(locale: string): string {
 /**
  * Separate post-quote assistant bubble (guest comparison / membership CTA).
  * Uses canonical guest recommendation limit — never hardcode "exactly 2".
+ * On-site guidance points to the page Sign Up control (never "go to the website").
  */
 export function getPostQuoteMembershipMessage(params: {
   locale?: string;
@@ -693,14 +694,51 @@ export function getPostQuoteMembershipMessage(params: {
     return (
       `The ${brand} AI assistant recommends up to ${max} clinics from our contracted partners ` +
       `that match your treatment. To also receive offers from other suitable healthcare providers ` +
-      `and compare options, you can register for free.`
+      `and compare options, you can create a free account using the Sign Up button in the top-right corner.`
     );
   }
 
   return (
     `${brand} yapay zeka asistanı tedavinize uygun, anlaşmalı olduğumuz klinik seçenekleri ` +
     `içerisinden en fazla ${max} klinik önerisinde bulunmaktadır. Tedavinize uygun diğer sağlık ` +
-    `kuruluşlarından da teklif almak ve seçenekleri karşılaştırmak için ücretsiz üye olabilirsiniz.`
+    `kuruluşlarından da teklif almak ve seçenekleri karşılaştırmak için sağ üstte yer alan ` +
+    `Kayıt Ol butonuna tıklayarak ücretsiz üyeliğinizi oluşturabilirsiniz.`
+  );
+}
+
+/**
+ * Detect "how do I sign up / become a member?" style questions.
+ */
+export function isMembershipHowToIntent(message?: string | null): boolean {
+  const raw = String(message || "").trim();
+  if (!raw) return false;
+  const m = raw.toLocaleLowerCase("tr-TR").normalize("NFC");
+  return (
+    /(?:üye\s*olmak|uye\s*olmak|üyelik|uyelik|kayıt\s*ol|kayit\s*ol|nasıl\s*üye|nasil\s*uye)/i.test(m) ||
+    /(?:sign\s*up|create\s+(?:an?\s+)?account|how\s+(?:do|can)\s+i\s+(?:sign|register)|become\s+a\s+member|membership)/i.test(
+      m
+    )
+  );
+}
+
+/**
+ * On-site membership CTA for the embedded FeelinHealthy experience.
+ * Never tells the visitor to leave and "go to the website".
+ */
+export function getOnSiteMembershipGuidance(params: {
+  locale?: string;
+  agencyDisplayName?: string;
+}): string {
+  const isEn = String(params.locale || "tr").toLowerCase().startsWith("en");
+  if (isEn) {
+    return (
+      "You can create your free account using the Sign Up button in the top-right corner. " +
+      "Once registered, you can request offers from additional suitable healthcare providers and compare your options."
+    );
+  }
+  return (
+    "Sağ üstte yer alan Kayıt Ol butonuna tıklayarak ücretsiz üyeliğinizi oluşturabilirsiniz. " +
+    "Üye olduktan sonra tedavinize uygun diğer sağlık kuruluşlarından da teklif isteyebilir ve seçenekleri karşılaştırabilirsiniz."
   );
 }
 
