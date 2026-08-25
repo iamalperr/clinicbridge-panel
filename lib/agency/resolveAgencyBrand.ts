@@ -1,7 +1,8 @@
 /**
- * Canonical patient-facing agency brand resolver.
+ * Canonical agency brand resolver for agency-originated emails
+ * (patient-facing transactional + agency staff notifications).
  *
- * ClinicBridge is the platform; patient emails for an agency conversation should
+ * ClinicBridge is the platform; emails for an agency conversation should
  * display the agency brand when known. Falls back to ClinicBridge AI only when
  * agency identity cannot be resolved — never invent a tenant.
  *

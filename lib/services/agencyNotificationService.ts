@@ -1,5 +1,6 @@
 import { getAdminDb } from "@/lib/firebase-admin";
 import { Resend } from "resend";
+import { resolveAgencyBrand } from "@/lib/agency/resolveAgencyBrand";
 import {
   AGENCY_LEAD_NOTIFICATION_EVENT,
   buildAgencyLeadNotificationJobId,
@@ -346,7 +347,9 @@ export async function processAgencyNotificationJob(agencyId: string, jobId: stri
     const clinicNames = await resolveOfficialClinicNames(agencyId, selectedClinicIds);
 
     const agencySnap = await adminDb.collection("agencies").doc(agencyId).get();
-    const agencyLocale = agencySnap.data()?.settings?.defaultLocale || lead.language || "tr";
+    const agencyData = agencySnap.exists ? agencySnap.data() || {} : {};
+    const brand = resolveAgencyBrand(agencyData);
+    const agencyLocale = agencyData.settings?.defaultLocale || lead.language || "tr";
     const lang = String(agencyLocale).toLowerCase().startsWith("en") ? "en" : "tr";
 
     const portalUrl = buildQuoteRequestPortalUrl(agencyId, leadId);
@@ -377,6 +380,8 @@ export async function processAgencyNotificationJob(agencyId: string, jobId: stri
       attemptNumber,
       recipientSource: delivery.source,
       recipientCount: recipients.length,
+      fromHeader: brand.fromHeader,
+      isAgencyBranded: brand.isAgencyBranded,
     });
 
     if (!process.env.RESEND_API_KEY) {
@@ -385,7 +390,7 @@ export async function processAgencyNotificationJob(agencyId: string, jobId: stri
     }
 
     const sendPromise = resend.emails.send({
-      from: "ClinicBridge AI <noreply@clinicbridge-ai.com>",
+      from: brand.fromHeader,
       to: recipients,
       ...(delivery.cc.length > 0 ? { cc: delivery.cc } : {}),
       ...(delivery.replyTo ? { replyTo: delivery.replyTo } : {}),
@@ -575,7 +580,11 @@ export async function sendTestQuoteNotificationEmail(agencyId: string): Promise<
     };
   }
 
-  const subject = "ClinicBridge – Teklif Talebi Bildirim Testi";
+  const adminDb = getAdminDb();
+  const agencySnap = adminDb ? await adminDb.collection("agencies").doc(agencyId).get() : null;
+  const brand = resolveAgencyBrand(agencySnap?.exists ? agencySnap.data() || {} : null);
+
+  const subject = `${brand.displayName} – Teklif Talebi Bildirim Testi`;
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #1e293b; line-height: 1.6;">
       <h2 style="color: #0d9488;">Test e-postası</h2>
@@ -584,12 +593,12 @@ export async function sendTestQuoteNotificationEmail(agencyId: string): Promise<
       <p style="font-size: 12px; color: #64748b;">Agency ID: ${agencyId}</p>
     </div>`;
   const text =
-    "ClinicBridge test e-postası. Gerçek bir hasta teklif talebi oluşturulmamıştır.\nAgency ID: " +
+    `${brand.displayName} test e-postası. Gerçek bir hasta teklif talebi oluşturulmamıştır.\nAgency ID: ` +
     agencyId;
 
   try {
     const result = await resend.emails.send({
-      from: "ClinicBridge AI <noreply@clinicbridge-ai.com>",
+      from: brand.fromHeader,
       to: delivery.recipients,
       ...(delivery.cc.length > 0 ? { cc: delivery.cc } : {}),
       ...(delivery.replyTo ? { replyTo: delivery.replyTo } : {}),

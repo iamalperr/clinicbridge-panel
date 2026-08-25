@@ -30,11 +30,14 @@ export async function sendAgencyLeadNotification({ agencyId, leadId }: { agencyI
     const patientName = lead?.patientName || "Bilinmiyor";
     const treatment = lead?.treatmentCategory || "Belirtilmedi";
 
+    const { resolveAgencyBrand } = await import("@/lib/agency/resolveAgencyBrand");
+    const brand = resolveAgencyBrand(agency);
+
     const htmlContent = `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.6;">
         <h2 style="color: #0d9488;">Yeni Hasta Talebi (${patientName})</h2>
         <p>Merhaba,</p>
-        <p><strong>FeelinHealthy AI Asistanı</strong> üzerinden yeni bir hasta talebi oluşturuldu. Aşağıda hastanın toplanan ön bilgilerini bulabilirsiniz:</p>
+        <p><strong>${brand.displayName} AI Asistanı</strong> üzerinden yeni bir hasta talebi oluşturuldu. Aşağıda hastanın toplanan ön bilgilerini bulabilirsiniz:</p>
         
         <table style="width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px;">
           <tr>
@@ -78,8 +81,9 @@ export async function sendAgencyLeadNotification({ agencyId, leadId }: { agencyI
     `;
 
     await resend.emails.send({
-      from: "ClinicBridge AI <noreply@clinicbridge-ai.com>",
+      from: brand.fromHeader,
       to: recipientEmail,
+      ...(brand.replyTo ? { replyTo: brand.replyTo } : {}),
       subject: `Yeni Hasta Talebi - ${patientName} - ${treatment}`,
       html: htmlContent,
     });
