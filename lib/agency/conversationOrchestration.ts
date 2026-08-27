@@ -10,6 +10,7 @@
  */
 
 import { IntentRouter } from "@/lib/conversation/intentRouter";
+import { isClinicFactInformationTurn } from "./clinicFactGrounding";
 import type { AgencySessionState, AgencySessionStateInput } from "./agencySessionState";
 import { normalizeAgencySessionState } from "./agencySessionState";
 import type { FeelinHealthyStage } from "./feelinhealthyConversationMachine";
@@ -171,6 +172,11 @@ export function isAgencyInformationalInterruption(
   // Question mark + substantive text during workflow → treat as digression.
   if (opts?.workflowActive && /[?]/.test(lower) && lower.length >= 8) {
     return { isInterruption: true, informationType: "general" };
+  }
+
+  // Clinic factual questions without "?" (TR/EN) — do not force intake.
+  if (opts?.workflowActive && isClinicFactInformationTurn(lower)) {
+    return { isInterruption: true, informationType: "clinic_fact" };
   }
 
   return { isInterruption: false };

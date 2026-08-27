@@ -9,6 +9,8 @@
  * Does not choose clinics, authorize writes, or change matching eligibility.
  */
 
+import { resolveClinicNarrativeText } from "./clinicFactGrounding";
+
 export type AgencyGroundedSourceType =
   | "prompt_studio"
   | "conversation_state"
@@ -40,9 +42,13 @@ export interface AgencyGroundedClinicInput {
   clinicName?: string;
   clinicSlug?: string;
   status?: string;
-  overview?: string | null;
+  overview?: string | null | Record<string, unknown>;
   summary?: string | null;
   description?: string | null;
+  longDescription?: string | null;
+  shortDescription?: string | null;
+  doctorCount?: number | null;
+  accreditation?: string[] | null;
   treatmentCategories?: string[];
   treatments?: Array<{ name?: string; category?: string } | string>;
   location?: { city?: string; address?: string; side?: string } | null;
@@ -58,6 +64,7 @@ export interface AgencyGroundedDoctorInput {
   title?: string;
   specialties?: string[];
   specialty?: string;
+  expertiseAreas?: string[];
   languages?: string[];
   isActive?: boolean;
   isPublic?: boolean;
@@ -353,8 +360,13 @@ export function buildAgencyGroundedContext(
     const name = clinicNameOf(clinic);
     const lines: string[] = [`### ${name} (id=${cid || "unknown"})`];
 
-    const overview =
-      String(clinic.overview || clinic.summary || clinic.description || "").trim();
+    const overview = resolveClinicNarrativeText({
+      overview: clinic.overview,
+      summary: clinic.summary,
+      description: clinic.description,
+      longDescription: clinic.longDescription,
+      shortDescription: clinic.shortDescription,
+    });
     if (overview) {
       lines.push(`Overview: ${overview.slice(0, 600)}`);
       pushAttr(attributions, {
@@ -370,7 +382,7 @@ export function buildAgencyGroundedContext(
       .filter(Boolean);
     if (cats.length || treatments.length) {
       lines.push(
-        `Treatments: ${[...cats, ...treatments].slice(0, 20).join(", ")}`
+        `Treatments (service availability — NOT automatic proof of specialization): ${[...cats, ...treatments].slice(0, 20).join(", ")}`
       );
       pushAttr(attributions, {
         agencyId,
@@ -379,15 +391,36 @@ export function buildAgencyGroundedContext(
       });
     }
 
+    const doctorCountNum = Number(clinic.doctorCount);
+    if (Number.isFinite(doctorCountNum) && doctorCountNum > 0) {
+      lines.push(`Verified doctorCount field: ${Math.floor(doctorCountNum)}`);
+      pushAttr(attributions, {
+        agencyId,
+        clinicId: cid,
+        sourceType: "doctors",
+      });
+    }
+
+    if (Array.isArray(clinic.accreditation) && clinic.accreditation.length > 0) {
+      lines.push(`Accreditation: ${clinic.accreditation.map(String).slice(0, 8).join(", ")}`);
+    }
+
     const docs = (doctorsByClinic.get(cid) || []).slice(0, 8);
     if (docs.length) {
+      lines.push(`Verified doctor records listed: ${docs.length}`);
       lines.push(
         "Doctors (verified records only): " +
           docs
             .map((d) => {
               const dn = d.fullName || d.name || "Doctor";
-              const sp =
-                (d.specialties && d.specialties.join("/")) || d.specialty || "";
+              const specs = [
+                ...(d.specialties || []),
+                ...(d.expertiseAreas || []),
+                ...(d.specialty ? [d.specialty] : []),
+              ]
+                .map(String)
+                .filter(Boolean);
+              const sp = Array.from(new Set(specs)).join("/");
               return sp ? `${dn} (${sp})` : dn;
             })
             .join("; ")
@@ -503,8 +536,8 @@ export function buildAgencyGroundedContext(
 
   blocks.push(
     isEn
-      ? "=== GROUNDING RULES ===\nUse only verified context above. Never invent doctors, prices, specialties, or clinic capabilities. If pricing is missing: do NOT stop or say you have no information — briefly explain that pricing is personalized after evaluation, collect any missing patient details, and promise a quick satisfaction-minded pricing follow-up."
-      : "=== DAYANAK KURALLARI ===\nYalnızca yukarıdaki doğrulanmış bağlamı kullan. Doktor, fiyat, uzmanlık veya klinik yeteneği uydurma. Fiyat yoksa: yanıtı kesme veya 'bilgim yok' deme — fiyatın değerlendirme sonrası kişiselleştiğini kısaca belirt, eksik hasta bilgilerini topla ve fiyat konusunda hızlı/memnuniyet odaklı dönüş sözü ver."
+      ? "=== GROUNDING RULES ===\nUse only verified context above. Never invent doctors, doctor counts, prices, specialties, certifications, or clinic capabilities. Offering a treatment ≠ specializing in it and ≠ being an expert — only state specialization when explicit specialty data exists. If a fact is missing, say it is not in verified records — do NOT invent marketing fillers (e.g. 'expert team', 'highly experienced staff'). If pricing is missing: do NOT invent a number — briefly explain pricing is personalized after evaluation when the user is in a quote flow; for pure information questions do not start lead qualification."
+      : "=== DAYANAK KURALLARI ===\nYalnızca yukarıdaki doğrulanmış bağlamı kullan. Doktor, doktor sayısı, fiyat, uzmanlık, sertifika veya klinik yeteneği uydurma. Bir tedaviyi sunmak = o alanda uzman olmak değildir; uzmanlık yalnızca açık uzmanlık kaydı varsa söylenebilir. Bilgi yoksa doğrulanmış kayıtlarda olmadığını söyle — 'uzman kadro / deneyimli ekip' gibi pazarlama cümleleri uydurma. Fiyat yoksa rakam uydurma; bilgi sorularında lead formuna geçme."
   );
 
   return {

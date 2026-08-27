@@ -120,7 +120,19 @@ import {
   isAgencyExplicitMatchingChangeRequest,
   isAgencyQuoteCompletedSession,
 } from "@/lib/agency/conversationOrchestration";
-import { buildAgencyGroundedContext, getApprovedPricingFallback } from "@/lib/agency/agencyGroundedRetrieval";
+import { buildAgencyGroundedContext, getApprovedPricingFallback, resolveNamedConnectedClinic } from "@/lib/agency/agencyGroundedRetrieval";
+import {
+  buildVerifiedClinicFactReply,
+  clinicHasExplicitSpecialization,
+  clinicOffersTreatmentCategory,
+  containsUnsupportedClinicMarketingClaim,
+  detectClinicFactKind,
+  isDoctorActivelyListed,
+  resolveClinicNarrativeText,
+  resolveDoctorDisplayName,
+  resolveDoctorSpecialtyList,
+  resolveVerifiedDoctorCount,
+} from "@/lib/agency/clinicFactGrounding";
 import {
   getIntakePausedForInformationCopy,
   composeExplainBeforeAskIntakePrompt,
@@ -191,9 +203,7 @@ type SessionContext = AgencySessionState;
  * the alias produced an undefined name in the clinic card payload.
  */
 function resolveDoctorFullName(doctor: any): string {
-  const candidate =
-    doctor?.doctorName || doctor?.full_name || doctor?.fullName || doctor?.name;
-  return typeof candidate === "string" ? candidate.trim() : "";
+  return resolveDoctorDisplayName(doctor);
 }
 
 /**
@@ -2173,7 +2183,7 @@ export async function POST(
         const c = allActiveClinics![idx];
         snap.docs.forEach(dDoc => {
           const dData = dDoc.data();
-          if (dData.status === "active" && dData.showOnPublicProfile !== false) {
+          if (isDoctorActivelyListed(dData)) {
             allDoctors!.push({ id: dDoc.id, clinicId: c.id, ...dData });
           }
         });
@@ -2249,6 +2259,29 @@ export async function POST(
       assistantRole === "clinic_coordinator" && coordinatorClinicId
         ? allClinics.filter((c: any) => String(c.id) === String(coordinatorClinicId))
         : allClinics;
+    // Named clinic asked about may sit outside the truncated top-10 — pull from full pool.
+    const namedClinicForFacts = resolveNamedConnectedClinic(
+      finalMessage || message,
+      fullAgencyClinics
+    );
+    let clinicsForGrounded =
+      clinicsForPrompt.length > 0 ? clinicsForPrompt : allClinics;
+    if (
+      namedClinicForFacts &&
+      !clinicsForGrounded.some((c: any) => String(c.id) === String(namedClinicForFacts.id))
+    ) {
+      clinicsForGrounded = [namedClinicForFacts, ...clinicsForGrounded].slice(0, 10);
+    }
+    if (
+      assistantRole === "clinic_coordinator" &&
+      coordinatorClinicId &&
+      !clinicsForGrounded.some((c: any) => String(c.id) === String(coordinatorClinicId))
+    ) {
+      const selectedFull = fullAgencyClinics.find(
+        (c: any) => String(c.id) === String(coordinatorClinicId)
+      );
+      if (selectedFull) clinicsForGrounded = [selectedFull];
+    }
     const kbForPrompt =
       assistantRole === "clinic_coordinator" && coordinatorClinicId
         ? relevantKbRecords.filter(
@@ -2259,8 +2292,6 @@ export async function POST(
       assistantRole === "clinic_coordinator" && coordinatorClinicId
         ? filteredPricing.filter((p: any) => String(p.clinicId) === String(coordinatorClinicId))
         : filteredPricing;
-    const clinicsForGrounded =
-      clinicsForPrompt.length > 0 ? clinicsForPrompt : allClinics;
     const promptLocale = (agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en")
       ? "en"
       : "tr";
@@ -2277,9 +2308,13 @@ export async function POST(
         clinicName: c.clinicName,
         clinicSlug: c.clinicSlug,
         status: c.status,
-        overview: c.overview || c.shortDescription,
+        overview: resolveClinicNarrativeText(c),
         summary: c.summary,
         description: c.description,
+        longDescription: c.longDescription,
+        shortDescription: c.shortDescription,
+        doctorCount: c.doctorCount,
+        accreditation: c.accreditation,
         treatmentCategories: c.treatmentCategories || c.treatments,
         treatments: c.subTreatments || c.treatments,
         location: c.location,
@@ -2291,11 +2326,12 @@ export async function POST(
         fullName: resolveDoctorFullName(d),
         name: resolveDoctorFullName(d),
         title: d.title || d.specialty,
-        specialties: d.specialties || (d.specialty ? [d.specialty] : []),
+        specialties: resolveDoctorSpecialtyList(d),
         specialty: d.specialty,
+        expertiseAreas: Array.isArray(d.expertiseAreas) ? d.expertiseAreas : [],
         languages: d.languages || d.supportedLanguages,
-        isActive: d.isActive,
-        isPublic: d.isPublic,
+        isActive: isDoctorActivelyListed(d),
+        isPublic: d.showOnPublicProfile !== false && d.isPublic !== false,
       })),
       pricing: pricingForPrompt.map((p: any) => ({
         id: p.id,
@@ -2442,6 +2478,76 @@ export async function POST(
     const aiStart = performance.now();
     
     let parsed: any;
+
+    // Deterministic clinic facts (doctor count / expertise / doctor list) — never invent.
+    const clinicFactKind = detectClinicFactKind(finalMessage || message);
+    const factClinicCandidate =
+      resolveNamedConnectedClinic(finalMessage || message, fullAgencyClinics) ||
+      (coordinatorClinicId
+        ? fullAgencyClinics.find((c: any) => String(c.id) === String(coordinatorClinicId))
+        : null) ||
+      (ctx.lastFocusedClinicId
+        ? fullAgencyClinics.find((c: any) => String(c.id) === String(ctx.lastFocusedClinicId))
+        : null) ||
+      (ctx.lastFocusedClinicName
+        ? resolveNamedConnectedClinic(String(ctx.lastFocusedClinicName), fullAgencyClinics)
+        : null);
+
+    if (
+      clinicFactKind &&
+      factClinicCandidate &&
+      (clinicFactKind === "doctor_count" ||
+        clinicFactKind === "doctor_list" ||
+        clinicFactKind === "expertise")
+    ) {
+      const factLang = (agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en")
+        ? "en"
+        : "tr";
+      const clinicDocs = (allDoctors || []).filter(
+        (d: any) => String(d.clinicId) === String(factClinicCandidate.id)
+      );
+      const countInfo = resolveVerifiedDoctorCount(factClinicCandidate, clinicDocs);
+      const treatmentHint =
+        getAgencyTreatmentContext(ctx).category ||
+        agencySlotsExtracted.extracted.treatment ||
+        null;
+      const fact = buildVerifiedClinicFactReply({
+        kind: clinicFactKind,
+        locale: factLang,
+        clinicName: factClinicCandidate.clinicName || factClinicCandidate.displayNameTr || "Clinic",
+        doctorCount: countInfo,
+        doctors: clinicDocs.map((d: any) => ({
+          name: resolveDoctorFullName(d),
+          specialties: resolveDoctorSpecialtyList(d),
+        })),
+        offersTreatment: clinicOffersTreatmentCategory(factClinicCandidate, treatmentHint),
+        explicitSpecialization: clinicHasExplicitSpecialization(
+          factClinicCandidate,
+          treatmentHint
+        ),
+        treatmentLabel: treatmentHint,
+      });
+
+      const factCtx = { ...ctx };
+      factCtx.lastFocusedClinicId = factClinicCandidate.id;
+      factCtx.lastFocusedClinicName =
+        factClinicCandidate.clinicName || factCtx.lastFocusedClinicName;
+
+      return jsonResponse(
+        {
+          reply: fact.reply,
+          type:
+            clinicFactKind === "doctor_count" || clinicFactKind === "doctor_list"
+              ? "doctor_answer"
+              : "clinic_answer",
+          sessionContext: serializeAgencySessionState(factCtx),
+          showClinicCards: false,
+          shouldCreateNewLead: false,
+          shouldUpdateLead: false,
+        },
+        { headers: CORS }
+      );
+    }
 
     // Structured city/side actions that are ready for matching must never call the LLM.
     // LLM parse failures previously rediscovered Group 1 after side selection (P0).
@@ -2933,7 +3039,7 @@ export async function POST(
       newCtx.conversationStage = fhState.stage;
       newCtx.intakeStage = fhState.intake.currentGroup;
 
-      if (isHardGateAction(nextAction)) {
+      if (isHardGateAction(nextAction) && !(ctx as any).__informationalDigression) {
         const composed = buildComposedHardGatePayload({
           nextAction,
           sessionContext: newCtx,
@@ -2980,8 +3086,15 @@ export async function POST(
           ? "en"
           : "tr";
       const intakeStatus = evaluateFeelinHealthyIntake(newCtx);
+      const clinicFactTurn =
+        Boolean((ctx as any).__informationalDigression) ||
+        detectClinicFactKind(finalMessage || message) != null ||
+        parsed.intent === "clinic_question" ||
+        parsed.intent === "doctor_question" ||
+        parsed.intent === "pricing_question";
 
-      if (!intakeStatus.allGroupsComplete) {
+      // Pure clinic information Q&A must not force lead qualification mid-conversation.
+      if (!intakeStatus.allGroupsComplete && !clinicFactTurn && !newCtx.intakeInformationOnly) {
         const groupPrompt =
           !intakeStatus.group3Complete && intakeStatus.group1Complete && intakeStatus.group2Complete
             ? currentLang === "en"
@@ -2999,7 +3112,7 @@ export async function POST(
         }, { headers: CORS });
       }
 
-      // Intake complete in coordinator mode: continue to clinic Q&A handlers.
+      // Intake complete OR informational clinic Q&A: continue to clinic handlers.
       // Do NOT auto-call persistAgencyQuoteRequest here — that was the P0 bug
       // that made every clinic-card action look like a failed quote request.
       if (!parsed.shouldCreateLead) {
@@ -3880,8 +3993,30 @@ export async function POST(
           })()
         };
 
+        let clinicReply =
+          parsed.replyText || `${clinic.clinicName} hakkında bilgi.`;
+        if (containsUnsupportedClinicMarketingClaim(clinicReply)) {
+          const treatmentHint =
+            getAgencyTreatmentContext(newCtx).category ||
+            parsed.treatmentCategory ||
+            null;
+          const expertiseFact = buildVerifiedClinicFactReply({
+            kind: "expertise",
+            locale: parsed.language || "tr",
+            clinicName: clinic.clinicName || "Clinic",
+            doctorCount: null,
+            offersTreatment: clinicOffersTreatmentCategory(clinic, treatmentHint),
+            explicitSpecialization: clinicHasExplicitSpecialization(
+              clinic,
+              treatmentHint
+            ),
+            treatmentLabel: treatmentHint,
+          });
+          clinicReply = expertiseFact.reply;
+        }
+
         return jsonResponse({
-          reply: parsed.replyText || `${clinic.clinicName} hakkında bilgi.`,
+          reply: clinicReply,
           type: "clinic_answer",
           clinics: [miniCard],
           sessionContext: newCtx,
@@ -4002,53 +4137,74 @@ export async function POST(
       const clinicName = parsed.clinicName || ctx.lastFocusedClinicName;
       let clinic: any = null;
       if (clinicName) {
-        const nameLower = clinicName.toLowerCase();
-        clinic = allClinics.find((c: any) => c.clinicName?.toLowerCase().includes(nameLower));
+        clinic =
+          resolveNamedConnectedClinic(String(clinicName), fullAgencyClinics) ||
+          fullAgencyClinics.find((c: any) =>
+            String(c.clinicName || "")
+              .toLowerCase()
+              .includes(String(clinicName).toLowerCase())
+          );
+      }
+      if (!clinic && ctx.lastFocusedClinicId) {
+        clinic = fullAgencyClinics.find(
+          (c: any) => String(c.id) === String(ctx.lastFocusedClinicId)
+        );
       }
 
       if (clinic) {
         newCtx.lastFocusedClinicId = clinic.id;
         newCtx.lastFocusedClinicName = clinic.clinicName;
 
-        try {
-          if (adminDb) {
-            const doctorSnap = await adminDb.collection("agencies").doc(agencyId)
-              .collection("clinics").doc(clinic.id)
-              .collection("doctors").orderBy("order", "asc").get();
-            const doctors = doctorSnap.docs
-              .map((d) => ({ id: d.id, ...d.data() }))
-              .filter((doc: any) => doc.status === "active");
+        const doctors = (allDoctors || []).filter(
+          (d: any) =>
+            String(d.clinicId) === String(clinic.id) && isDoctorActivelyListed(d)
+        );
+        const lang = parsed.language || "tr";
+        const countInfo = resolveVerifiedDoctorCount(clinic, doctors);
+        const factKind = detectClinicFactKind(finalMessage || message) || "doctor_list";
 
-            if (doctors.length > 0) {
-              const docLines = doctors.map((d: any) => {
-                const title = d.title || "";
-                const specs = (d.specialties || []).join(", ");
-                return `• ${title} ${d.name}${specs ? ` — ${specs}` : ""}`;
-              }).join("\n");
-
-            const lang = parsed.language || "tr";
-            const replyText = parsed.replyText || (lang === "tr"
-              ? `${clinic.clinicName} doktor kadrosu:\n\n${docLines}`
-              : `${clinic.clinicName} medical team:\n\n${docLines}`);
-
-            return jsonResponse({
-              reply: replyText,
-              type: "doctor_answer",
-              sessionContext: newCtx,
-            }, { headers: CORS });
+        if (factKind === "doctor_count" || doctors.length === 0) {
+          const fact = buildVerifiedClinicFactReply({
+            kind: factKind === "doctor_count" ? "doctor_count" : "doctor_list",
+            locale: lang,
+            clinicName: clinic.clinicName || "Clinic",
+            doctorCount: countInfo,
+            doctors: doctors.map((d: any) => ({
+              name: resolveDoctorFullName(d),
+              specialties: resolveDoctorSpecialtyList(d),
+            })),
+          });
+          let reply = fact.reply;
+          if (
+            !fact.verified &&
+            containsUnsupportedClinicMarketingClaim(parsed.replyText)
+          ) {
+            reply = fact.reply;
           }
-        }
-      } catch (e) {
-          console.error("[matching-chat] Doctor fetch error:", e);
+          return jsonResponse({
+            reply,
+            type: "doctor_answer",
+            sessionContext: newCtx,
+          }, { headers: CORS });
         }
 
-        return jsonResponse({
-          reply: parsed.replyText || (parsed.language === "tr"
-            ? `${clinic.clinicName} için sistemde doktor bilgisi henüz tanımlı değil.`
-            : `No doctor information is available for ${clinic.clinicName} yet.`),
-          type: "text",
-          sessionContext: newCtx,
-        }, { headers: CORS });
+        if (doctors.length > 0) {
+          const fact = buildVerifiedClinicFactReply({
+            kind: "doctor_list",
+            locale: lang,
+            clinicName: clinic.clinicName || "Clinic",
+            doctorCount: countInfo,
+            doctors: doctors.map((d: any) => ({
+              name: resolveDoctorFullName(d),
+              specialties: resolveDoctorSpecialtyList(d),
+            })),
+          });
+          return jsonResponse({
+            reply: fact.reply,
+            type: "doctor_answer",
+            sessionContext: newCtx,
+          }, { headers: CORS });
+        }
       }
 
       return jsonResponse({
