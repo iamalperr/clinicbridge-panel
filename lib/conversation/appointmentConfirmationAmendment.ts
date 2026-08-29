@@ -12,7 +12,6 @@ import type { ConversationSlots } from "./types";
 import { PendingActionManager } from "./PendingActionManager";
 import { IntentRouter } from "./intentRouter";
 import {
-  validateAppointmentDateTime,
   type AppointmentDateTimeValidationResult,
 } from "@/lib/appointment/appointmentDateTimePolicy";
 import type { WeeklySchedule } from "@/lib/skills/ClinicWorkingHoursResolver";
@@ -22,6 +21,7 @@ import {
   type ClinicDoctorMatchInput,
   type RequestedDoctorPreference,
 } from "@/lib/appointment/requestedDoctorPreference";
+import { applyAppointmentSchedulingAmendment } from "./appointmentSchedulingAmendment";
 
 export type ConfirmationAmendmentField =
   | "preferredDate"
@@ -41,6 +41,7 @@ export type AppointmentDraftLike = {
   requestedDate?: string;
   requestedTime?: string | null;
   preferredDateDisplay?: string;
+  preferredTimeText?: string | null;
   requestedWeekday?: string;
   requestedDoctor?: RequestedDoctorPreference;
   notes?: string;
@@ -104,12 +105,6 @@ function applySlotsToDraft(
   extracted: Partial<ConversationSlots>
 ): AppointmentDraftLike {
   const next = cloneDraft(draft);
-  if (extracted.preferredTime) next.requestedTime = extracted.preferredTime;
-  if (extracted.preferredDate) {
-    next.requestedDate = extracted.preferredDate;
-    next.preferredDateDisplay = extracted.preferredDate;
-    if (extracted.preferredWeekday) next.requestedWeekday = extracted.preferredWeekday;
-  }
   if (extracted.email) next.patientEmail = extracted.email;
   if (extracted.phone) next.patientPhone = extracted.phone;
   if (extracted.fullName) next.patientName = extracted.fullName;
@@ -204,7 +199,14 @@ export function applyConfirmationAmendment(params: {
   const extracted =
     params.extracted && Object.keys(params.extracted).length > 0
       ? params.extracted
-      : SlotExtractor.extractSlots(raw, {}, locale, params.clinicTimeZone || "Europe/Istanbul").extracted;
+      : SlotExtractor.extractSlots(
+          raw,
+          {},
+          locale,
+          params.clinicTimeZone || "Europe/Istanbul",
+          undefined,
+          params.now ?? new Date()
+        ).extracted;
 
   const amendedFields = detectConfirmationAmendmentFields(extracted);
   const doctorPref = applyDoctorPreferenceToDraft({
@@ -246,33 +248,44 @@ export function applyConfirmationAmendment(params: {
     amendedFields.includes("preferredDate") || amendedFields.includes("preferredTime");
 
   if (dateOrTimeChanged) {
-    const policy = validateAppointmentDateTime({
-      localDate: nextDraft.requestedDate,
-      localTime: nextDraft.requestedTime || "",
-      rawUserInput: raw,
+    const scheduling = applyAppointmentSchedulingAmendment({
+      message: raw,
+      draft: nextDraft,
+      extracted: {
+        preferredDate: extracted.preferredDate,
+        preferredTime: extracted.preferredTime,
+        preferredWeekday: extracted.preferredWeekday,
+        rawTimeText: extracted.rawTimeText,
+        timePreference: extracted.timePreference,
+      },
+      locale,
       clinicTimeZone: params.clinicTimeZone,
       now: params.now ?? new Date(),
       workingHours: params.workingHours ?? null,
       is24_7: params.is24_7,
-      minimumNoticeMinutes: 0,
-      locale,
-      resolutionSource: "deterministic_parser",
     });
 
-    if (!policy.ok) {
+    if (scheduling.outcome === "invalid") {
+      const preservedDraft = applySlotsToDraft(
+        scheduling.draft,
+        extracted
+      );
+      preservedDraft.requestedDoctor = doctorPref.draft.requestedDoctor;
+      preservedDraft.notes = doctorPref.draft.notes;
       return {
         outcome: "invalid",
-        nextDraft: original,
+        nextDraft: preservedDraft,
         amendedFields: [],
         preservedFields: [...PRESERVED_FIELD_KEYS],
-        validationReason: policy.reason,
-        message: policy.message,
-        suggestions: policy.suggestions,
+        validationReason: scheduling.validationReason,
+        message: scheduling.message,
+        suggestions: scheduling.suggestions,
       };
     }
 
-    if (policy.resolved?.localDate) nextDraft.requestedDate = policy.resolved.localDate;
-    if (policy.resolved?.localTime) nextDraft.requestedTime = policy.resolved.localTime;
+    if (scheduling.outcome === "applied") {
+      Object.assign(nextDraft, scheduling.draft);
+    }
   }
 
   return {

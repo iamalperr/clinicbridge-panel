@@ -125,7 +125,7 @@ describe("Appointment confirmation amendment invariant", () => {
       appointmentData: res.nextDraft,
       clinicName: "İstanbul Diş Akademisi",
     });
-    expect(review).toMatch(/12:00|12:00 PM|noon/i);
+    expect(review).toMatch(/12:00|12:00 PM|12pm|noon/i);
     expect(review).toMatch(/submit this preliminary appointment request/i);
   });
 
@@ -364,7 +364,7 @@ describe("Confirmation amendment persistence + Conversation Records", () => {
     const roles = [...stored.values()].map((m) => String(m.sender || m.role));
     const contents = [...stored.values()].map((m) => String(m.content || ""));
     expect(contents.some((c) => /12pm please/i.test(c))).toBe(true);
-    expect(contents.some((c) => /12:00/i.test(c) && /submit/i.test(c))).toBe(true);
+    expect(contents.some((c) => /(12:00|12pm)/i.test(c) && /submit/i.test(c))).toBe(true);
     expect(roles.some((r) => r === "patient" || r === "user")).toBe(true);
     expect(roles.some((r) => r === "assistant")).toBe(true);
   });

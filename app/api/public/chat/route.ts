@@ -35,6 +35,8 @@ import {
   evaluateAppointmentCollectionGate,
   resolveConversationLocaleWithMeta,
   applyConfirmationAmendment,
+  applyAppointmentSchedulingAmendment,
+  type AppointmentDraftLike,
 } from "@/lib/conversation";
 import {
   applyDoctorPreferenceToDraft,
@@ -2213,36 +2215,72 @@ export async function POST(req: Request) {
       isMidFlowInterruption = true;
       console.log(`[INTENT_ROUTER] Mid-flow interruption detected: ${conversationIntent.intent}. Answering question while preserving appointment state: ${appointmentState}`);
     } else if (appointmentGate.allowed) {
-      // 6. Handle Slot Extractions and Corrections (e.g. email, phone, name, date, time, treatment)
+      // 6. Handle slot extractions with immediate scheduling validation
+      const clinicTzForScheduling = resolveClinicTimeZone(clinicData);
+      const schedulingTimeZone = clinicTzForScheduling.confident
+        ? clinicTzForScheduling.timeZone
+        : "Europe/Istanbul";
+      const hoursForScheduling = ClinicWorkingHoursResolver.resolveClinicWorkingHours({
+        clinicId: actualClinicId || clinicId,
+        clinicData,
+        trainingDocs,
+      });
+
+      const abbrevGateCollect = evaluateRawAppointmentTimeZoneAmbiguity(message, conversationLocale);
+      if (abbrevGateCollect) {
+        await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_DATE_CLARIFICATION", appointmentDraft, {
+          processedMessageIds: [...processedMessageIds, messageId],
+          conversationLocale,
+        });
+        return respondWithVisibleReply({
+          responseType: "CHAT_REPLY",
+          reply: abbrevGateCollect.message,
+          pendingAppointmentData: appointmentDraft,
+        }, basePersist({ appointmentState: "AWAITING_DATE_CLARIFICATION" }));
+      }
+
+      const schedulingAmendment = applyAppointmentSchedulingAmendment({
+        message,
+        draft: appointmentDraft as AppointmentDraftLike,
+        extracted: conversationIntent.entities || undefined,
+        locale: conversationLocale,
+        clinicTimeZone: schedulingTimeZone,
+        now: new Date(),
+        workingHours: hoursForScheduling.schedule,
+        is24_7: hoursForScheduling.is24_7,
+      });
+
+      console.log(JSON.stringify({
+        checkpoint: "APPT_SCHEDULING_AMENDMENT",
+        traceId: activeTraceId,
+        conversationId: convId,
+        outcome: schedulingAmendment.outcome,
+        amendedFields: schedulingAmendment.amendedFields,
+        validationReason: schedulingAmendment.validationReason || null,
+      }));
+
+      if (schedulingAmendment.outcome === "invalid") {
+        Object.assign(appointmentDraft, schedulingAmendment.draft);
+        await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_DATE", appointmentDraft, {
+          processedMessageIds: [...processedMessageIds, messageId],
+          conversationLocale,
+        });
+        return respondWithVisibleReply({
+          responseType: "appointment_date_clarification_required",
+          reply: schedulingAmendment.message || (conversationLocale.startsWith("en")
+            ? "That date is not available. Please choose another day within clinic working hours."
+            : "Bu tarih uygun değil. Lütfen kliniğin çalışma saatlerine uygun başka bir gün seçin."),
+          suggestedTimes: schedulingAmendment.suggestions,
+          pendingAppointmentData: appointmentDraft,
+        }, basePersist({ appointmentState: "COLLECTING_DATE" }));
+      }
+
+      if (schedulingAmendment.outcome === "applied") {
+        Object.assign(appointmentDraft, schedulingAmendment.draft);
+      }
+
+      // Non-scheduling entities (contact, treatment, name)
       if (conversationIntent.entities) {
-        if (conversationIntent.entities.preferredDate) {
-          appointmentDraft.requestedDate = conversationIntent.entities.preferredDate;
-          appointmentDraft.preferredDateDisplay = conversationIntent.entities.preferredDate;
-          (appointmentDraft as any).requestedWeekday = conversationIntent.entities.preferredWeekday;
-        }
-        if (conversationIntent.entities.preferredTime) {
-          appointmentDraft.requestedTime = conversationIntent.entities.preferredTime;
-          const pref = String(conversationIntent.entities.timePreference || "");
-          if (pref === "after") {
-            appointmentDraft.preferredTimeStart = conversationIntent.entities.preferredTime;
-            appointmentDraft.preferredTimeText =
-              conversationLocale.startsWith("en")
-                ? `Anytime after ${conversationIntent.entities.preferredTime}`
-                : `${conversationIntent.entities.preferredTime} sonrası herhangi bir saat`;
-          } else if (pref === "before") {
-            appointmentDraft.preferredTimeEnd = conversationIntent.entities.preferredTime;
-            appointmentDraft.preferredTimeText =
-              conversationLocale.startsWith("en")
-                ? `Anytime before ${conversationIntent.entities.preferredTime}`
-                : `${conversationIntent.entities.preferredTime} öncesi herhangi bir saat`;
-          } else if (pref === "morning" || pref === "afternoon" || pref === "evening") {
-            appointmentDraft.preferredTimePeriod = pref as any;
-            appointmentDraft.preferredTimeText =
-              conversationIntent.entities.rawTimeText || conversationIntent.entities.preferredTime;
-          } else {
-            appointmentDraft.preferredTimeText = conversationIntent.entities.preferredTime;
-          }
-        }
         if (conversationIntent.entities.fullName) {
           appointmentDraft.patientName = conversationIntent.entities.fullName;
         }
@@ -2403,6 +2441,41 @@ export async function POST(req: Request) {
       });
 
       if (missingSlots.length === 0) {
+        const preConfirmPolicy = validateAppointmentDateTime({
+          localDate: appointmentDraft.requestedDate,
+          localTime: appointmentDraft.requestedTime || "",
+          rawUserInput: `${appointmentDraft.requestedDate || ""} ${appointmentDraft.requestedTime || ""}`,
+          clinicTimeZone: schedulingTimeZone,
+          now: new Date(),
+          workingHours: hoursForScheduling.schedule,
+          is24_7: hoursForScheduling.is24_7,
+          minimumNoticeMinutes: 0,
+          locale: conversationLocale,
+          resolutionSource: "deterministic_parser",
+        });
+        if (!preConfirmPolicy.ok) {
+          appointmentDraft.requestedDate = undefined as any;
+          appointmentDraft.requestedTime = undefined as any;
+          appointmentDraft.preferredDateDisplay = undefined as any;
+          (appointmentDraft as any).requestedWeekday = undefined;
+          await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_DATE", appointmentDraft, {
+            processedMessageIds: [...processedMessageIds, messageId],
+            conversationLocale,
+          });
+          return respondWithVisibleReply({
+            responseType: "appointment_date_clarification_required",
+            reply: preConfirmPolicy.message,
+            suggestedTimes: preConfirmPolicy.suggestions,
+            pendingAppointmentData: appointmentDraft,
+          }, basePersist({ appointmentState: "COLLECTING_DATE" }));
+        }
+        if (preConfirmPolicy.resolved?.localDate) {
+          appointmentDraft.requestedDate = preConfirmPolicy.resolved.localDate;
+        }
+        if (preConfirmPolicy.resolved?.localTime) {
+          appointmentDraft.requestedTime = preConfirmPolicy.resolved.localTime;
+        }
+
         await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, {
           processedMessageIds: [...processedMessageIds, messageId],
           conversationLocale

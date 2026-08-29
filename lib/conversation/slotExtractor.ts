@@ -7,6 +7,12 @@
 import { ConversationSlots, VisitType, InformationType, ContactTarget } from "./types";
 import { AppointmentDateValidator } from "../skills/AppointmentDateValidator";
 import { normalizeTurkishPhone } from "../phoneUtils";
+import { getClinicLocalParts } from "../appointment/appointmentDateTimePolicy";
+import {
+  clinicLocalTodayIso,
+  clinicLocalTomorrowIso,
+  resolveWeekdayFromMessage,
+} from "./resolveWeekdayDate";
 
 const MONTHS_TR: Record<string, number> = {
   ocak: 1, şubat: 2, subat: 2, mart: 3, nisan: 4, mayıs: 5, mayis: 5, haziran: 6,
@@ -227,7 +233,8 @@ export class SlotExtractor {
     existingSlots: Partial<ConversationSlots> = {},
     locale: string = "tr",
     timeZone: string = "Europe/Istanbul",
-    expectedSlot?: string
+    expectedSlot?: string,
+    now: Date = new Date()
   ): {
     extracted: Partial<ConversationSlots>;
     isCorrection: boolean;
@@ -274,9 +281,18 @@ export class SlotExtractor {
       invalidEmailAttempt = true;
     }
 
-    // 3. Date Extraction (if not already extracted by correction)
+    // 3. Time hint for combined date+time phrases ("Saturday 3pm")
+    const timeHintRes = !extracted.preferredTime ? this.parseTime(raw, lower) : null;
+
+    // 4. Date Extraction (if not already extracted by correction)
     if (!extracted.preferredDate) {
-      const dateRes = this.parseDate(raw, lower, timeZone);
+      const dateRes = this.parseDate(
+        raw,
+        lower,
+        timeZone,
+        now,
+        timeHintRes?.time || null
+      );
       if (dateRes) {
         extracted.preferredDate = dateRes.isoDate;
         extracted.date = dateRes.isoDate;
@@ -285,9 +301,9 @@ export class SlotExtractor {
       }
     }
 
-    // 4. Time Extraction
+    // 5. Time Extraction
     if (!extracted.preferredTime) {
-      const timeRes = this.parseTime(raw, lower);
+      const timeRes = timeHintRes || this.parseTime(raw, lower);
       if (timeRes) {
         extracted.preferredTime = timeRes.time;
         extracted.time = timeRes.time;
@@ -766,23 +782,22 @@ export class SlotExtractor {
   public static parseDate(
     raw: string,
     lower: string,
-    timeZone: string = "Europe/Istanbul"
+    timeZone: string = "Europe/Istanbul",
+    now: Date = new Date(),
+    rawTimeText?: string | null
   ): { isoDate: string; rawText: string; weekday?: string } | null {
-    const now = new Date();
-    const currentYear = now.getFullYear();
+    const currentYear = getClinicLocalParts(now, timeZone).year;
 
     // Relative dates: "yarın" / "tomorrow"
     if (/\b(yarın|yarin|tomorrow)\b/i.test(lower)) {
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const iso = tomorrow.toISOString().split("T")[0];
+      const iso = clinicLocalTomorrowIso(timeZone, now);
       const weekdayInfo = AppointmentDateValidator.getCanonicalWeekday({ isoDate: iso, timeZone });
       return { isoDate: iso, rawText: raw, weekday: weekdayInfo.weekdayTr };
     }
 
     // Relative dates: "bugün" / "today"
     if (/\b(bugün|bugun|today)\b/i.test(lower)) {
-      const iso = now.toISOString().split("T")[0];
+      const iso = clinicLocalTodayIso(timeZone, now);
       const weekdayInfo = AppointmentDateValidator.getCanonicalWeekday({ isoDate: iso, timeZone });
       return { isoDate: iso, rawText: raw, weekday: weekdayInfo.weekdayTr };
     }
@@ -857,6 +872,18 @@ export class SlotExtractor {
         const weekdayInfo = AppointmentDateValidator.getCanonicalWeekday({ isoDate: iso, timeZone });
         return { isoDate: iso, rawText: matchEn2[0], weekday: weekdayInfo.weekdayTr };
       }
+    }
+
+    // 5. Weekday-only or relative weekday ("Saturday", "next Monday")
+    const weekdayRes = resolveWeekdayFromMessage({
+      raw,
+      lower,
+      timeZone,
+      now,
+      rawTimeText: rawTimeText || null,
+    });
+    if (weekdayRes) {
+      return weekdayRes;
     }
 
     return null;

@@ -115,7 +115,7 @@ describe("Requested doctor matching", () => {
     expect(res.nextDraft.requestedDate).toBe("2026-08-21");
     expect(res.nextDraft.requestedTime).toBe("14:00");
     expect(res.nextDraft.requestedDoctor?.id).toBe("doc_ahmet");
-    expect(res.amendedFields).toEqual(expect.arrayContaining(["preferredTime", "requestedDoctor"]));
+    expect(res.amendedFields).toEqual(expect.arrayContaining(["preferredDate", "preferredTime", "requestedDoctor"]));
   });
 
   it("5. doctor first, date/time later — doctor is preserved", () => {

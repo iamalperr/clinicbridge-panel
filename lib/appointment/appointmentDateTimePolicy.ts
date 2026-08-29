@@ -487,6 +487,200 @@ function weekdayLabel(isoDate: string, timeZone: string, isEn: boolean): string 
 }
 
 /**
+ * Suggest nearest open clinic days around a requested (possibly closed) date.
+ */
+export function suggestNearbyOpenDates(params: {
+  requestedDate: string;
+  now: Date;
+  clinicTimeZone: string;
+  workingHours: WeeklySchedule;
+  locale?: string;
+  maxSuggestions?: number;
+  preferredTime?: string | null;
+}): AppointmentDateTimeSuggestion[] {
+  const max = params.maxSuggestions ?? 2;
+  const locale = params.locale || "tr";
+  const isEn = locale.toLowerCase().startsWith("en");
+  const out: AppointmentDateTimeSuggestion[] = [];
+  const seen = new Set<string>();
+
+  const pushDay = (isoDate: string, time?: string) => {
+    if (seen.has(isoDate) || out.length >= max) return;
+    const wdIdx = weekdayIndexFromIsoDate(isoDate, params.clinicTimeZone);
+    const dayKey = DAY_INDEX_MAP[wdIdx] as DayOfWeek;
+    const schedule = params.workingHours[dayKey];
+    if (!schedule) return;
+    const t = time || params.preferredTime || schedule[0];
+    const wd = weekdayLabel(isoDate, params.clinicTimeZone, isEn);
+    seen.add(isoDate);
+    out.push({
+      localDate: isoDate,
+      localTime: t,
+      weekdayLabel: wd,
+      label: formatSuggestionLabel(isoDate, wd, t, isEn),
+    });
+  };
+
+  for (let offset = 1; offset <= 7 && out.length < max; offset++) {
+    const before = addDaysIso(params.requestedDate, -offset, params.clinicTimeZone);
+    pushDay(before);
+  }
+  for (let offset = 1; offset <= 7 && out.length < max; offset++) {
+    const after = addDaysIso(params.requestedDate, offset, params.clinicTimeZone);
+    pushDay(after);
+  }
+
+  return out.sort((a, b) => a.localDate.localeCompare(b.localDate));
+}
+
+function addDaysIso(isoDate: string, days: number, timeZone: string): string {
+  const baseUtc = clinicLocalDateTimeToUtcIso(isoDate, "12:00", timeZone);
+  if (!baseUtc) return isoDate;
+  const next = new Date(new Date(baseUtc).getTime() + days * 86400_000);
+  return getClinicLocalParts(next, timeZone).isoDate;
+}
+
+function formatSuggestionLabel(
+  isoDate: string,
+  weekday: string,
+  time: string,
+  isEn: boolean
+): string {
+  const [y, m, d] = isoDate.split("-").map((x) => parseInt(x, 10));
+  const dt = new Date(y, m - 1, d);
+  const dateFmt = new Intl.DateTimeFormat(isEn ? "en-US" : "tr-TR", {
+    month: "long",
+    day: "numeric",
+  }).format(dt);
+  return isEn ? `${weekday}, ${dateFmt}` : `${weekday}, ${dateFmt}`;
+}
+
+function closedDayDateMessage(
+  locale: string,
+  weekdayLabel: string,
+  suggestions: AppointmentDateTimeSuggestion[]
+): string {
+  const isEn = locale.toLowerCase().startsWith("en");
+  if (suggestions.length >= 2) {
+    const a = suggestions[0].label;
+    const b = suggestions[1].label;
+    return isEn
+      ? `The clinic is closed on ${weekdayLabel}. We can submit a preliminary appointment request for ${a} or ${b}. Which day would you prefer?`
+      : `Kliniğimiz ${weekdayLabel} günü kapalıdır. ${a} veya ${b} için ön talep iletebiliriz. Hangi günü tercih edersiniz?`;
+  }
+  if (suggestions.length === 1) {
+    const a = suggestions[0].label;
+    return isEn
+      ? `The clinic is closed on ${weekdayLabel}. We can submit a preliminary appointment request for ${a}. Would that work for you?`
+      : `Kliniğimiz ${weekdayLabel} günü kapalıdır. ${a} için ön talep iletebiliriz. Uyar mı?`;
+  }
+  return guidanceMessage("CLOSED_DAY", locale);
+}
+
+/**
+ * Validate a date without requiring a time (collection-stage date slot).
+ */
+export function validateAppointmentDateOnly(
+  params: Omit<ValidateAppointmentDateTimeParams, "localTime"> & {
+    localTime?: string | null;
+  }
+): AppointmentDateTimeValidationResult {
+  const now = params.now ?? new Date();
+  const locale = params.locale || "tr";
+  const clinicTimeZone = params.clinicTimeZone;
+  const date = String(params.localDate || "").trim();
+
+  if (!clinicTimeZone || !isValidIanaTimeZone(clinicTimeZone)) {
+    return {
+      ok: false,
+      reason: "MISSING_TIMEZONE",
+      message: guidanceMessage("MISSING_TIMEZONE", locale),
+      suggestions: [],
+      clinicTimeZone: clinicTimeZone || "UTC",
+      clinicTimeZoneSource: "invalid",
+    };
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return {
+      ok: false,
+      reason: "INVALID_DATE",
+      message: guidanceMessage("INVALID_DATE", locale),
+      suggestions: suggestNextValidAppointmentTimes({
+        now,
+        clinicTimeZone,
+        workingHours: params.workingHours,
+        is24_7: params.is24_7,
+        locale,
+      }),
+      clinicTimeZone,
+      clinicTimeZoneSource: "provided",
+    };
+  }
+
+  const clinicNow = getClinicLocalParts(now, clinicTimeZone);
+  const wdIdx = weekdayIndexFromIsoDate(date, clinicTimeZone);
+  const weekday = locale.toLowerCase().startsWith("en") ? WEEKDAY_EN[wdIdx] : WEEKDAY_TR[wdIdx];
+
+  if (date < clinicNow.isoDate) {
+    const suggestions = suggestNextValidAppointmentTimes({
+      now,
+      clinicTimeZone,
+      workingHours: params.workingHours,
+      is24_7: params.is24_7,
+      locale,
+    });
+    return {
+      ok: false,
+      reason: "PAST_DATE",
+      message: guidanceMessage("PAST_DATE", locale, { suggestions }),
+      suggestions,
+      clinicTimeZone,
+      clinicTimeZoneSource: "provided",
+    };
+  }
+
+  if (!params.is24_7 && params.workingHours) {
+    const dayKey = DAY_INDEX_MAP[wdIdx] as DayOfWeek;
+    if (!params.workingHours[dayKey]) {
+      const suggestions = suggestNearbyOpenDates({
+        requestedDate: date,
+        now,
+        clinicTimeZone,
+        workingHours: params.workingHours,
+        locale,
+        preferredTime: params.localTime || null,
+      });
+      return {
+        ok: false,
+        reason: "CLOSED_DAY",
+        message: closedDayDateMessage(locale, weekday, suggestions),
+        suggestions,
+        clinicTimeZone,
+        clinicTimeZoneSource: "provided",
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    message: "",
+    suggestions: [],
+    clinicTimeZone,
+    clinicTimeZoneSource: "provided",
+    resolved: {
+      rawUserInput: params.rawUserInput || date,
+      localDate: date,
+      localTime: "",
+      clinicTimeZone,
+      startsAtUtc: clinicLocalDateTimeToUtcIso(date, "12:00", clinicTimeZone) || "",
+      resolutionSource: params.resolutionSource || "deterministic_parser",
+      confidence: params.confidence || "high",
+    },
+  };
+}
+
+/**
  * Canonical validator: past date/time, working hours, optional minimum notice.
  */
 export function validateAppointmentDateTime(
