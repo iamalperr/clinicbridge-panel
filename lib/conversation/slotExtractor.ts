@@ -261,7 +261,7 @@ export class SlotExtractor {
     }
 
     // 1. Correction Detection (e.g. "1 Ağustos değil 3 Ağustos olsun", "Use sadia.new@hotmail.com instead")
-    const correctionCheck = this.parseCorrection(raw, lower, locale, timeZone);
+    const correctionCheck = this.parseCorrection(raw, lower, locale, timeZone, now);
     if (correctionCheck.isCorrection) {
       isCorrection = true;
       correctedSlotKey = correctionCheck.slotKey;
@@ -440,7 +440,8 @@ export class SlotExtractor {
     raw: string,
     lower: string,
     locale: string = "tr",
-    timeZone: string = "Europe/Istanbul"
+    timeZone: string = "Europe/Istanbul",
+    now: Date = new Date()
   ): { isCorrection: boolean; slotKey?: keyof ConversationSlots; slots: Partial<ConversationSlots> } {
     const slots: Partial<ConversationSlots> = {};
 
@@ -450,7 +451,7 @@ export class SlotExtractor {
 
     if (degilMatch) {
       const targetPhrase = degilMatch[2].trim();
-      const dateRes = this.parseDate(targetPhrase, targetPhrase.toLowerCase(), timeZone);
+      const dateRes = this.parseDate(targetPhrase, targetPhrase.toLowerCase(), timeZone, now);
       if (dateRes) {
         slots.preferredDate = dateRes.isoDate;
         slots.date = dateRes.isoDate;
@@ -485,7 +486,7 @@ export class SlotExtractor {
         return { isCorrection: true, slotKey: "phone", slots };
       }
 
-      const dateRes = this.parseDate(targetPhrase, targetPhrase.toLowerCase(), timeZone);
+      const dateRes = this.parseDate(targetPhrase, targetPhrase.toLowerCase(), timeZone, now);
       if (dateRes) {
         slots.preferredDate = dateRes.isoDate;
         slots.date = dateRes.isoDate;

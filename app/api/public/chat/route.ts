@@ -31,9 +31,11 @@ import {
   formatMultilingualPrompt,
   formatPricingFallback,
   formatContactResponse,
+  formatLiveSupportHandoff,
   buildAppointmentReviewMessage,
   evaluateAppointmentCollectionGate,
   resolveConversationLocaleWithMeta,
+  languageResolutionLogFields,
   applyConfirmationAmendment,
   applyAppointmentSchedulingAmendment,
   type AppointmentDraftLike,
@@ -961,12 +963,19 @@ async function logConversation(params: {
     if (!existing) {
       logData.createdAt = nowStr;
       logData.convertedToAppointment = false;
-      logData.language = params.detectedLanguage || "tr";
       logData.tenantId = params.tenantId || "";
       logData.widgetId = params.widgetId || "";
       logData.sourceDomain = params.sourceDomain || "";
       logData.promptVersionId = params.promptVersionId || "";
       logData.knowledgeBaseId = params.knowledgeBaseId || "";
+    }
+
+    // Persist active conversation language on every turn so short follow-ups
+    // (WhatsApp?, Да, phone numbers) inherit the established language.
+    if (params.detectedLanguage) {
+      logData.language = params.detectedLanguage;
+      logData.conversationLocale = params.detectedLanguage;
+      logData.detectedLanguage = params.detectedLanguage;
     }
 
     if (params.retrievedDocumentCount !== undefined) logData.retrievedDocumentCount = params.retrievedDocumentCount;
@@ -1517,8 +1526,8 @@ export async function POST(req: Request) {
       clinicId: actualClinicId,
       requestLanguage: language,
       persistedLocale: loadedConversationLocale,
-      resolvedLocale: conversationLocale,
       localeReason: localeResolution.reason,
+      ...languageResolutionLogFields(localeResolution),
       clinicDefaultLocale: clinicLanguage,
     }));
     // ── INSTRUMENTATION LOG 2 & 3 ──
@@ -2155,7 +2164,18 @@ export async function POST(req: Request) {
     // 4. Handle Contact / Live Support Request (Preserves active appointment flow state)
     if (conversationIntent.intent === "contact_request" || conversationIntent.intent === "live_support_request") {
       const effectiveContactNumber = clinicWhatsapp || clinicData?.turkishContactNumber || clinicData?.internationalContactNumber || clinicData?.phone;
-      const contactMsg = formatContactResponse(effectiveContactNumber, conversationIntent.entities?.contactTarget, conversationLocale);
+      const contactTarget =
+        conversationIntent.entities?.contactTarget ||
+        (/\bwhatsapp\b/i.test(message) ? "whatsapp" : undefined);
+      const contactMsg = formatContactResponse(effectiveContactNumber, contactTarget, conversationLocale);
+      console.log(JSON.stringify({
+        checkpoint: "CONTACT_RESPONSE_LANGUAGE",
+        traceId: activeTraceId,
+        conversationId: convId,
+        responseLanguage: conversationLocale,
+        ...languageResolutionLogFields(localeResolution),
+        handler: "formatContactResponse",
+      }));
       return respondWithVisibleReply({
         responseType: "CHAT_REPLY",
         reply: contactMsg,
@@ -3094,30 +3114,12 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
         loadedIsAppointmentCreated ||
         Boolean(loadedAppointmentId);
 
-      let handoffMsg = "";
-      if (lang === "tr") {
-         handoffMsg = `Sizi canlı destek ekibimize yönlendirebilirim. Aşağıdaki kanallardan biriyle ${clinicName} ekibine ulaşabilirsiniz.`;
-         if (contactNumber) {
-            handoffMsg = `Elbette. ${clinicName} ekibiyle WhatsApp üzerinden doğrudan iletişime geçebilirsiniz:\n\n${contactNumber}`;
-         }
-      } else if (lang === "de") {
-         handoffMsg = `Ich kann Sie an unser Live-Support-Team weiterleiten. Sie können das Team von ${clinicName} über einen der unten stehenden Kanäle kontaktieren.`;
-         if (contactNumber) {
-            handoffMsg = `Natürlich. Sie können das internationale Patiententeam von ${clinicName} direkt über WhatsApp kontaktieren:\n\n${contactNumber}`;
-         }
-      } else {
-         handoffMsg = `I can direct you to our live support team. You can contact ${clinicName} through one of the channels below.`;
-         if (contactNumber) {
-            handoffMsg = `Of course. You can contact ${clinicName}’s international patient team directly via WhatsApp:\n\n${contactNumber}`;
-         }
-      }
-
-      if (appointmentAlreadySubmitted) {
-        const confirmNote = lang.startsWith("tr")
-          ? `\n\nNot: Ön randevu talebiniz zaten kliniğe iletildi. WhatsApp tercihini klinik ekibine de iletebilirsiniz.`
-          : `\n\nNote: Your preliminary appointment request has already been submitted to the clinic. You can also share your WhatsApp preference with the clinic team.`;
-        handoffMsg = `${handoffMsg}${confirmNote}`;
-      }
+      let handoffMsg = formatLiveSupportHandoff({
+        clinicName,
+        contactNumber,
+        locale: lang,
+        appointmentAlreadySubmitted,
+      });
 
       // Persist WhatsApp preference on an already-submitted appointment when possible
       if (appointmentAlreadySubmitted && adminDb && loadedAppointmentId) {
@@ -3311,9 +3313,10 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
 
       // ── System-level rules ──
       `\nSİSTEM KURALLARI:
+- LANGUAGE INVARIANT (MANDATORY): Active conversation language is "${conversationLocale}". Always reply in this language. Do NOT switch to English (or any other language) because the latest user message is short, contains "WhatsApp"/brand names, numbers, dates, yes/no, or mixed proper nouns. Only switch language when the user explicitly asks to change languages.
 - ÖNEMLİ: A polite closing, appreciation message, or temporary end of conversation ("Teşekkürler", "Tamamdır", "Thanks") does NOT prevent the user from continuing the conversation. If the user asks a new question after a closing message, immediately resume normal assistant behavior, treat it as a fresh active query, and always respond factually based on the clinic's Knowledge Base, ignoring the fact that the conversation recently seemed 'closed'.
 - Kesin randevu onayı veya kesin müsaitlik garantisi VERME.
-- Yanıt dilini kullanıcının diline göre belirle.${!hasCustomPrompt ? "\n- Yanıtların kısa (max 4 cümle), nazik olsun." : "\n- Yanıt uzunluğunu kendi talimatlarına göre belirle; bilgi varsa eksiksiz aktar."}
+- Yanıt dilini aktif konuşma diline ("${conversationLocale}") göre belirle.${!hasCustomPrompt ? "\n- Yanıtların kısa (max 4 cümle), nazik olsun." : "\n- Yanıt uzunluğunu kendi talimatlarına göre belirle; bilgi varsa eksiksiz aktar."}
 - Eğer mevcut konuşmanın bağlamıyla DOĞRUDAN ilgili ve kullanıcının seçebileceği 2 veya 3 kısa hızlı aksiyon önerebiliyorsan, yanıtının EN SONUNA şu formatta ekle: [ACTIONS: Aksiyon 1 | Aksiyon 2]
 - Bu aksiyonlar kesinlikle kullanıcının diliyle eşleşmelidir (Türkçe konuşmada "Randevu almak istiyorum", "Hangi hizmetleri sunuyorsunuz?", "Kliniğiniz nerede?" gibi olmalı. "Book an appointment" gibi İngilizce kalıpları Türkçe konuşmada KULLANMA).
 - SADECE mantıklıysa öner. Randevu akışı başladıysa (isim/telefon soruluyorsa veya onay bekleniyorsa) genel tedavi komutları GÖSTERME.
@@ -3346,7 +3349,7 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       conversationId: convId,
       channel: "web_widget",
       requestType: "chat",
-      language: "tr",
+      language: conversationLocale,
       model: chatModel,
       temperature: temperatureResolved.temperature,
       omitTemperature: temperatureResolved.omitFromRequest,

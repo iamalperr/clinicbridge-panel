@@ -1,8 +1,24 @@
 /**
  * Multilingual formatters for appointment flow summaries, sequential prompts,
- * safe pricing fallbacks, contact responses, and locale resolution across TR, EN, DE, FR, AR.
+ * safe pricing fallbacks, contact responses, and locale resolution across TR, EN, DE, FR, AR, RU.
  */
 import { normalizeTurkishPhone } from "../phoneUtils";
+
+export {
+  resolveConversationLocale,
+  resolveConversationLocaleWithMeta,
+  detectTextLanguage,
+  detectTextLanguageWithMeta,
+  detectExplicitLanguageSwitch,
+  isLanguageAmbiguousMessage,
+  languageResolutionLogFields,
+  normalizeLocaleCode,
+  type LocaleResolutionParams,
+  type LocaleResolutionResult,
+  type LanguageConfidence,
+  type LanguageSource,
+  type TextLanguageDetection,
+} from "./conversationLanguagePolicy";
 
 export interface AppointmentSummaryInput {
   patientName?: string | null;
@@ -21,194 +37,6 @@ export interface AppointmentSummaryInput {
   clinicName?: string | null;
   requestedDoctor?: { id?: string; name: string } | null;
   notes?: string | null;
-}
-
-export interface LocaleResolutionParams {
-  requestLanguage?: string | null;
-  persistedLocale?: string | null;
-  currentMessage?: string | null;
-  history?: Array<{ role: "user" | "assistant" | "system" | string; content: string }> | null;
-  clinicDefaultLocale?: string | null;
-}
-
-export interface LocaleResolutionResult {
-  locale: string;
-  reason: string;
-}
-
-const SUPPORTED_LOCALES = new Set(["en", "tr", "de", "fr", "ar", "ru", "es", "it"]);
-
-function normalizeLocaleCode(value?: string | null): string | null {
-  if (!value || typeof value !== "string") return null;
-  const clean = value.trim().toLowerCase().slice(0, 2);
-  return SUPPORTED_LOCALES.has(clean) ? clean : null;
-}
-
-function wordCount(text?: string | null): number {
-  return String(text || "")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean).length;
-}
-
-/**
- * Resolves the conversation locale with an inspectable reason.
- *
- * Priority (product rule: patient message language must not be overridden by
- * widget browser language / requestLanguage unless the user clearly switches):
- * 1. Explicit language-switch command in the current message
- * 2. Strong language detected from the current message
- * 3. Persisted conversation locale (may follow a clear language change in #2)
- * 4. Soft requestLanguage hint from the client / widget
- * 5. Language detected from recent user history
- * 6. Clinic default locale
- * 7. "tr"
- */
-export function resolveConversationLocaleWithMeta(
-  params: LocaleResolutionParams
-): LocaleResolutionResult {
-  const currentMsg = (params.currentMessage || "").trim().toLowerCase();
-  const detectedFromMsg = detectTextLanguage(params.currentMessage || "");
-  const requestLang = normalizeLocaleCode(params.requestLanguage);
-  const persistedLang = normalizeLocaleCode(params.persistedLocale);
-  const clinicLang = normalizeLocaleCode(params.clinicDefaultLocale);
-
-  // 1. Explicit command in current message
-  if (
-    currentMsg.includes("speak in english") ||
-    currentMsg.includes("english please") ||
-    currentMsg.includes("in english") ||
-    currentMsg.includes("switch to english") ||
-    currentMsg.includes("can we speak english") ||
-    currentMsg.includes("let's speak in english") ||
-    currentMsg.includes("can we talk in english")
-  ) {
-    return { locale: "en", reason: "explicit_switch_command:en" };
-  }
-  if (
-    currentMsg.includes("türkçe konuşalım") ||
-    currentMsg.includes("türkçe lütfen") ||
-    currentMsg.includes("türkçe devam edelim") ||
-    (currentMsg.includes("türkçe") && (currentMsg.includes("geç") || currentMsg.includes("konuş")))
-  ) {
-    return { locale: "tr", reason: "explicit_switch_command:tr" };
-  }
-  if (currentMsg.includes("auf deutsch") || currentMsg.includes("deutsch bitte")) {
-    return { locale: "de", reason: "explicit_switch_command:de" };
-  }
-  if (currentMsg.includes("en français") || currentMsg.includes("français s'il vous plaît")) {
-    return { locale: "fr", reason: "explicit_switch_command:fr" };
-  }
-  if (currentMsg.includes("باللغة العربية") || currentMsg.includes("تكلم بالعربية")) {
-    return { locale: "ar", reason: "explicit_switch_command:ar" };
-  }
-
-  // 2. Strong message-content detection beats widget browser language.
-  //    A Turkish pricing question must stay Turkish even when navigator.language is "en".
-  if (detectedFromMsg && wordCount(params.currentMessage) >= 2) {
-    if (!persistedLang || persistedLang === detectedFromMsg) {
-      return { locale: detectedFromMsg, reason: `message_detected:${detectedFromMsg}` };
-    }
-    // Clear language change mid-conversation (e.g. persisted EN, user writes full TR)
-    if (wordCount(params.currentMessage) >= 3) {
-      return {
-        locale: detectedFromMsg,
-        reason: `message_overrides_persisted:${persistedLang}->${detectedFromMsg}`,
-      };
-    }
-  }
-
-  // 3. Persisted conversation locale from existing session
-  if (persistedLang) {
-    return { locale: persistedLang, reason: `persisted:${persistedLang}` };
-  }
-
-  // 4. Soft requestLanguage hint (widget UI / browser preference) — only when
-  //    the message itself does not clearly establish a different language.
-  if (requestLang) {
-    return { locale: requestLang, reason: `request_language:${requestLang}` };
-  }
-
-  // 5. Recent user history detection
-  if (params.history && Array.isArray(params.history) && params.history.length > 0) {
-    for (let i = params.history.length - 1; i >= 0; i--) {
-      const item = params.history[i];
-      if (item && item.role === "user" && item.content) {
-        const detectedFromHist = detectTextLanguage(item.content);
-        if (detectedFromHist) {
-          return { locale: detectedFromHist, reason: `history_detected:${detectedFromHist}` };
-        }
-      }
-    }
-  }
-
-  // 6. Clinic default
-  if (clinicLang) {
-    return { locale: clinicLang, reason: `clinic_default:${clinicLang}` };
-  }
-
-  return { locale: "tr", reason: "fallback:tr" };
-}
-
-/**
- * Resolves the conversation locale according to the guarded priority above.
- */
-export function resolveConversationLocale(params: LocaleResolutionParams): string {
-  return resolveConversationLocaleWithMeta(params).locale;
-}
-
-/**
- * Lightweight heuristic text language detector for appointment and medical queries.
- */
-export function detectTextLanguage(text: string): string | null {
-  if (!text || typeof text !== "string") return null;
-  const t = text.trim().toLowerCase();
-  if (t.length < 2) return null;
-
-  // English indicators
-  const enPatterns = [
-    /\b(i want|i would like|i need|can i|appointment|book|schedule|consultation|implant|doctor|dentist|teeth|tooth|filling|whitening|crown|checkup|tomorrow|today|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday|morning|afternoon|evening|pm|am|please|thank you|thanks|hello|hi|good morning|yes|no|my name is|my phone is|my email is)\b/i,
-    /\b(cost|price|how much|location|where are you|contact)\b/i
-  ];
-
-  // Turkish indicators
-  const trPatterns = [
-    /\b(merhaba|selam|randevu|almak istiyorum|muayene|doktor|diş|dolgu|beyazlatma|kaplama|implant|zirkonyum|kanal|tedavi|yarın|bugün|pazartesi|salı|çarşamba|perşembe|cuma|cumartesi|pazar|sabah|öğleden sonra|akşam|saat|lütfen|teşekkürler|teşekkür ederim|adım|telefonum|eposta|evet|hayır|fiyat|ne kadar|ücret|neredesiniz)\b/i,
-    /[çğıöşü]/i
-  ];
-
-  // German indicators
-  const dePatterns = [
-    /\b(ich möchte|termin|vereinbaren|untersuchung|zahnarzt|zahn|füllung|bleaching|krone|morgen|heute|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|vormittag|nachmittag|bitte|danke|hallo|guten tag|ja|nein|mein name ist|meine telefonnummer|kosten|wie viel)\b/i,
-    /[äöüß]/i
-  ];
-
-  // Arabic indicators
-  const arPattern = /[\u0600-\u06FF]/;
-  if (arPattern.test(t)) return "ar";
-
-  let enScore = 0;
-  let trScore = 0;
-  let deScore = 0;
-
-  for (const p of enPatterns) {
-    const matches = t.match(new RegExp(p, "gi"));
-    if (matches) enScore += matches.length;
-  }
-  for (const p of trPatterns) {
-    const matches = t.match(new RegExp(p, "gi"));
-    if (matches) trScore += matches.length;
-  }
-  for (const p of dePatterns) {
-    const matches = t.match(new RegExp(p, "gi"));
-    if (matches) deScore += matches.length;
-  }
-
-  if (trScore > enScore && trScore > deScore && trScore >= 1) return "tr";
-  if (enScore > trScore && enScore > deScore && enScore >= 1) return "en";
-  if (deScore > enScore && deScore > trScore && deScore >= 1) return "de";
-
-  return null;
 }
 
 const TR_MONTHS: Record<number, string> = {
@@ -722,6 +550,7 @@ export function formatPricingFallback(treatmentName?: string, locale: string = "
   const isDe = locale.toLowerCase().startsWith("de");
   const isFr = locale.toLowerCase().startsWith("fr");
   const isAr = locale.toLowerCase().startsWith("ar");
+  const isRu = locale.toLowerCase().startsWith("ru");
   const treatment = String(treatmentName || "").trim();
 
   if (isEn) {
@@ -749,6 +578,13 @@ export function formatPricingFallback(treatmentName?: string, locale: string = "
       "شاركنا التفاصيل الناقصة وسنعود إليك بسرعة بتوضيح واضح للأسعار."
     );
   }
+  if (isRu) {
+    const subject = treatment ? `по услуге «${treatment}»` : "по этому лечению";
+    return (
+      `У меня сейчас нет подтверждённой прайс-цены ${subject} — итоговая сумма определяется после оценки клиники. ` +
+      `Поделитесь недостающими деталями, и мы быстро вернёмся с понятной информацией по стоимости.`
+    );
+  }
 
   const subject = treatment ? `${treatment} için` : "Bu tedavi için";
   return (
@@ -759,17 +595,22 @@ export function formatPricingFallback(treatmentName?: string, locale: string = "
 
 /**
  * Standardized, polite contact response providing localized phone number and representative assistance.
+ * Locale must be the active conversation language from resolveConversationLocaleWithMeta.
  */
 export function formatContactResponse(phone?: string, contactTarget?: string, locale: string = "tr"): string {
   const isEn = locale.toLowerCase().startsWith("en");
   const isDe = locale.toLowerCase().startsWith("de");
   const isFr = locale.toLowerCase().startsWith("fr");
   const isAr = locale.toLowerCase().startsWith("ar");
+  const isRu = locale.toLowerCase().startsWith("ru");
 
   const phoneStr = phone ? ` (${phone})` : "";
+  const wantsWhatsApp = String(contactTarget || "").toLowerCase().includes("whatsapp");
 
   if (isEn) {
-    return `Our clinic team is available to assist you directly${phoneStr}. Would you like us to have a representative contact you, or would you like help with booking an appointment?`;
+    return wantsWhatsApp
+      ? `Our clinic team is available on WhatsApp${phoneStr}. Would you like us to have a representative contact you, or would you like help with booking an appointment?`
+      : `Our clinic team is available to assist you directly${phoneStr}. Would you like us to have a representative contact you, or would you like help with booking an appointment?`;
   }
   if (isDe) {
     return `Unser Klinikteam steht Ihnen gerne direkt zur Verfügung${phoneStr}. Möchten Sie, dass sich ein Mitarbeiter bei Ihnen meldet, oder kann ich Ihnen bei der Terminvereinbarung helfen?`;
@@ -780,6 +621,65 @@ export function formatContactResponse(phone?: string, contactTarget?: string, lo
   if (isAr) {
     return `فريق العيادة متاح لمساعدتك مباشرة${phoneStr}. هل ترغب في أن يتواصل معك ممثلنا، أم يمكنني مساعدتك في حجز موعد؟`;
   }
+  if (isRu) {
+    return wantsWhatsApp
+      ? `Команда клиники доступна в WhatsApp${phoneStr}. Хотите, чтобы с вами связался представитель, или вам помочь с записью на приём?`
+      : `Команда клиники готова помочь вам напрямую${phoneStr}. Хотите, чтобы с вами связался представитель, или вам помочь с записью на приём?`;
+  }
 
   return `Klinik ekibimize doğrudan${phoneStr} numarasından ulaşabilirsiniz. Dilerseniz yetkili bir temsilcimizin size ulaşmasını sağlayabilir veya randevu talebinizi hemen oluşturabilirim.`;
+}
+
+/**
+ * Live-support / WhatsApp handoff copy tied to the active conversation language.
+ */
+export function formatLiveSupportHandoff(params: {
+  clinicName: string;
+  contactNumber?: string | null;
+  locale?: string;
+  appointmentAlreadySubmitted?: boolean;
+}): string {
+  const locale = (params.locale || "tr").toLowerCase();
+  const clinicName = params.clinicName || "clinic";
+  const contactNumber = String(params.contactNumber || "").trim();
+
+  let handoffMsg = "";
+  if (locale.startsWith("tr")) {
+    handoffMsg = contactNumber
+      ? `Elbette. ${clinicName} ekibiyle WhatsApp üzerinden doğrudan iletişime geçebilirsiniz:\n\n${contactNumber}`
+      : `Sizi canlı destek ekibimize yönlendirebilirim. Aşağıdaki kanallardan biriyle ${clinicName} ekibine ulaşabilirsiniz.`;
+  } else if (locale.startsWith("de")) {
+    handoffMsg = contactNumber
+      ? `Natürlich. Sie können das internationale Patiententeam von ${clinicName} direkt über WhatsApp kontaktieren:\n\n${contactNumber}`
+      : `Ich kann Sie an unser Live-Support-Team weiterleiten. Sie können das Team von ${clinicName} über einen der unten stehenden Kanäle kontaktieren.`;
+  } else if (locale.startsWith("ru")) {
+    handoffMsg = contactNumber
+      ? `Конечно. Вы можете напрямую связаться с командой ${clinicName} через WhatsApp:\n\n${contactNumber}`
+      : `Я могу направить вас в службу поддержки. Связаться с командой ${clinicName} можно через каналы ниже.`;
+  } else if (locale.startsWith("fr")) {
+    handoffMsg = contactNumber
+      ? `Bien sûr. Vous pouvez contacter l’équipe de ${clinicName} directement via WhatsApp :\n\n${contactNumber}`
+      : `Je peux vous orienter vers notre équipe d’assistance. Vous pouvez contacter ${clinicName} via les canaux ci-dessous.`;
+  } else if (locale.startsWith("ar")) {
+    handoffMsg = contactNumber
+      ? `بالتأكيد. يمكنك التواصل مباشرة مع فريق ${clinicName} عبر واتساب:\n\n${contactNumber}`
+      : `يمكنني توجيهك إلى فريق الدعم المباشر. يمكنك التواصل مع ${clinicName} عبر القنوات أدناه.`;
+  } else {
+    handoffMsg = contactNumber
+      ? `Of course. You can contact ${clinicName}’s international patient team directly via WhatsApp:\n\n${contactNumber}`
+      : `I can direct you to our live support team. You can contact ${clinicName} through one of the channels below.`;
+  }
+
+  if (params.appointmentAlreadySubmitted) {
+    const confirmNote = locale.startsWith("tr")
+      ? `\n\nNot: Ön randevu talebiniz zaten kliniğe iletildi. WhatsApp tercihini klinik ekibine de iletebilirsiniz.`
+      : locale.startsWith("ru")
+        ? `\n\nПримечание: ваш предварительный запрос на приём уже отправлен в клинику. Вы также можете сообщить команде о предпочтении WhatsApp.`
+        : locale.startsWith("de")
+          ? `\n\nHinweis: Ihre vorläufige Terminanfrage wurde bereits an die Klinik übermittelt. Sie können Ihre WhatsApp-Präferenz auch dem Klinikteam mitteilen.`
+          : `\n\nNote: Your preliminary appointment request has already been submitted to the clinic. You can also share your WhatsApp preference with the clinic team.`;
+    handoffMsg = `${handoffMsg}${confirmNote}`;
+  }
+
+  return handoffMsg;
 }

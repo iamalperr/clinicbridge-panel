@@ -299,12 +299,17 @@ function guidanceMessage(
   extras?: { suggestions?: AppointmentDateTimeSuggestion[]; scheduleSummary?: string }
 ): string {
   const isEn = locale.toLowerCase().startsWith("en");
+  const isRu = locale.toLowerCase().startsWith("ru");
   const suggestionText =
     extras?.suggestions && extras.suggestions.length > 0
       ? isEn
         ? `\n\nPreferred request time options we can submit for clinic confirmation:\n${extras.suggestions
             .map((s, i) => `${i + 1}) ${s.label}`)
             .join("\n")}`
+        : isRu
+          ? `\n\nВарианты времени, которые мы можем отправить на подтверждение клинике:\n${extras.suggestions
+              .map((s, i) => `${i + 1}) ${s.label}`)
+              .join("\n")}`
         : `\n\nKlinik onayına sunabileceğimiz saat seçenekleri:\n${extras.suggestions
             .map((s, i) => `${i + 1}) ${s.label}`)
             .join("\n")}`
@@ -315,6 +320,8 @@ function guidanceMessage(
       return (
         (isEn
           ? "The date you shared appears to be in the past. We can choose a future date within the clinic’s working hours."
+          : isRu
+            ? "Указанная дата кажется прошедшей. Мы можем выбрать будущую дату в рабочие часы клиники."
           : "Belirttiğiniz tarih geçmiş görünüyor. Kliniğin çalışma saatlerine uygun ileri bir tarih seçebiliriz.") +
         suggestionText
       );
@@ -322,6 +329,8 @@ function guidanceMessage(
       return (
         (isEn
           ? "The time you shared appears to be earlier today. We can choose a later time within clinic hours, or another day."
+          : isRu
+            ? "Указанное время уже прошло сегодня. Мы можем выбрать более позднее время в рабочие часы или другой день."
           : "Belirttiğiniz saat bugün için geçmiş görünüyor. Kliniğin çalışma saatlerine uygun ileri bir saat veya başka bir gün seçebiliriz.") +
         suggestionText
       );
@@ -331,6 +340,10 @@ function guidanceMessage(
           ? `The clinic appears to be closed on that day.${
               extras?.scheduleSummary ? ` Working hours: ${extras.scheduleSummary}.` : ""
             } We can pick another working day.`
+          : isRu
+            ? `В этот день клиника закрыта.${
+                extras?.scheduleSummary ? ` Часы работы: ${extras.scheduleSummary}.` : ""
+              } Мы можем выбрать другой рабочий день.`
           : `Belirttiğiniz gün kliniğin kapalı olduğu günlerden biri görünüyor.${
               extras?.scheduleSummary ? ` Çalışma saatleri: ${extras.scheduleSummary}.` : ""
             } Dilerseniz başka bir çalışma günü seçebiliriz.`) + suggestionText
@@ -561,18 +574,27 @@ function closedDayDateMessage(
   suggestions: AppointmentDateTimeSuggestion[]
 ): string {
   const isEn = locale.toLowerCase().startsWith("en");
+  const isRu = locale.toLowerCase().startsWith("ru");
   if (suggestions.length >= 2) {
     const a = suggestions[0].label;
     const b = suggestions[1].label;
-    return isEn
-      ? `The clinic is closed on ${weekdayLabel}. We can submit a preliminary appointment request for ${a} or ${b}. Which day would you prefer?`
-      : `Kliniğimiz ${weekdayLabel} günü kapalıdır. ${a} veya ${b} için ön talep iletebiliriz. Hangi günü tercih edersiniz?`;
+    if (isEn) {
+      return `The clinic is closed on ${weekdayLabel}. We can submit a preliminary appointment request for ${a} or ${b}. Which day would you prefer?`;
+    }
+    if (isRu) {
+      return `Клиника закрыта в ${weekdayLabel}. Мы можем отправить предварительную заявку на ${a} или ${b}. Какой день вам удобнее?`;
+    }
+    return `Kliniğimiz ${weekdayLabel} günü kapalıdır. ${a} veya ${b} için ön talep iletebiliriz. Hangi günü tercih edersiniz?`;
   }
   if (suggestions.length === 1) {
     const a = suggestions[0].label;
-    return isEn
-      ? `The clinic is closed on ${weekdayLabel}. We can submit a preliminary appointment request for ${a}. Would that work for you?`
-      : `Kliniğimiz ${weekdayLabel} günü kapalıdır. ${a} için ön talep iletebiliriz. Uyar mı?`;
+    if (isEn) {
+      return `The clinic is closed on ${weekdayLabel}. We can submit a preliminary appointment request for ${a}. Would that work for you?`;
+    }
+    if (isRu) {
+      return `Клиника закрыта в ${weekdayLabel}. Мы можем отправить предварительную заявку на ${a}. Вам подходит?`;
+    }
+    return `Kliniğimiz ${weekdayLabel} günü kapalıdır. ${a} için ön talep iletebiliriz. Uyar mı?`;
   }
   return guidanceMessage("CLOSED_DAY", locale);
 }
