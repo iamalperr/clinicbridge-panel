@@ -34,6 +34,7 @@ import {
   languageResolutionLogFields,
   applyConfirmationAmendment,
   applyAppointmentSchedulingAmendment,
+  resolveAppointmentTreatmentCarryForward,
   type AppointmentDraftLike,
 } from "@/lib/conversation";
 import {
@@ -777,6 +778,31 @@ export async function handleClinicAgentTurn(
       undefined;
 
     // Global Intent Router Evaluation
+    // Carry forward last unambiguous treatment from draft/history so Q&A → booking
+    // does not re-ask "which treatment?" when the patient only supplies date/time.
+    const treatmentCarryForward = resolveAppointmentTreatmentCarryForward({
+      draftRequestedService: appointmentDraft.requestedService,
+      history,
+      locale: conversationLocale,
+    });
+    const activeTreatment =
+      !treatmentCarryForward.ambiguous && treatmentCarryForward.treatmentId
+        ? treatmentCarryForward.treatmentId
+        : undefined;
+
+    if (treatmentCarryForward.source !== "none" || treatmentCarryForward.ambiguous) {
+      console.log(JSON.stringify({
+        checkpoint: "APPT_TREATMENT_CARRY_FORWARD",
+        traceId: activeTraceId,
+        conversationId: convId,
+        clinicId: actualClinicId,
+        treatmentId: treatmentCarryForward.treatmentId,
+        ambiguous: treatmentCarryForward.ambiguous,
+        source: treatmentCarryForward.source,
+        reason: treatmentCarryForward.reason,
+      }));
+    }
+
     perf.start("intent_classify");
     const conversationIntent = IntentRouter.classifyConversationIntent({
       message,
@@ -791,8 +817,9 @@ export async function handleClinicAgentTurn(
         fullName: appointmentDraft.patientName || undefined,
         phone: appointmentDraft.patientPhone || undefined,
         email: appointmentDraft.patientEmail || undefined,
-        treatment: appointmentDraft.requestedService || undefined
+        treatment: appointmentDraft.requestedService || activeTreatment || undefined
       },
+      activeTreatment,
       clinicContext: {
         clinicId: actualClinicId,
         clinicName,

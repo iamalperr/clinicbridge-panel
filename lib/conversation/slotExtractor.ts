@@ -537,6 +537,7 @@ export class SlotExtractor {
   ): Array<{ id: string; matchedRaw: string; index: number }> {
     const haystack = SlotExtractor.normalizeForKeywordMatch(lower);
     const found = new Map<string, { id: string; matchedRaw: string; index: number }>();
+    const isWordChar = (c: string) => /[\p{L}\p{N}]/u.test(c);
 
     for (const t of CANONICAL_TREATMENTS) {
       for (const kw of t.keywords) {
@@ -547,14 +548,28 @@ export class SlotExtractor {
         if (isArabic) {
           idx = haystack.indexOf(kwLower);
         } else {
-          const probe = haystack.indexOf(kwLower);
-          if (probe !== -1) {
-            const charBefore = probe > 0 ? haystack[probe - 1] : " ";
-            const charAfter = probe + kwLower.length < haystack.length ? haystack[probe + kwLower.length] : " ";
-            const isWordChar = (c: string) => /[\p{L}\p{N}]/u.test(c);
-            if (!isWordChar(charBefore) && !isWordChar(charAfter)) {
-              idx = probe;
+          // Exact word match, plus common English plurals ("implants", "veneers")
+          // so Q&A wording still yields treatment context for booking carry-forward.
+          const variants = [kwLower];
+          if (!kwLower.endsWith("s")) variants.push(`${kwLower}s`);
+
+          for (const variant of variants) {
+            let from = 0;
+            while (from <= haystack.length) {
+              const probe = haystack.indexOf(variant, from);
+              if (probe === -1) break;
+              const charBefore = probe > 0 ? haystack[probe - 1] : " ";
+              const charAfter =
+                probe + variant.length < haystack.length
+                  ? haystack[probe + variant.length]
+                  : " ";
+              if (!isWordChar(charBefore) && !isWordChar(charAfter)) {
+                idx = probe;
+                break;
+              }
+              from = probe + 1;
             }
+            if (idx !== -1) break;
           }
         }
 

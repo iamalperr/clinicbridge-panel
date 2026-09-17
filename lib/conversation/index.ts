@@ -14,3 +14,4 @@ export * from "./formatters";
 export * from "./PendingActionManager";
 export * from "./appointmentConfirmationAmendment";
 export * from "./appointmentSchedulingAmendment";
+export * from "./appointmentContextCarryForward";
