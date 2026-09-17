@@ -198,10 +198,10 @@ describe("Pricing intent stability (intermittent appointment drift)", () => {
   });
 
   describe("Shared chat route wiring / observability", () => {
-    const routeSource = readFileSync(
-      join(process.cwd(), "app/api/public/chat/route.ts"),
-      "utf8"
-    );
+    const routeSource = [
+      readFileSync(join(process.cwd(), "app/api/public/chat/route.ts"), "utf8"),
+      readFileSync(join(process.cwd(), "lib/agent/handleClinicAgentTurn.ts"), "utf8"),
+    ].join("\n");
 
     it("uses the meta locale resolver and logs the reason", () => {
       expect(routeSource).toContain("resolveConversationLocaleWithMeta");

@@ -401,7 +401,11 @@ describe("Single-clinic visible turn persistence", () => {
   });
 
   it("chat route finalizes visible replies through respondWithVisibleReply", () => {
-    const chat = readFileSync(resolve(REPO, "app/api/public/chat/route.ts"), "utf8");
+    const chat = [
+      readFileSync(resolve(REPO, "app/api/public/chat/route.ts"), "utf8"),
+      readFileSync(resolve(REPO, "lib/agent/handleClinicAgentTurn.ts"), "utf8"),
+      readFileSync(resolve(REPO, "lib/agent/persistence.ts"), "utf8"),
+    ].join("\n");
     expect(chat).toContain("async function respondWithVisibleReply");
     // Critical early-return branches that previously skipped assistant logging
     expect(chat).toMatch(/appointment_information_required[\s\S]{0,200}basePersist/);

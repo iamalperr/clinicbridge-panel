@@ -213,7 +213,11 @@ describe("Intent + contact path wiring", () => {
   });
 
   it("chat route persists conversationLocale every turn and uses formatLiveSupportHandoff", () => {
-    const route = readFileSync(join(process.cwd(), "app/api/public/chat/route.ts"), "utf8");
+    const route = [
+      readFileSync(join(process.cwd(), "app/api/public/chat/route.ts"), "utf8"),
+      readFileSync(join(process.cwd(), "lib/agent/handleClinicAgentTurn.ts"), "utf8"),
+      readFileSync(join(process.cwd(), "lib/agent/persistence.ts"), "utf8"),
+    ].join("\n");
     expect(route).toContain("formatLiveSupportHandoff");
     expect(route).toContain("languageResolutionLogFields");
     expect(route).toContain("logData.conversationLocale");

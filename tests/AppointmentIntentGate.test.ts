@@ -218,7 +218,10 @@ describe("Appointment collection entry gate", () => {
   });
 
   describe("Shared single-clinic chat route wiring", () => {
-    const routeSource = readFileSync(join(process.cwd(), "app/api/public/chat/route.ts"), "utf8");
+    const routeSource = [
+      readFileSync(join(process.cwd(), "app/api/public/chat/route.ts"), "utf8"),
+      readFileSync(join(process.cwd(), "lib/agent/handleClinicAgentTurn.ts"), "utf8"),
+    ].join("\n");
 
     it("routes appointment entry through the shared gate", () => {
       expect(routeSource).toContain("evaluateAppointmentCollectionGate");

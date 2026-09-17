@@ -161,7 +161,10 @@ describe("AI temperature — business-rule invariance", () => {
   });
 
   it("21–23. public chat routes do not let clients override temperature; lead/quote unaffected by policy module", () => {
-    const clinicChat = readFileSync(resolve(REPO, "app/api/public/chat/route.ts"), "utf8");
+    const clinicChat = [
+      readFileSync(resolve(REPO, "app/api/public/chat/route.ts"), "utf8"),
+      readFileSync(resolve(REPO, "lib/agent/handleClinicAgentTurn.ts"), "utf8"),
+    ].join("\n");
     const agencyChat = readFileSync(
       resolve(REPO, "app/api/public/agency/[slug]/matching-chat/route.ts"),
       "utf8"

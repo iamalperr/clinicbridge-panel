@@ -415,7 +415,10 @@ describe("Confirmation amendment persistence + Conversation Records", () => {
 });
 
 describe("Chat route confirmation amendment wiring", () => {
-  const chat = readFileSync(resolve(REPO, "app/api/public/chat/route.ts"), "utf8");
+  const chat = [
+    readFileSync(resolve(REPO, "app/api/public/chat/route.ts"), "utf8"),
+    readFileSync(resolve(REPO, "lib/agent/handleClinicAgentTurn.ts"), "utf8"),
+  ].join("\n");
 
   it("uses applyConfirmationAmendment before LLM on AWAITING_CONFIRMATION", () => {
     expect(chat).toContain("applyConfirmationAmendment");

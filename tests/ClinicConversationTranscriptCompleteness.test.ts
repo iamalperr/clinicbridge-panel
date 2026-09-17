@@ -160,7 +160,10 @@ describe("Clinic conversation transcript completeness", () => {
 
   it("11. 14-count cannot result from displaying only two without recovery path", () => {
     // History sync + merge path must exist so a final logged turn materializes prior turns.
-    const chat = readFileSync(resolve(REPO, "app/api/public/chat/route.ts"), "utf8");
+    const chat = [
+      readFileSync(resolve(REPO, "app/api/public/chat/route.ts"), "utf8"),
+      readFileSync(resolve(REPO, "lib/agent/persistence.ts"), "utf8"),
+    ].join("\n");
     expect(chat).toContain("syncConversationLogMessagesFromHistory");
     expect(chat).toContain("respondWithVisibleReply");
     expect(chat).toContain("history,");
