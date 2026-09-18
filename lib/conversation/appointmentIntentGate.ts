@@ -74,6 +74,7 @@ export const INFORMATION_SEEKING_INTENTS: ConversationIntent[] = [
   "clinic_recommendation",
   "clinic_comparison",
   "contact_request",
+  "contact_handoff_request",
   "live_support_request",
   "complaint",
   "emergency",

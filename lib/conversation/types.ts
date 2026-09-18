@@ -26,6 +26,7 @@ export type ConversationIntent =
   | "appointment_confirmation"
   | "quote_request"
   | "contact_request"
+  | "contact_handoff_request"
   | "live_support_request"
   | "complaint"
   | "confirmation"
@@ -93,6 +94,10 @@ export type PendingActionType =
   | "show_doctor_information"
   | "request_quote"
   | "create_live_support_request"
+  | "create_contact_request"
+  | "collect_contact_phone"
+  | "collect_contact_email"
+  | "request_phone_contact"
   | "continue_clinic_selection"
   | "general_confirmation"
   | string;

@@ -158,12 +158,13 @@ describe('Unified Conversation Engine & Hardened Intent Resolution Suite', () =>
       expect(enMsg).toContain('Our clinic team');
     });
 
-    it('C3: handles "Beni arayın" as live_support_request', () => {
+    it('C3: handles "Beni arayın" as contact_handoff_request', () => {
       const res = IntentRouter.classifyConversationIntent({
         message: 'Lütfen beni arayın',
         locale: 'tr'
       });
-      expect(res.intent).toBe('live_support_request');
+      expect(res.intent).toBe('contact_handoff_request');
+      expect(res.requiresKnowledgeBase).toBe(false);
     });
   });
 

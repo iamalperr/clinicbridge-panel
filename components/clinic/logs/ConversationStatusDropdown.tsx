@@ -45,6 +45,8 @@ export default function ConversationStatusDropdown({
   const normalizedStatus = normalizeConversationStatus(log.status, {
     convertedToAppointment: log.convertedToAppointment,
     appointmentId: log.appointmentId,
+    contactRequestId: log.contactRequestId,
+    contactRequestStatus: log.contactRequestStatus,
   });
   const systemLabel = getConversationStatusLabel(normalizedStatus, language);
   const systemVariant = getConversationStatusVariant(normalizedStatus);

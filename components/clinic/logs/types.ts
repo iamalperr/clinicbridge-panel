@@ -38,6 +38,11 @@ export interface ConversationLog {
   manualConversionMarkedBy?: string | null;
   manualConversionRemovedAt?: string | null;
   manualConversionRemovedBy?: string | null;
+  // Contact Request / Human Handoff (additive — historical logs may omit these)
+  contactRequestId?: string | null;
+  contactRequestStatus?: string | null;
+  preferredContactMethod?: string | null;
+  preferredContactChannel?: string | null;
 }
 
 export interface ConversationMessage {

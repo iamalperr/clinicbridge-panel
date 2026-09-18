@@ -23,6 +23,11 @@ export type AppointmentEventType =
   | 'appointment.cancelled'
   | 'appointment.expired';
 
+/** Non-appointment clinic notification events (Contact Request / handoff). */
+export type ContactRequestEventType = 'contact_request.created';
+
+export type ClinicNotificationEventType = AppointmentEventType | ContactRequestEventType;
+
 export interface NotificationEvent {
   id?: string;
   tenant_id: string;
@@ -30,7 +35,7 @@ export interface NotificationEvent {
   clinic_id: string;
   appointment_id?: string;
   patient_id?: string;
-  event_type: AppointmentEventType;
+  event_type: ClinicNotificationEventType;
   channel: NotificationChannel;
   recipient: string; // email address, phone number
   template_id?: string;

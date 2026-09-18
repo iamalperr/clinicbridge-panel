@@ -34,8 +34,14 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
   const [messageCount, setMessageCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [contactUpdating, setContactUpdating] = useState(false);
+  const [localContactStatus, setLocalContactStatus] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setLocalContactStatus(log?.contactRequestStatus || null);
+  }, [log?.id, log?.contactRequestStatus]);
 
   useEffect(() => {
     if (!isOpen || !log?.id || !log?.clinicId) return;
@@ -121,10 +127,42 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
   const normalizedStatus = normalizeConversationStatus(log.status, {
     convertedToAppointment: log.convertedToAppointment,
     appointmentId: log.appointmentId,
+    contactRequestId: log.contactRequestId,
+    contactRequestStatus: localContactStatus || log.contactRequestStatus,
   });
   const statusLabel = getConversationStatusLabel(normalizedStatus, language);
   const statusVariant = getConversationStatusVariant(normalizedStatus);
   const displayCount = messageCount ?? log.totalMessages;
+
+  const updateContactStatus = async (next: string) => {
+    if (!log.contactRequestId || !log.clinicId) return;
+    setContactUpdating(true);
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error(language === "en" ? "Not signed in." : "Oturum bulunamadı.");
+      const token = await user.getIdToken();
+      const res = await fetch(
+        `/api/clinics/${encodeURIComponent(log.clinicId)}/contact-requests/${encodeURIComponent(log.contactRequestId)}`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ status: next }),
+        }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || "Update failed");
+      }
+      setLocalContactStatus(next);
+    } catch (e: any) {
+      setError(e?.message || "Error");
+    } finally {
+      setContactUpdating(false);
+    }
+  };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={t("logs.detailTitle") || (language === "en" ? "Conversation Details" : "Görüşme Detayı")} width={600}>
@@ -221,6 +259,89 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
                   : "Bu görüşmede kullanıcıya canlı destek yönlendirmesi gösterildi. Mesaj geçmişinde eylem loglarını inceleyebilirsiniz."}
               </p>
             </div>
+          </div>
+        )}
+
+        {/* Contact Request Banner */}
+        {(log.contactRequestId ||
+          normalizedStatus === "contact_request_pending" ||
+          normalizedStatus === "contact_request_resolved") && (
+          <div
+            style={{
+              background: "rgba(15, 118, 110, 0.05)",
+              border: `1px solid rgba(15, 118, 110, 0.25)`,
+              borderRadius: UI_COMMON_STYLES.radius,
+              padding: 14,
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+            }}
+          >
+            <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 20 }}>📞</span>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 13.5, fontWeight: 600, color: "#0f766e", marginBottom: 4 }}>
+                  {language === "en" ? "Patient Contact Request" : "Hasta İletişim Talebi"}
+                </p>
+                <p style={{ fontSize: 12.5, color: UI_COLORS.textSecondary, lineHeight: 1.5 }}>
+                  {(language === "en" ? "Status" : "Durum")}:{" "}
+                  <strong>{localContactStatus || log.contactRequestStatus || "pending"}</strong>
+                  {(log.preferredContactMethod || log.preferredContactChannel) && (
+                    <>
+                      {" · "}
+                      {language === "en" ? "Preferred" : "Tercih"}:{" "}
+                      <strong>{log.preferredContactMethod || log.preferredContactChannel}</strong>
+                    </>
+                  )}
+                </p>
+                {log.patientPhone && (
+                  <p style={{ fontSize: 12.5, color: UI_COLORS.textSecondary, marginTop: 2 }}>
+                    {language === "en" ? "Phone" : "Telefon"}: {log.patientPhone}
+                  </p>
+                )}
+                {log.patientEmail && (
+                  <p style={{ fontSize: 12.5, color: UI_COLORS.textSecondary, marginTop: 2 }}>
+                    Email: {log.patientEmail}
+                  </p>
+                )}
+                {log.updatedAt && (
+                  <p style={{ fontSize: 11.5, color: UI_COLORS.textMuted, marginTop: 4 }}>
+                    {language === "en" ? "Updated" : "Güncellendi"}: {new Date(log.updatedAt).toLocaleString(language === "en" ? "en-US" : "tr-TR")}
+                  </p>
+                )}
+              </div>
+            </div>
+            {log.contactRequestId &&
+              localContactStatus !== "resolved" &&
+              localContactStatus !== "cancelled" && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {[
+                    { key: "acknowledged", en: "Acknowledge", tr: "Onayla" },
+                    { key: "contacted", en: "Contacted", tr: "İletişime Geçildi" },
+                    { key: "resolved", en: "Resolved", tr: "Çözüldü" },
+                  ].map((btn) => (
+                    <button
+                      key={btn.key}
+                      type="button"
+                      disabled={contactUpdating || localContactStatus === btn.key}
+                      onClick={() => updateContactStatus(btn.key)}
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        padding: "6px 10px",
+                        borderRadius: 6,
+                        border: `1px solid rgba(15, 118, 110, 0.35)`,
+                        background: localContactStatus === btn.key ? "rgba(15, 118, 110, 0.12)" : "#fff",
+                        color: "#0f766e",
+                        cursor: contactUpdating ? "wait" : "pointer",
+                        opacity: contactUpdating ? 0.7 : 1,
+                      }}
+                    >
+                      {language === "en" ? btn.en : btn.tr}
+                    </button>
+                  ))}
+                </div>
+              )}
           </div>
         )}
 

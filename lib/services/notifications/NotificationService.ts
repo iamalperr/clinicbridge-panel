@@ -3,6 +3,7 @@ import { CanonicalAppointmentStatus, isValidTransition, APPOINTMENT_STATUS_TRANS
 import { getAppointmentStatusEmailTemplate } from './EmailTemplateResolver';
 import { 
   AppointmentEventType, 
+  ClinicNotificationEventType,
   NotificationChannel, 
   NotificationEvent,
   NotificationStatus
@@ -210,7 +211,7 @@ export class NotificationService {
       clinic_id: string;
       appointment_id?: string;
       patient_id?: string;
-      event_type: AppointmentEventType;
+      event_type: ClinicNotificationEventType;
       channel: NotificationChannel;
       recipient: string;
       template_id?: string;

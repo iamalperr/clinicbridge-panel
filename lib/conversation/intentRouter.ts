@@ -22,6 +22,10 @@ import { SlotExtractor } from "./slotExtractor";
 import { ContextResolver } from "./contextResolver";
 import { PendingActionManager } from "./PendingActionManager";
 import { detectExplicitBookingIntent } from "./appointmentIntentGate";
+import {
+  detectPreferredContactMethod as detectPreferredContactMethodFromDomain,
+  isPatientContactHandoffIntent,
+} from "@/lib/contact-request/intent";
 
 export class IntentRouter {
   /**
@@ -143,7 +147,28 @@ export class IntentRouter {
       };
     }
 
-    // Step 3: High priority live support / contact request
+    // Step 3a: Patient contact handoff (clinic → patient). Distinct from asking for clinic's number.
+    if (this.isPatientContactHandoff(lower)) {
+      const preferred =
+        extracted.preferredContactMethod ||
+        this.detectPreferredContactMethod(lower);
+      return {
+        intent: "contact_handoff_request",
+        confidence: 0.98,
+        entities: {
+          ...extracted,
+          preferredContactMethod: preferred,
+          contactTarget: extracted.contactTarget || "clinic_team",
+        },
+        requiresKnowledgeBase: false,
+        shouldContinueActiveFlow: isInAppointmentFlow,
+        isInterruption: isInAppointmentFlow,
+        interruptionReason: "contact_handoff",
+        explanation: "Patient requested clinic contact / human handoff",
+      };
+    }
+
+    // Step 3b: High priority live support / contact information request
     if (this.isContactOrLiveSupport(lower)) {
       const isLiveSupport = this.isLiveSupport(lower);
       return {
@@ -324,6 +349,29 @@ export class IntentRouter {
             explanation: "Live support offer confirmed"
           };
         }
+
+        if (
+          resolution.actionType === "create_contact_request" ||
+          resolution.actionType === "request_phone_contact" ||
+          resolution.actionType === "collect_contact_phone" ||
+          resolution.actionType === "collect_contact_email"
+        ) {
+          return {
+            intent: "contact_handoff_request",
+            confidence: 0.95,
+            entities: {
+              ...extracted,
+              preferredContactMethod:
+                extracted.preferredContactMethod ||
+                params.pendingAction?.payload?.preferredContactMethod ||
+                "unspecified",
+            },
+            requiresKnowledgeBase: false,
+            shouldContinueActiveFlow: false,
+            pendingAction: params.pendingAction,
+            explanation: "Contact request / handoff offer confirmed"
+          };
+        }
       }
 
       // If appointment was already submitted and user sent a generic confirmation without pending action
@@ -501,8 +549,18 @@ export class IntentRouter {
     return this.isLiveSupport(lower) || this.isContactQuery(lower);
   }
 
+  /** Patient asks clinic to contact them (handoff) — not "what is your phone number". */
+  public static isPatientContactHandoff(lower: string): boolean {
+    return isPatientContactHandoffIntent(lower);
+  }
+
+  public static detectPreferredContactMethod(lower: string): string {
+    return detectPreferredContactMethodFromDomain(lower);
+  }
+
   public static isLiveSupport(lower: string): boolean {
-    return /\b(canlı destek|canli destek|müşteri temsilcisi|yetkili|yetkiliyle|insanla görüşmek|biriyle görüşmek|temsilci|operator|human agent|live support|talk to human|representative|call me|beni arayın|beni arayin|real person|speak with someone|speak to someone|talk to someone|connect me with a person|need human support)\b/i.test(
+    // "call me" / "beni arayın" are patient handoff intents (handled in isPatientContactHandoff).
+    return /\b(canlı destek|canli destek|müşteri temsilcisi|yetkili|yetkiliyle|insanla görüşmek|biriyle görüşmek|temsilci|operator|human agent|live support|talk to human|representative|real person|speak with someone|speak to someone|talk to someone|connect me with a person|need human support)\b/i.test(
       lower
     );
   }

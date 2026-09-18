@@ -178,10 +178,13 @@ export default function ConversationLogsTab({ clinicId }: Props) {
           const norm = normalizeConversationStatus(log.status, {
             convertedToAppointment: log.convertedToAppointment,
             appointmentId: log.appointmentId,
+            contactRequestId: log.contactRequestId,
+            contactRequestStatus: log.contactRequestStatus,
           });
           if (statusFilter === "answered" && (norm !== "successfully_answered" || isConversationConverted(log))) return false;
           if (statusFilter === "collecting" && norm !== "collecting_appointment_information") return false;
           if (statusFilter === "liveSupport" && norm !== "live_support_required") return false;
+          if (statusFilter === "contactRequest" && norm !== "contact_request_pending" && norm !== "contact_request_resolved") return false;
           if (statusFilter === "unanswered" && norm !== "unanswered") return false;
         }
       }
@@ -214,6 +217,7 @@ export default function ConversationLogsTab({ clinicId }: Props) {
   const metrics = useMemo(() => {
     let unansweredCount = 0;
     let liveSupportCount = 0;
+    let contactRequestCount = 0;
     let appointmentsCount = 0;
     let collectingCount = 0;
     let answeredCount = 0;
@@ -222,6 +226,8 @@ export default function ConversationLogsTab({ clinicId }: Props) {
       const s = normalizeConversationStatus(l.status, {
         convertedToAppointment: l.convertedToAppointment,
         appointmentId: l.appointmentId,
+        contactRequestId: l.contactRequestId,
+        contactRequestStatus: l.contactRequestStatus,
       });
       const isConv = isConversationConverted(l);
 
@@ -231,6 +237,7 @@ export default function ConversationLogsTab({ clinicId }: Props) {
 
       if (s === "unanswered") unansweredCount++;
       else if (s === "live_support_required") liveSupportCount++;
+      else if (s === "contact_request_pending" || s === "contact_request_resolved") contactRequestCount++;
       else if (s === "collecting_appointment_information") collectingCount++;
       else if (s === "successfully_answered" && !isConv) answeredCount++;
     });
@@ -239,6 +246,7 @@ export default function ConversationLogsTab({ clinicId }: Props) {
       total: logs.length,
       unanswered: unansweredCount,
       needsLiveSupport: liveSupportCount,
+      contactRequests: contactRequestCount,
       appointments: appointmentsCount,
       collecting: collectingCount,
       answered: answeredCount,
@@ -251,6 +259,8 @@ export default function ConversationLogsTab({ clinicId }: Props) {
         return t("logs.status.answered") || (language === "en" ? "Successfully Answered" : "Başarılı Yanıtlandı");
       case "liveSupport":
         return t("logs.status.liveSupport") || (language === "en" ? "Live Support Required" : "Canlı Destek Gerekli");
+      case "contactRequest":
+        return language === "en" ? "Contact Request" : "İletişim Talebi";
       case "unanswered":
         return t("logs.status.unanswered") || (language === "en" ? "Unanswered" : "Yanıtlanamadı");
       case "appointment":
@@ -272,6 +282,7 @@ export default function ConversationLogsTab({ clinicId }: Props) {
       { value: "appointment", label: getStatusLabel("appointment") },
       { value: "collecting", label: getStatusLabel("collecting") },
       { value: "liveSupport", label: getStatusLabel("liveSupport") },
+      { value: "contactRequest", label: getStatusLabel("contactRequest") },
       { value: "unanswered", label: getStatusLabel("unanswered") },
     ];
 

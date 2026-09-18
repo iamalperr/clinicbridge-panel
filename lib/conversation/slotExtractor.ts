@@ -13,6 +13,7 @@ import {
   clinicLocalTomorrowIso,
   resolveWeekdayFromMessage,
 } from "./resolveWeekdayDate";
+import { detectPreferredContactMethod } from "@/lib/contact-request/intent";
 
 const MONTHS_TR: Record<string, number> = {
   ocak: 1, şubat: 2, subat: 2, mart: 3, nisan: 4, mayıs: 5, mayis: 5, haziran: 6,
@@ -342,6 +343,12 @@ export class SlotExtractor {
     const contactTarget = this.parseContactTarget(lower);
     if (contactTarget) {
       extracted.contactTarget = contactTarget;
+    }
+
+    // 8b. Preferred contact method for handoff (patient preference ≠ clinic capability)
+    const preferred = detectPreferredContactMethod(lower);
+    if (preferred && preferred !== "unspecified") {
+      extracted.preferredContactMethod = preferred;
     }
 
     // 9. Currency Extraction

@@ -59,6 +59,10 @@ export async function logConversation(params: {
   appointmentId?: string;
   isAppointmentCreated?: boolean;
   isLiveSupport?: boolean;
+  isContactRequest?: boolean;
+  contactRequestId?: string;
+  contactRequestStatus?: string;
+  preferredContactMethod?: string;
   // NEW DIAGNOSTIC FIELDS
   tenantId?: string;
   widgetId?: string;
@@ -98,6 +102,16 @@ export async function logConversation(params: {
     if (alreadyConverted || params.isAppointmentCreated) {
       // Appointment conversion is durable; live-support / chat may coexist.
       status = "appointment";
+    } else if (params.isContactRequest || params.contactRequestId) {
+      // Contact request pending clinic action — not generically "answered"
+      const crStatus = String(params.contactRequestStatus || existing?.contactRequestStatus || "pending").toLowerCase();
+      if (crStatus === "resolved") {
+        status = "contact_request_resolved";
+      } else if (crStatus === "cancelled") {
+        status = existing?.status === "contact_request_pending" ? "answered" : (existing?.status || "answered");
+      } else {
+        status = "contact_request_pending";
+      }
     } else if (params.isLiveSupport) {
       status = "liveSupport";
     } else if (params.appointmentState && params.appointmentState !== "IDLE") {
@@ -230,6 +244,15 @@ export async function logConversation(params: {
       }
     }
 
+    if (params.isContactRequest || params.contactRequestId) {
+      logData.contactRequestId = params.contactRequestId || existing?.contactRequestId;
+      logData.contactRequestStatus = params.contactRequestStatus || existing?.contactRequestStatus || "pending";
+      if (params.preferredContactMethod) {
+        logData.preferredContactMethod = params.preferredContactMethod;
+        logData.preferredContactChannel = params.preferredContactMethod;
+      }
+    }
+
     // Preserve terminal appointment fields even when this turn is support/chat.
     if (alreadyConverted) {
       logData.convertedToAppointment = true;
@@ -281,6 +304,10 @@ export async function respondWithVisibleReply(
     appointmentId?: string;
     isAppointmentCreated?: boolean;
     isLiveSupport?: boolean;
+    isContactRequest?: boolean;
+    contactRequestId?: string;
+    contactRequestStatus?: string;
+    preferredContactMethod?: string;
     tenantId?: string;
     widgetId?: string;
     sourceDomain?: string;
@@ -310,6 +337,10 @@ export async function respondWithVisibleReply(
       appointmentId: persist.appointmentId,
       isAppointmentCreated: persist.isAppointmentCreated,
       isLiveSupport: persist.isLiveSupport,
+      isContactRequest: persist.isContactRequest,
+      contactRequestId: persist.contactRequestId,
+      contactRequestStatus: persist.contactRequestStatus,
+      preferredContactMethod: persist.preferredContactMethod,
       tenantId: persist.tenantId,
       widgetId: persist.widgetId,
       sourceDomain: persist.sourceDomain,

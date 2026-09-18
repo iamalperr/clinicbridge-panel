@@ -11,6 +11,8 @@ export type CanonicalConversationStatus =
   | "collecting_appointment_information"
   | "converted_to_appointment"
   | "live_support_required"
+  | "contact_request_pending"
+  | "contact_request_resolved"
   | "unanswered";
 
 export interface ConversationStatusContext {
@@ -21,6 +23,8 @@ export interface ConversationStatusContext {
   customLabel?: string | null;
   customLabelId?: string | null;
   customLabelName?: string | null;
+  contactRequestId?: string | null;
+  contactRequestStatus?: string | null;
 }
 
 export const CANONICAL_CONVERSATION_STATUSES: CanonicalConversationStatus[] = [
@@ -28,6 +32,8 @@ export const CANONICAL_CONVERSATION_STATUSES: CanonicalConversationStatus[] = [
   "collecting_appointment_information",
   "converted_to_appointment",
   "live_support_required",
+  "contact_request_pending",
+  "contact_request_resolved",
   "unanswered",
 ];
 
@@ -63,6 +69,20 @@ export const CONVERSATION_STATUS_LABELS: Record<
     ar: "الدعم المباشر مطلوب",
     es: "Se requiere soporte en vivo",
   },
+  contact_request_pending: {
+    tr: "İletişim Talebi / Klinik Aksiyonu Bekleniyor",
+    en: "Contact Request / Clinic Action Pending",
+    de: "Kontaktanfrage / Klinikaktion ausstehend",
+    ar: "طلب تواصل / بانتظار إجراء العيادة",
+    es: "Solicitud de contacto / Acción de clínica pendiente",
+  },
+  contact_request_resolved: {
+    tr: "İletişim Talebi Çözüldü",
+    en: "Contact Request Resolved",
+    de: "Kontaktanfrage erledigt",
+    ar: "تم حل طلب التواصل",
+    es: "Solicitud de contacto resuelta",
+  },
   unanswered: {
     tr: "Yanıtlanamadı",
     en: "Unanswered",
@@ -80,6 +100,8 @@ export const CONVERSATION_STATUS_VARIANTS: Record<
   collecting_appointment_information: "warning",
   converted_to_appointment: "pro",
   live_support_required: "open",
+  contact_request_pending: "warning",
+  contact_request_resolved: "resolved",
   unanswered: "failed",
 };
 
@@ -165,6 +187,18 @@ export function normalizeConversationStatus(
     return "converted_to_appointment";
   }
 
+  // Contact request context (clinic action pending) — before generic answered defaults
+  const crStatus = String(context?.contactRequestStatus || "").toLowerCase();
+  if (
+    (typeof context?.contactRequestId === "string" && context.contactRequestId.trim().length > 0) ||
+    crStatus === "pending" ||
+    crStatus === "acknowledged" ||
+    crStatus === "contacted"
+  ) {
+    if (crStatus === "resolved") return "contact_request_resolved";
+    if (crStatus !== "cancelled") return "contact_request_pending";
+  }
+
   if (!rawStatus) {
     return "successfully_answered";
   }
@@ -195,6 +229,26 @@ export function normalizeConversationStatus(
     s === "converted"
   ) {
     return "converted_to_appointment";
+  }
+
+  // Contact request mappings
+  if (
+    s === "contact_request_pending" ||
+    s === "contact_request" ||
+    s === "contactrequest" ||
+    s === "clinic_action_pending" ||
+    s === "iletişim talebi" ||
+    s === "iletisim talebi"
+  ) {
+    return "contact_request_pending";
+  }
+  if (
+    s === "contact_request_resolved" ||
+    s === "contact_resolved" ||
+    s === "iletişim talebi çözüldü" ||
+    s === "iletisim talebi cozuldu"
+  ) {
+    return "contact_request_resolved";
   }
 
   // Live support required mappings

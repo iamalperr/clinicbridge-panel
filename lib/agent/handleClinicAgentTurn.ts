@@ -57,6 +57,7 @@ import {
 import { extractAppointmentFromHistory, parseTimeText } from "./appointmentParse";
 import { saveAppointmentState, respondWithVisibleReply } from "./persistence";
 import { fetchClinicDoctorMatchInputs, getClientDb } from "./clinicRuntime";
+import { tryHandleContactHandoffTurn } from "@/lib/contact-request/handleContactHandoffTurn";
 import type {
   AgentTurnInput,
   AgentTurnResult,
@@ -1038,7 +1039,56 @@ export async function handleClinicAgentTurn(
       }, basePersist({ appointmentState }));
     }
 
-    // 4. Handle Contact / Live Support Request (Preserves active appointment flow state)
+    // 4. Contact Request / Human Handoff (deterministic — never falls through to RAG/groundedness)
+    {
+      const pendingType =
+        loadedPendingAction?.status === "pending" ? loadedPendingAction?.type : null;
+      const contactPending =
+        pendingType === "create_contact_request" ||
+        pendingType === "request_phone_contact" ||
+        pendingType === "collect_contact_phone" ||
+        pendingType === "collect_contact_email";
+
+      const handoffResult = await tryHandleContactHandoffTurn({
+        message,
+        intent: conversationIntent.intent,
+        entities: conversationIntent.entities as any,
+        locale: conversationLocale,
+        clinicId: actualClinicId,
+        conversationId: convId,
+        channel: (channel as any) || "web_widget",
+        clinicData,
+        appointmentDraft,
+        appointmentState,
+        appointmentVersion,
+        history,
+        loadedPendingAction,
+        loadedConversationLogData,
+        adminDb,
+        basePersist,
+        confirmationAffirmed:
+          contactPending &&
+          (PendingActionManager.isConfirmation(message) ||
+            conversationIntent.intent === "contact_handoff_request"),
+      });
+
+      if (handoffResult) {
+        console.log(
+          JSON.stringify({
+            checkpoint: "CONTACT_HANDOFF_HANDLED",
+            traceId: activeTraceId,
+            conversationId: convId,
+            clinicId: actualClinicId,
+            intent: conversationIntent.intent,
+            contactRequestId: handoffResult.payload?.contactRequestId || null,
+            contactRequestCreated: handoffResult.payload?.contactRequestCreated || false,
+          })
+        );
+        return handoffResult;
+      }
+    }
+
+    // 4b. Informational contact / live-support display (clinic number / WhatsApp UI) — not a Contact Request
     if (conversationIntent.intent === "contact_request" || conversationIntent.intent === "live_support_request") {
       const effectiveContactNumber = clinicWhatsapp || clinicData?.turkishContactNumber || clinicData?.internationalContactNumber || clinicData?.phone;
       const contactTarget =
