@@ -253,3 +253,116 @@ describe("Demo form remaining required fields (smoke)", () => {
     expect(ATTRIBUTION_STORAGE_KEY).toBe("cb_lead_attribution_v1");
   });
 });
+
+describe("PROD REGRESSION — Firestore undefined rejection (71a6dc0)", () => {
+  function collectUndefinedPaths(value: unknown, path = "root"): string[] {
+    if (value === undefined) return [path];
+    if (value === null || typeof value !== "object") return [];
+    const out: string[] = [];
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v === undefined) out.push(`${path}.${k}`);
+      else out.push(...collectUndefinedPaths(v, `${path}.${k}`));
+    }
+    return out;
+  }
+
+  /** Exact production-shaped payload from UTM landing without click ids */
+  const productionUtmAttribution = {
+    firstTouch: {
+      source: "google",
+      medium: "cpc",
+      campaign: "test_attribution",
+      landingPage: "/",
+      referrer: "",
+      capturedAt: "2026-09-21T10:00:00.000Z",
+    },
+    lastTouch: {
+      source: "google",
+      medium: "cpc",
+      campaign: "test_attribution",
+      page: "/",
+      referrer: "",
+      capturedAt: "2026-09-21T10:00:00.000Z",
+    },
+    identifiers: {},
+    leadSourceLabel: "Google Ads",
+    capturedAt: "2026-09-21T10:00:00.000Z",
+    version: 1 as const,
+  };
+
+  it("sanitize never emits undefined nested props for UTM-only attribution", async () => {
+    const { sanitizeAttributionPayload, attributionContainsUndefined } = await import(
+      "@/lib/attribution/sanitize"
+    );
+    const { stripUndefinedDeep } = await import("@/lib/firestore/stripUndefined");
+
+    const out = sanitizeAttributionPayload(productionUtmAttribution);
+    expect(out).toBeTruthy();
+    expect(collectUndefinedPaths(out)).toEqual([]);
+    expect(attributionContainsUndefined(out)).toBe(false);
+
+    const firestoreDoc = stripUndefinedDeep({
+      fullName: "Test User",
+      clinicName: "Test Clinic",
+      phone: "+905551112233",
+      email: "test@example.com",
+      website: "",
+      message: "",
+      source: "landing",
+      status: "new",
+      attribution: out,
+      leadSourceLabel: out!.leadSourceLabel,
+    });
+    expect(collectUndefinedPaths(firestoreDoc)).toEqual([]);
+    // identifiers may be empty object, but must not contain undefined keys
+    expect(Object.values((out as any).identifiers || {}).every((v) => v !== undefined)).toBe(true);
+    expect((out as any).firstTouch.term).toBeUndefined(); // property absent, not present-as-undefined
+    expect("term" in ((out as any).firstTouch || {})).toBe(false);
+    expect("gclid" in ((out as any).identifiers || {})).toBe(false);
+  });
+
+  it("email formatting tolerates partial/empty optional fields", () => {
+    const text = formatDemoAttributionEmailSection({
+      firstTouch: {
+        source: "google",
+        medium: "cpc",
+        campaign: "test_attribution",
+        landingPage: "/",
+        referrer: "",
+        capturedAt: "2026-09-21T10:00:00.000Z",
+      },
+      lastTouch: {
+        source: "google",
+        medium: "cpc",
+        campaign: "test_attribution",
+        page: "/",
+        referrer: "",
+        capturedAt: "2026-09-21T10:00:00.000Z",
+      },
+      identifiers: {},
+      leadSourceLabel: "Google Ads",
+      version: 1,
+    });
+    expect(text).toContain("Lead Source: Google Ads");
+    expect(text).toContain("Campaign: test_attribution");
+    expect(text).toContain("GCLID: -");
+  });
+
+  it("no-attribution path remains valid (core demo fields only)", async () => {
+    const { sanitizeAttributionPayload } = await import("@/lib/attribution/sanitize");
+    expect(sanitizeAttributionPayload(null)).toBeNull();
+    expect(sanitizeAttributionPayload(undefined)).toBeNull();
+    const { stripUndefinedDeep } = await import("@/lib/firestore/stripUndefined");
+    const core = stripUndefinedDeep({
+      fullName: "A",
+      clinicName: "B",
+      phone: "1",
+      email: "",
+      website: "",
+      message: "",
+      source: "landing",
+      status: "new",
+    });
+    expect(collectUndefinedPaths(core)).toEqual([]);
+  });
+});

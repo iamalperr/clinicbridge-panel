@@ -107,6 +107,7 @@ export function extractWhitelistedParams(
 /**
  * Server-side: coerce unknown client attribution into a safe plain object.
  * Returns null if nothing usable — never throws.
+ * Never emits `undefined` property values (Firestore rejects them).
  */
 export function sanitizeAttributionPayload(raw: unknown): Record<string, unknown> | null {
   if (!raw || typeof raw !== "object") return null;
@@ -114,25 +115,23 @@ export function sanitizeAttributionPayload(raw: unknown): Record<string, unknown
     const obj = raw as Record<string, any>;
     const touch = (t: any, kind: "first" | "last") => {
       if (!t || typeof t !== "object") return null;
-      const base = {
+      const base: Record<string, string> = {
         source: clampString(t.source) || "direct",
         medium: clampString(t.medium) || "none",
         campaign: clampString(t.campaign) || "",
-        term: clampString(t.term) || undefined,
-        content: clampString(t.content) || undefined,
         referrer: sanitizeReferrer(t.referrer),
         capturedAt: clampString(t.capturedAt, 40) || new Date().toISOString(),
       };
+      const term = clampString(t.term);
+      const content = clampString(t.content);
+      if (term) base.term = term;
+      if (content) base.content = content;
       if (kind === "first") {
-        return {
-          ...base,
-          landingPage: sanitizePathname(t.landingPage || t.page || "/"),
-        };
+        base.landingPage = sanitizePathname(t.landingPage || t.page || "/");
+      } else {
+        base.page = sanitizePathname(t.page || t.landingPage || "/");
       }
-      return {
-        ...base,
-        page: sanitizePathname(t.page || t.landingPage || "/"),
-      };
+      return base;
     };
 
     const firstTouch = touch(obj.firstTouch, "first");
@@ -140,11 +139,13 @@ export function sanitizeAttributionPayload(raw: unknown): Record<string, unknown
     if (!firstTouch && !lastTouch) return null;
 
     const idsRaw = obj.identifiers && typeof obj.identifiers === "object" ? obj.identifiers : {};
-    const identifiers = {
-      gclid: clampString(idsRaw.gclid) || undefined,
-      fbclid: clampString(idsRaw.fbclid) || undefined,
-      msclkid: clampString(idsRaw.msclkid) || undefined,
-    };
+    const identifiers: Record<string, string> = {};
+    const gclid = clampString(idsRaw.gclid);
+    const fbclid = clampString(idsRaw.fbclid);
+    const msclkid = clampString(idsRaw.msclkid);
+    if (gclid) identifiers.gclid = gclid;
+    if (fbclid) identifiers.fbclid = fbclid;
+    if (msclkid) identifiers.msclkid = msclkid;
 
     return {
       firstTouch: firstTouch || lastTouch,
@@ -157,4 +158,17 @@ export function sanitizeAttributionPayload(raw: unknown): Record<string, unknown
   } catch {
     return null;
   }
+}
+
+/** True if any nested own-property is strictly `undefined` (Firestore-unsafe). */
+export function attributionContainsUndefined(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (value === null || typeof value !== "object") return false;
+  for (const nested of Object.values(value as Record<string, unknown>)) {
+    if (nested === undefined) return true;
+    if (nested !== null && typeof nested === "object" && attributionContainsUndefined(nested)) {
+      return true;
+    }
+  }
+  return false;
 }

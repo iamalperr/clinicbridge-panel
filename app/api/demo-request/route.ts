@@ -7,6 +7,7 @@ import {
   formatDemoAttributionEmailSection,
   sanitizeAttributionPayload,
 } from "@/lib/attribution";
+import { stripUndefinedDeep } from "@/lib/firestore/stripUndefined";
 
 const resend = new Resend(process.env.RESEND_API_KEY || "dummy-resend-key");
 
@@ -86,26 +87,32 @@ export async function POST(req: Request) {
     /* ─── Optional attribution (never fails the request) ───── */
     let attribution: Record<string, unknown> | null = null;
     try {
-      attribution = sanitizeAttributionPayload(body?.attribution);
+      const sanitizedAttr = sanitizeAttributionPayload(body?.attribution);
+      if (sanitizedAttr) {
+        // Firestore rejects nested `undefined`. stripUndefinedDeep is defense-in-depth
+        // after sanitize already omits empty optionals.
+        attribution = stripUndefinedDeep(sanitizedAttr) as Record<string, unknown>;
+      }
     } catch {
       attribution = null;
     }
 
     /* ─── Sanitised payload ────────────────────────────────── */
-    const sanitised: Record<string, unknown> = {
+    const coreFields = {
       fullName: fullName.trim(),
       clinicName: clinicName.trim(),
       phone: phone?.trim() || "",
       email: email?.trim() || "",
       website: website?.trim() || "",
       message: message?.trim() || "",
-      source: "landing",
-      status: "new",
+      source: "landing" as const,
+      status: "new" as const,
     };
 
+    const withAttribution: Record<string, unknown> = { ...coreFields };
     if (attribution) {
-      sanitised.attribution = attribution;
-      sanitised.leadSourceLabel =
+      withAttribution.attribution = attribution;
+      withAttribution.leadSourceLabel =
         typeof attribution.leadSourceLabel === "string"
           ? attribution.leadSourceLabel
           : "Direct / Unknown";
@@ -113,32 +120,56 @@ export async function POST(req: Request) {
 
     /* ─── Write to Firestore ───────────────────────────────── */
     let docId: string;
+    // Keep for email formatting; may be cleared if attribution write is skipped
+    let attributionForEmail: Record<string, unknown> | null = attribution;
 
     const adminDb = getAdminDb();
     if (adminDb) {
-      // Preferred: use Admin SDK (bypasses security rules)
-      const docRef = await adminDb.collection("demoRequests").add({
-        ...sanitised,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-      docId = docRef.id;
-      console.log("[DemoRequest API] Created via Admin SDK:", docId);
+      try {
+        const docRef = await adminDb.collection("demoRequests").add({
+          ...stripUndefinedDeep(withAttribution),
+          createdAt: FieldValue.serverTimestamp(),
+        });
+        docId = docRef.id;
+        console.log("[DemoRequest API] Created via Admin SDK:", docId);
+      } catch (writeErr: unknown) {
+        // Attribution must never block the core demo lead. Retry without it.
+        const msg = writeErr instanceof Error ? writeErr.message : String(writeErr);
+        console.error(
+          JSON.stringify({
+            checkpoint: "DEMO_REQUEST_WRITE_FAILED_RETRY_CORE",
+            error: msg,
+            hadAttribution: Boolean(attribution),
+          })
+        );
+        attributionForEmail = null;
+        const docRef = await adminDb.collection("demoRequests").add({
+          ...coreFields,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+        docId = docRef.id;
+        console.log("[DemoRequest API] Created via Admin SDK (core-only retry):", docId);
+      }
     } else {
       // Fallback: string-only REST fields — nest attribution as JSON string
       const restPayload: Record<string, string> = {
-        fullName: String(sanitised.fullName),
-        clinicName: String(sanitised.clinicName),
-        phone: String(sanitised.phone),
-        email: String(sanitised.email),
-        website: String(sanitised.website),
-        message: String(sanitised.message),
+        fullName: coreFields.fullName,
+        clinicName: coreFields.clinicName,
+        phone: coreFields.phone,
+        email: coreFields.email,
+        website: coreFields.website,
+        message: coreFields.message,
         source: "landing",
         status: "new",
       };
       if (attribution) {
         try {
           restPayload.attributionJson = JSON.stringify(attribution).slice(0, 4000);
-          restPayload.leadSourceLabel = String(sanitised.leadSourceLabel || "");
+          restPayload.leadSourceLabel = String(
+            typeof attribution.leadSourceLabel === "string"
+              ? attribution.leadSourceLabel
+              : ""
+          );
         } catch {
           // ignore attribution on REST fallback
         }
@@ -158,30 +189,30 @@ export async function POST(req: Request) {
       const fromEmail = process.env.EMAIL_FROM || "ClinicBridge AI <info@clinicbridge-ai.com>";
       const requestDate = new Date().toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" });
 
-      const attributionBlock = attribution
-        ? `\n\n${formatDemoAttributionEmailSection(attribution)}\n`
+      const attributionBlock = attributionForEmail
+        ? `\n\n${formatDemoAttributionEmailSection(attributionForEmail)}\n`
         : "";
 
       const emailText = `Yeni bir demo talebi alındı.
 
-Ad Soyad: ${sanitised.fullName}
-Klinik Adı: ${sanitised.clinicName}
-Telefon: ${sanitised.phone || "-"}
-E-posta: ${sanitised.email || "-"}
-Web Sitesi: ${sanitised.website || "-"}
-Mesaj: ${sanitised.message || "-"}
+Ad Soyad: ${coreFields.fullName}
+Klinik Adı: ${coreFields.clinicName}
+Telefon: ${coreFields.phone || "-"}
+E-posta: ${coreFields.email || "-"}
+Web Sitesi: ${coreFields.website || "-"}
+Mesaj: ${coreFields.message || "-"}
 
 Talep Tarihi: ${requestDate}${attributionBlock}`;
 
       const emailPayload: any = {
         from: fromEmail,
         to: [notifyTo],
-        subject: `Yeni Demo Talebi - ${sanitised.clinicName}`,
+        subject: `Yeni Demo Talebi - ${coreFields.clinicName}`,
         text: emailText,
       };
 
-      if (sanitised.email) {
-        emailPayload.reply_to = sanitised.email;
+      if (coreFields.email) {
+        emailPayload.reply_to = coreFields.email;
       }
 
       const { data, error } = await resend.emails.send(emailPayload);

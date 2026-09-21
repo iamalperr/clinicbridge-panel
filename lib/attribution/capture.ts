@@ -41,11 +41,13 @@ function buildTouch(
     source: classification.source,
     medium: classification.medium,
     campaign: classification.campaign || clampString(params.utm_campaign),
-    term: clampString(params.utm_term) || undefined,
-    content: clampString(params.utm_content) || undefined,
     referrer: sanitizeReferrer(ctx.referrer),
     capturedAt,
   };
+  const term = clampString(params.utm_term);
+  const content = clampString(params.utm_content);
+  if (term) base.term = term;
+  if (content) base.content = content;
   if (kind === "first") {
     return { ...base, landingPage: path };
   }
@@ -56,11 +58,19 @@ function mergeIdentifiers(
   prev: AttributionIdentifiers | undefined,
   params: ReturnType<typeof extractWhitelistedParams>
 ): AttributionIdentifiers {
-  return {
-    gclid: clampString(params.gclid) || prev?.gclid || undefined,
-    fbclid: clampString(params.fbclid) || prev?.fbclid || undefined,
-    msclkid: clampString(params.msclkid) || prev?.msclkid || undefined,
-  };
+  const next: AttributionIdentifiers = { ...(prev || {}) };
+  const gclid = clampString(params.gclid);
+  const fbclid = clampString(params.fbclid);
+  const msclkid = clampString(params.msclkid);
+  if (gclid) next.gclid = gclid;
+  if (fbclid) next.fbclid = fbclid;
+  if (msclkid) next.msclkid = msclkid;
+  // Drop empties so JSON/storage never retain undefined-like holes
+  const cleaned: AttributionIdentifiers = {};
+  if (next.gclid) cleaned.gclid = next.gclid;
+  if (next.fbclid) cleaned.fbclid = next.fbclid;
+  if (next.msclkid) cleaned.msclkid = next.msclkid;
+  return cleaned;
 }
 
 /**
