@@ -8,6 +8,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import type { LeadAttributionPayload } from "@/lib/attribution/types";
 
 /* ─── Types ─────────────────────────────────────────────── */
 
@@ -20,6 +21,8 @@ export interface DemoRequestData {
   email: string;
   website: string;
   message: string;
+  /** Optional first/last-touch acquisition data — never required for submit. */
+  attribution?: LeadAttributionPayload | null;
 }
 
 export interface DemoRequest extends DemoRequestData {
@@ -27,6 +30,8 @@ export interface DemoRequest extends DemoRequestData {
   source: "landing";
   status: DemoRequestStatus;
   createdAt: Timestamp | null;
+  /** Flattened label persisted by API when attribution present */
+  leadSourceLabel?: string;
 }
 
 /* ─── Submit (public — called from landing page) ─────────── */

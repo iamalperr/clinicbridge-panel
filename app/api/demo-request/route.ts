@@ -3,7 +3,10 @@ import { Resend } from "resend";
 
 import { getAdminDb } from "@/lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
-
+import {
+  formatDemoAttributionEmailSection,
+  sanitizeAttributionPayload,
+} from "@/lib/attribution";
 
 const resend = new Resend(process.env.RESEND_API_KEY || "dummy-resend-key");
 
@@ -51,7 +54,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { fullName, clinicName, phone, email, website, message } = body;
 
-    /* ─── Validation ───────────────────────────────────────── */
+    /* ─── Validation (unchanged required fields) ───────────── */
     if (!fullName?.trim()) {
       return NextResponse.json(
         { error: "Ad Soyad zorunludur." },
@@ -80,8 +83,16 @@ export async function POST(req: Request) {
       );
     }
 
+    /* ─── Optional attribution (never fails the request) ───── */
+    let attribution: Record<string, unknown> | null = null;
+    try {
+      attribution = sanitizeAttributionPayload(body?.attribution);
+    } catch {
+      attribution = null;
+    }
+
     /* ─── Sanitised payload ────────────────────────────────── */
-    const sanitised = {
+    const sanitised: Record<string, unknown> = {
       fullName: fullName.trim(),
       clinicName: clinicName.trim(),
       phone: phone?.trim() || "",
@@ -91,6 +102,14 @@ export async function POST(req: Request) {
       source: "landing",
       status: "new",
     };
+
+    if (attribution) {
+      sanitised.attribution = attribution;
+      sanitised.leadSourceLabel =
+        typeof attribution.leadSourceLabel === "string"
+          ? attribution.leadSourceLabel
+          : "Direct / Unknown";
+    }
 
     /* ─── Write to Firestore ───────────────────────────────── */
     let docId: string;
@@ -105,11 +124,28 @@ export async function POST(req: Request) {
       docId = docRef.id;
       console.log("[DemoRequest API] Created via Admin SDK:", docId);
     } else {
-      // Fallback: use Firestore REST API (respects security rules, but works for open collections)
-      docId = await writeViaRestApi(sanitised);
+      // Fallback: string-only REST fields — nest attribution as JSON string
+      const restPayload: Record<string, string> = {
+        fullName: String(sanitised.fullName),
+        clinicName: String(sanitised.clinicName),
+        phone: String(sanitised.phone),
+        email: String(sanitised.email),
+        website: String(sanitised.website),
+        message: String(sanitised.message),
+        source: "landing",
+        status: "new",
+      };
+      if (attribution) {
+        try {
+          restPayload.attributionJson = JSON.stringify(attribution).slice(0, 4000);
+          restPayload.leadSourceLabel = String(sanitised.leadSourceLabel || "");
+        } catch {
+          // ignore attribution on REST fallback
+        }
+      }
+      docId = await writeViaRestApi(restPayload);
       console.log("[DemoRequest API] Created via REST API fallback:", docId);
     }
-
 
     /* ─── Notification e-mail ──────────────────────────────── */
     if (!process.env.RESEND_API_KEY) {
@@ -122,6 +158,10 @@ export async function POST(req: Request) {
       const fromEmail = process.env.EMAIL_FROM || "ClinicBridge AI <info@clinicbridge-ai.com>";
       const requestDate = new Date().toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" });
 
+      const attributionBlock = attribution
+        ? `\n\n${formatDemoAttributionEmailSection(attribution)}\n`
+        : "";
+
       const emailText = `Yeni bir demo talebi alındı.
 
 Ad Soyad: ${sanitised.fullName}
@@ -131,7 +171,7 @@ E-posta: ${sanitised.email || "-"}
 Web Sitesi: ${sanitised.website || "-"}
 Mesaj: ${sanitised.message || "-"}
 
-Talep Tarihi: ${requestDate}`;
+Talep Tarihi: ${requestDate}${attributionBlock}`;
 
       const emailPayload: any = {
         from: fromEmail,

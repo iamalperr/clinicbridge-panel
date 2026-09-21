@@ -4,6 +4,7 @@ import { useState, FormEvent } from "react";
 import { useLandingLang } from "@/lib/landing-translations";
 import { CheckCircle, ArrowRight, Loader2, AlertCircle } from "lucide-react";
 import { submitDemoRequest } from "@/lib/services/demoRequestService";
+import { getAttributionForSubmit } from "@/lib/attribution";
 import { useRouter } from "next/navigation";
 
 const EMPTY_FORM = {
@@ -64,7 +65,18 @@ export default function DemoCTASection() {
     setServerError(null);
 
     try {
-      await submitDemoRequest(form);
+      // Attribution is best-effort — never block demo submission
+      let attribution: ReturnType<typeof getAttributionForSubmit> = null;
+      try {
+        attribution = getAttributionForSubmit();
+      } catch {
+        attribution = null;
+      }
+
+      await submitDemoRequest({
+        ...form,
+        ...(attribution ? { attribution } : {}),
+      });
       setSubmitState("success");
       setForm(EMPTY_FORM);
       router.push("/thank-you");
