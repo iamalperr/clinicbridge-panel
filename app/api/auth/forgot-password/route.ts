@@ -1,18 +1,30 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
-import { getAdminDb } from "@/lib/firebase-admin";
-import crypto from "crypto";
+import { getAdminAuth, getAdminDb } from "@/lib/firebase-admin";
+import {
+  PASSWORD_RESET_COLLECTION,
+  PASSWORD_RESET_GENERIC_SUCCESS_MESSAGE,
+  PASSWORD_RESET_TTL_MS,
+  buildPasswordResetLink,
+  generateRawResetToken,
+  getPasswordResetFromAddress,
+  hashResetToken,
+  logPasswordReset,
+  maskEmail,
+  normalizeResetEmail,
+  type PasswordResetTokenRecord,
+} from "@/lib/auth/passwordReset";
+import {
+  buildForgotPasswordRateLimitKey,
+  consumePasswordResetRateLimit,
+  extractClientIp,
+} from "@/lib/auth/passwordResetRateLimit";
 
-// Resend istemcisini yalnızca API key varsa oluştur
-const resendApiKey = process.env.RESEND_API_KEY;
-const resend = resendApiKey ? new Resend(resendApiKey) : null;
-
-function maskEmail(email: string): string {
-  const [local, domain] = email.split("@");
-  const masked = local.length <= 3
-    ? local[0] + "***"
-    : local.slice(0, 2) + "***" + local.slice(-1);
-  return `${masked}@${domain}`;
+function genericSuccess() {
+  return NextResponse.json({
+    success: true,
+    message: PASSWORD_RESET_GENERIC_SUCCESS_MESSAGE,
+  });
 }
 
 export async function POST(req: Request) {
@@ -20,143 +32,225 @@ export async function POST(req: Request) {
   const env = process.env.NODE_ENV || "unknown";
 
   try {
-    const body = await req.json();
-    const { email } = body;
-
-    console.log(`[PASSWORD_RESET_REQUESTED] timestamp=${timestamp} env=${env} email=${email ? maskEmail(email) : "empty"}`);
-
-    if (!email || !email.includes("@")) {
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
       return NextResponse.json(
         { error: "Geçerli bir e-posta adresi giriniz." },
         { status: 400 }
       );
     }
 
-    // ── 1. Firebase Admin DB kontrolü ────────────────────────────────────────
-    const adminDb = getAdminDb();
-    if (!adminDb) {
-      console.error(`[PASSWORD_RESET_EMAIL_FAILED] timestamp=${timestamp} env=${env} reason=adminDb_null`);
+    const normalizedEmail = normalizeResetEmail(body?.email);
+    if (!normalizedEmail) {
       return NextResponse.json(
-        { error: "Sunucu yapılandırma hatası. Lütfen daha sonra tekrar deneyin." },
-        { status: 500 }
+        { error: "Geçerli bir e-posta adresi giriniz." },
+        { status: 400 }
       );
     }
 
-    // ── 2. Resend API Key kontrolü ───────────────────────────────────────────
-    if (!resend || !resendApiKey) {
-      console.error(`[PASSWORD_RESET_EMAIL_FAILED] timestamp=${timestamp} env=${env} reason=RESEND_API_KEY_missing provider=resend`);
+    const ip = extractClientIp(req);
+    const rateKey = buildForgotPasswordRateLimitKey(ip, normalizedEmail);
+    const rate = consumePasswordResetRateLimit(rateKey);
+    if (!rate.allowed) {
+      logPasswordReset("PASSWORD_RESET_RATE_LIMITED", {
+        timestamp,
+        env,
+        email: maskEmail(normalizedEmail),
+        retryAfterSec: rate.retryAfterSec,
+      });
       return NextResponse.json(
-        { error: "E-posta şu anda gönderilemedi. Lütfen birkaç dakika sonra tekrar deneyin." },
-        { status: 503 }
+        {
+          error: "Çok fazla deneme yapıldı. Lütfen bir süre sonra tekrar deneyin.",
+        },
+        {
+          status: 429,
+          headers: { "Retry-After": String(rate.retryAfterSec) },
+        }
       );
     }
 
-    // ── 3. Kullanıcıyı veritabanında ara (güvenlik: bulunamasa da aynı mesaj) ─
-    const normalizedEmail = email.trim().toLowerCase();
-    const usersSnap = await adminDb
-      .collection("users")
-      .where("email", "==", normalizedEmail)
-      .limit(1)
-      .get();
-
-    if (usersSnap.empty) {
-      console.warn(`[PASSWORD_RESET_USER_RESOLVED] timestamp=${timestamp} env=${env} email=${maskEmail(normalizedEmail)} found=false`);
-      // Güvenlik: Kullanıcıya "bulunamadı" deme, genel başarı mesajı göster
-      return NextResponse.json({ success: true, message: "İşlem tamamlandı." });
-    }
-
-    const userDoc = usersSnap.docs[0];
-    console.log(`[PASSWORD_RESET_USER_RESOLVED] timestamp=${timestamp} env=${env} email=${maskEmail(normalizedEmail)} found=true uid=${userDoc.id}`);
-
-    // ── 4. Token oluştur ve Firestore'a kaydet ───────────────────────────────
-    const token = crypto.randomUUID();
-    const expiresAt = Date.now() + 15 * 60 * 1000; // 15 dakika
-
-    await adminDb.collection("password_reset_tokens").add({
-      email: normalizedEmail,
-      token,
-      expiresAt,
-      used: false,
-      createdAt: Date.now(),
+    logPasswordReset("PASSWORD_RESET_REQUESTED", {
+      timestamp,
+      env,
+      email: maskEmail(normalizedEmail),
     });
 
-    console.log(`[PASSWORD_RESET_TOKEN_CREATED] timestamp=${timestamp} env=${env} email=${maskEmail(normalizedEmail)} ttl=15m`);
+    const adminAuth = getAdminAuth();
+    const adminDb = getAdminDb();
 
-    // ── 5. E-posta gönderimi ─────────────────────────────────────────────────
-    const origin =
-      req.headers.get("origin") ||
-      process.env.NEXT_PUBLIC_APP_URL ||
-      "https://app.clinicbridge-ai.com";
-    const resetLink = `${origin}/reset-password?token=${token}`;
+    // Missing infra → generic success (no enumeration / no config leak)
+    if (!adminAuth || !adminDb) {
+      logPasswordReset("PASSWORD_RESET_USER_LOOKUP_FAILED", {
+        timestamp,
+        env,
+        reason: !adminAuth ? "adminAuth_null" : "adminDb_null",
+        email: maskEmail(normalizedEmail),
+      });
+      return genericSuccess();
+    }
 
-    const fromAddress =
-      process.env.EMAIL_FROM || "ClinicBridge <noreply@clinicbridge-ai.com>";
+    const resendApiKey = process.env.RESEND_API_KEY;
+    if (!resendApiKey) {
+      logPasswordReset("PASSWORD_RESET_EMAIL_PROVIDER_FAILED", {
+        timestamp,
+        env,
+        reason: "RESEND_API_KEY_missing",
+        provider: "resend",
+        email: maskEmail(normalizedEmail),
+      });
+      return genericSuccess();
+    }
 
-    console.log(`[PASSWORD_RESET_EMAIL_PROVIDER_CALLED] timestamp=${timestamp} env=${env} provider=resend to=${maskEmail(normalizedEmail)} from=${fromAddress}`);
+    // ── User lookup via Admin Auth (no Firestore users query) ───────────────
+    let userId: string | null = null;
+    try {
+      const userRecord = await adminAuth.getUserByEmail(normalizedEmail);
+      userId = userRecord.uid;
+      logPasswordReset("PASSWORD_RESET_USER_RESOLVED", {
+        timestamp,
+        env,
+        email: maskEmail(normalizedEmail),
+        found: true,
+      });
+    } catch (err: any) {
+      const code = err?.code || "";
+      if (code === "auth/user-not-found") {
+        logPasswordReset("PASSWORD_RESET_USER_RESOLVED", {
+          timestamp,
+          env,
+          email: maskEmail(normalizedEmail),
+          found: false,
+        });
+        return genericSuccess();
+      }
+      logPasswordReset("PASSWORD_RESET_USER_LOOKUP_FAILED", {
+        timestamp,
+        env,
+        email: maskEmail(normalizedEmail),
+        reason: code || err?.message || "unknown",
+      });
+      return genericSuccess();
+    }
 
-    const { data, error } = await resend.emails.send({
-      from: fromAddress,
-      to: [normalizedEmail],
-      subject: "ClinicBridge - Şifre Sıfırlama Talebi",
-      html: `
+    if (!userId) {
+      return genericSuccess();
+    }
+
+    // ── Create hashed token document ────────────────────────────────────────
+    const rawToken = generateRawResetToken();
+    const tokenHash = hashResetToken(rawToken);
+    const now = Date.now();
+    const record: PasswordResetTokenRecord = {
+      userId,
+      email: normalizedEmail,
+      expiresAt: now + PASSWORD_RESET_TTL_MS,
+      createdAt: now,
+      used: false,
+      status: "active",
+    };
+
+    try {
+      await adminDb.collection(PASSWORD_RESET_COLLECTION).doc(tokenHash).set(record);
+      logPasswordReset("PASSWORD_RESET_TOKEN_CREATED", {
+        timestamp,
+        env,
+        email: maskEmail(normalizedEmail),
+        ttlMinutes: PASSWORD_RESET_TTL_MS / 60000,
+      });
+    } catch (err: any) {
+      logPasswordReset("PASSWORD_RESET_TOKEN_CREATE_FAILED", {
+        timestamp,
+        env,
+        email: maskEmail(normalizedEmail),
+        reason: err?.message || "unknown",
+      });
+      return genericSuccess();
+    }
+
+    // ── Send email (failures still return generic success) ──────────────────
+    const resetLink = buildPasswordResetLink(rawToken);
+    const fromAddress = getPasswordResetFromAddress();
+    const resend = new Resend(resendApiKey);
+
+    try {
+      logPasswordReset("PASSWORD_RESET_EMAIL_PROVIDER_CALLED", {
+        timestamp,
+        env,
+        provider: "resend",
+        email: maskEmail(normalizedEmail),
+      });
+
+      const { data, error } = await resend.emails.send({
+        from: fromAddress,
+        to: [normalizedEmail],
+        subject: "ClinicBridge - Şifre Sıfırlama Talebi",
+        html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #1e293b;">
           <div style="text-align: center; margin-bottom: 30px;">
             <h2 style="color: #6366f1; margin: 0;">ClinicBridge</h2>
           </div>
-          
           <div style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 32px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
             <h3 style="margin-top: 0; font-size: 20px; color: #0f172a;">Şifrenizi Sıfırlayın</h3>
             <p style="font-size: 15px; line-height: 1.6; color: #475569;">
               Merhaba,<br/><br/>
               Hesabınızın şifresini sıfırlamak için bir talep aldık. Şifrenizi güvenli bir şekilde yenilemek için aşağıdaki butona tıklayabilirsiniz. Bu bağlantı 15 dakika boyunca geçerlidir.
             </p>
-            
             <div style="text-align: center; margin: 32px 0;">
               <a href="${resetLink}" style="background-color: #6366f1; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 15px; display: inline-block;">
                 Şifremi Sıfırla
               </a>
             </div>
-            
             <p style="font-size: 14px; color: #64748b; margin-bottom: 0;">
               Eğer bu talebi siz oluşturmadıysanız, bu e-postayı görmezden gelebilirsiniz. Güvenliğiniz için şifrenizi kimseyle paylaşmayın.
             </p>
           </div>
-          
           <div style="text-align: center; margin-top: 24px; font-size: 12px; color: #94a3b8;">
             &copy; ${new Date().getFullYear()} ClinicBridge AI. Tüm hakları saklıdır.
           </div>
         </div>
       `,
-    });
+      });
 
-    // ── 6. Resend hata kontrolü ──────────────────────────────────────────────
-    if (error) {
-      console.error(
-        `[PASSWORD_RESET_EMAIL_FAILED] timestamp=${timestamp} env=${env} provider=resend ` +
-        `email=${maskEmail(normalizedEmail)} error_name=${error.name} error_message=${error.message}`
-      );
-      return NextResponse.json(
-        { error: "E-posta şu anda gönderilemedi. Lütfen birkaç dakika sonra tekrar deneyin." },
-        { status: 502 }
-      );
+      if (error) {
+        logPasswordReset("PASSWORD_RESET_EMAIL_PROVIDER_FAILED", {
+          timestamp,
+          env,
+          provider: "resend",
+          email: maskEmail(normalizedEmail),
+          reason: error.name || "resend_error",
+          detail: error.message,
+        });
+        return genericSuccess();
+      }
+
+      logPasswordReset("PASSWORD_RESET_EMAIL_ACCEPTED", {
+        timestamp,
+        env,
+        provider: "resend",
+        email: maskEmail(normalizedEmail),
+        messageId: (data as any)?.id || "unknown",
+      });
+    } catch (err: any) {
+      logPasswordReset("PASSWORD_RESET_EMAIL_PROVIDER_FAILED", {
+        timestamp,
+        env,
+        provider: "resend",
+        email: maskEmail(normalizedEmail),
+        reason: err?.message || "exception",
+      });
+      return genericSuccess();
     }
 
-    // ── 7. Başarılı gönderim ─────────────────────────────────────────────────
-    const messageId = (data as any)?.id || "unknown";
-    console.log(
-      `[PASSWORD_RESET_EMAIL_ACCEPTED] timestamp=${timestamp} env=${env} provider=resend ` +
-      `email=${maskEmail(normalizedEmail)} messageId=${messageId}`
-    );
-
-    return NextResponse.json({ success: true, message: "Şifre sıfırlama bağlantısı gönderildi." });
+    return genericSuccess();
   } catch (error: any) {
-    console.error(
-      `[PASSWORD_RESET_EMAIL_FAILED] timestamp=${timestamp} env=${env} provider=resend ` +
-      `error=${error?.message} stack=${error?.stack?.slice(0, 200)}`
-    );
-    return NextResponse.json(
-      { error: "E-posta şu anda gönderilemedi. Lütfen birkaç dakika sonra tekrar deneyin." },
-      { status: 500 }
-    );
+    logPasswordReset("PASSWORD_RESET_EMAIL_PROVIDER_FAILED", {
+      timestamp,
+      env,
+      reason: error?.message || "unexpected",
+    });
+    // Still generic — never leak infra failures as distinguishable client errors
+    return genericSuccess();
   }
 }

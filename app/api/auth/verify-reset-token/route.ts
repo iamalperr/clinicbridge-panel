@@ -1,51 +1,74 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
+import {
+  PASSWORD_RESET_COLLECTION,
+  hashResetToken,
+  isTokenConsumable,
+  logPasswordReset,
+  type PasswordResetTokenRecord,
+} from "@/lib/auth/passwordReset";
+
+const INVALID_TOKEN_MESSAGE =
+  "Bu bağlantı geçersiz veya süresi dolmuş. Lütfen yeni bir talep oluşturun.";
 
 export async function POST(req: Request) {
+  const timestamp = new Date().toISOString();
+
   try {
     const body = await req.json();
-    const { token } = body;
+    const rawToken = typeof body?.token === "string" ? body.token.trim() : "";
 
-    if (!token) {
+    if (!rawToken || rawToken.length > 200) {
       return NextResponse.json({ error: "Token eksik." }, { status: 400 });
     }
 
     const adminDb = getAdminDb();
     if (!adminDb) {
-      console.error("Verify Token: adminDb is null. Check Firebase Admin init.");
+      logPasswordReset("PASSWORD_RESET_VERIFY_FAILED", {
+        timestamp,
+        reason: "adminDb_null",
+      });
       return NextResponse.json({ error: "Sunucu yapılandırma hatası." }, { status: 500 });
     }
 
-    const tokensRef = adminDb.collection("password_reset_tokens");
-    const snapshot = await tokensRef.where("token", "==", token).limit(1).get();
-
-    if (snapshot.empty) {
-      return NextResponse.json(
-        { error: "Bu bağlantı geçersiz veya önceden kullanılmış." },
-        { status: 400 }
-      );
+    const tokenHash = hashResetToken(rawToken);
+    let snap;
+    try {
+      snap = await adminDb.collection(PASSWORD_RESET_COLLECTION).doc(tokenHash).get();
+    } catch (err: any) {
+      logPasswordReset("PASSWORD_RESET_VERIFY_FAILED", {
+        timestamp,
+        reason: "firestore_get_failed",
+        detail: err?.message || "unknown",
+      });
+      return NextResponse.json({ error: "Sunucu tarafında bir hata oluştu." }, { status: 500 });
     }
 
-    const tokenDoc = snapshot.docs[0];
-    const tokenData = tokenDoc.data();
-
-    if (Date.now() > tokenData.expiresAt) {
-      // Delete expired token to keep DB clean
-      await tokenDoc.ref.delete();
-      return NextResponse.json(
-        { error: "Bu şifre sıfırlama bağlantısının süresi dolmuş. Lütfen yeni bir talep oluşturun." },
-        { status: 400 }
-      );
+    if (!snap.exists) {
+      // Legacy auto-ID + raw-token documents are not queryable by design.
+      // They expire within the existing 15-minute TTL.
+      return NextResponse.json({ error: INVALID_TOKEN_MESSAGE }, { status: 400 });
     }
 
-    return NextResponse.json({ email: tokenData.email }, { status: 200 });
+    const data = snap.data() as PasswordResetTokenRecord;
+    const check = isTokenConsumable(data);
+    if (!check.ok) {
+      if (check.reason === "expired") {
+        try {
+          await snap.ref.delete();
+        } catch {
+          // ignore cleanup failure
+        }
+      }
+      return NextResponse.json({ error: INVALID_TOKEN_MESSAGE }, { status: 400 });
+    }
 
+    return NextResponse.json({ email: data.email }, { status: 200 });
   } catch (error: any) {
-    console.error("Verify token error:", error);
-    const isDev = process.env.NODE_ENV === "development";
-    return NextResponse.json(
-      { error: isDev ? `Server Error: ${error?.message}` : "Sunucu tarafında bir hata oluştu." }, 
-      { status: 500 }
-    );
+    logPasswordReset("PASSWORD_RESET_VERIFY_FAILED", {
+      timestamp,
+      reason: error?.message || "unexpected",
+    });
+    return NextResponse.json({ error: "Sunucu tarafında bir hata oluştu." }, { status: 500 });
   }
 }

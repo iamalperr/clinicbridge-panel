@@ -7,7 +7,7 @@ import { auth } from "@/lib/firebase";
 import { Input } from "@/components/ui/Input";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
-import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
+import { UI_COLORS } from "@/components/ui/ui-shared";
 import Logo from "@/components/ui/Logo";
 import Modal from "@/components/ui/Modal";
 
@@ -60,7 +60,7 @@ export default function LoginPage() {
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!forgotEmail) return;
+    if (!forgotEmail || forgotLoading) return;
 
     setForgotLoading(true);
     setForgotError(null);
@@ -73,21 +73,38 @@ export default function LoginPage() {
         body: JSON.stringify({ email: forgotEmail.trim().toLowerCase() })
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
-      if (!res.ok) {
-        // API gerçek bir hata döndürdüyse kullanıcıya göster
-        throw new Error(data.error || "E-posta şu anda gönderilemedi. Lütfen birkaç dakika sonra tekrar deneyin.");
+      if (res.status === 429) {
+        setForgotError(
+          data.error || "Çok fazla deneme yapıldı. Lütfen bir süre sonra tekrar deneyin."
+        );
+        return;
       }
 
-      // Yalnızca API success:true döndüğünde başarı göster
-      if (data.success) {
+      if (res.status === 400) {
+        setForgotError(data.error || "Geçerli bir e-posta adresi giriniz.");
+        return;
+      }
+
+      // Success and non-rate-limit failures use the same generic success UX
+      // so account existence / provider issues are not distinguishable.
+      if (res.ok && data.success) {
         setForgotSuccess(true);
-      } else {
-        throw new Error(data.error || "Beklenmeyen bir hata oluştu.");
+        return;
       }
-    } catch (err: any) {
-      setForgotError(err.message || "Bir hata oluştu, lütfen tekrar deneyin.");
+
+      // Unexpected non-OK without enumeration-safe body — still show generic success
+      // for 5xx-style responses that might leak existence in older deployments.
+      if (res.ok) {
+        setForgotSuccess(true);
+        return;
+      }
+
+      setForgotSuccess(true);
+    } catch {
+      // Network errors: do not claim delivery; show soft retry without leaking state
+      setForgotError("İstek tamamlanamadı. Lütfen bağlantınızı kontrol edip tekrar deneyin.");
     } finally {
       setForgotLoading(false);
     }
@@ -243,9 +260,10 @@ export default function LoginPage() {
                   <path d="M20 6L9 17l-5-5"/>
                 </svg>
               </div>
-              <h3 style={{ color: UI_COLORS.textPrimary, marginBottom: 8, fontSize: 18 }}>E-posta Gönderildi</h3>
+              <h3 style={{ color: UI_COLORS.textPrimary, marginBottom: 8, fontSize: 18 }}>Talebiniz Alındı</h3>
               <p style={{ color: UI_COLORS.textSecondary, fontSize: 14, lineHeight: 1.5 }}>
-                Şifre sıfırlama bağlantısı <strong>{forgotEmail}</strong> adresinize gönderildi. Lütfen gelen kutunuzu (ve spam klasörünü) kontrol edin.
+                Eğer bu e-posta adresi sistemimizde kayıtlıysa, şifre sıfırlama bağlantısı gönderilecektir.
+                Gelen kutunuzu ve spam klasörünü kontrol edin.
               </p>
               <Button 
                 onClick={() => setIsForgotModalOpen(false)} 
@@ -258,7 +276,7 @@ export default function LoginPage() {
           ) : (
             <form onSubmit={handleForgotPassword} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <p style={{ color: UI_COLORS.textSecondary, fontSize: 14, lineHeight: 1.5, marginBottom: 8, marginTop: -4 }}>
-                Sisteme kayıtlı e-posta adresinizi girin. Size şifrenizi sıfırlamanız için bir bağlantı göndereceğiz.
+                E-posta adresinizi girin. Eğer hesap sistemimizde kayıtlıysa, şifre sıfırlama bağlantısı gönderilecektir.
               </p>
               
               <Input 
