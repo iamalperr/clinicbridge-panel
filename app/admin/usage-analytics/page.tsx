@@ -62,6 +62,7 @@ function UsageAnalyticsContent() {
 
   const [summary, setSummary] = useState<any>(null);
   const [users, setUsers] = useState<UserAnalyticsSummary[]>([]);
+  const [meta, setMeta] = useState<{ truncated?: boolean; sessionStatsPartial?: boolean } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -90,29 +91,22 @@ function UsageAnalyticsContent() {
 
       const queryString = queryParams.toString() ? `?${queryParams.toString()}` : "";
 
-      const [summaryRes, usersRes] = await Promise.all([
-        fetch(`/api/admin/analytics/summary${queryString}`, { headers }),
-        fetch(`/api/admin/analytics/users${queryString}`, { headers })
-      ]);
+      const res = await fetch(`/api/admin/analytics${queryString}`, { headers });
+      const data = await res.json().catch(() => ({}));
 
-      const summaryData = await summaryRes.json().catch(() => ({}));
-      const usersData = await usersRes.json().catch(() => ({}));
-
-      if (!summaryRes.ok) {
-        throw new Error(summaryData.error || `Özet analitik alınamadı (HTTP ${summaryRes.status})`);
+      if (!res.ok) {
+        throw new Error(data.error || `Analitik alınamadı (HTTP ${res.status})`);
       }
 
-      if (!usersRes.ok) {
-        throw new Error(usersData.error || `Kullanıcı analitiği alınamadı (HTTP ${usersRes.status})`);
-      }
-
-      setSummary(summaryData);
-      setUsers(usersData.users || []);
+      setSummary(data.summary || null);
+      setUsers(data.users || []);
+      setMeta(data.meta || null);
     } catch (err: any) {
       console.error("[UsageAnalytics] Fetch error:", err);
       setError(err.message || "Analitik verileri yüklenirken bir hata oluştu.");
       setSummary(null);
       setUsers([]);
+      setMeta(null);
     } finally {
       setLoading(false);
     }
@@ -246,6 +240,31 @@ function UsageAnalyticsContent() {
         </div>
       )}
 
+      {/* Truncation / partial stats banner */}
+      {!error && meta?.truncated && (
+        <div style={{ 
+          marginBottom: 24, 
+          padding: "12px 18px", 
+          borderRadius: 12, 
+          background: "rgba(245, 158, 11, 0.08)", 
+          border: "1px solid rgba(245, 158, 11, 0.3)",
+          display: "flex", 
+          alignItems: "flex-start", 
+          gap: 10
+        }}>
+          <AlertCircle size={18} color="#f59e0b" style={{ marginTop: 2, flexShrink: 0 }} />
+          <div>
+            <p style={{ fontSize: 13.5, fontWeight: 600, color: UI_COLORS.textPrimary, margin: 0 }}>
+              Oturum tablosu istatistikleri kısmi
+            </p>
+            <p style={{ fontSize: 13, color: UI_COLORS.textSecondary, margin: "4px 0 0" }}>
+              Son 30 günde çok fazla oturum kaydı var. Üst KPI kartları (kullanıcı aktivitesi ve toplam oturum sayıları) güvenilirdir;
+              tabladaki giriş/süre kolonları eksik kalmış olabilir.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Error Banner */}
       {error && (
         <div style={{ 
@@ -287,37 +306,37 @@ function UsageAnalyticsContent() {
         {[
           { 
             title: "Toplam Kullanıcı", 
-            value: loading ? "..." : (summary?.totalUsers ?? 0), 
+            value: loading ? "..." : error ? "—" : (summary?.totalUsers ?? 0), 
             icon: Users, 
             color: UI_COLORS.brand 
           },
           { 
             title: "Bugün Giriş Yapanlar", 
-            value: loading ? "..." : (summary?.activeUsersToday ?? 0), 
+            value: loading ? "..." : error ? "—" : (summary?.activeUsersToday ?? 0), 
             icon: Activity, 
             color: "#10b981" 
           },
           { 
             title: "Şu An Aktif", 
-            value: loading ? "..." : (summary?.currentlyActiveUsers ?? 0), 
+            value: loading ? "..." : error ? "—" : (summary?.currentlyActiveUsers ?? 0), 
             icon: Monitor, 
             color: "#10b981" 
           },
           { 
             title: "Son 30 Günde Pasif", 
-            value: loading ? "..." : (summary?.inactiveUsers30d ?? 0), 
+            value: loading ? "..." : error ? "—" : (summary?.inactiveUsers30d ?? 0), 
             icon: ShieldAlert, 
             color: "#ef4444" 
           },
           { 
             title: "Ortalama Oturum", 
-            value: loading ? "..." : formatDuration(summary?.avgSessionTimeSeconds ?? 0), 
+            value: loading ? "..." : error ? "—" : summary?.avgSessionTimeSeconds == null ? "—" : formatDuration(summary.avgSessionTimeSeconds), 
             icon: Clock, 
             color: "#f59e0b" 
           },
           { 
             title: "Bugünkü Oturumlar", 
-            value: loading ? "..." : (summary?.totalSessionsToday ?? 0), 
+            value: loading ? "..." : error ? "—" : summary?.totalSessionsToday == null ? "—" : (summary.totalSessionsToday ?? 0), 
             icon: ArrowUpRight, 
             color: UI_COLORS.brand 
           }
@@ -422,6 +441,17 @@ function UsageAnalyticsContent() {
                     </div>
                   </td>
                 </tr>
+              ) : error ? (
+                <tr>
+                  <td colSpan={7} style={{ padding: 48, textAlign: "center", color: UI_COLORS.textMuted }}>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+                      <AlertCircle size={28} color={UI_COLORS.danger} />
+                      <p style={{ margin: 0, fontSize: 14, color: UI_COLORS.textSecondary }}>
+                        Analitik verileri yüklenemedi. Lütfen yeniden deneyin.
+                      </p>
+                    </div>
+                  </td>
+                </tr>
               ) : filteredUsers.length === 0 ? (
                 <tr>
                   <td colSpan={7} style={{ padding: 48, textAlign: "center", color: UI_COLORS.textMuted }}>
@@ -429,7 +459,7 @@ function UsageAnalyticsContent() {
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
                         <AlertCircle size={28} color={UI_COLORS.textMuted} />
                         <p style={{ margin: 0, fontSize: 14, color: UI_COLORS.textSecondary }}>
-                          ID'si <code style={{ background: "rgba(0,0,0,0.06)", padding: "2px 6px", borderRadius: 4 }}>{userQueryParam}</code> olan kullanıcı bulunamadı veya bu hesabı görüntüleme yetkiniz yok.
+                          ID&apos;si <code style={{ background: "rgba(0,0,0,0.06)", padding: "2px 6px", borderRadius: 4 }}>{userQueryParam}</code> olan kullanıcı bulunamadı veya bu hesabı görüntüleme yetkiniz yok.
                         </p>
                         <Button variant="secondary" onClick={clearUserFilter} style={{ marginTop: 8 }}>
                           Tüm Kullanıcıları Görüntüle

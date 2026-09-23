@@ -51,6 +51,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Dışa aktarılacak kullanıcı bulunamadı." }, { status: 400 });
     }
 
+    // Export uses client-provided rows from the already-bounded analytics response.
+    // Cap payload size so export cannot become an unbounded dump channel.
+    const MAX_EXPORT_ROWS = 2000;
+    if (users.length > MAX_EXPORT_ROWS) {
+      return NextResponse.json(
+        {
+          error: `En fazla ${MAX_EXPORT_ROWS} kullanıcı dışa aktarılabilir. Lütfen filtreleyin.`,
+        },
+        { status: 400 }
+      );
+    }
+
     const headers = [
       "Kullanıcı Adı",
       "E-posta",
