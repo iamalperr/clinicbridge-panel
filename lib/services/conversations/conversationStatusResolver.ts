@@ -13,7 +13,9 @@ export type CanonicalConversationStatus =
   | "live_support_required"
   | "contact_request_pending"
   | "contact_request_resolved"
-  | "unanswered";
+  | "unanswered"
+  /** Voice call that ended before any business turn was recorded (e.g. caller hung up). */
+  | "no_interaction";
 
 export interface ConversationStatusContext {
   convertedToAppointment?: boolean;
@@ -35,6 +37,7 @@ export const CANONICAL_CONVERSATION_STATUSES: CanonicalConversationStatus[] = [
   "contact_request_pending",
   "contact_request_resolved",
   "unanswered",
+  "no_interaction",
 ];
 
 export const CONVERSATION_STATUS_LABELS: Record<
@@ -90,12 +93,18 @@ export const CONVERSATION_STATUS_LABELS: Record<
     ar: "لم يتم الرد",
     es: "Sin respuesta",
   },
+  no_interaction: {
+    tr: "Etkileşim Olmadı",
+    en: "No Interaction",
+    de: "Keine Interaktion",
+    ar: "لم يحدث تفاعل",
+    es: "Sin interacción",
+  },
 };
 
-export const CONVERSATION_STATUS_VARIANTS: Record<
-  CanonicalConversationStatus,
-  "resolved" | "warning" | "pro" | "open" | "failed"
-> = {
+export type ConversationStatusVariant = "resolved" | "warning" | "pro" | "open" | "failed" | "inactive";
+
+export const CONVERSATION_STATUS_VARIANTS: Record<CanonicalConversationStatus, ConversationStatusVariant> = {
   successfully_answered: "resolved",
   collecting_appointment_information: "warning",
   converted_to_appointment: "pro",
@@ -103,6 +112,7 @@ export const CONVERSATION_STATUS_VARIANTS: Record<
   contact_request_pending: "warning",
   contact_request_resolved: "resolved",
   unanswered: "failed",
+  no_interaction: "inactive",
 };
 
 /**
@@ -170,6 +180,7 @@ export function getConversionSource(log: Partial<ConversationStatusContext> | an
  * - "logs.status.livesupport", "liveSupport", "live_support", "live_support_required"
  * - "logs.status.unanswered", "unanswered", "failed"
  * - "logs.status.answered", "answered", "successful", "open", "successfully_answered"
+ * - "no_interaction"
  *
  * In addition, if conversation context contains appointmentId or convertedToAppointment,
  * it returns "converted_to_appointment".
@@ -204,6 +215,10 @@ export function normalizeConversationStatus(
   }
 
   const s = String(rawStatus).trim().toLowerCase();
+
+  if (s === "no_interaction") {
+    return "no_interaction";
+  }
 
   // Collecting appointment info mappings
   if (
@@ -310,7 +325,7 @@ export function getConversationStatusLabel(
  */
 export function getConversationStatusVariant(
   status: CanonicalConversationStatus | string
-): "resolved" | "warning" | "pro" | "open" | "failed" {
+): ConversationStatusVariant {
   const normalized = normalizeConversationStatus(status);
   return CONVERSATION_STATUS_VARIANTS[normalized] || "resolved";
 }

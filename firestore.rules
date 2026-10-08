@@ -3,50 +3,41 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Demo requests: anyone can CREATE (landing page form), only authenticated users can read/update
-    match /demoRequests/{docId} {
-      allow create: if true;
-      allow read, update, delete: if request.auth != null;
+    // Voice infrastructure is server-only: clients are denied, the Firebase Admin SDK bypasses rules.
+    // Rules are additive, so these ids must also be excluded from the catch-all below;
+    // the explicit deny blocks alone cannot override another matching allow.
+    function isServerOnlyCollection(collectionId) {
+      return collectionId in [
+        'voiceNumbers',
+        'voiceCallSessions',
+        'voiceCalls',
+        'voiceRuntimeLeases'
+      ];
     }
 
-    // Agency collections: authenticated users only
-    match /agencies/{agencyId} {
-      allow read, write: if request.auth != null;
-      
-      match /clinics/{docId} {
-        allow read, write: if request.auth != null;
-
-        // Sub-collections under clinics (pricing, etc.)
-        match /{subcol}/{subId} {
-          allow read, write: if request.auth != null;
-        }
-      }
-      
-      match /leads/{leadId} {
-        allow read, write: if request.auth != null;
-      }
-
-      // Config and other sub-collections
-      match /{subcol}/{subId} {
-        allow read, write: if request.auth != null;
-      }
-    }
-
-    // AI Usage tracking is purely backend-driven (via admin SDK). 
-    // Client should use API endpoints.
-    match /aiUsage/{docId} {
-      allow read, write: if false;
-    }
-    match /aiUsageDaily/{docId} {
-      allow read, write: if false;
-    }
-    match /aiModelPricing/{docId} {
+    match /voiceNumbers/{document=**} {
       allow read, write: if false;
     }
 
-    // All other collections require authentication
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+    match /voiceCallSessions/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /voiceCalls/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /voiceRuntimeLeases/{document=**} {
+      allow read, write: if false;
+    }
+
+    // Every other path: authenticated clients only (current production behavior).
+    // Unlike a root `match /{document=**}`, this pattern does not authorize client
+    // collection-group queries. Do not add a broad recursive rule to restore them:
+    // it would re-grant nested paths under the voice collections.
+    match /{collectionId}/{document=**} {
+      allow read, write: if request.auth != null
+        && !isServerOnlyCollection(collectionId);
     }
   }
 }

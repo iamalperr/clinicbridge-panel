@@ -1,0 +1,570 @@
+/**
+ * Voice Runtime Bridge (Phase 3, provider-independent).
+ *
+ *   calledDid → DID resolver → call binding → Phase 2 session
+ *   final transcript → atomic turn id → processVoiceTurn → speech text + lifecycle policy
+ *
+ * A realtime transport is a thin adapter around this bridge. ClinicBridge Agent Core
+ * stays the only business brain: the bridge never interprets reply text and derives
+ * every policy decision from structured turn state.
+ *
+ * Tenant identity comes ONLY from the called DID. Firestore/session handles are injected
+ * (see composeVoiceRuntime.ts) and never returned to the transport.
+ *
+ * In-process guarantees (per bridge instance): one business turn per call at a time, and a
+ * started business turn always runs to completion — no cancellation path exists. Distributed
+ * ownership across workers is out of scope here.
+ */
+
+import type {
+  EndCallSessionInput,
+  EndCallSessionResult,
+  VoiceErrorCode,
+  VoiceErrorResult,
+  VoiceTurnInput,
+  VoiceTurnResult,
+} from "../types";
+import {
+  deriveCallBindingId,
+  voiceErrorLogMeta,
+  type AllocateTurnIdResult,
+  type CallBinding,
+  type CallBindingEndReason,
+  type CallBindingErrorCode,
+  type CallBindingResult,
+  type GetOrCreateCallBindingInput,
+  type GetOrCreateCallBindingResult,
+} from "../telephony/callBinding";
+import type {
+  DidResolutionErrorCode,
+  DidResolutionResult,
+  ResolveClinicByDidInput,
+} from "../telephony/didResolver";
+import {
+  INITIAL_SILENCE_STATE,
+  VOICE_CALL_END_REASONS,
+  fallbackForEndReason,
+  isFailureEndReason,
+  resolveBargeIn,
+  resolveBufferedSpeechAfterTurn,
+  resolveVoiceLifecyclePolicy,
+  toSessionEndReason,
+  type BargeInDecision,
+  type SilenceState,
+  type VoiceCallEndReason,
+  type VoiceFallbackCategory,
+  type VoiceLifecyclePolicy,
+} from "../telephony/lifecyclePolicy";
+import { toSpeechText } from "../telephony/speechText";
+
+const MAX_TRANSCRIPT_LENGTH = 2_000;
+const MAX_ENDED_CALLS_TRACKED = 1_000;
+
+/* ── Injected capabilities ───────────────────────────────────────────── */
+
+/** Existing server capabilities, bound to their dependencies (see composeVoiceRuntime.ts). */
+export interface VoiceRuntimeCapabilities {
+  resolveDid(input: ResolveClinicByDidInput): Promise<DidResolutionResult>;
+  getOrCreateBinding(input: GetOrCreateCallBindingInput): Promise<GetOrCreateCallBindingResult>;
+  allocateTurnId(input: { bindingId: string; clinicId: string }): Promise<AllocateTurnIdResult>;
+  endBinding(input: { bindingId: string; clinicId: string; reason: CallBindingEndReason }): Promise<CallBindingResult>;
+  failBinding(input: { bindingId: string; clinicId: string; failureCode: string }): Promise<CallBindingResult>;
+  processTurn(input: VoiceTurnInput): Promise<VoiceTurnResult | VoiceErrorResult>;
+  endSession(input: EndCallSessionInput): Promise<EndCallSessionResult | VoiceErrorResult>;
+}
+
+export interface VoiceRuntimeBridgeOptions {
+  capabilities: VoiceRuntimeCapabilities;
+  policy?: Partial<VoiceLifecyclePolicy>;
+}
+
+/* ── Transport DTOs ──────────────────────────────────────────────────── */
+
+export interface StartRuntimeCallInput {
+  /** Stable provider call identifier. Never carries tenant identity. */
+  externalCallKey: string;
+  /** The dialed business number. The only source of tenant identity. */
+  calledDid: string;
+}
+
+/** Transport-safe call context. Plain data; no persistence handles. */
+export interface VoiceRuntimeCall {
+  readonly bindingId: string;
+  readonly clinicId: string;
+  readonly didE164: string;
+  readonly callSessionId: string;
+  readonly conversationId: string;
+  readonly locale?: string;
+  /** Verbatim from the trusted DID mapping; undefined when not configured. */
+  readonly greetingText?: string;
+  readonly lifecycle: {
+    readonly startedAtMs: number;
+    readonly maxCallDurationMs: number;
+    readonly silenceTimeoutMs: number;
+    readonly maxSilenceReprompts: number;
+    readonly silence: SilenceState;
+    readonly bargeIn: BargeInDecision;
+  };
+}
+
+export type VoiceRuntimeFailureCode =
+  | "INVALID_INPUT"
+  | "TENANT_RESOLUTION_FAILED"
+  | "BINDING_FAILED"
+  | "CALL_CONTEXT_INVALID"
+  | "CALL_ALREADY_ENDED"
+  | "TRANSCRIPT_EMPTY"
+  | "TRANSCRIPT_INVALID"
+  | "TURN_IN_FLIGHT"
+  | "TURN_LIMIT_REACHED"
+  | "AGENT_FAILED"
+  | "SESSION_FAILED"
+  | "INTERNAL_ERROR";
+
+/** Machine-readable detail from ClinicBridge's own closed code sets (never raw error text). */
+export type VoiceRuntimeReasonCode = DidResolutionErrorCode | CallBindingErrorCode | VoiceErrorCode;
+
+export interface VoiceRuntimeFailure {
+  ok: false;
+  code: VoiceRuntimeFailureCode;
+  reasonCode?: VoiceRuntimeReasonCode;
+  retryable: boolean;
+  /** Set when the call should end; speak `fallback` (if any) first. */
+  endReason?: VoiceCallEndReason;
+  fallback?: VoiceFallbackCategory | null;
+}
+
+export type StartRuntimeCallResult = { ok: true; call: VoiceRuntimeCall; created: boolean } | VoiceRuntimeFailure;
+
+/**
+ * What the transport does with a final transcript:
+ * PROCESS — it was processed as a business turn (see `turn`);
+ * BUFFER — a business turn is in flight; hold it and resubmit after that turn completes;
+ * DISCARD — drop it.
+ */
+export type RuntimeTranscriptAction = "PROCESS" | "BUFFER" | "DISCARD";
+
+export type RuntimeTurnReply = Pick<VoiceTurnResult, "replyText" | "locale" | "appointmentState" | "appointmentId">;
+
+export interface RuntimeTurnOutput extends RuntimeTurnReply {
+  turnId: string;
+  turnSeq: number;
+  /** Speech-safe rendering of `replyText`; empty means nothing to speak. */
+  speechText: string;
+  appointmentCreated: boolean;
+  escalationRequested: boolean;
+  endCallSuggested: boolean;
+  idempotentReplay: boolean;
+  allowBargeIn: boolean;
+  bargeIn: BargeInDecision;
+  /**
+   * Speech buffered while this turn was processing: SUBMIT it as the next transcript,
+   * or DISCARD it because it predates an uninterruptible reply (confirmation summary).
+   */
+  bufferedSpeech: "SUBMIT" | "DISCARD";
+}
+
+export type ProcessRuntimeTranscriptResult =
+  | { ok: true; action: "PROCESS"; turn: RuntimeTurnOutput }
+  | (VoiceRuntimeFailure & { action: "BUFFER" | "DISCARD" });
+
+export interface EndRuntimeCallInput {
+  /** Omit when the call never started (e.g. tenant rejected): nothing is persisted then. */
+  runtimeCall?: VoiceRuntimeCall | null;
+  reason: VoiceCallEndReason;
+}
+
+export interface RuntimeCallEnded {
+  ok: true;
+  reason: VoiceCallEndReason;
+  /** Actual terminal binding state ("NONE" when no call existed). Terminal states never change. */
+  bindingStatus: "ENDED" | "FAILED" | "NONE";
+  /** Reason sent to Phase 2 endCallSession, null when no session exists. */
+  sessionEndReason: NonNullable<EndCallSessionInput["reason"]> | null;
+  sessionEnded: boolean;
+  /** True when this call was already ended by an earlier endRuntimeCall. */
+  alreadyEnded: boolean;
+  fallback: VoiceFallbackCategory | null;
+}
+
+export type EndRuntimeCallResult = RuntimeCallEnded | VoiceRuntimeFailure;
+
+export interface VoiceRuntimeBridge {
+  startRuntimeCall(input: StartRuntimeCallInput): Promise<StartRuntimeCallResult>;
+  processRuntimeTranscript(input: {
+    runtimeCall: VoiceRuntimeCall;
+    transcript: string;
+  }): Promise<ProcessRuntimeTranscriptResult>;
+  endRuntimeCall(input: EndRuntimeCallInput): Promise<EndRuntimeCallResult>;
+}
+
+/* ── Internals ───────────────────────────────────────────────────────── */
+
+interface LocalCallState {
+  call: VoiceRuntimeCall;
+  /** Seeded from the binding's turnSeq so a re-attached call is not reported as abandoned. */
+  completedTurns: number;
+  inFlight: Promise<void> | null;
+  endRequested: boolean;
+  ending: Promise<EndRuntimeCallResult> | null;
+  ended: RuntimeCallEnded | null;
+}
+
+function failure(
+  code: VoiceRuntimeFailureCode,
+  extra: Partial<Omit<VoiceRuntimeFailure, "ok" | "code">> = {}
+): VoiceRuntimeFailure {
+  const endReason = extra.endReason;
+  return {
+    ok: false,
+    code,
+    retryable: extra.retryable ?? false,
+    ...(extra.reasonCode ? { reasonCode: extra.reasonCode } : {}),
+    ...(endReason ? { endReason, fallback: extra.fallback ?? fallbackForEndReason(endReason) } : {}),
+  };
+}
+
+function transcriptFailure(
+  action: "BUFFER" | "DISCARD",
+  code: VoiceRuntimeFailureCode,
+  extra: Partial<Omit<VoiceRuntimeFailure, "ok" | "code">> = {}
+): ProcessRuntimeTranscriptResult {
+  return { ...failure(code, extra), action };
+}
+
+function logRuntimeError(checkpoint: string, bindingId: string | null, err: unknown): void {
+  console.error(
+    JSON.stringify({ checkpoint, bindingId, ...voiceErrorLogMeta(err) })
+  );
+}
+
+function bindingFailure(code: CallBindingErrorCode): VoiceRuntimeFailure {
+  if (code === "CALL_BINDING_ENDED" || code === "CALL_BINDING_FAILED") {
+    return failure("CALL_ALREADY_ENDED", { reasonCode: code });
+  }
+  if (code === "CALL_BINDING_TURN_LIMIT") {
+    return failure("TURN_LIMIT_REACHED", { reasonCode: code, endReason: "RUNTIME_FAILURE" });
+  }
+  const retryable =
+    code === "CALL_BINDING_INITIALIZING" ||
+    code === "CALL_BINDING_LOOKUP_FAILED" ||
+    code === "CALL_BINDING_CREATE_FAILED" ||
+    code === "CALL_BINDING_UPDATE_FAILED" ||
+    code === "CALL_BINDING_SESSION_START_FAILED";
+  return failure("BINDING_FAILED", { reasonCode: code, retryable });
+}
+
+function phase2Failure(errorCode: VoiceErrorCode): VoiceRuntimeFailure {
+  switch (errorCode) {
+    case "SESSION_ENDED":
+      return failure("CALL_ALREADY_ENDED", { reasonCode: errorCode });
+    case "EMPTY_TRANSCRIPT":
+      return failure("TRANSCRIPT_EMPTY", { reasonCode: errorCode });
+    case "SESSION_NOT_FOUND":
+    case "CLINIC_MISMATCH":
+      return failure("SESSION_FAILED", { reasonCode: errorCode, endReason: "AGENT_FAILURE" });
+    case "AGENT_ERROR":
+    case "CLINIC_NOT_FOUND":
+      return failure("AGENT_FAILED", { reasonCode: errorCode, endReason: "AGENT_FAILURE" });
+  }
+}
+
+function normalizeTranscript(transcript: unknown): string | null {
+  if (typeof transcript !== "string") return null;
+  return transcript.replace(/\u0000/g, "").trim();
+}
+
+function sameCall(a: VoiceRuntimeCall, b: VoiceRuntimeCall): boolean {
+  return (
+    a.bindingId === b.bindingId &&
+    a.clinicId === b.clinicId &&
+    a.didE164 === b.didE164 &&
+    a.callSessionId === b.callSessionId &&
+    a.conversationId === b.conversationId
+  );
+}
+
+function isEndReason(value: unknown): value is VoiceCallEndReason {
+  return typeof value === "string" && (VOICE_CALL_END_REASONS as readonly string[]).includes(value);
+}
+
+/* ── Bridge ──────────────────────────────────────────────────────────── */
+
+export function createVoiceRuntimeBridge(options: VoiceRuntimeBridgeOptions): VoiceRuntimeBridge {
+  const caps = options.capabilities;
+  const policy = resolveVoiceLifecyclePolicy(options.policy);
+  const calls = new Map<string, LocalCallState>();
+  const pendingStarts = new Map<string, Promise<StartRuntimeCallResult>>();
+  const endedOrder: string[] = [];
+
+  function buildCall(
+    binding: CallBinding,
+    resolution: Extract<DidResolutionResult, { ok: true }>
+  ): VoiceRuntimeCall {
+    const startedAtMs = Date.parse(binding.startedAt);
+    return Object.freeze({
+      bindingId: binding.bindingId,
+      clinicId: binding.clinicId,
+      didE164: binding.didE164,
+      callSessionId: binding.callSessionId,
+      conversationId: binding.conversationId,
+      ...(resolution.defaultLocale ? { locale: resolution.defaultLocale } : {}),
+      ...(resolution.greetingText ? { greetingText: resolution.greetingText } : {}),
+      lifecycle: Object.freeze({
+        startedAtMs,
+        maxCallDurationMs: policy.maxCallDurationMs,
+        silenceTimeoutMs: policy.silenceTimeoutMs,
+        maxSilenceReprompts: policy.maxSilenceReprompts,
+        silence: INITIAL_SILENCE_STATE,
+        bargeIn: resolveBargeIn(null, policy),
+      }),
+    });
+  }
+
+  /** Trusted local state for a transport-supplied context; forged/unknown contexts are rejected. */
+  function lookup(runtimeCall: unknown): LocalCallState | null {
+    if (typeof runtimeCall !== "object" || runtimeCall === null) return null;
+    const bindingId = (runtimeCall as { bindingId?: unknown }).bindingId;
+    if (typeof bindingId !== "string") return null;
+    const state = calls.get(bindingId);
+    if (!state || !sameCall(state.call, runtimeCall as VoiceRuntimeCall)) return null;
+    return state;
+  }
+
+  function rememberEnded(bindingId: string): void {
+    endedOrder.push(bindingId);
+    while (endedOrder.length > MAX_ENDED_CALLS_TRACKED) {
+      const evicted = endedOrder.shift();
+      if (evicted) calls.delete(evicted);
+    }
+  }
+
+  async function doStart(input: StartRuntimeCallInput, bindingId: string): Promise<StartRuntimeCallResult> {
+    // Only the called DID reaches the resolver; the binding gets the resolver's clinicId.
+    const resolution = await caps.resolveDid({ calledDid: input.calledDid });
+    if (!resolution.ok) {
+      return failure("TENANT_RESOLUTION_FAILED", {
+        reasonCode: resolution.code,
+        retryable: resolution.code === "DID_LOOKUP_FAILED",
+        endReason: "TENANT_REJECTED",
+      });
+    }
+
+    const bound = await caps.getOrCreateBinding({
+      externalCallKey: input.externalCallKey,
+      clinicId: resolution.clinicId,
+      didE164: resolution.didE164,
+      ...(resolution.defaultLocale ? { locale: resolution.defaultLocale } : {}),
+    });
+    if (!bound.ok) return bindingFailure(bound.code);
+
+    const binding = bound.binding;
+    if (
+      binding.bindingId !== bindingId ||
+      binding.clinicId !== resolution.clinicId ||
+      binding.didE164 !== resolution.didE164 ||
+      binding.status !== "ACTIVE"
+    ) {
+      return failure("BINDING_FAILED", { reasonCode: "CALL_BINDING_TENANT_CONFLICT" });
+    }
+
+    const existing = calls.get(bindingId);
+    if (existing) {
+      if (existing.endRequested) return failure("CALL_ALREADY_ENDED");
+      const next = buildCall(binding, resolution);
+      if (!sameCall(existing.call, next)) return failure("BINDING_FAILED", { reasonCode: "CALL_BINDING_TENANT_CONFLICT" });
+      return { ok: true, call: existing.call, created: false };
+    }
+
+    const call = buildCall(binding, resolution);
+    calls.set(bindingId, {
+      call,
+      completedTurns: binding.turnSeq,
+      inFlight: null,
+      endRequested: false,
+      ending: null,
+      ended: null,
+    });
+    return { ok: true, call, created: bound.created };
+  }
+
+  async function startRuntimeCall(input: StartRuntimeCallInput): Promise<StartRuntimeCallResult> {
+    const externalCallKey = input?.externalCallKey;
+    const bindingId = typeof externalCallKey === "string" ? deriveCallBindingId(externalCallKey) : null;
+    if (!bindingId || typeof input.calledDid !== "string") return failure("INVALID_INPUT");
+
+    const pending = pendingStarts.get(bindingId);
+    if (pending) return pending;
+
+    const started = doStart({ externalCallKey, calledDid: input.calledDid }, bindingId).catch((err) => {
+      logRuntimeError("VOICE_RUNTIME_START_FAILED", bindingId, err);
+      return failure("INTERNAL_ERROR", { retryable: true });
+    });
+    pendingStarts.set(bindingId, started);
+    try {
+      return await started;
+    } finally {
+      pendingStarts.delete(bindingId);
+    }
+  }
+
+  async function runTurn(state: LocalCallState, text: string): Promise<ProcessRuntimeTranscriptResult> {
+    const { bindingId, clinicId, callSessionId } = state.call;
+
+    const allocated = await caps.allocateTurnId({ bindingId, clinicId });
+    if (!allocated.ok) return { ...bindingFailure(allocated.code), action: "DISCARD" };
+
+    // From here the business turn runs to completion: there is no abort, timeout or cancellation hook.
+    let result: VoiceTurnResult | VoiceErrorResult;
+    try {
+      result = await caps.processTurn({ callSessionId, clinicId, text, turnId: allocated.turnId });
+    } catch (err) {
+      logRuntimeError("VOICE_RUNTIME_TURN_THREW", bindingId, err);
+      return transcriptFailure("DISCARD", "AGENT_FAILED", { endReason: "AGENT_FAILURE" });
+    }
+    if (!result.ok) return { ...phase2Failure(result.errorCode), action: "DISCARD" };
+
+    if (result.clinicId !== clinicId || result.callSessionId !== callSessionId) {
+      return transcriptFailure("DISCARD", "SESSION_FAILED", {
+        reasonCode: "CLINIC_MISMATCH",
+        endReason: "AGENT_FAILURE",
+      });
+    }
+
+    state.completedTurns += 1;
+    const bargeIn = resolveBargeIn(result, policy);
+    const turn: RuntimeTurnOutput = {
+      turnId: allocated.turnId,
+      turnSeq: allocated.turnSeq,
+      replyText: result.replyText,
+      speechText: toSpeechText(result.replyText),
+      appointmentCreated: Boolean(result.appointmentCreated),
+      escalationRequested: Boolean(result.escalationRequested),
+      endCallSuggested: Boolean(result.endCallSuggested),
+      idempotentReplay: Boolean(result.idempotentReplay),
+      allowBargeIn: bargeIn.allowInterruptions,
+      bargeIn,
+      bufferedSpeech: resolveBufferedSpeechAfterTurn(bargeIn),
+      ...(result.locale ? { locale: result.locale } : {}),
+      ...(result.appointmentState ? { appointmentState: result.appointmentState } : {}),
+      ...(result.appointmentId ? { appointmentId: result.appointmentId } : {}),
+    };
+    return { ok: true, action: "PROCESS", turn };
+  }
+
+  async function processRuntimeTranscript(input: {
+    runtimeCall: VoiceRuntimeCall;
+    transcript: string;
+  }): Promise<ProcessRuntimeTranscriptResult> {
+    // Everything up to claiming the in-flight slot is synchronous, so concurrent
+    // transcripts for one call cannot both pass the check.
+    const state = lookup(input?.runtimeCall);
+    if (!state) return transcriptFailure("DISCARD", "CALL_CONTEXT_INVALID");
+    if (state.endRequested) return transcriptFailure("DISCARD", "CALL_ALREADY_ENDED");
+
+    const text = normalizeTranscript(input.transcript);
+    if (text === null || text.length > MAX_TRANSCRIPT_LENGTH) {
+      return transcriptFailure("DISCARD", "TRANSCRIPT_INVALID");
+    }
+    if (!text) return transcriptFailure("DISCARD", "TRANSCRIPT_EMPTY");
+    if (state.inFlight) return transcriptFailure("BUFFER", "TURN_IN_FLIGHT", { retryable: true });
+
+    let release: () => void = () => {};
+    state.inFlight = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      return await runTurn(state, text);
+    } catch (err) {
+      logRuntimeError("VOICE_RUNTIME_TURN_FAILED", state.call.bindingId, err);
+      return transcriptFailure("DISCARD", "INTERNAL_ERROR", { endReason: "RUNTIME_FAILURE" });
+    } finally {
+      state.inFlight = null;
+      release();
+    }
+  }
+
+  async function finishEnd(state: LocalCallState, reason: VoiceCallEndReason): Promise<EndRuntimeCallResult> {
+    // Never abort an in-flight business turn (it may be creating an appointment): wait for it.
+    if (state.inFlight) await state.inFlight;
+
+    const { bindingId, clinicId, callSessionId } = state.call;
+    const isFailure = isFailureEndReason(reason) || reason === "TENANT_REJECTED";
+    const transitioned = isFailure
+      ? await caps.failBinding({ bindingId, clinicId, failureCode: reason })
+      : await caps.endBinding({
+          bindingId,
+          clinicId,
+          reason: toSessionEndReason(reason, state.completedTurns) === "completed" ? "completed" : "abandoned",
+        });
+    if (!transitioned.ok) return bindingFailure(transitioned.code);
+
+    // The binding's terminal state is immutable; the session follows it so FAILED and
+    // ENDED never overwrite each other.
+    const binding = transitioned.binding;
+    if (binding.status !== "ENDED" && binding.status !== "FAILED") {
+      return failure("BINDING_FAILED", { reasonCode: "CALL_BINDING_UPDATE_FAILED", retryable: true });
+    }
+    const sessionEndReason: NonNullable<EndCallSessionInput["reason"]> =
+      binding.status === "FAILED" ? "failed" : (binding.endReason ?? "completed");
+
+    let sessionEnded = false;
+    try {
+      const ended = await caps.endSession({ callSessionId, clinicId, reason: sessionEndReason });
+      sessionEnded = ended.ok;
+    } catch (err) {
+      logRuntimeError("VOICE_RUNTIME_SESSION_END_FAILED", bindingId, err);
+    }
+
+    return {
+      ok: true,
+      reason,
+      bindingStatus: binding.status,
+      sessionEndReason,
+      sessionEnded,
+      alreadyEnded: false,
+      fallback: fallbackForEndReason(reason),
+    };
+  }
+
+  async function endRuntimeCall(input: EndRuntimeCallInput): Promise<EndRuntimeCallResult> {
+    const reason = input?.reason;
+    if (!isEndReason(reason)) return failure("INVALID_INPUT");
+
+    if (input.runtimeCall === undefined || input.runtimeCall === null) {
+      return {
+        ok: true,
+        reason,
+        bindingStatus: "NONE",
+        sessionEndReason: null,
+        sessionEnded: false,
+        alreadyEnded: false,
+        fallback: fallbackForEndReason(reason),
+      };
+    }
+
+    const state = lookup(input.runtimeCall);
+    if (!state) return failure("CALL_CONTEXT_INVALID");
+    if (state.ended) return { ...state.ended, alreadyEnded: true };
+    if (state.ending) return state.ending;
+
+    state.endRequested = true;
+    const ending = finishEnd(state, reason)
+      .catch((err): EndRuntimeCallResult => {
+        logRuntimeError("VOICE_RUNTIME_END_FAILED", state.call.bindingId, err);
+        return failure("INTERNAL_ERROR", { retryable: true });
+      })
+      .then((result) => {
+        state.ending = null;
+        if (result.ok) {
+          state.ended = result;
+          rememberEnded(state.call.bindingId);
+        }
+        return result;
+      });
+    state.ending = ending;
+    return ending;
+  }
+
+  return { startRuntimeCall, processRuntimeTranscript, endRuntimeCall };
+}

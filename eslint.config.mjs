@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "workers/voice/dist/**",
+    "workers/voice/.pilot-stage/**",
   ]),
   {
     rules: {

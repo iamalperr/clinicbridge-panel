@@ -1,0 +1,30 @@
+{
+  "name": "clinicbridge-voice-worker",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ClinicBridge LiveKit voice worker (transport only; business turns stay in the shared ClinicBridge runtime).",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "start": "node dist/main.mjs start"
+  },
+  "dependencies": {
+    "@livekit/agents": "1.9.1",
+    "@livekit/local-inference": "0.2.7",
+    "@livekit/rtc-node": "1.1.0",
+    "firebase": "12.10.0",
+    "firebase-admin": "13.8.0",
+    "openai": "6.34.0",
+    "resend": "6.12.2",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.35",
+    "esbuild": "0.28.2",
+    "typescript": "5.9.3"
+  }
+}

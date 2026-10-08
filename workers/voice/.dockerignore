@@ -1,0 +1,7 @@
+# Allowlist: the staged build context may only contribute these files.
+*
+!Dockerfile
+!package.json
+!package-lock.json
+!dist/main.mjs
+!dist/agent.mjs

@@ -8,8 +8,10 @@
 import { handleClinicAgentTurn } from "@/lib/agent/handleClinicAgentTurn";
 import type { HandleClinicAgentTurnParams } from "@/lib/agent/handleClinicAgentTurn";
 import { RequestTimer } from "@/lib/performance/requestTimer";
+import type { CanonicalConversationStatus } from "@/lib/services/conversations/conversationStatusResolver";
 import {
   appendProcessedTurnId,
+  isFirestoreAlreadyExistsError,
   putTurnResultCache,
   type CallSessionStore,
 } from "./callSessionStore";
@@ -79,21 +81,20 @@ async function ensureConversationLogShell(params: {
       .doc(clinicId)
       .collection("conversationLogs")
       .doc(conversationId);
-    await ref.set(
-      {
-        clinicId,
-        channel: "voice",
-        source: "voice",
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        status: "open",
-        ...(callerE164 ? { patientPhone: callerE164 } : {}),
-        ...(locale ? { conversationLocale: locale } : {}),
-      },
-      { merge: true }
-    );
+    // Create-if-absent: a retried/stale start must not reset an in-progress conversation.
+    await ref.create({
+      clinicId,
+      channel: "voice",
+      source: "voice",
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      status: "open",
+      ...(callerE164 ? { patientPhone: callerE164 } : {}),
+      ...(locale ? { conversationLocale: locale } : {}),
+    });
     return true;
   } catch (e: any) {
+    if (isFirestoreAlreadyExistsError(e)) return true;
     console.error(JSON.stringify({
       checkpoint: "VOICE_CONV_SHELL_FAILED",
       clinicId,
@@ -101,6 +102,72 @@ async function ensureConversationLogShell(params: {
       ...safeErrorMeta(e),
     }));
     return false;
+  }
+}
+
+const VOICE_SHELL_INITIAL_STATUS = "open";
+const NO_INTERACTION_STATUS: CanonicalConversationStatus = "no_interaction";
+
+type VoiceConversationFinalizeOutcome =
+  | "NO_INTERACTION"
+  | "OUTCOME_PRESERVED"
+  | "SHELL_MISSING"
+  | "SKIPPED"
+  | "FAILED";
+
+/** True only for the untouched shell written by ensureConversationLogShell. */
+function isUntouchedVoiceShell(data: unknown, hasMessages: boolean): boolean {
+  if (hasMessages || typeof data !== "object" || data === null) return false;
+  const d = data as Record<string, unknown>;
+  return (
+    d.channel === "voice" &&
+    d.status === VOICE_SHELL_INITIAL_STATUS &&
+    !(typeof d.totalMessages === "number" && d.totalMessages > 0) &&
+    d.convertedToAppointment !== true &&
+    d.appointmentId === undefined &&
+    d.appointmentState === undefined &&
+    d.appointmentDraft === undefined &&
+    d.pendingAppointmentData === undefined &&
+    d.contactRequestId === undefined
+  );
+}
+
+/**
+ * Give a voice conversation that never had a recorded business turn a final status.
+ * conversationLogs.status is the conversation OUTCOME (set by Agent Core per turn), so any
+ * conversation that already has one is left untouched. Never creates the document.
+ */
+async function finalizeVoiceConversationShell(params: {
+  adminDb: any;
+  clinicId: string;
+  conversationId: string;
+  nowIso: string;
+}): Promise<VoiceConversationFinalizeOutcome> {
+  const { adminDb, clinicId, conversationId, nowIso } = params;
+  if (!adminDb || typeof adminDb.runTransaction !== "function") return "SKIPPED";
+  try {
+    const ref = adminDb
+      .collection("clinics")
+      .doc(clinicId)
+      .collection("conversationLogs")
+      .doc(conversationId);
+    // Transactional so a concurrent Agent Core outcome write is never overwritten.
+    return await adminDb.runTransaction(async (tx: any): Promise<VoiceConversationFinalizeOutcome> => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return "SHELL_MISSING";
+      const messages = await tx.get(ref.collection("messages").limit(1));
+      if (!isUntouchedVoiceShell(snap.data(), !messages.empty)) return "OUTCOME_PRESERVED";
+      tx.update(ref, { status: NO_INTERACTION_STATUS, updatedAt: nowIso });
+      return "NO_INTERACTION";
+    });
+  } catch (e: any) {
+    console.error(JSON.stringify({
+      checkpoint: "VOICE_CONV_FINALIZE_FAILED",
+      clinicId,
+      conversationId,
+      ...safeErrorMeta(e),
+    }));
+    return "FAILED";
   }
 }
 
@@ -384,6 +451,13 @@ export async function endCallSession(
     lastActivityAt: nowIso,
   });
 
+  const conversationFinalize = await finalizeVoiceConversationShell({
+    adminDb: deps.adminDb,
+    clinicId: session.clinicId,
+    conversationId: session.conversationId,
+    nowIso,
+  });
+
   console.log(JSON.stringify({
     checkpoint: "VOICE_SESSION_ENDED",
     callSessionId,
@@ -391,6 +465,7 @@ export async function endCallSession(
     clinicId: session.clinicId,
     channel: "voice",
     status,
+    conversationFinalize,
   }));
 
   return {
