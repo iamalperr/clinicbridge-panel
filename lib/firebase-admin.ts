@@ -10,6 +10,7 @@
 import type { App } from "firebase-admin/app";
 import type { Firestore } from "firebase-admin/firestore";
 import type { Auth } from "firebase-admin/auth";
+import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
 
 let _app: App | null = null;
 let _db: Firestore | null = null;
@@ -53,7 +54,7 @@ function initializeAdmin(): App | null {
       _app = initializeApp({ credential: applicationDefault(), projectId });
     }
   } catch (err) {
-    console.error("[firebase-admin] Initialization failed:", err);
+    console.error("[firebase-admin] Initialization failed:", JSON.stringify(safeErrorMeta(err)));
     _app = null;
   }
 
@@ -69,7 +70,7 @@ export function getAdminDb(): Firestore | null {
     const { getFirestore } = require("firebase-admin/firestore");
     _db = getFirestore(app) as Firestore;
   } catch (err) {
-    console.error("[firebase-admin] Firestore init failed:", err);
+    console.error("[firebase-admin] Firestore init failed:", JSON.stringify(safeErrorMeta(err)));
   }
   return _db;
 }
@@ -83,7 +84,7 @@ export function getAdminAuth(): Auth | null {
     const { getAuth } = require("firebase-admin/auth");
     _auth = getAuth(app) as Auth;
   } catch (err) {
-    console.error("[firebase-admin] Auth init failed:", err);
+    console.error("[firebase-admin] Auth init failed:", JSON.stringify(safeErrorMeta(err)));
   }
   return _auth;
 }
@@ -96,7 +97,7 @@ export function getAdminStorage(): any | null {
     const { getStorage } = require("firebase-admin/storage");
     _storage = getStorage(app);
   } catch (err) {
-    console.error("[firebase-admin] Storage init failed:", err);
+    console.error("[firebase-admin] Storage init failed:", JSON.stringify(safeErrorMeta(err)));
   }
   return _storage;
 }

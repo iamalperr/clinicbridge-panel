@@ -12,6 +12,7 @@ import { NotificationProvider, NotificationPayload } from './providers/Notificat
 import { ResendEmailProvider } from './providers/ResendEmailProvider';
 
 import { resolveAppointmentDisplaySchedule } from '../appointments/AppointmentScheduleResolver';
+import { safeErrorMeta } from '../infrastructureErrors';
 
 export class NotificationService {
   private providers: Map<NotificationChannel, NotificationProvider>;
@@ -38,7 +39,7 @@ export class NotificationService {
       }
       return null;
     } catch (e) {
-      console.error("[NotificationService] getClinicEmailSettings failed:", e);
+      console.error("[NotificationService] getClinicEmailSettings failed:", JSON.stringify(safeErrorMeta(e)));
       return null;
     }
   }
@@ -241,7 +242,7 @@ export class NotificationService {
 
       if (!existingEvents.empty) {
         const doc = existingEvents.docs[0];
-        console.log(`[NotificationService] Idempotency hit for key: ${eventData.idempotency_key}`);
+        console.log(`[NotificationService] Idempotency hit`, JSON.stringify({ eventId: doc.id }));
         return { 
           success: true, 
           attempted: false, 
@@ -304,7 +305,6 @@ export class NotificationService {
         hasFromAddress: true,
         fromDomain: "system",
         hasRecipient: !!sendPayload.to,
-        maskedRecipient: sendPayload.to ? sendPayload.to.replace(/(.{2})(.*)(@.*)/, "$1***$3") : "none",
         subjectPresent: !!sendPayload.subject,
         htmlPresent: !!sendPayload.variables?.htmlContent
       }));
@@ -322,16 +322,14 @@ export class NotificationService {
         accepted: result.accepted,
         rejected: !result.accepted,
         errorCode: result.errorCode || null,
-        safeErrorMessage: result.errorMessage || null
+        hasError: Boolean(result.errorMessage),
       }));
     } catch (err: any) {
       console.error(JSON.stringify({
         checkpoint: "PATIENT_STATUS_EMAIL_EXCEPTION",
         traceId: "auto",
         appointmentId: eventData.appointment_id || "unknown",
-        errorName: err.name || "Exception",
-        errorCode: err.code || "UNKNOWN_ERR",
-        safeErrorMessage: err.message,
+        ...safeErrorMeta(err),
         stackLocation: "NotificationService"
       }));
       result = {
@@ -706,7 +704,7 @@ export class NotificationService {
         ...extraFields
       });
     } catch (err) {
-      console.error('[NotificationService] Failed to update event status', err);
+      console.error('[NotificationService] Failed to update event status', JSON.stringify(safeErrorMeta(err)));
     }
   }
 }

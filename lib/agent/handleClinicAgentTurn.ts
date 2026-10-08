@@ -59,6 +59,7 @@ import { extractAppointmentFromHistory, parseTimeText } from "./appointmentParse
 import { saveAppointmentState, respondWithVisibleReply } from "./persistence";
 import { fetchClinicDoctorMatchInputs, getClientDb } from "./clinicRuntime";
 import { tryHandleContactHandoffTurn } from "@/lib/contact-request/handleContactHandoffTurn";
+import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
 import type {
   AgentTurnInput,
   AgentTurnResult,
@@ -300,7 +301,7 @@ export async function handleClinicAgentTurn(
                                       msgLower.startsWith("yes");
     }
 
-    console.log(JSON.stringify({ checkpoint: "APPT_01_CONFIRMATION_REQUEST_RECEIVED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, message: msgLower, positiveConfirmationDetected, negativeConfirmationDetected, timestamp: new Date().toISOString() }));
+    console.log(JSON.stringify({ checkpoint: "APPT_01_CONFIRMATION_REQUEST_RECEIVED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, messageLength: msgLower.length, positiveConfirmationDetected, negativeConfirmationDetected, timestamp: new Date().toISOString() }));
 
     let loadedState = "IDLE";
     let loadedDraft: any = {};
@@ -338,7 +339,7 @@ export async function handleClinicAgentTurn(
             perf.end("conversation_state_load", { exists: docExists, appointmentState: rawState || "IDLE" });
         } catch (e: any) {
             perf.end("conversation_state_load", { error: true });
-            console.error("[chat API] Error loading strict context:", e.message);
+            console.error("[chat API] Error loading strict context:", JSON.stringify(safeErrorMeta(e)));
         }
     }
 
@@ -533,7 +534,12 @@ export async function handleClinicAgentTurn(
          });
 
          if (finalDateValidation.hasConflict || !finalDateValidation.isValid) {
-            console.error(`[CONFIRMATION_BLOCKED] Final date validation failed before creation:`, JSON.stringify(finalDateValidation));
+            console.error(`[CONFIRMATION_BLOCKED] Final date validation failed before creation:`, JSON.stringify({
+              isValid: finalDateValidation.isValid,
+              hasConflict: finalDateValidation.hasConflict,
+              conflictType: finalDateValidation.conflictType ?? null,
+              alternativesCount: finalDateValidation.alternatives?.length ?? 0,
+            }));
             const draftKeepFields = { ...loadedDraft };
             if (finalDateValidation.conflictType === "PAST_DATE" || finalDateValidation.conflictType === "PAST_TIME") {
               draftKeepFields.requestedDate = undefined as any;
@@ -743,7 +749,7 @@ export async function handleClinicAgentTurn(
           }
         }
       } catch (e: any) {
-        console.error("[chat API] Error fetching conversationLog for state machine:", e.message);
+        console.error("[chat API] Error fetching conversationLog for state machine:", JSON.stringify(safeErrorMeta(e)));
       }
     }
 
@@ -1282,7 +1288,9 @@ export async function handleClinicAgentTurn(
             appointmentDraft.notes = [appointmentDraft.notes, proceduresNote].filter(Boolean).join("\n");
           }
         }
-        console.log(`[INTENT_ROUTER] Appointment slots updated:`, conversationIntent.entities);
+        console.log(`[INTENT_ROUTER] Appointment slots updated:`, JSON.stringify({
+          entityKeys: Object.keys(conversationIntent.entities || {}),
+        }));
       }
 
       if (appointmentGate.allowed) {
@@ -1809,7 +1817,7 @@ ${docsListStrings.join('\n\n---\n\n')}
             doctorDataMissing = true;
           }
         } catch (err) {
-          console.error("[chat] Error fetching doctors", err);
+          console.error("[chat] Error fetching doctors", JSON.stringify(safeErrorMeta(err)));
           doctorDataMissing = true;
         }
 
@@ -1964,8 +1972,8 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
           event: "WORKING_HOURS_VALIDATION_CHECK",
           traceId: activeTraceId,
           clinicId: actualClinicId || clinicId,
-          requestedDay: validation.requestedDay,
-          requestedTime: validation.requestedTime,
+          hasRequestedDay: Boolean(validation.requestedDay),
+          hasRequestedTime: Boolean(validation.requestedTime),
           isValid: validation.isValid,
           reason: validation.reason
         }));
@@ -1979,7 +1987,11 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
               : `Belirttiğiniz ${validation.requestedTime || ""} saati kliniğimizin çalışma saatleri dışında kalmaktadır. Kliniğimizin çalışma saatleri: ${validation.scheduleSummary || ""}. Bu saatler içerisinden size uygun başka bir saat paylaşabilir misiniz?`
           );
 
-          console.log("[widget-chat] Rejected appointment time:", { requestedDay: validation.requestedDay, requestedTime: validation.requestedTime });
+          console.log("[widget-chat] Rejected appointment time:", JSON.stringify({
+            hasRequestedDay: Boolean(validation.requestedDay),
+            hasRequestedTime: Boolean(validation.requestedTime),
+            reason: validation.reason ?? null,
+          }));
           return respondWithVisibleReply(
             { responseType: "CHAT_REPLY", reply: fallbackMsg, conversationId: convId, pendingAppointmentData: appointmentDraft },
             basePersist({ appointmentState })
@@ -2026,9 +2038,9 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
     if (topDocs.length > 0) {
       // Working hours validation is handled deterministically via ClinicWorkingHoursResolver before RAG search
       console.log(`[RAG-DEBUG] widget_clinic_id: ${clinicId}`);
-      console.log(`[RAG-DEBUG] query_text: "${message}"`);
+      console.log(`[RAG-DEBUG] query_length: ${message.length}`);
       topDocs.slice(0, 3).forEach((d, i) => {
-        console.log(`[RAG-DEBUG] match_${i + 1} - title: "${d.title}", score: ${d.score.toFixed(3)}, vec: ${d.vectorScore.toFixed(3)}, kw: ${d.keywordScore.toFixed(3)}, content_preview: "${d.text.slice(0, 100).replace(/\n/g, ' ')}..."`);
+        console.log(`[RAG-DEBUG] match_${i + 1} - title: "${d.title}", score: ${d.score.toFixed(3)}, vec: ${d.vectorScore.toFixed(3)}, kw: ${d.keywordScore.toFixed(3)}, content_length: ${d.text.length}`);
       });
       console.log(`[RAG-DEBUG] final_context_sent_to_llm_length: ${knowledgeContext.length} chars`);
     }
@@ -2100,7 +2112,7 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
             { merge: true }
           );
         } catch (e: any) {
-          console.error("[LIVE_SUPPORT] Failed to annotate appointment contact preference:", e?.message);
+          console.error("[LIVE_SUPPORT] Failed to annotate appointment contact preference:", JSON.stringify(safeErrorMeta(e)));
         }
       }
 
@@ -2347,7 +2359,9 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
     
     // We only do this if it's the general LLM flow, which it is here.
     if (forbiddenClaims.some(claim => reply.toLowerCase().includes(claim.toLowerCase()))) {
-      console.warn("[FORBIDDEN_CLAIM_INTERCEPTED] LLM tried to claim success without transaction:", reply);
+      console.warn("[FORBIDDEN_CLAIM_INTERCEPTED] LLM tried to claim success without transaction:", JSON.stringify({
+        replyLength: reply.length,
+      }));
       
       // AŞAMA 7 - State'e göre dinamik fallback metni
       if (appointmentState === "AWAITING_CONFIRMATION" || loadedState === "AWAITING_CONFIRMATION") {
@@ -2444,7 +2458,11 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       const validation = await validateGroundedness(reply, fullContextForValidation);
       perf.end("groundedness", { isGrounded: validation.isGrounded });
       if (!validation.isGrounded) {
-         console.warn(`[Groundedness Failed] Reason: ${validation.reason}\nReply: ${reply}`);
+         console.warn("[Groundedness Failed]", JSON.stringify({
+           isGrounded: validation.isGrounded,
+           reasonLength: validation.reason.length,
+           replyLength: reply.length,
+         }));
          if (activeLang === "tr") {
             reply = "Bu bilgiyi şu online güvenilir şekilde doğrulayamıyorum. Yanlış yönlendirmemek için klinik ekibimizden teyit edilmesi gerekir.";
          } else if (activeLang === "de") {
@@ -2482,7 +2500,7 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       reply = `${reply}\n\n${bridge}\n\n${resumePrompt}`;
     }
 
-    debugLog.push(`OK reply="${reply.slice(0, 60)}" ms=${Date.now() - startTime}`);
+    debugLog.push(`OK replyLength=${reply.length} ms=${Date.now() - startTime}`);
     console.log("[widget-chat]", debugLog.join(" | "));
     perf.log({
       path: "llm_rag_response",
@@ -2587,10 +2605,10 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
          event: "APPOINTMENT_DATE_VALIDATION_START",
          traceId: activeTraceId,
          conversationId: convId,
-         rawDateText: rawDateText,
-         rawTimeText: rawTimeStr,
-         inferredDate: pending.requestedDate,
-         inferredTime: pending.requestedTime,
+         hasRawDateText: Boolean(rawDateText),
+         hasRawTimeText: Boolean(rawTimeStr),
+         hasInferredDate: Boolean(pending.requestedDate),
+         hasInferredTime: Boolean(pending.requestedTime),
          timeZone,
          clinicTimeZoneSource: tzResolved.source,
          currentClinicDateTime
@@ -2648,10 +2666,9 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       console.log(JSON.stringify({
          event: "APPOINTMENT_DATE_VALIDATION_RESULT",
          traceId: activeTraceId,
-         mentionedWeekday: dateValidation.mentionedWeekday,
-         resolvedDate: dateValidation.resolvedDate,
-         resolvedWeekday: dateValidation.resolvedWeekday,
-         resolvedTime: dateValidation.resolvedTime,
+         hasMentionedWeekday: Boolean(dateValidation.mentionedWeekday),
+         hasResolvedDate: Boolean(dateValidation.resolvedDate),
+         hasResolvedTime: Boolean(dateValidation.resolvedTime),
          isValid: dateValidation.isValid,
          hasConflict: dateValidation.hasConflict,
          conflictType: dateValidation.conflictType
@@ -2754,7 +2771,7 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
               conversationLocale
             });
         } catch (e: any) {
-            console.error("[chat API] Error saving deterministic state at end of flow:", e.message);
+            console.error("[chat API] Error saving deterministic state at end of flow:", JSON.stringify(safeErrorMeta(e)));
         }
     }
 

@@ -1,4 +1,5 @@
 import { generateEmbeddings, cosineSimilarity, getOpenAI } from "./embeddingService";
+import { safeErrorMeta } from "./infrastructureErrors";
 
 export interface RetrievedChunk {
   text: string;
@@ -39,7 +40,7 @@ User message: "${userMessage}"`;
     // Fallback if parsing fails
     return [userMessage];
   } catch (err) {
-    console.error("[retrievalService] Query rewrite failed:", err);
+    console.error("[retrievalService] Query rewrite failed:", JSON.stringify(safeErrorMeta(err)));
     return [userMessage];
   }
 }
@@ -98,7 +99,7 @@ export async function hybridSearch(
         clinicName: clinicName || undefined,
       }));
     } catch (err) {
-      console.warn("[retrievalService] OpenAI embedding/rewrite skipped, falling back to keyword search:", err);
+      console.warn("[retrievalService] OpenAI embedding/rewrite skipped, falling back to keyword search:", JSON.stringify(safeErrorMeta(err)));
       queries = [userMessage];
       queryEmbeddings = [];
     }
@@ -202,7 +203,7 @@ Return strictly a JSON object: { "isGrounded": boolean, "reason": "short explana
       reason: json.reason || "",
     };
   } catch (err) {
-    console.error("[retrievalService] Groundedness check failed:", err);
+    console.error("[retrievalService] Groundedness check failed:", JSON.stringify(safeErrorMeta(err)));
     // Fail-open or fail-closed? The user wants fail-closed, but if the validator itself fails, 
     // it's safer to fail-open so the bot doesn't completely die, but log it.
     return { isGrounded: true, reason: "Validator failed" };

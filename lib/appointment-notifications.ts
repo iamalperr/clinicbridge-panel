@@ -305,12 +305,10 @@ export async function sendPatientAppointmentStatusEmail(
 }> {
   const patientEmailToUse = resolvePatientEmail(payload);
   
-  // Maskeli log
   console.log("[STATUS_EMAIL_FLOW_START]", JSON.stringify({
     traceId: "auto",
     appointmentId: payload.appointmentId,
     hasRecipient: !!patientEmailToUse,
-    maskedRecipient: patientEmailToUse ? patientEmailToUse.replace(/(.{1})(.*)(@.*)/, "$1***$3") : null,
     provider: "resend",
     hasApiKey: !!process.env.RESEND_API_KEY,
     hasFromAddress: true
@@ -455,7 +453,7 @@ export async function sendPatientAppointmentStatusEmail(
     accepted: result.accepted,
     rejected: !result.accepted,
     errorCode: result.errorCode || null,
-    safeErrorMessage: result.errorMessage || result.error || null
+    hasError: Boolean(result.errorMessage || result.error),
   }));
 
   if (!result.success) {
@@ -464,7 +462,6 @@ export async function sendPatientAppointmentStatusEmail(
       appointmentId: payload.appointmentId,
       failureStage: "PROVIDER_CALL",
       errorCode: result.errorCode || "PROVIDER_ERROR",
-      safeErrorMessage: result.errorMessage || result.error || "Bilinmeyen provider hatası"
     }));
   }
 

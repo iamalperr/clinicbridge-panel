@@ -4,6 +4,7 @@
  */
 
 import { loadClinicConversationTranscript } from "@/lib/services/conversations/conversationTranscriptService";
+import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
 
 export type AgentHistoryTurn = { role: "user" | "assistant"; content: string };
 
@@ -43,7 +44,7 @@ export async function loadServerAgentHistory(params: {
       checkpoint: "VOICE_HISTORY_LOAD_FAILED",
       clinicId,
       conversationId,
-      error: e?.message || String(e),
+      ...safeErrorMeta(e),
     }));
     return [];
   }

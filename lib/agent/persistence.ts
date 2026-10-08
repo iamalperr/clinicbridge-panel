@@ -5,6 +5,7 @@
 import { getAdminDb } from "@/lib/firebase-admin";
 import { stripUndefinedDeep } from "@/lib/firestore/stripUndefined";
 import type { AgentTurnResult, AppointmentData, AppointmentState } from "./types";
+import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
 
 export async function saveAppointmentState(
   adminDb: any, 
@@ -41,7 +42,7 @@ export async function saveAppointmentState(
       conversationId: convId,
       clinicId,
       stateAttempted: newState,
-      error: e?.message || String(e),
+      ...safeErrorMeta(e),
     }));
     return false;
   }
@@ -284,7 +285,7 @@ export async function logConversation(params: {
     // Message docs are upserted via syncConversationLogMessagesFromHistory above.
 
   } catch (err: any) {
-    console.error("[logConversation] Error:", err.message);
+    console.error("[logConversation] Error:", JSON.stringify(safeErrorMeta(err)));
   }
 }
 

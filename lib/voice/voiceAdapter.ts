@@ -14,6 +14,7 @@ import {
   type CallSessionStore,
 } from "./callSessionStore";
 import { loadServerAgentHistory, type AgentHistoryTurn } from "./loadServerHistory";
+import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
 import type {
   CallSession,
   EndCallSessionInput,
@@ -97,7 +98,7 @@ async function ensureConversationLogShell(params: {
       checkpoint: "VOICE_CONV_SHELL_FAILED",
       clinicId,
       conversationId,
-      error: e?.message || String(e),
+      ...safeErrorMeta(e),
     }));
     return false;
   }
@@ -272,7 +273,7 @@ export async function processVoiceTurn(
       conversationId: session.conversationId,
       clinicId: session.clinicId,
       channel: "voice",
-      error: e?.message || String(e),
+      ...safeErrorMeta(e),
     }));
     return err("AGENT_ERROR", "Agent failed to process the turn", {
       callSessionId,

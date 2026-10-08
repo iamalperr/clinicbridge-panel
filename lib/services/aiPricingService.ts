@@ -9,6 +9,7 @@
 
 import { getAdminDb } from "@/lib/firebase-admin";
 import type { AIModelPricing } from "@/lib/types/aiUsage";
+import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
 
 // In-memory cache for pricing lookups (refreshed every 5 min)
 let pricingCache: AIModelPricing[] = [];
@@ -43,7 +44,7 @@ async function loadPricingCache(): Promise<AIModelPricing[]> {
 
     pricingCacheTime = Date.now();
   } catch (err) {
-    console.error("[aiPricingService] Failed to load pricing:", err);
+    console.error("[aiPricingService] Failed to load pricing:", JSON.stringify(safeErrorMeta(err)));
   }
 
   return pricingCache;

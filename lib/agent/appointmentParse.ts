@@ -152,7 +152,7 @@ export function extractAppointmentFromHistory(history: any[]): AppointmentData |
     return null;
   }
 
-  console.log("[appt-extract] Found summary:", confirmMsg.slice(0, 300));
+  console.log("[appt-extract] Found summary:", JSON.stringify({ summaryLength: confirmMsg.length }));
 
   // Extract each field with flexible regex
   const nameMatch    = confirmMsg.match(/(?:Ad|Name|İsim|Hasta):\s*([^\n\r]+)/i);
@@ -180,11 +180,22 @@ export function extractAppointmentFromHistory(history: any[]): AppointmentData |
   const parsedTime = parseTimeText(rawTimeStr);
 
   if (!patientName || (!patientPhone && !patientEmail)) {
-    console.log(`[appt-extract] Missing required fields: name="${patientName}" phone="${patientPhone}" email="${patientEmail}"`);
+    console.log("[appt-extract] Missing required fields:", JSON.stringify({
+      hasName: Boolean(patientName),
+      hasPhone: Boolean(patientPhone),
+      hasEmail: Boolean(patientEmail),
+    }));
     return null;
   }
 
-  console.log(`[appt-extract] ✅ name="${patientName}" phone="${patientPhone}" service="${requestedService}" date="${requestedDate}" time="${parsedTime.preferredTime}"`);
+  console.log("[appt-extract] Extracted:", JSON.stringify({
+    hasName: true,
+    hasPhone: Boolean(patientPhone),
+    hasEmail: Boolean(patientEmail),
+    hasService: Boolean(serviceMatch),
+    hasDate: Boolean(requestedDate),
+    hasTime: Boolean(parsedTime.preferredTime),
+  }));
   return {
     patientName,
     patientPhone,

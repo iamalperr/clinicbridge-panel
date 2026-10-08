@@ -15,13 +15,7 @@ import type {
   UpdateContactRequestStatusResult,
 } from "./types";
 import { UNRESOLVED_CONTACT_REQUEST_STATUSES } from "./types";
-
-function maskPhone(phone?: string): string {
-  if (!phone) return "";
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length < 4) return "***";
-  return `***${digits.slice(-4)}`;
-}
+import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
 
 function collectionRef(adminDb: any, clinicId: string) {
   return adminDb.collection("clinics").doc(clinicId).collection("contactRequests");
@@ -82,7 +76,7 @@ export async function findUnresolvedContactRequest(params: {
         checkpoint: "CONTACT_REQUEST_LOOKUP_FAILED",
         clinicId: params.clinicId,
         conversationId: params.conversationId,
-        error: e?.message || String(e),
+        ...safeErrorMeta(e),
       })
     );
     return null;
@@ -166,7 +160,7 @@ async function sendClinicNewContactRequestNotification(
         checkpoint: "CONTACT_REQUEST_NOTIFY_EXCEPTION",
         clinicId: request.clinicId,
         contactRequestId: request.id,
-        error: e?.message || String(e),
+        ...safeErrorMeta(e),
       })
     );
     return { status: "FAILED" };
@@ -273,7 +267,7 @@ export async function createContactRequestAndNotify(
             clinicId: payload.clinicId,
             conversationId: payload.conversationId,
             contactRequestId: openByKey.id,
-            phoneMasked: maskPhone(openByKey.patientPhone),
+            hasPhone: Boolean(openByKey.patientPhone),
             notificationStatus: openByKey.clinicNotificationStatus || null,
           })
         );
@@ -321,7 +315,7 @@ export async function createContactRequestAndNotify(
 
     await ref.set(record);
 
-    // In-app clinic notification (no PII in console beyond masked)
+    // In-app clinic notification (no PII in console)
     try {
       await adminDb.collection("clinics").doc(payload.clinicId).collection("notifications").add({
         type: "contact_request",
@@ -344,7 +338,7 @@ export async function createContactRequestAndNotify(
         contactRequestId: record.id,
         preferredContactMethod: record.preferredContactMethod,
         channel: record.channel,
-        phoneMasked: maskPhone(record.patientPhone),
+        hasPhone: Boolean(record.patientPhone),
       })
     );
 
@@ -382,7 +376,7 @@ export async function createContactRequestAndNotify(
         checkpoint: "CONTACT_REQUEST_CREATE_FAILED",
         clinicId: payload.clinicId,
         conversationId: payload.conversationId,
-        error: e?.message || String(e),
+        ...safeErrorMeta(e),
       })
     );
     return {

@@ -47,6 +47,28 @@ function readMessage(err: any): string {
   return "";
 }
 
+export interface SafeErrorMeta {
+  errorType: string;
+  errorCode: number | string | null;
+}
+
+const SAFE_ERROR_FIELD_MAX = 64;
+
+/**
+ * Content-free description of an unknown error for server logs: the error class name and the
+ * provider's status code only. Never the message, stack, request payload or provider response,
+ * which can echo patient content, contact details or credentials.
+ */
+export function safeErrorMeta(err: unknown): SafeErrorMeta {
+  const errorType =
+    err instanceof Error ? err.name || "Error" : err === null ? "null" : typeof err;
+  const code = readCode(err);
+  return {
+    errorType: errorType.slice(0, SAFE_ERROR_FIELD_MAX),
+    errorCode: typeof code === "string" ? code.slice(0, SAFE_ERROR_FIELD_MAX) : code,
+  };
+}
+
 export function isQuotaError(err: any): boolean {
   const code = readCode(err);
   if (code === GRPC_RESOURCE_EXHAUSTED || code === WEB_RESOURCE_EXHAUSTED) return true;

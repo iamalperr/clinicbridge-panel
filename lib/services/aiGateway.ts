@@ -22,6 +22,7 @@ import {
   modelSupportsChatTemperature,
   normalizeAITemperature,
 } from "@/lib/ai/temperaturePolicy";
+import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
 
 // Initialize OpenAI client lazily
 let openaiClient: OpenAI | null = null;
@@ -182,12 +183,15 @@ export async function trackableAIRequest(
 
     if (!aiContent && lastError) {
       status = "failed";
-      console.error(`[aiGateway] Request failed after ${attempts} attempts (${internalRequestId}):`, lastError.message);
+      console.error(`[aiGateway] Request failed after ${attempts} attempts (${internalRequestId}):`, JSON.stringify({
+        ...safeErrorMeta(lastError),
+        gatewayErrorCode: errorCode ?? null,
+      }));
     }
   } catch (err: any) {
     status = "failed";
     errorCode = "INTERNAL_GATEWAY_ERROR";
-    console.error(`[aiGateway] Fatal gateway error (${internalRequestId}):`, err.message);
+    console.error(`[aiGateway] Fatal gateway error (${internalRequestId}):`, JSON.stringify(safeErrorMeta(err)));
   }
 
   const durationMs = Date.now() - startTime;
@@ -254,18 +258,18 @@ export async function trackableAIRequest(
       // 4. Update daily aggregate (fire and forget)
       if (clinicId) {
         updateDailyAggregate(adminDb, usageRecord).catch(e => 
-          console.error(`[aiGateway] Failed to update daily aggregate:`, e)
+          console.error(`[aiGateway] Failed to update daily aggregate:`, JSON.stringify(safeErrorMeta(e)))
         );
         
         // 5. Check Limits (if success and cost > 0)
         if (status === "success" && costs.totalCostUsd > 0) {
           checkLimitsForClinic(adminDb, clinicId, costs.totalCostUsd).catch(e =>
-            console.error(`[aiGateway] Failed to check limits:`, e)
+            console.error(`[aiGateway] Failed to check limits:`, JSON.stringify(safeErrorMeta(e)))
           );
         }
       }
     } catch (dbErr) {
-      console.error(`[aiGateway] Failed to save usage record (${internalRequestId}):`, dbErr);
+      console.error(`[aiGateway] Failed to save usage record (${internalRequestId}):`, JSON.stringify(safeErrorMeta(dbErr)));
     }
   }
 
@@ -334,7 +338,7 @@ async function updateDailyAggregate(
       ...incrementObj
     }, { merge: true });
   } catch (err) {
-    console.error(`[aiGateway] Daily aggregate update failed for ${docId}:`, err);
+    console.error(`[aiGateway] Daily aggregate update failed for ${docId}:`, JSON.stringify(safeErrorMeta(err)));
   }
 }
 

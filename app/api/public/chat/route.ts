@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { RequestTimer } from "@/lib/performance/requestTimer";
+import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
 import {
   handleClinicAgentTurn,
   resolveAgentChannel,
@@ -59,7 +60,7 @@ export async function POST(req: Request) {
     const convId = conversationId || `session_${Date.now()}`;
     perf.end("parse_request");
     perf.setContext({ conversationId: convId, clinicId, traceId });
-    debugLog.push(`clinicId=${clinicId} msg="${message?.slice(0, 60)}"`);
+    debugLog.push(`clinicId=${clinicId} msgLength=${message?.length ?? 0}`);
 
     if (!clinicId || !message) {
       return NextResponse.json(
@@ -176,7 +177,7 @@ export async function POST(req: Request) {
             );
           }
         } catch (e: any) {
-          console.warn("[system-action] Log error:", e.message);
+          console.warn("[system-action] Log error:", JSON.stringify(safeErrorMeta(e)));
         }
       }
       return NextResponse.json({ ok: true }, { headers: CORS });
@@ -221,9 +222,9 @@ export async function POST(req: Request) {
     });
 
     return agentTurnResultToResponse(result);
-  } catch (err: any) {
-    debugLog.push(`ERROR: ${err.message ?? err}`);
-    console.error("[widget-chat]", debugLog.join(" | "), err);
+  } catch (err: unknown) {
+    debugLog.push(`ERROR: ${JSON.stringify(safeErrorMeta(err))}`);
+    console.error("[widget-chat]", debugLog.join(" | "));
     return NextResponse.json(
       { reply: "Şu an teknik bir sorun yaşıyoruz. Lütfen kliniğimizi doğrudan arayın." },
       { status: 200, headers: CORS }

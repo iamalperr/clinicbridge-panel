@@ -2,6 +2,8 @@
  * Feature Flags & Safe Execution Wrappers for Conversation Engine V2
  */
 
+import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
+
 export interface FeatureFlagContext {
   clinicId?: string;
   agencyId?: string;
@@ -43,10 +45,10 @@ export class ConversationFeatureFlags {
     try {
       return await primaryFn();
     } catch (err: any) {
-      console.error(`[ConversationEngine] Error in ${operationName} (falling back to legacy):`, {
-        error: err?.message || err,
-        context
-      });
+      console.error(`[ConversationEngine] Error in ${operationName} (falling back to legacy):`, JSON.stringify({
+        ...safeErrorMeta(err),
+        contextKeys: Object.keys(context || {}),
+      }));
       return await fallbackFn();
     }
   }

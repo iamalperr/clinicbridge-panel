@@ -8,6 +8,7 @@ import {
 } from "@/lib/appointment/appointmentDateTimePolicy";
 import { ClinicWorkingHoursResolver } from "@/lib/skills/ClinicWorkingHoursResolver";
 import { toPersistedRequestedDoctor } from "@/lib/appointment/requestedDoctorPreference";
+import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
 
 export interface CreateAppointmentPayload {
   clinicId: string;
@@ -107,7 +108,7 @@ export async function createAppointmentRecord(payload: CreateAppointmentPayload)
       const idempSnap = await appointmentsCol.where("idempotencyKey", "==", payload.idempotencyKey).limit(1).get();
       if (!idempSnap.empty) {
         const existingData = idempSnap.docs[0].data() as Appointment;
-        console.log(`[IDEMPOTENCY_HIT] Existing appointment found by idempotencyKey=${payload.idempotencyKey} id=${existingData.id}`);
+        console.log(`[IDEMPOTENCY_HIT] Existing appointment found by idempotencyKey id=${existingData.id}`);
         return { record: existingData, isDuplicate: true };
       }
     }
@@ -281,7 +282,10 @@ export async function sendClinicNewAppointmentNotification(appointment: Partial<
       status: appointment.status!
     });
 
-    console.log(`[STEP 11] provider response:`, result);
+    console.log(`[STEP 11] provider response:`, JSON.stringify({
+      success: result.success,
+      hasError: Boolean(result.error),
+    }));
 
     if (result.success) {
       return { status: "SENT", providerResponse: result };
@@ -289,7 +293,7 @@ export async function sendClinicNewAppointmentNotification(appointment: Partial<
       return { status: "FAILED", providerResponse: result };
     }
   } catch (e: any) {
-    console.log(`[STEP 11] provider response (exception): ${e.message}`);
+    console.log(`[STEP 11] provider response (exception):`, JSON.stringify(safeErrorMeta(e)));
     return { status: "FAILED", providerResponse: { error: e.message } };
   }
 }
@@ -344,7 +348,7 @@ export async function sendPatientAppointmentAcknowledgement(appointment: Partial
           accepted: patientResult.accepted,
           messageId: patientResult.messageId || null,
           errorCode: patientResult.errorCode || null,
-          error: patientResult.errorMessage || patientResult.error || null
+          hasError: Boolean(patientResult.errorMessage || patientResult.error),
         }));
         
         patientEmailSentStatus = patientResult.status;
@@ -353,7 +357,7 @@ export async function sendPatientAppointmentAcknowledgement(appointment: Partial
           checkpoint: "PATIENT_EMAIL_SEND_FAILED",
           traceId: "auto",
           appointmentId: appointment.id,
-          errorMessage: e.message
+          ...safeErrorMeta(e),
         }));
         patientEmailSentStatus = "FAILED";
       }
@@ -388,7 +392,7 @@ export async function createAppointmentAndNotify(draft: CreateAppointmentPayload
     try {
       validatedPayload = validateAppointmentPayload(draft);
     } catch (policyErr: any) {
-      console.error(`[APPOINTMENT_DATETIME_POLICY_BLOCKED] ${policyErr?.code || policyErr?.message}`);
+      console.error(`[APPOINTMENT_DATETIME_POLICY_BLOCKED] ${policyErr?.code || safeErrorMeta(policyErr).errorType}`);
       return {
         success: false,
         code: policyErr?.code || "APPOINTMENT_DATETIME_REJECTED",
@@ -413,7 +417,7 @@ export async function createAppointmentAndNotify(draft: CreateAppointmentPayload
         checkpoint: "APPT_DUPLICATE_SUBMISSION_PREVENTED",
         clinicId: validatedPayload.clinicId,
         appointmentId: record.id,
-        idempotencyKey: validatedPayload.idempotencyKey,
+        hasIdempotencyKey: Boolean(validatedPayload.idempotencyKey),
         conversationId: validatedPayload.conversationId,
         timestamp: new Date().toISOString()
       }));
@@ -445,8 +449,8 @@ export async function createAppointmentAndNotify(draft: CreateAppointmentPayload
         // ── INSTRUMENTATION LOG 12 ──
         console.log(JSON.stringify({ checkpoint: "APPT_12_CLINIC_EMAIL_SEND_RESULT", clinicId: validatedPayload.clinicId, appointmentId: record.id, result: clinicNotificationStatus, timestamp: new Date().toISOString() }));
     } catch (e: any) {
-        console.error(`[CLINIC_NOTIFICATION_ERROR] ${e.message}`);
-        console.log(JSON.stringify({ checkpoint: "APPT_12_CLINIC_EMAIL_SEND_RESULT", clinicId: validatedPayload.clinicId, appointmentId: record.id, result: "FAILED_EXCEPTION", error: e.message, timestamp: new Date().toISOString() }));
+        console.error(`[CLINIC_NOTIFICATION_ERROR]`, JSON.stringify(safeErrorMeta(e)));
+        console.log(JSON.stringify({ checkpoint: "APPT_12_CLINIC_EMAIL_SEND_RESULT", clinicId: validatedPayload.clinicId, appointmentId: record.id, result: "FAILED_EXCEPTION", ...safeErrorMeta(e), timestamp: new Date().toISOString() }));
     }
 
     try {
@@ -456,8 +460,8 @@ export async function createAppointmentAndNotify(draft: CreateAppointmentPayload
         // ── INSTRUMENTATION LOG 13 ──
         console.log(JSON.stringify({ checkpoint: "APPT_13_PATIENT_EMAIL_SEND_RESULT", clinicId: validatedPayload.clinicId, appointmentId: record.id, result: patientNotificationStatus, timestamp: new Date().toISOString() }));
     } catch (e: any) {
-        console.error(`[PATIENT_NOTIFICATION_ERROR] ${e.message}`);
-        console.log(JSON.stringify({ checkpoint: "APPT_13_PATIENT_EMAIL_SEND_RESULT", clinicId: validatedPayload.clinicId, appointmentId: record.id, result: "FAILED_EXCEPTION", error: e.message, timestamp: new Date().toISOString() }));
+        console.error(`[PATIENT_NOTIFICATION_ERROR]`, JSON.stringify(safeErrorMeta(e)));
+        console.log(JSON.stringify({ checkpoint: "APPT_13_PATIENT_EMAIL_SEND_RESULT", clinicId: validatedPayload.clinicId, appointmentId: record.id, result: "FAILED_EXCEPTION", ...safeErrorMeta(e), timestamp: new Date().toISOString() }));
     }
     
     const adminDb = getAdminDb();
@@ -471,7 +475,7 @@ export async function createAppointmentAndNotify(draft: CreateAppointmentPayload
                 patientNotificationStatus: patientNotificationStatus
             });
         } catch (e: any) {
-             console.error(`[NOTIFICATION_STATUS_UPDATE_ERROR] ${e.message}`);
+             console.error(`[NOTIFICATION_STATUS_UPDATE_ERROR]`, JSON.stringify(safeErrorMeta(e)));
         }
     }
 
@@ -487,7 +491,7 @@ export async function createAppointmentAndNotify(draft: CreateAppointmentPayload
 
     return transactionResponse;
   } catch (err: any) {
-      console.log(`[APPOINTMENT_SUBMISSION_EXCEPTION] convId=${draft.conversationId} clinicId=${draft.clinicId} error=${err.message} timestamp=${new Date().toISOString()}`);
+      console.log(`[APPOINTMENT_SUBMISSION_EXCEPTION] convId=${draft.conversationId} clinicId=${draft.clinicId} error=${JSON.stringify(safeErrorMeta(err))} timestamp=${new Date().toISOString()}`);
       return { success: false, step_failed: "UNKNOWN", reason: err.message, stack: err.stack };
   }
 }

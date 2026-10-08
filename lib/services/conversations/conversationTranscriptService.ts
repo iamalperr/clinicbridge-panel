@@ -12,6 +12,7 @@ import {
   type CanonicalConversationDetail,
   type RawTranscriptMessage,
 } from "./conversationTranscript";
+import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
 
 async function readMessagesSubcollection(
   adminDb: Firestore,
@@ -152,7 +153,7 @@ export async function loadClinicConversationTranscript(
       } catch (err: any) {
         console.warn(
           `[conversationTranscript] reconcile failed conversationId=${conversationId}:`,
-          err?.message
+          JSON.stringify(safeErrorMeta(err))
         );
       }
     }

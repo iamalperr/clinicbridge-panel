@@ -7,6 +7,7 @@
 
 import { getAdminDb } from "@/lib/firebase-admin";
 import type { ClinicAIUsageSettings } from "@/lib/types/aiUsage";
+import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
 
 export interface LimitCheckParams {
   clinicId: string;
@@ -107,6 +108,6 @@ export async function checkLimitsAndNotify(params: LimitCheckParams): Promise<vo
 
     console.log(`[aiLimitService] Triggered ${currentThreshold}% notification for clinic ${clinicId}`);
   } catch (err) {
-    console.error("[aiLimitService] Failed to send limit notification:", err);
+    console.error("[aiLimitService] Failed to send limit notification:", JSON.stringify(safeErrorMeta(err)));
   }
 }
