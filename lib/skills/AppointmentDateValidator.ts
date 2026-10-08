@@ -1,3 +1,7 @@
+import {
+  canonicalResolveAppointmentDate,
+} from "@/lib/appointment/canonicalAppointmentDate";
+
 export interface DateValidationConsistencyResult {
   originalInput: string;
   rawDateText: string | null;
@@ -155,12 +159,31 @@ export class AppointmentDateValidator {
     }
 
     // Determine if user explicitly mentioned a date number (e.g. "26 Temmuz", "31")
-    const dateRegex = /(\d{1,2})\s*([a-zçğıöşü]+)/;
+    const dateRegex = /(\d{1,2})\s*([a-zçğıöşü]+)(?:\s+(\d{4})(?!\d))?/;
     const dateMatch = lowerRaw.match(dateRegex);
     let explicitDateStr = null;
     if (dateMatch && this.trMonths[dateMatch[2]] !== undefined) {
-       explicitDateStr = `${currentYear}-${String(this.trMonths[dateMatch[2]] + 1).padStart(2, '0')}-${String(parseInt(dateMatch[1])).padStart(2, '0')}`;
-       result.mentionedDate = explicitDateStr;
+       const month = this.trMonths[dateMatch[2]] + 1; // trMonths is 0-indexed
+       const day = parseInt(dateMatch[1], 10);
+       const explicitYear = dateMatch[3] ? parseInt(dateMatch[3], 10) : null;
+       const resolved = canonicalResolveAppointmentDate({
+         month,
+         day,
+         year: explicitYear,
+         yearExplicit: explicitYear != null,
+         clinicTimeZone: timeZone,
+         now: currentClinicDateTime,
+       });
+       if (resolved.status === "complete") {
+         explicitDateStr = resolved.isoDate;
+         result.mentionedDate = explicitDateStr;
+       } else if (resolved.status === "invalid_calendar") {
+         result.conflictType = "INVALID_DATE";
+         result.hasConflict = true;
+         result.requiresClarification = true;
+         result.clarificationMessage = `Belirttiğiniz tarih geçerli bir takvim günü değil. Lütfen geçerli bir tarih belirtir misiniz?`;
+         return result;
+       }
     }
 
     let parsedDateObj: Date | null = null;

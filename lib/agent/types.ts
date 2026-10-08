@@ -29,6 +29,13 @@ export interface AppointmentData {
   requestedService: string;
   requestedDate: string;
   preferredDateDisplay?: string;
+  /** Month-only preference while day is still missing (no fabricated ISO day). */
+  pendingAppointmentDate?: {
+    month: number;
+    year: number;
+    yearExplicit: boolean;
+    awaitingDayReply: boolean;
+  };
   requestedTime: string | null;
   preferredTimeStart?: string | null;
   preferredTimeEnd?: string | null;

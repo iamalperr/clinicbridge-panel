@@ -42,6 +42,7 @@ function schedule(
     clinicTimeZone: CLINIC_TZ,
     now,
     workingHours: PRODUCTION_HOURS,
+    expectedSlot: "preferredDate",
   });
 }
 
@@ -163,8 +164,15 @@ describe("Early scheduling validation during collection", () => {
     expect(res.validationReason).toBe("OUTSIDE_WORKING_HOURS");
   });
 
-  it("8. past date → immediate rejection", () => {
+  it("8. yearless past month/day → next future year (not PAST_DATE)", () => {
+    // FIXED_NOW = 2026-08-29; yearless 28 Aug → 2027-08-28 (Saturday)
     const res = schedule("28th August");
+    expect(res.outcome).toBe("applied");
+    expect(res.draft.requestedDate).toBe("2027-08-28");
+  });
+
+  it("8b. explicit past year → PAST_DATE", () => {
+    const res = schedule("28 August 2025");
     expect(res.outcome).toBe("invalid");
     expect(res.validationReason).toBe("PAST_DATE");
   });

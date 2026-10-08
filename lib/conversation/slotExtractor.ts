@@ -7,7 +7,14 @@
 import { ConversationSlots, VisitType, InformationType, ContactTarget } from "./types";
 import { AppointmentDateValidator } from "../skills/AppointmentDateValidator";
 import { normalizeTurkishPhone } from "../phoneUtils";
-import { getClinicLocalParts } from "../appointment/appointmentDateTimePolicy";
+import {
+  canonicalResolveAppointmentDate,
+  composeDayWithPendingAppointmentDate,
+  isBareDayOfMonthMessage,
+  isPendingDayCompletionEligible,
+  withPendingDayEligibility,
+  type PendingAppointmentDate,
+} from "../appointment/canonicalAppointmentDate";
 import {
   clinicLocalTodayIso,
   clinicLocalTomorrowIso,
@@ -24,6 +31,24 @@ const MONTHS_EN: Record<string, number> = {
   january: 1, feb: 2, february: 2, march: 3, april: 4, may: 5, june: 6,
   july: 7, aug: 8, august: 8, sept: 9, september: 9, oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12
 };
+
+export type ParsedAppointmentDateResult =
+  | {
+      status: "complete";
+      isoDate: string;
+      rawText: string;
+      weekday?: string;
+      yearExplicit: boolean;
+    }
+  | {
+      status: "partial_month";
+      pending: PendingAppointmentDate;
+      rawText: string;
+    }
+  | {
+      status: "invalid_calendar";
+      rawText: string;
+    };
 
 export interface CanonicalTreatment {
   id: string;
@@ -286,30 +311,84 @@ export class SlotExtractor {
     const timeHintRes = !extracted.preferredTime ? this.parseTime(raw, lower) : null;
 
     // 4. Date Extraction (if not already extracted by correction)
-    if (!extracted.preferredDate) {
-      const dateRes = this.parseDate(
-        raw,
-        lower,
-        timeZone,
-        now,
-        timeHintRes?.time || null
-      );
-      if (dateRes) {
-        extracted.preferredDate = dateRes.isoDate;
-        extracted.date = dateRes.isoDate;
-        extracted.rawDateText = dateRes.rawText;
-        extracted.preferredWeekday = dateRes.weekday;
+    let composedFromPendingDay = false;
+    if (!extracted.preferredDate && !extracted.pendingAppointmentDate && !extracted.invalidCivilDate) {
+      // 4a. Bare day-of-month ONLY when pending is day-eligible AND expectedSlot is preferredDate
+      const pending = existingSlots.pendingAppointmentDate as PendingAppointmentDate | undefined;
+      const bareDay = pending ? isBareDayOfMonthMessage(raw) : null;
+      const dayEligible = isPendingDayCompletionEligible({
+        pending,
+        expectedSlot,
+        hasResolvedDate: Boolean(existingSlots.preferredDate),
+      });
+      if (pending && bareDay != null && dayEligible) {
+        const composed = composeDayWithPendingAppointmentDate({
+          day: bareDay,
+          pending,
+          clinicTimeZone: timeZone,
+          now,
+        });
+        if (composed.status === "complete") {
+          const weekdayInfo = AppointmentDateValidator.getCanonicalWeekday({
+            isoDate: composed.isoDate,
+            timeZone,
+          });
+          extracted.preferredDate = composed.isoDate;
+          extracted.date = composed.isoDate;
+          extracted.rawDateText = raw;
+          extracted.preferredWeekday = weekdayInfo.weekdayTr;
+          extracted.pendingAppointmentDate = undefined;
+          composedFromPendingDay = true;
+        } else if (composed.status === "invalid_calendar") {
+          extracted.invalidCivilDate = true;
+          extracted.rawDateText = raw;
+          composedFromPendingDay = true;
+        }
+      } else {
+        const dateRes = this.parseDate(
+          raw,
+          lower,
+          timeZone,
+          now,
+          timeHintRes?.time || null
+        );
+        if (dateRes) {
+          if (dateRes.status === "complete") {
+            extracted.preferredDate = dateRes.isoDate;
+            extracted.date = dateRes.isoDate;
+            extracted.rawDateText = dateRes.rawText;
+            extracted.preferredWeekday = dateRes.weekday;
+            extracted.pendingAppointmentDate = undefined;
+          } else if (dateRes.status === "partial_month") {
+            extracted.pendingAppointmentDate = withPendingDayEligibility(
+              dateRes.pending,
+              true
+            );
+            extracted.rawDateText = dateRes.rawText;
+            extracted.preferredDate = undefined;
+            extracted.date = undefined;
+          } else if (dateRes.status === "invalid_calendar") {
+            extracted.invalidCivilDate = true;
+            extracted.rawDateText = dateRes.rawText;
+          }
+        }
       }
     }
 
-    // 5. Time Extraction
-    if (!extracted.preferredTime) {
-      const timeRes = timeHintRes || this.parseTime(raw, lower);
-      if (timeRes) {
-        extracted.preferredTime = timeRes.time;
-        extracted.time = timeRes.time;
-        extracted.rawTimeText = timeRes.rawText;
-        extracted.timePreference = timeRes.timePreference;
+    // 5. Time Extraction — skip when message was only a day numeral composing pending month
+    // Also: during preferredDate collection, bare numerals must not be reinterpreted as HH:00
+    // (stale/ineligible pending day replies would otherwise become 05:00).
+    if (!extracted.preferredTime && !composedFromPendingDay) {
+      const bareForTimeGuard = isBareDayOfMonthMessage(raw);
+      const skipBareAsTime = bareForTimeGuard != null && expectedSlot === "preferredDate";
+      if (!skipBareAsTime) {
+        const timeRes = timeHintRes || this.parseTime(raw, lower);
+        if (timeRes) {
+          extracted.preferredTime = timeRes.time;
+          extracted.time = timeRes.time;
+          extracted.rawTimeText = timeRes.rawText;
+          extracted.timePreference = timeRes.timePreference;
+        }
       }
     }
 
@@ -459,11 +538,24 @@ export class SlotExtractor {
     if (degilMatch) {
       const targetPhrase = degilMatch[2].trim();
       const dateRes = this.parseDate(targetPhrase, targetPhrase.toLowerCase(), timeZone, now);
-      if (dateRes) {
+      if (dateRes?.status === "complete") {
         slots.preferredDate = dateRes.isoDate;
         slots.date = dateRes.isoDate;
         slots.rawDateText = dateRes.rawText;
         slots.preferredWeekday = dateRes.weekday;
+        slots.pendingAppointmentDate = undefined;
+        return { isCorrection: true, slotKey: "preferredDate", slots };
+      }
+      if (dateRes?.status === "partial_month") {
+        slots.pendingAppointmentDate = withPendingDayEligibility(dateRes.pending, true);
+        slots.rawDateText = dateRes.rawText;
+        slots.preferredDate = undefined;
+        slots.date = undefined;
+        return { isCorrection: true, slotKey: "pendingAppointmentDate", slots };
+      }
+      if (dateRes?.status === "invalid_calendar") {
+        slots.invalidCivilDate = true;
+        slots.rawDateText = dateRes.rawText;
         return { isCorrection: true, slotKey: "preferredDate", slots };
       }
 
@@ -494,11 +586,24 @@ export class SlotExtractor {
       }
 
       const dateRes = this.parseDate(targetPhrase, targetPhrase.toLowerCase(), timeZone, now);
-      if (dateRes) {
+      if (dateRes?.status === "complete") {
         slots.preferredDate = dateRes.isoDate;
         slots.date = dateRes.isoDate;
         slots.rawDateText = dateRes.rawText;
         slots.preferredWeekday = dateRes.weekday;
+        slots.pendingAppointmentDate = undefined;
+        return { isCorrection: true, slotKey: "preferredDate", slots };
+      }
+      if (dateRes?.status === "partial_month") {
+        slots.pendingAppointmentDate = withPendingDayEligibility(dateRes.pending, true);
+        slots.rawDateText = dateRes.rawText;
+        slots.preferredDate = undefined;
+        slots.date = undefined;
+        return { isCorrection: true, slotKey: "pendingAppointmentDate", slots };
+      }
+      if (dateRes?.status === "invalid_calendar") {
+        slots.invalidCivilDate = true;
+        slots.rawDateText = dateRes.rawText;
         return { isCorrection: true, slotKey: "preferredDate", slots };
       }
 
@@ -800,7 +905,8 @@ export class SlotExtractor {
   }
 
   /**
-   * Parse date in multiple formats (numeric, relative, full text Turkish/English)
+   * Parse date in multiple formats (numeric, relative, full text Turkish/English).
+   * Yearless month/day uses canonical next-future-occurrence resolution in clinic TZ.
    */
   public static parseDate(
     raw: string,
@@ -808,46 +914,76 @@ export class SlotExtractor {
     timeZone: string = "Europe/Istanbul",
     now: Date = new Date(),
     rawTimeText?: string | null
-  ): { isoDate: string; rawText: string; weekday?: string } | null {
-    const currentYear = getClinicLocalParts(now, timeZone).year;
+  ): ParsedAppointmentDateResult | null {
+    const finalizeComplete = (
+      isoDate: string,
+      rawText: string,
+      yearExplicit: boolean
+    ): ParsedAppointmentDateResult => {
+      const weekdayInfo = AppointmentDateValidator.getCanonicalWeekday({ isoDate, timeZone });
+      return {
+        status: "complete",
+        isoDate,
+        rawText,
+        weekday: weekdayInfo.weekdayTr,
+        yearExplicit,
+      };
+    };
+
+    const fromCivil = (
+      month: number,
+      day: number | null,
+      year: number | null,
+      yearExplicit: boolean,
+      rawText: string
+    ): ParsedAppointmentDateResult => {
+      const resolved = canonicalResolveAppointmentDate({
+        month,
+        day,
+        year,
+        yearExplicit,
+        clinicTimeZone: timeZone,
+        now,
+      });
+      if (resolved.status === "complete") {
+        return finalizeComplete(resolved.isoDate, rawText, resolved.yearExplicit);
+      }
+      if (resolved.status === "partial_month") {
+        return { status: "partial_month", pending: resolved.pending, rawText };
+      }
+      return { status: "invalid_calendar", rawText };
+    };
 
     // Relative dates: "yarın" / "tomorrow"
     if (/\b(yarın|yarin|tomorrow)\b/i.test(lower)) {
       const iso = clinicLocalTomorrowIso(timeZone, now);
-      const weekdayInfo = AppointmentDateValidator.getCanonicalWeekday({ isoDate: iso, timeZone });
-      return { isoDate: iso, rawText: raw, weekday: weekdayInfo.weekdayTr };
+      return finalizeComplete(iso, raw, false);
     }
 
     // Relative dates: "bugün" / "today"
     if (/\b(bugün|bugun|today)\b/i.test(lower)) {
       const iso = clinicLocalTodayIso(timeZone, now);
-      const weekdayInfo = AppointmentDateValidator.getCanonicalWeekday({ isoDate: iso, timeZone });
-      return { isoDate: iso, rawText: raw, weekday: weekdayInfo.weekdayTr };
+      return finalizeComplete(iso, raw, false);
     }
 
-    // 1. Regex for D/M/YYYY or DD.MM.YYYY or DD-MM-YYYY (e.g. 1/8/2026, 01.08.2026, 1-8-2026)
+    // 1. Regex for D/M/YYYY or DD.MM.YYYY or DD-MM-YYYY (explicit year)
     const dmyFullMatch = raw.match(/\b(\d{1,2})[\.\/\-](\d{1,2})[\.\/\-](\d{4})\b/);
     if (dmyFullMatch) {
       const day = parseInt(dmyFullMatch[1], 10);
       const month = parseInt(dmyFullMatch[2], 10);
       const year = parseInt(dmyFullMatch[3], 10);
       if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-        const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-        const weekdayInfo = AppointmentDateValidator.getCanonicalWeekday({ isoDate: iso, timeZone });
-        return { isoDate: iso, rawText: dmyFullMatch[0], weekday: weekdayInfo.weekdayTr };
+        return fromCivil(month, day, year, true, dmyFullMatch[0]);
       }
     }
 
-    // 2. Regex for D/M (e.g. 1/8, 01.08) without year -> infer current or next year
+    // 2. Regex for D/M (e.g. 1/8, 01.08) without year → next future occurrence
     const dmyShortMatch = raw.match(/\b(\d{1,2})[\.\/\-](\d{1,2})\b/);
     if (dmyShortMatch) {
       const day = parseInt(dmyShortMatch[1], 10);
       const month = parseInt(dmyShortMatch[2], 10);
       if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-        const year = currentYear;
-        const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-        const weekdayInfo = AppointmentDateValidator.getCanonicalWeekday({ isoDate: iso, timeZone });
-        return { isoDate: iso, rawText: dmyShortMatch[0], weekday: weekdayInfo.weekdayTr };
+        return fromCivil(month, day, null, false, dmyShortMatch[0]);
       }
     }
 
@@ -857,20 +993,18 @@ export class SlotExtractor {
       const match1 = lower.match(regex1);
       if (match1) {
         const day = parseInt(match1[1], 10);
-        const year = match1[2] ? parseInt(match1[2], 10) : currentYear;
-        const iso = `${year}-${String(mNum).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-        const weekdayInfo = AppointmentDateValidator.getCanonicalWeekday({ isoDate: iso, timeZone });
-        return { isoDate: iso, rawText: match1[0], weekday: weekdayInfo.weekdayTr };
+        const yearExplicit = Boolean(match1[2]);
+        const year = yearExplicit ? parseInt(match1[2], 10) : null;
+        return fromCivil(mNum, day, year, yearExplicit, match1[0]);
       }
 
       const regex2 = new RegExp(`\\b${mName}\\s+(\\d{1,2})(?:\\s+(\\d{4}))?\\b`, "i");
       const match2 = lower.match(regex2);
       if (match2) {
         const day = parseInt(match2[1], 10);
-        const year = match2[2] ? parseInt(match2[2], 10) : currentYear;
-        const iso = `${year}-${String(mNum).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-        const weekdayInfo = AppointmentDateValidator.getCanonicalWeekday({ isoDate: iso, timeZone });
-        return { isoDate: iso, rawText: match2[0], weekday: weekdayInfo.weekdayTr };
+        const yearExplicit = Boolean(match2[2]);
+        const year = yearExplicit ? parseInt(match2[2], 10) : null;
+        return fromCivil(mNum, day, year, yearExplicit, match2[0]);
       }
     }
 
@@ -880,24 +1014,45 @@ export class SlotExtractor {
       const matchEn1 = lower.match(regexEn1);
       if (matchEn1) {
         const day = parseInt(matchEn1[1], 10);
-        const year = matchEn1[2] ? parseInt(matchEn1[2], 10) : currentYear;
-        const iso = `${year}-${String(mNum).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-        const weekdayInfo = AppointmentDateValidator.getCanonicalWeekday({ isoDate: iso, timeZone });
-        return { isoDate: iso, rawText: matchEn1[0], weekday: weekdayInfo.weekdayTr };
+        const yearExplicit = Boolean(matchEn1[2]);
+        const year = yearExplicit ? parseInt(matchEn1[2], 10) : null;
+        return fromCivil(mNum, day, year, yearExplicit, matchEn1[0]);
       }
 
       const regexEn2 = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?${mName}(?:\\s+(\\d{4}))?\\b`, "i");
       const matchEn2 = lower.match(regexEn2);
       if (matchEn2) {
         const day = parseInt(matchEn2[1], 10);
-        const year = matchEn2[2] ? parseInt(matchEn2[2], 10) : currentYear;
-        const iso = `${year}-${String(mNum).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-        const weekdayInfo = AppointmentDateValidator.getCanonicalWeekday({ isoDate: iso, timeZone });
-        return { isoDate: iso, rawText: matchEn2[0], weekday: weekdayInfo.weekdayTr };
+        const yearExplicit = Boolean(matchEn2[2]);
+        const year = yearExplicit ? parseInt(matchEn2[2], 10) : null;
+        return fromCivil(mNum, day, year, yearExplicit, matchEn2[0]);
       }
     }
 
-    // 5. Weekday-only or relative weekday ("Saturday", "next Monday")
+    // 5. Month-only (optional "next" / "gelecek" / "önümüzdeki") — no fabricated day
+    // Use Turkish-safe edges: JS \\b is not Unicode-aware for çğıöşü.
+    const monthEdge = (name: string) =>
+      new RegExp(
+        `(?:^|[^a-z0-9çğıöşü])((?:(?:next|gelecek|önümüzdeki|onumuzdeki)\\s+)?${name})(?:$|[^a-z0-9çğıöşü])`,
+        "i"
+      );
+    const compactMonth = lower.replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+    for (const [mName, mNum] of Object.entries({ ...MONTHS_TR, ...MONTHS_EN })) {
+      const m = ` ${lower} `.match(monthEdge(mName));
+      if (!m) continue;
+      const matched = (m[1] || "").trim();
+      const around = lower.replace(matched.toLowerCase(), " ");
+      if (/\d/.test(around)) continue;
+      const nextish = /^(?:next|gelecek|önümüzdeki|onumuzdeki)\s+\S+$/i.test(compactMonth);
+      const alone =
+        compactMonth === mName ||
+        nextish ||
+        compactMonth.split(" ").length <= 3;
+      if (!alone && !nextish) continue;
+      return fromCivil(mNum, null, null, false, matched);
+    }
+
+    // 6. Weekday-only or relative weekday ("Saturday", "next Monday")
     const weekdayRes = resolveWeekdayFromMessage({
       raw,
       lower,
@@ -906,7 +1061,7 @@ export class SlotExtractor {
       rawTimeText: rawTimeText || null,
     });
     if (weekdayRes) {
-      return weekdayRes;
+      return finalizeComplete(weekdayRes.isoDate, weekdayRes.rawText, false);
     }
 
     return null;

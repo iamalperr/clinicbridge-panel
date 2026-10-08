@@ -45,6 +45,13 @@ export type AppointmentDraftLike = {
   requestedWeekday?: string;
   requestedDoctor?: RequestedDoctorPreference;
   notes?: string;
+  /** Month-only context while collecting a day — not a complete appointment date. */
+  pendingAppointmentDate?: {
+    month: number;
+    year: number;
+    yearExplicit: boolean;
+    awaitingDayReply: boolean;
+  };
 };
 
 export type ConfirmationAmendmentOutcome =
@@ -201,12 +208,40 @@ export function applyConfirmationAmendment(params: {
       ? params.extracted
       : SlotExtractor.extractSlots(
           raw,
-          {},
+          {
+            pendingAppointmentDate: original.pendingAppointmentDate,
+            preferredDate: original.requestedDate,
+          },
           locale,
           params.clinicTimeZone || "Europe/Istanbul",
-          undefined,
+          original.requestedDate ? "preferredTime" : "preferredDate",
           params.now ?? new Date()
         ).extracted;
+
+  if (extracted.invalidCivilDate || extracted.pendingAppointmentDate) {
+    const scheduling = applyAppointmentSchedulingAmendment({
+      message: raw,
+      draft: original,
+      extracted,
+      locale,
+      clinicTimeZone: params.clinicTimeZone,
+      now: params.now ?? new Date(),
+      workingHours: params.workingHours ?? null,
+      is24_7: params.is24_7,
+      expectedSlot: original.requestedDate ? undefined : "preferredDate",
+    });
+    if (scheduling.outcome === "invalid" || scheduling.outcome === "partial_month") {
+      return {
+        outcome: "invalid",
+        nextDraft: scheduling.draft,
+        amendedFields: [],
+        preservedFields: [...PRESERVED_FIELD_KEYS],
+        validationReason: scheduling.validationReason || "PARTIAL_MONTH",
+        message: scheduling.message,
+        suggestions: scheduling.suggestions,
+      };
+    }
+  }
 
   const amendedFields = detectConfirmationAmendmentFields(extracted);
   const doctorPref = applyDoctorPreferenceToDraft({
@@ -257,12 +292,21 @@ export function applyConfirmationAmendment(params: {
         preferredWeekday: extracted.preferredWeekday,
         rawTimeText: extracted.rawTimeText,
         timePreference: extracted.timePreference,
+        pendingAppointmentDate: extracted.pendingAppointmentDate,
+        invalidCivilDate: extracted.invalidCivilDate,
       },
       locale,
       clinicTimeZone: params.clinicTimeZone,
       now: params.now ?? new Date(),
       workingHours: params.workingHours ?? null,
       is24_7: params.is24_7,
+      expectedSlot: extracted.preferredDate
+        ? "preferredDate"
+        : extracted.preferredTime
+          ? "preferredTime"
+          : original.requestedDate
+            ? "preferredTime"
+            : "preferredDate",
     });
 
     if (scheduling.outcome === "invalid") {
@@ -280,6 +324,18 @@ export function applyConfirmationAmendment(params: {
         validationReason: scheduling.validationReason,
         message: scheduling.message,
         suggestions: scheduling.suggestions,
+      };
+    }
+
+    if (scheduling.outcome === "partial_month") {
+      Object.assign(nextDraft, scheduling.draft);
+      return {
+        outcome: "invalid",
+        nextDraft,
+        amendedFields: [],
+        preservedFields: [...PRESERVED_FIELD_KEYS],
+        validationReason: "PARTIAL_MONTH",
+        message: scheduling.message,
       };
     }
 

@@ -55,6 +55,10 @@ export class IntentRouter {
     };
     locale?: string;
     expectedSlot?: string;
+    /** Clinic IANA TZ for appointment date resolution. Falls back to Europe/Istanbul. */
+    clinicTimeZone?: string;
+    /** Injectable clock for deterministic date resolution (tests). */
+    now?: Date;
   }): IntentClassificationResult {
     const raw = (params.message || "").trim();
     const lower = raw.toLowerCase();
@@ -62,14 +66,17 @@ export class IntentRouter {
     const existingSlots = params.collectedSlots || {};
     const locale = params.locale || "tr";
     const expectedSlot = params.expectedSlot;
+    const clinicTimeZone = params.clinicTimeZone || "Europe/Istanbul";
+    const now = params.now ?? new Date();
 
     // Step 1: Extract all identifiable entities, slots, and corrections
     const { extracted, isCorrection, correctedSlotKey, invalidEmailAttempt, allInfoProvidedIntent } = SlotExtractor.extractSlots(
       raw,
       existingSlots,
       locale,
-      "Europe/Istanbul",
-      expectedSlot
+      clinicTimeZone,
+      expectedSlot,
+      now
     );
 
     // Merge active treatment if not explicitly in current message

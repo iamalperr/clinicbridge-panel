@@ -171,9 +171,14 @@ describe('Unified Conversation Engine & Hardened Intent Resolution Suite', () =>
   // ── GROUP D: Slot Extraction, Normalization & Corrections ──
   describe('Group D: Slot Extraction, Normalization & State Corrections', () => {
     it('D1: detects and parses slot correction ("1 Ağustos değil 3 Ağustos olsun")', () => {
+      const now = new Date("2026-07-15T09:00:00.000Z");
       const res = SlotExtractor.extractSlots(
         '1 Ağustos değil 3 Ağustos olsun',
-        { preferredDate: '2026-08-01' }
+        { preferredDate: '2026-08-01' },
+        'tr',
+        'Europe/Istanbul',
+        undefined,
+        now
       );
       expect(res.isCorrection).toBe(true);
       expect(res.extracted.preferredDate).toBe('2026-08-03');
@@ -190,7 +195,15 @@ describe('Unified Conversation Engine & Hardened Intent Resolution Suite', () =>
     });
 
     it('D4: extracts date, time and treatment from a single mixed sentence', () => {
-      const res = SlotExtractor.extractSlots('3 Ağustos saat 15:00 için implant randevusu almak istiyorum');
+      const now = new Date("2026-07-15T09:00:00.000Z");
+      const res = SlotExtractor.extractSlots(
+        '3 Ağustos saat 15:00 için implant randevusu almak istiyorum',
+        {},
+        'tr',
+        'Europe/Istanbul',
+        undefined,
+        now
+      );
       expect(res.extracted.preferredDate).toBe('2026-08-03');
       expect(res.extracted.preferredTime).toBe('15:00');
       expect(res.extracted.treatment).toBe('implant');

@@ -139,6 +139,19 @@ export interface ConversationSlots {
   date?: string; // ISO YYYY-MM-DD
   preferredDate?: string; // ISO YYYY-MM-DD
   rawDateText?: string;
+  /**
+   * Month-only appointment preference while waiting for a day.
+   * Never stores a fabricated ISO day (e.g. no 2027-02-01 for "February").
+   */
+  pendingAppointmentDate?: {
+    month: number;
+    year: number;
+    yearExplicit: boolean;
+    /** Bare "5"/"5th" may complete only while true — see canonicalAppointmentDate. */
+    awaitingDayReply: boolean;
+  };
+  /** Set when NL calendar components are invalid (e.g. Feb 30). */
+  invalidCivilDate?: boolean;
   preferredWeekday?: string;
   time?: string; // e.g. "14:00"
   preferredTime?: string; // e.g. "14:00", "sabah", "öğleden sonra", "morning"

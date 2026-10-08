@@ -34,6 +34,7 @@ import {
   languageResolutionLogFields,
   applyConfirmationAmendment,
   applyAppointmentSchedulingAmendment,
+  invalidatePendingAppointmentDayReply,
   resolveAppointmentTreatmentCarryForward,
   type AppointmentDraftLike,
 } from "@/lib/conversation";
@@ -818,7 +819,8 @@ export async function handleClinicAgentTurn(
         fullName: appointmentDraft.patientName || undefined,
         phone: appointmentDraft.patientPhone || undefined,
         email: appointmentDraft.patientEmail || undefined,
-        treatment: appointmentDraft.requestedService || activeTreatment || undefined
+        treatment: appointmentDraft.requestedService || activeTreatment || undefined,
+        pendingAppointmentDate: (appointmentDraft as any).pendingAppointmentDate || undefined,
       },
       activeTreatment,
       clinicContext: {
@@ -827,7 +829,11 @@ export async function handleClinicAgentTurn(
         turkishContactNumber: clinicData?.turkishContactNumber,
         internationalContactNumber: clinicData?.internationalContactNumber
       },
-      locale: conversationLocale
+      locale: conversationLocale,
+      clinicTimeZone: (() => {
+        const tz = resolveClinicTimeZone(clinicData);
+        return tz.confident ? tz.timeZone : "Europe/Istanbul";
+      })(),
     });
     perf.end("intent_classify", { intent: conversationIntent.intent });
 
@@ -1160,6 +1166,13 @@ export async function handleClinicAgentTurn(
     // 5. Interruption Handling during active Appointment Collection / Review
     if (conversationIntent.isInterruption && isAppointmentFlowActive) {
       isMidFlowInterruption = true;
+      // Stale partial-date: bare "5" must not complete month after a topic interrupt
+      if ((appointmentDraft as any).pendingAppointmentDate?.awaitingDayReply) {
+        Object.assign(
+          appointmentDraft,
+          invalidatePendingAppointmentDayReply(appointmentDraft as any)
+        );
+      }
       console.log(`[INTENT_ROUTER] Mid-flow interruption detected: ${conversationIntent.intent}. Answering question while preserving appointment state: ${appointmentState}`);
     } else if (appointmentGate.allowed) {
       // 6. Handle slot extractions with immediate scheduling validation
@@ -1195,6 +1208,7 @@ export async function handleClinicAgentTurn(
         now: new Date(),
         workingHours: hoursForScheduling.schedule,
         is24_7: hoursForScheduling.is24_7,
+        expectedSlot: currentExpectedSlot,
       });
 
       console.log(JSON.stringify({
@@ -1218,6 +1232,21 @@ export async function handleClinicAgentTurn(
             ? "That date is not available. Please choose another day within clinic working hours."
             : "Bu tarih uygun değil. Lütfen kliniğin çalışma saatlerine uygun başka bir gün seçin."),
           suggestedTimes: schedulingAmendment.suggestions,
+          pendingAppointmentData: appointmentDraft,
+        }, basePersist({ appointmentState: "COLLECTING_DATE" }));
+      }
+
+      if (schedulingAmendment.outcome === "partial_month") {
+        Object.assign(appointmentDraft, schedulingAmendment.draft);
+        await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_DATE", appointmentDraft, {
+          processedMessageIds: [...processedMessageIds, messageId],
+          conversationLocale,
+        });
+        return respondWithVisibleReply({
+          responseType: "appointment_date_clarification_required",
+          reply: schedulingAmendment.message || (conversationLocale.startsWith("en")
+            ? "Which day of that month works for you?"
+            : "O ayın hangi günü uygun olur?"),
           pendingAppointmentData: appointmentDraft,
         }, basePersist({ appointmentState: "COLLECTING_DATE" }));
       }

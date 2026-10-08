@@ -296,7 +296,7 @@ describe("Agent Core — handleClinicAgentTurn direct call (mocked I/O)", () => 
       patientPhone: "+905551112233",
       patientEmail: "ada@example.com",
       requestedService: "Cleaning",
-      requestedDate: "2026-09-22",
+      requestedDate: "2026-10-15",
       requestedTime: "11:00",
       originalText: "yes",
     };
