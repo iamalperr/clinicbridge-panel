@@ -21,6 +21,10 @@ import {
   resolveWeekdayFromMessage,
 } from "./resolveWeekdayDate";
 import { detectPreferredContactMethod } from "@/lib/contact-request/intent";
+import {
+  normalizeTurkishSpokenTemporal,
+  spokenTurkishPhoneDigits,
+} from "./turkishSpokenNumbers";
 
 const MONTHS_TR: Record<string, number> = {
   ocak: 1, şubat: 2, subat: 2, mart: 3, nisan: 4, mayıs: 5, mayis: 5, haziran: 6,
@@ -272,6 +276,10 @@ export class SlotExtractor {
     if (!raw) return { extracted: {}, isCorrection: false };
 
     const lower = raw.toLowerCase();
+    // Date/time parsers read spoken Turkish numbers through their digit view;
+    // identical to `raw` when the message has no anchored number words.
+    const temporalRaw = normalizeTurkishSpokenTemporal(raw);
+    const temporalLower = temporalRaw.toLowerCase();
     const extracted: Partial<ConversationSlots> = {};
     let isCorrection = false;
     let correctedSlotKey: keyof ConversationSlots | undefined;
@@ -287,7 +295,7 @@ export class SlotExtractor {
     }
 
     // 1. Correction Detection (e.g. "1 Ağustos değil 3 Ağustos olsun", "Use sadia.new@hotmail.com instead")
-    const correctionCheck = this.parseCorrection(raw, lower, locale, timeZone, now);
+    const correctionCheck = this.parseCorrection(temporalRaw, temporalLower, locale, timeZone, now);
     if (correctionCheck.isCorrection) {
       isCorrection = true;
       correctedSlotKey = correctionCheck.slotKey;
@@ -308,14 +316,14 @@ export class SlotExtractor {
     }
 
     // 3. Time hint for combined date+time phrases ("Saturday 3pm")
-    const timeHintRes = !extracted.preferredTime ? this.parseTime(raw, lower) : null;
+    const timeHintRes = !extracted.preferredTime ? this.parseTime(temporalRaw, temporalLower) : null;
 
     // 4. Date Extraction (if not already extracted by correction)
     let composedFromPendingDay = false;
     if (!extracted.preferredDate && !extracted.pendingAppointmentDate && !extracted.invalidCivilDate) {
       // 4a. Bare day-of-month ONLY when pending is day-eligible AND expectedSlot is preferredDate
       const pending = existingSlots.pendingAppointmentDate as PendingAppointmentDate | undefined;
-      const bareDay = pending ? isBareDayOfMonthMessage(raw) : null;
+      const bareDay = pending ? isBareDayOfMonthMessage(temporalRaw) : null;
       const dayEligible = isPendingDayCompletionEligible({
         pending,
         expectedSlot,
@@ -346,8 +354,8 @@ export class SlotExtractor {
         }
       } else {
         const dateRes = this.parseDate(
-          raw,
-          lower,
+          temporalRaw,
+          temporalLower,
           timeZone,
           now,
           timeHintRes?.time || null
@@ -379,10 +387,10 @@ export class SlotExtractor {
     // Also: during preferredDate collection, bare numerals must not be reinterpreted as HH:00
     // (stale/ineligible pending day replies would otherwise become 05:00).
     if (!extracted.preferredTime && !composedFromPendingDay) {
-      const bareForTimeGuard = isBareDayOfMonthMessage(raw);
+      const bareForTimeGuard = isBareDayOfMonthMessage(temporalRaw);
       const skipBareAsTime = bareForTimeGuard != null && expectedSlot === "preferredDate";
       if (!skipBareAsTime) {
-        const timeRes = timeHintRes || this.parseTime(raw, lower);
+        const timeRes = timeHintRes || this.parseTime(temporalRaw, temporalLower);
         if (timeRes) {
           extracted.preferredTime = timeRes.time;
           extracted.time = timeRes.time;
@@ -1136,6 +1144,13 @@ export class SlotExtractor {
     const allDigits = raw.replace(/\D/g, "");
     if (allDigits.length >= 9 && allDigits.length <= 16 && (raw.startsWith("+") || raw.startsWith("0") || raw.startsWith("5"))) {
       return raw.trim();
+    }
+
+    // 4. Spoken Turkish mobile ("sıfır beş yüz otuz iki ..."): only a complete, valid TR mobile.
+    const spokenDigits = spokenTurkishPhoneDigits(raw);
+    if (spokenDigits) {
+      const spokenNorm = normalizeTurkishPhone(spokenDigits);
+      if (spokenNorm.valid) return spokenNorm.display;
     }
 
     return null;

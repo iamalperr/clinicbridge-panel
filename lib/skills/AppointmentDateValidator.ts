@@ -1,6 +1,7 @@
 import {
   canonicalResolveAppointmentDate,
 } from "@/lib/appointment/canonicalAppointmentDate";
+import { normalizeTurkishSpokenTemporal } from "@/lib/conversation/turkishSpokenNumbers";
 
 export interface DateValidationConsistencyResult {
   originalInput: string;
@@ -128,7 +129,7 @@ export class AppointmentDateValidator {
       return result;
     }
 
-    const lowerRaw = rawDateText.toLocaleLowerCase("tr-TR").trim();
+    const lowerRaw = normalizeTurkishSpokenTemporal(rawDateText).toLocaleLowerCase("tr-TR").trim();
     
     // Get current clinic Date based on timezone
     const dtf = new Intl.DateTimeFormat("en-US", { 
