@@ -377,6 +377,9 @@ describe("POST /api/auth/reset-password", () => {
     vi.resetModules();
     store.clear();
     updateUserCalls = [];
+    // Vitest resolves consecutive queued mocks in parallel; the unmock splits the queue so the
+    // id-aware mock below deterministically replaces the beforeEach mock of the same module.
+    vi.doUnmock("@/lib/firebase-admin");
 
     vi.doMock("firebase-admin/firestore", () => ({
       FieldValue: {
