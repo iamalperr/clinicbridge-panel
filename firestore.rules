@@ -11,7 +11,9 @@ service cloud.firestore {
         'voiceNumbers',
         'voiceCallSessions',
         'voiceCalls',
-        'voiceRuntimeLeases'
+        'voiceRuntimeLeases',
+        'voiceSettings',
+        'voiceProfiles'
       ];
     }
 
@@ -28,6 +30,15 @@ service cloud.firestore {
     }
 
     match /voiceRuntimeLeases/{document=**} {
+      allow read, write: if false;
+    }
+
+    // Voice control plane: written only through the validated, audited admin API.
+    match /voiceSettings/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /voiceProfiles/{document=**} {
       allow read, write: if false;
     }
 

@@ -126,7 +126,14 @@ function isAllowed(method: Method, docPath: string, auth: boolean): boolean {
   });
 }
 
-const VOICE_COLLECTIONS = ["voiceNumbers", "voiceCallSessions", "voiceCalls", "voiceRuntimeLeases"] as const;
+const VOICE_COLLECTIONS = [
+  "voiceNumbers",
+  "voiceCallSessions",
+  "voiceCalls",
+  "voiceRuntimeLeases",
+  "voiceSettings",
+  "voiceProfiles",
+] as const;
 
 describe("firestore.rules — voice infrastructure is server-only", () => {
   it("parses rules and the server-only list", () => {
@@ -134,7 +141,7 @@ describe("firestore.rules — voice infrastructure is server-only", () => {
     expect(functions.isServerOnlyCollection).toEqual([...VOICE_COLLECTIONS]);
   });
 
-  it("contains only the four voice deny blocks plus the authenticated catch-all (no unrelated rules)", () => {
+  it("contains only the voice deny blocks plus the authenticated catch-all (no unrelated rules)", () => {
     expect(allows).toHaveLength(VOICE_COLLECTIONS.length + 1);
     const catchAll = allows.filter((rule) => rule.condition !== "false");
     expect(catchAll).toHaveLength(1);
@@ -171,6 +178,29 @@ describe("firestore.rules — voice infrastructure is server-only", () => {
         new RegExp(`match\\s+/${collection}/\\{document=\\*\\*\\}\\s*\\{\\s*allow read, write: if false;\\s*\\}`)
       );
     }
+  });
+});
+
+describe("firestore.rules — voice control plane (Phase 4A)", () => {
+  const PATHS = [
+    "voiceSettings/clinic_a",
+    "voiceSettings/clinic_a/auditLog/evt1",
+    "voiceProfiles/sys_en",
+    "voiceProfiles/cv_ida",
+  ];
+
+  for (const path of PATHS) {
+    it(`no client (anonymous or authenticated) can read or write ${path}`, () => {
+      for (const method of ALL_METHODS) {
+        expect(isAllowed(method, path, false)).toBe(false);
+        expect(isAllowed(method, path, true)).toBe(false);
+      }
+    });
+  }
+
+  it("same-named subcollections elsewhere keep catch-all behavior (no accidental widening or narrowing)", () => {
+    expect(isAllowed("get", "clinics/c1/voiceSettings/x", true)).toBe(true);
+    expect(isAllowed("get", "voiceSettingsArchive/x", true)).toBe(true);
   });
 });
 
