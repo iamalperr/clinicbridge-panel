@@ -2,10 +2,10 @@
  * Phase 4A — multilingual voice control plane (backend foundation only).
  * Language registry, strict validation, resolver precedence/legacy fallback, voice profile and
  * custom voice isolation/consent, DID overrides, admin authorization, versioning/audit, and
- * proof that the production voice runtime does not use any of it yet.
+ * proof that the production speech runtime consumes none of it (Phase 4B: shadow only).
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -862,7 +862,7 @@ describe("no secret or provider credential exposure", () => {
 
 /* ── Production runtime unchanged ───────────────────────────────────── */
 
-describe("production voice runtime is not wired to the control plane", () => {
+describe("production speech runtime does not consume the control plane (Phase 4B shadow only)", () => {
   function sourceFiles(dir: string): string[] {
     return readdirSync(dir).flatMap((name) => {
       const full = join(dir, name);
@@ -871,12 +871,35 @@ describe("production voice runtime is not wired to the control plane", () => {
     });
   }
 
-  it("worker, runtime bridge, telephony and Agent Core do not import lib/voice/config", () => {
-    const roots = ["workers/voice/src", "lib/voice/runtime", "lib/voice/telephony", "lib/agent", "lib/conversation"];
+  /** Control-plane modules a file imports, by resolved path (relative and "@/" specifiers). */
+  function controlPlaneImports(file: string): string[] {
+    const src = readFileSync(file, "utf8");
+    const specifiers = [...src.matchAll(/(?:from|import)\s*\(?\s*["']([^"']+)["']/g)].map((m) => m[1]);
+    return specifiers
+      .map((s) => (s.startsWith("@/") ? resolve(REPO, s.slice(2)) : s.startsWith(".") ? resolve(dirname(file), s) : s))
+      .filter((p) => p.startsWith(resolve(REPO, "lib/voice/config")))
+      .map((p) => relative(resolve(REPO, "lib/voice/config"), p))
+      .sort();
+  }
+
+  it("worker, telephony and Agent Core do not import lib/voice/config", () => {
+    const roots = ["workers/voice/src", "lib/voice/telephony", "lib/agent", "lib/conversation"];
     const offenders = roots
       .flatMap((root) => sourceFiles(resolve(REPO, root)))
-      .filter((file) => /voice\/config/.test(readFileSync(file, "utf8")));
+      .filter((file) => controlPlaneImports(file).length > 0 || /voice\/config/.test(readFileSync(file, "utf8")));
     expect(offenders).toEqual([]);
+  });
+
+  it("the runtime reaches the control plane only through the shadow resolver", () => {
+    const usage = Object.fromEntries(
+      sourceFiles(resolve(REPO, "lib/voice/runtime"))
+        .map((file) => [relative(REPO, file), controlPlaneImports(file)] as const)
+        .filter(([, imports]) => imports.length > 0)
+    );
+    expect(usage).toEqual({
+      "lib/voice/runtime/composeVoiceRuntime.ts": ["resolveVoiceConfiguration", "store"],
+      "lib/voice/runtime/voiceRuntimeBridge.ts": ["shadow"],
+    });
   });
 
   it("the Turkish speech stack constants are unchanged", () => {

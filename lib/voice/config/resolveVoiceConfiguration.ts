@@ -1,8 +1,9 @@
 /**
  * Server-only voice configuration resolver (Phase 4A control plane).
  *
- * NOT wired into the voice worker or runtime bridge yet: production calls still use the
- * Turkish speech stack, the DID mapping's defaultLocale/greetingText and the worker env voice.
+ * Phase 4B: the runtime bridge calls it once per new call in shadow mode only (see
+ * config/shadow.ts). Production calls still use the Turkish speech stack, the DID mapping's
+ * defaultLocale/greetingText and the worker env voice.
  *
  * Precedence (later wins, each layer validated before use):
  *   1. SYSTEM SAFE DEFAULT   FIXED tr-TR, built-in Turkish voice (worker env), generic greeting
@@ -147,19 +148,30 @@ export async function resolveVoiceConfiguration(
   const db = deps.adminDb;
   if (!db) return { ok: false, code: "VOICE_CONFIG_LOOKUP_FAILED" };
 
+  // Independent reads share one round trip (this runs at call start); their results are still
+  // evaluated in order: DID tenant check, clinic existence, then settings.
+  const didRead = input.calledDid !== undefined ? readDidContext(db, clinicId, input.calledDid) : null;
+  const clinicRead = db
+    .collection(CLINICS_COLLECTION)
+    .doc(clinicId)
+    .get()
+    .then((snap) => (snap.exists ? "FOUND" : "NOT_FOUND"), () => "FAILED" as const);
+  const settingsRead = db
+    .collection(VOICE_SETTINGS_COLLECTION)
+    .doc(clinicId)
+    .get()
+    .catch(() => "UNREADABLE" as const);
+
   let did: DidContext | null = null;
-  if (input.calledDid !== undefined) {
-    const read = await readDidContext(db, clinicId, input.calledDid);
+  if (didRead) {
+    const read = await didRead;
     if (!read.ok) return read;
     did = read.did;
   }
 
-  try {
-    const clinicSnap = await db.collection(CLINICS_COLLECTION).doc(clinicId).get();
-    if (!clinicSnap.exists) return { ok: false, code: "VOICE_CLINIC_NOT_FOUND" };
-  } catch {
-    return { ok: false, code: "VOICE_CONFIG_LOOKUP_FAILED" };
-  }
+  const clinic = await clinicRead;
+  if (clinic === "NOT_FOUND") return { ok: false, code: "VOICE_CLINIC_NOT_FOUND" };
+  if (clinic === "FAILED") return { ok: false, code: "VOICE_CONFIG_LOOKUP_FAILED" };
 
   const issues: VoiceConfigIssueCode[] = [];
   const diagnostics: VoiceConfigError[] = [];
@@ -167,7 +179,8 @@ export async function resolveVoiceConfiguration(
   let profiles = new Map<string, LoadedVoiceProfile>();
 
   try {
-    const snap = await db.collection(VOICE_SETTINGS_COLLECTION).doc(clinicId).get();
+    const snap = await settingsRead;
+    if (snap === "UNREADABLE") throw new Error("VOICE_SETTINGS_UNREADABLE");
     if (snap.exists) {
       const parsed = parseVoiceSettingsDocument(clinicId, snap.data());
       if (!parsed.ok) {

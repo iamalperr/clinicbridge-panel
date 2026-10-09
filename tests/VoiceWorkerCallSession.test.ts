@@ -413,6 +413,23 @@ describe("A. trusted SIP call start", () => {
     expect(rejected.createSpeech).not.toHaveBeenCalled();
   });
 
+  it("a shadow-detected DID tenant mismatch rejects the call: no lease, no speech, no Turkish greeting", async () => {
+    const h = harness({
+      start: {
+        ok: false,
+        code: "TENANT_RESOLUTION_FAILED",
+        reasonCode: "VOICE_DID_TENANT_MISMATCH",
+        retryable: false,
+        endReason: "TENANT_REJECTED",
+        fallback: null,
+      },
+    });
+    await expect(h.call.done).resolves.toEqual({ outcome: "CALL_REJECTED", code: "TENANT_RESOLUTION_FAILED" });
+    expect(h.lease.acquire).not.toHaveBeenCalled();
+    expect(h.createSpeech).not.toHaveBeenCalled();
+    expect(h.speech.port.start).not.toHaveBeenCalled();
+  });
+
   it("a lease held by another worker never activates speech or ends the call", async () => {
     const h = harness();
     h.lease.acquire.mockImplementation(async () => ({ ok: false, code: "RUNTIME_LEASE_HELD" }));

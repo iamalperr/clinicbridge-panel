@@ -32,6 +32,10 @@ function start(): void {
   assertSpeechStackConfig(process.env);
   assertSipKindContract();
   assertVoiceWorkerAdminDb();
+  console.log(JSON.stringify({
+    checkpoint: "VOICE_WORKER_CONFIG",
+    voiceConfigShadow: config.voiceConfigShadowEnabled ? "ENABLED" : "DISABLED",
+  }));
 
   const options: ServerOptions = new ServerOptions({
     agent: fileURLToPath(new URL("./agent.mjs", import.meta.url)),

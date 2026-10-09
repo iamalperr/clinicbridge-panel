@@ -11,6 +11,9 @@
  * Tenant identity comes ONLY from the called DID. Firestore/session handles are injected
  * (see composeVoiceRuntime.ts) and never returned to the transport.
  *
+ * Phase 4B shadow mode: the voice configuration is resolved once per new call and only
+ * compared and logged; the call context, speech, greeting and turns never depend on it.
+ *
  * In-process guarantees (per bridge instance): one business turn per call at a time, and a
  * started business turn always runs to completion — no cancellation path exists. Distributed
  * ownership across workers is out of scope here.
@@ -62,9 +65,18 @@ import {
 } from "../telephony/lifecyclePolicy";
 import { toSpeechText } from "../telephony/speechText";
 import { renderSpeechForLocale } from "../telephony/turkishSpeechRenderer";
+import {
+  isVoiceConfigTenantViolation,
+  startVoiceConfigShadow,
+  voiceConfigShadowLogFields,
+  type VoiceConfigResolver,
+  type VoiceConfigShadowOutcome,
+} from "../config/shadow";
 
 const MAX_TRANSCRIPT_LENGTH = 2_000;
 const MAX_ENDED_CALLS_TRACKED = 1_000;
+/** Upper bound on how long call start may wait for the shadow once the binding is ready. */
+export const VOICE_CONFIG_SHADOW_TIMEOUT_MS = 500;
 
 /* ── Injected capabilities ───────────────────────────────────────────── */
 
@@ -93,11 +105,18 @@ export interface VoiceRuntimeCapabilities {
     clinicId: string;
     lease: VoiceTurnLeaseCheck;
   }): Promise<LeasedTurnAllocationResult>;
+  /**
+   * Phase 4B shadow mode: resolves the voice configuration once per new call for the trusted
+   * clinicId. Observed and logged only; it controls no speech, language, greeting or routing.
+   */
+  resolveVoiceConfig?: VoiceConfigResolver;
 }
 
 export interface VoiceRuntimeBridgeOptions {
   capabilities: VoiceRuntimeCapabilities;
   policy?: Partial<VoiceLifecyclePolicy>;
+  /** Defaults to VOICE_CONFIG_SHADOW_TIMEOUT_MS. */
+  voiceConfigShadowTimeoutMs?: number;
 }
 
 /* ── Transport DTOs ──────────────────────────────────────────────────── */
@@ -150,7 +169,8 @@ export type VoiceRuntimeReasonCode =
   | DidResolutionErrorCode
   | CallBindingErrorCode
   | VoiceErrorCode
-  | VoiceTurnLeaseErrorCode;
+  | VoiceTurnLeaseErrorCode
+  | "VOICE_DID_TENANT_MISMATCH";
 
 export interface VoiceRuntimeFailure {
   ok: false;
@@ -228,12 +248,15 @@ export interface VoiceRuntimeBridge {
   startRuntimeCall(input: StartRuntimeCallInput): Promise<StartRuntimeCallResult>;
   processRuntimeTranscript(input: ProcessRuntimeTranscriptInput): Promise<ProcessRuntimeTranscriptResult>;
   endRuntimeCall(input: EndRuntimeCallInput): Promise<EndRuntimeCallResult>;
+  /** The call's shadow voice configuration snapshot (null when not resolved). Never re-resolved. */
+  getVoiceConfigShadow(runtimeCall: VoiceRuntimeCall): VoiceConfigShadowOutcome | null;
 }
 
 /* ── Internals ───────────────────────────────────────────────────────── */
 
 interface LocalCallState {
   call: VoiceRuntimeCall;
+  voiceConfigShadow: VoiceConfigShadowOutcome | null;
   /** Seeded from the binding's turnSeq so a re-attached call is not reported as abandoned. */
   completedTurns: number;
   inFlight: Promise<void> | null;
@@ -340,6 +363,7 @@ function isEndReason(value: unknown): value is VoiceCallEndReason {
 export function createVoiceRuntimeBridge(options: VoiceRuntimeBridgeOptions): VoiceRuntimeBridge {
   const caps = options.capabilities;
   const policy = resolveVoiceLifecyclePolicy(options.policy);
+  const shadowTimeoutMs = options.voiceConfigShadowTimeoutMs ?? VOICE_CONFIG_SHADOW_TIMEOUT_MS;
   const calls = new Map<string, LocalCallState>();
   const pendingStarts = new Map<string, Promise<StartRuntimeCallResult>>();
   const endedOrder: string[] = [];
@@ -386,6 +410,27 @@ export function createVoiceRuntimeBridge(options: VoiceRuntimeBridgeOptions): Vo
     }
   }
 
+  /** The binding was created for a tenant the DID no longer maps to: fail it, never continue. */
+  async function rejectTenantViolation(binding: CallBinding): Promise<VoiceRuntimeFailure> {
+    const { bindingId, clinicId, callSessionId } = binding;
+    console.error(JSON.stringify({
+      checkpoint: "VOICE_RUNTIME_TENANT_MISMATCH_REJECTED",
+      bindingId,
+      clinicId,
+      reasonCode: "VOICE_DID_TENANT_MISMATCH",
+    }));
+    try {
+      await caps.failBinding({ bindingId, clinicId, failureCode: "TENANT_REJECTED" });
+      await caps.endSession({ callSessionId, clinicId, reason: "failed" });
+    } catch (err) {
+      logRuntimeError("VOICE_RUNTIME_TENANT_REJECT_FAILED", bindingId, err);
+    }
+    return failure("TENANT_RESOLUTION_FAILED", {
+      reasonCode: "VOICE_DID_TENANT_MISMATCH",
+      endReason: "TENANT_REJECTED",
+    });
+  }
+
   async function doStart(input: StartRuntimeCallInput, bindingId: string): Promise<StartRuntimeCallResult> {
     // Only the called DID reaches the resolver; the binding gets the resolver's clinicId.
     const resolution = await caps.resolveDid({ calledDid: input.calledDid });
@@ -396,6 +441,12 @@ export function createVoiceRuntimeBridge(options: VoiceRuntimeBridgeOptions): Vo
         endReason: "TENANT_REJECTED",
       });
     }
+
+    // Resolved once per call, alongside binding creation; a re-attached call keeps its snapshot.
+    const shadow =
+      caps.resolveVoiceConfig && !calls.has(bindingId)
+        ? startVoiceConfigShadow(caps.resolveVoiceConfig, { clinicId: resolution.clinicId, calledDid: resolution.didE164 })
+        : null;
 
     const bound = await caps.getOrCreateBinding({
       externalCallKey: input.externalCallKey,
@@ -423,9 +474,26 @@ export function createVoiceRuntimeBridge(options: VoiceRuntimeBridgeOptions): Vo
       return { ok: true, call: existing.call, created: false };
     }
 
+    let voiceConfigShadow: VoiceConfigShadowOutcome | null = null;
+    if (shadow) {
+      const boundAt = performance.now();
+      const settled = await shadow.settle(shadowTimeoutMs);
+      voiceConfigShadow = settled.outcome;
+      console.log(JSON.stringify({
+        checkpoint: "VOICE_CONFIG_SHADOW",
+        bindingId,
+        clinicId: binding.clinicId,
+        ...voiceConfigShadowLogFields(settled.outcome),
+        resolveMs: settled.resolveMs,
+        startWaitMs: Math.round(performance.now() - boundAt),
+      }));
+      if (isVoiceConfigTenantViolation(settled.outcome)) return rejectTenantViolation(binding);
+    }
+
     const call = buildCall(binding, resolution);
     calls.set(bindingId, {
       call,
+      voiceConfigShadow,
       completedTurns: binding.turnSeq,
       inFlight: null,
       endRequested: false,
@@ -661,5 +729,9 @@ export function createVoiceRuntimeBridge(options: VoiceRuntimeBridgeOptions): Vo
     return ending;
   }
 
-  return { startRuntimeCall, processRuntimeTranscript, endRuntimeCall };
+  function getVoiceConfigShadow(runtimeCall: VoiceRuntimeCall): VoiceConfigShadowOutcome | null {
+    return lookup(runtimeCall)?.voiceConfigShadow ?? null;
+  }
+
+  return { startRuntimeCall, processRuntimeTranscript, endRuntimeCall, getVoiceConfigShadow };
 }

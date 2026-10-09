@@ -25,7 +25,7 @@ describe("readVoiceWorkerConfig", () => {
 
   it("accepts an explicit agent name and leaves allowlists unenforced when unset", () => {
     const config = readVoiceWorkerConfig({ LIVEKIT_AGENT_NAME: "clinicbridge-voice" });
-    expect(config).toEqual({ agentName: "clinicbridge-voice", sipTrust: {} });
+    expect(config).toEqual({ agentName: "clinicbridge-voice", sipTrust: {}, voiceConfigShadowEnabled: true });
     expect(config.sipTrust).not.toHaveProperty("allowedTrunkIds");
     expect(config.sipTrust).not.toHaveProperty("allowedRuleIds");
   });
@@ -51,6 +51,37 @@ describe("readVoiceWorkerConfig", () => {
   it("error messages never echo env values", () => {
     try {
       readVoiceWorkerConfig({ LIVEKIT_AGENT_NAME: "bad name with secret-ish value" });
+    } catch (err) {
+      expect((err as Error).message).not.toContain("secret-ish");
+    }
+  });
+});
+
+describe("CLINICBRIDGE_VOICE_CONFIG_SHADOW_ENABLED kill switch", () => {
+  const withFlag = (value: string | undefined) =>
+    readVoiceWorkerConfig({
+      LIVEKIT_AGENT_NAME: "clinicbridge-voice",
+      ...(value === undefined ? {} : { CLINICBRIDGE_VOICE_CONFIG_SHADOW_ENABLED: value }),
+    });
+
+  it("unset → enabled", () => {
+    expect(withFlag(undefined).voiceConfigShadowEnabled).toBe(true);
+  });
+
+  it('"true" → enabled', () => {
+    expect(withFlag("true").voiceConfigShadowEnabled).toBe(true);
+  });
+
+  it('"false" → disabled', () => {
+    expect(withFlag("false").voiceConfigShadowEnabled).toBe(false);
+  });
+
+  it("any other value fails worker configuration deterministically, without echoing it", () => {
+    for (const bad of ["", " ", "TRUE", "False", "0", "1", "yes", "off", "disabled", "true,false"]) {
+      expect(codeOf(() => withFlag(bad))).toBe("CONFIG_SHADOW_FLAG_INVALID");
+    }
+    try {
+      withFlag("secret-ish-typo");
     } catch (err) {
       expect((err as Error).message).not.toContain("secret-ish");
     }

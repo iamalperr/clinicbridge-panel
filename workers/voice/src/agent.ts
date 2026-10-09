@@ -89,7 +89,9 @@ export default defineAgent({
     const linkedParticipantIdentity = participant.identity;
     const speechStack = resolveSpeechProviders({ env: process.env, vad: prewarmedVad(ctx.proc) });
     if (!speechStack.ok) log("VOICE_WORKER_SPEECH_STACK_UNAVAILABLE", { code: speechStack.code });
-    const runtime = createVoiceRuntimeGraph(assertVoiceWorkerAdminDb());
+    const runtime = createVoiceRuntimeGraph(assertVoiceWorkerAdminDb(), {
+      voiceConfigShadowEnabled: config.voiceConfigShadowEnabled,
+    });
 
     const call = runVoiceCall({
       participant: { kind: participant.kind, attributes: participant.attributes },

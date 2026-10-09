@@ -25,9 +25,16 @@ export interface VoiceRuntimeGraph {
   controllerOptions: Pick<CallControllerOptions, "verifyLeaseInTurnAllocation">;
 }
 
-export function createVoiceRuntimeGraph(adminDb: VoiceWorkerAdminDb): VoiceRuntimeGraph {
+export interface VoiceRuntimeGraphOptions {
+  /** From CLINICBRIDGE_VOICE_CONFIG_SHADOW_ENABLED; false removes the shadow resolver entirely. */
+  voiceConfigShadowEnabled: boolean;
+}
+
+export function createVoiceRuntimeGraph(adminDb: VoiceWorkerAdminDb, options: VoiceRuntimeGraphOptions): VoiceRuntimeGraph {
   return {
-    bridge: createVoiceRuntimeBridge({ capabilities: composeVoiceRuntimeCapabilities({ adminDb }) }),
+    bridge: createVoiceRuntimeBridge({
+      capabilities: composeVoiceRuntimeCapabilities({ adminDb, voiceConfigShadow: options.voiceConfigShadowEnabled }),
+    }),
     lease: createRuntimeLeaseOperations({ adminDb }),
     controllerOptions: { verifyLeaseInTurnAllocation: true },
   };

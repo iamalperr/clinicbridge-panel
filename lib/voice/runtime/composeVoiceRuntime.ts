@@ -8,6 +8,8 @@
 
 import { warmClinicRuntime } from "../../performance/clinicRuntimeLoader";
 import { createFirestoreCallSessionStore, type CallSessionStore } from "../callSessionStore";
+import { resolveVoiceConfiguration } from "../config/resolveVoiceConfiguration";
+import type { VoiceConfigReadFirestore } from "../config/store";
 import {
   allocateNextTurnId,
   endCallBinding,
@@ -30,7 +32,7 @@ import type { VoiceRuntimeCapabilities } from "./voiceRuntimeBridge";
 export const VOICE_CLINIC_RUNTIME_REFRESH_AHEAD_MS = 25_000;
 
 export interface VoiceRuntimeCompositionDeps {
-  adminDb: CallBindingFirestore & DidResolverFirestore & LeasedTurnFirestore;
+  adminDb: CallBindingFirestore & DidResolverFirestore & LeasedTurnFirestore & VoiceConfigReadFirestore;
   /** Defaults to the Firestore-backed `voiceCallSessions` store. */
   sessionStore?: CallSessionStore;
   runAgentTurn?: VoiceAdapterDeps["runAgentTurn"];
@@ -40,6 +42,8 @@ export interface VoiceRuntimeCompositionDeps {
   deferSessionBookkeeping?: boolean;
   /** Default true: pre-warm the clinic runtime cache for the trusted clinicId. */
   warmClinicRuntime?: boolean;
+  /** Default true: resolve the voice configuration once per call in shadow mode (observed only). */
+  voiceConfigShadow?: boolean;
 }
 
 export function composeVoiceRuntimeCapabilities(deps: VoiceRuntimeCompositionDeps): VoiceRuntimeCapabilities {
@@ -65,6 +69,9 @@ export function composeVoiceRuntimeCapabilities(deps: VoiceRuntimeCompositionDep
     processTurn: (input, options) => processVoiceTurn(voiceDeps, input, options),
     prefetchTurn: (input) => prefetchVoiceTurnContext(voiceDeps, input),
     endSession: (input) => endCallSession(voiceDeps, input),
+    ...(deps.voiceConfigShadow ?? true
+      ? { resolveVoiceConfig: (input: { clinicId: string; calledDid: string }) => resolveVoiceConfiguration({ adminDb }, input) }
+      : {}),
     ...(deps.warmClinicRuntime ?? true
       ? {
           warmClinicRuntime: async ({ clinicId }: { clinicId: string }) => {

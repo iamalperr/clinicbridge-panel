@@ -919,7 +919,7 @@ describe("module boundary", () => {
       );
     }
     expect(importsOf(bridgeSrc).sort()).toEqual(
-      ["../telephony/callBinding", "../telephony/didResolver", "../telephony/lifecyclePolicy", "../telephony/speechText", "../telephony/turkishSpeechRenderer", "../types"].sort()
+      ["../config/shadow", "../telephony/callBinding", "../telephony/didResolver", "../telephony/lifecyclePolicy", "../telephony/speechText", "../telephony/turkishSpeechRenderer", "../types"].sort()
     );
     expect(importsOf(composeSrc).every((p) => p.startsWith("../") || p.startsWith("./"))).toBe(true);
   });

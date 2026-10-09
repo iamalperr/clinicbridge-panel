@@ -7,6 +7,10 @@
  * Optional SIP allowlists (comma-separated LiveKit IDs):
  *   CLINICBRIDGE_VOICE_ALLOWED_SIP_TRUNK_IDS, CLINICBRIDGE_VOICE_ALLOWED_SIP_RULE_IDS
  * Unset → not enforced. Set (even to "") → enforced; an empty list denies every call.
+ *
+ * Voice configuration shadow mode (operational rollback switch):
+ *   CLINICBRIDGE_VOICE_CONFIG_SHADOW_ENABLED  unset or "true" → enabled; "false" → disabled;
+ *   any other value (including "") fails worker startup.
  */
 
 import type { SipTrustPolicy } from "./sipIdentity";
@@ -14,20 +18,23 @@ import type { SipTrustPolicy } from "./sipIdentity";
 export const VOICE_WORKER_AGENT_NAME_ENV = "LIVEKIT_AGENT_NAME";
 export const VOICE_WORKER_ALLOWED_TRUNK_IDS_ENV = "CLINICBRIDGE_VOICE_ALLOWED_SIP_TRUNK_IDS";
 export const VOICE_WORKER_ALLOWED_RULE_IDS_ENV = "CLINICBRIDGE_VOICE_ALLOWED_SIP_RULE_IDS";
+export const VOICE_WORKER_CONFIG_SHADOW_ENV = "CLINICBRIDGE_VOICE_CONFIG_SHADOW_ENABLED";
 
 const AGENT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
-export type VoiceWorkerConfigErrorCode = "AGENT_NAME_MISSING" | "AGENT_NAME_INVALID";
+export type VoiceWorkerConfigErrorCode = "AGENT_NAME_MISSING" | "AGENT_NAME_INVALID" | "CONFIG_SHADOW_FLAG_INVALID";
+
+const CONFIG_ERROR_MESSAGES: Record<VoiceWorkerConfigErrorCode, string> = {
+  AGENT_NAME_MISSING: `Voice worker config error: ${VOICE_WORKER_AGENT_NAME_ENV} is required (explicit dispatch only).`,
+  AGENT_NAME_INVALID: `Voice worker config error: ${VOICE_WORKER_AGENT_NAME_ENV} has an invalid format.`,
+  CONFIG_SHADOW_FLAG_INVALID: `Voice worker config error: ${VOICE_WORKER_CONFIG_SHADOW_ENV} must be "true" or "false" when set.`,
+};
 
 export class VoiceWorkerConfigError extends Error {
   readonly code: VoiceWorkerConfigErrorCode;
 
   constructor(code: VoiceWorkerConfigErrorCode) {
-    super(
-      code === "AGENT_NAME_MISSING"
-        ? `Voice worker config error: ${VOICE_WORKER_AGENT_NAME_ENV} is required (explicit dispatch only).`
-        : `Voice worker config error: ${VOICE_WORKER_AGENT_NAME_ENV} has an invalid format.`
-    );
+    super(CONFIG_ERROR_MESSAGES[code]);
     this.name = "VoiceWorkerConfigError";
     this.code = code;
   }
@@ -36,6 +43,8 @@ export class VoiceWorkerConfigError extends Error {
 export interface VoiceWorkerConfig {
   agentName: string;
   sipTrust: SipTrustPolicy;
+  /** Phase 4B shadow resolution of the voice configuration (observed only). */
+  voiceConfigShadowEnabled: boolean;
 }
 
 type EnvRecord = Readonly<Record<string, string | undefined>>;
@@ -59,5 +68,13 @@ export function readVoiceWorkerConfig(env: EnvRecord): VoiceWorkerConfig {
   if (allowedTrunkIds !== undefined) sipTrust.allowedTrunkIds = allowedTrunkIds;
   if (allowedRuleIds !== undefined) sipTrust.allowedRuleIds = allowedRuleIds;
 
-  return { agentName, sipTrust };
+  return { agentName, sipTrust, voiceConfigShadowEnabled: parseShadowFlag(env[VOICE_WORKER_CONFIG_SHADOW_ENV]) };
+}
+
+function parseShadowFlag(raw: string | undefined): boolean {
+  if (raw === undefined) return true;
+  const value = raw.trim();
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new VoiceWorkerConfigError("CONFIG_SHADOW_FLAG_INVALID");
 }
