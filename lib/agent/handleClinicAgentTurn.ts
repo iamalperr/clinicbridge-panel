@@ -52,7 +52,16 @@ import {
   safeMergeDraft,
   isAppointmentDraftComplete,
   mergeAppointmentDraftSources,
+  appointmentDraftSlots,
+  draftPatientEmail,
+  createFreshAppointmentDraft,
+  hasAppointmentDraftContent,
+  parseAppointmentDraftBoundary,
+  isLoadedAppointmentFromClosedDraft,
+  type AppointmentDraftBoundary,
 } from "./draft";
+import { normalizeSpokenEmail } from "@/lib/conversation/emailCollection";
+import { controlPhraseKey } from "@/lib/conversation/controlPhrase";
 import { extractAppointmentFromHistory, parseTimeText } from "./appointmentParse";
 import { saveAppointmentState, respondWithVisibleReply } from "./persistence";
 import { fetchClinicDoctorMatchInputs, getClientDb } from "./clinicRuntime";
@@ -373,11 +382,24 @@ export async function handleClinicAgentTurn(
     // to persist (Firestore undefined rejection), leaving state stuck in COLLECTING_*.
     // Also reconstruct from the last assistant summary in history when needed so
     // "Yes please" still finalizes even if client pending payload is missing.
-    let confirmationDraft = mergeAppointmentDraftSources(
-      loadedDraft,
-      pendingAppointmentData as Partial<AppointmentData> | undefined
-    );
-    if (!isAppointmentDraftComplete(confirmationDraft) && Array.isArray(history) && history.length > 0) {
+    // After a cancel / new-appointment boundary the persisted draft is authoritative: client
+    // echoes and history summaries may describe the closed appointment.
+    const draftBoundary = parseAppointmentDraftBoundary(loadedConversationLogData?.appointmentDraftBoundary);
+    const loadedAppointmentFromClosedDraft = isLoadedAppointmentFromClosedDraft(draftBoundary, loadedAppointmentId);
+    const priorAppointmentSubmitted = loadedIsAppointmentCreated && !loadedAppointmentFromClosedDraft;
+    /** Per-appointment conversation fields reset at a draft boundary (written with replaceDraft). */
+    const appointmentDraftBoundaryFields = (reason: AppointmentDraftBoundary["reason"]) => {
+      const appointmentDraftBoundary: AppointmentDraftBoundary = {
+        reason,
+        afterAppointmentId: loadedAppointmentId || null,
+        at: new Date().toISOString(),
+      };
+      return { appointmentDraftBoundary, pendingAction: null, dateAlternatives: null };
+    };
+    let confirmationDraft = draftBoundary
+      ? mergeAppointmentDraftSources(loadedDraft)
+      : mergeAppointmentDraftSources(loadedDraft, pendingAppointmentData as Partial<AppointmentData> | undefined);
+    if (!draftBoundary && !isAppointmentDraftComplete(confirmationDraft) && Array.isArray(history) && history.length > 0) {
       const fromHistory = extractAppointmentFromHistory(history);
       if (fromHistory) {
         confirmationDraft = mergeAppointmentDraftSources(confirmationDraft, fromHistory);
@@ -392,8 +414,8 @@ export async function handleClinicAgentTurn(
     const draftCompleteForConfirm = isAppointmentDraftComplete(confirmationDraft);
     const apptPermitted = PendingActionManager.isAppointmentSubmissionPermitted({
       appointmentState: loadedState,
-      appointmentSubmitted: loadedIsAppointmentCreated || loadedState === "APPOINTMENT_SUBMITTED" || loadedState === "COMPLETED",
-      appointmentId: loadedAppointmentId || undefined,
+      appointmentSubmitted: priorAppointmentSubmitted || loadedState === "APPOINTMENT_SUBMITTED" || loadedState === "COMPLETED",
+      appointmentId: loadedAppointmentFromClosedDraft ? undefined : loadedAppointmentId || undefined,
       pendingAction: loadedPendingAction
     });
 
@@ -437,14 +459,7 @@ export async function handleClinicAgentTurn(
          console.log(JSON.stringify({ checkpoint: "APPT_04_CONFIRMATION_HANDLER_ENTERED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, conversationLocale, loadedStateBefore: loadedState, timestamp: new Date().toISOString() }));
          
          // 1. Validate all 6 required fields in persisted draft
-         const missingDraftSlots = ConversationStateEngine.getMissingSlots({
-           treatment: loadedDraft.requestedService,
-           preferredDate: loadedDraft.requestedDate,
-           preferredTime: loadedDraft.requestedTime,
-           fullName: loadedDraft.patientName,
-           phone: loadedDraft.patientPhone,
-           email: loadedDraft.patientEmail
-         });
+         const missingDraftSlots = ConversationStateEngine.getMissingSlots(appointmentDraftSlots(loadedDraft));
 
          if (missingDraftSlots.length > 0) {
            const earliestMissing = missingDraftSlots[0];
@@ -459,14 +474,7 @@ export async function handleClinicAgentTurn(
            console.error(`[CONFIRMATION_BLOCKED] Missing ${earliestMissing} in persisted draft for convId=${convId}`);
            await saveAppointmentState(adminDb, actualClinicId, convId, 0, nextSubState, loadedDraft, { conversationLocale });
            const missingPrompt = ConversationStateEngine.generateNextSlotPrompt(
-             {
-               treatment: loadedDraft.requestedService,
-               preferredDate: loadedDraft.requestedDate,
-               preferredTime: loadedDraft.requestedTime,
-               fullName: loadedDraft.patientName,
-               phone: loadedDraft.patientPhone,
-               email: loadedDraft.patientEmail
-             },
+             appointmentDraftSlots(loadedDraft),
              missingDraftSlots,
              conversationLocale
            );
@@ -594,7 +602,7 @@ export async function handleClinicAgentTurn(
                  clinicId: actualClinicId, // Must be the real Firestore doc ID
                  patientName: loadedDraft.patientName,
                  patientPhone: loadedDraft.patientPhone,
-                 patientEmail: loadedDraft.patientEmail,
+                 patientEmail: draftPatientEmail(loadedDraft),
                  requestedService: loadedDraft.requestedService || (conversationLocale.startsWith("en") ? "General Consultation" : "Genel Muayene"),
                  requestedDate: loadedDraft.requestedDate,
                  requestedTime: loadedDraft.requestedTime,
@@ -734,9 +742,17 @@ export async function handleClinicAgentTurn(
 
     // Only merge frontend pendingAppointmentData if we are NOT awaiting confirmation.
     // This prevents empty or stale frontend data from erasing the server's persisted draft during the 'evet' step.
-    if (appointmentState !== "AWAITING_CONFIRMATION") {
+    if (appointmentState !== "AWAITING_CONFIRMATION" && !draftBoundary) {
       appointmentDraft = safeMergeDraft(appointmentDraft, pendingAppointmentData);
     }
+
+    // No flow active and an earlier draft was submitted or cancelled: that draft (and the
+    // history that built it) must not seed routing or treatment for a new appointment.
+    const isFlowActiveAtLoad = appointmentState !== "IDLE" && appointmentState !== "APPOINTMENT_SUBMITTED";
+    const draftBelongsToClosedAppointment =
+      !isFlowActiveAtLoad &&
+      (Boolean(draftBoundary) || loadedIsAppointmentCreated || appointmentState === "APPOINTMENT_SUBMITTED");
+    const routingDraft = draftBelongsToClosedAppointment ? createFreshAppointmentDraft(appointmentDraft) : appointmentDraft;
 
     let clinicDoctorsForMatch: ClinicDoctorMatchInput[] | null = null;
     const getClinicDoctorsForMatch = async () => {
@@ -768,8 +784,8 @@ export async function handleClinicAgentTurn(
     // Carry forward last unambiguous treatment from draft/history so Q&A → booking
     // does not re-ask "which treatment?" when the patient only supplies date/time.
     const treatmentCarryForward = resolveAppointmentTreatmentCarryForward({
-      draftRequestedService: appointmentDraft.requestedService,
-      history,
+      draftRequestedService: routingDraft.requestedService,
+      history: draftBelongsToClosedAppointment ? [] : history,
       locale: conversationLocale,
     });
     const activeTreatment =
@@ -797,15 +813,15 @@ export async function handleClinicAgentTurn(
       currentState: appointmentState === "IDLE" ? "INITIAL" : (appointmentState === "AWAITING_CONFIRMATION" ? "APPOINTMENT_REVIEW" : (appointmentState === "APPOINTMENT_SUBMITTED" ? "APPOINTMENT_SUBMITTED" : "APPOINTMENT_COLLECTION")),
       expectedSlot: currentExpectedSlot,
       pendingAction: loadedPendingAction,
-      appointmentSubmitted: loadedIsAppointmentCreated || loadedState === "APPOINTMENT_SUBMITTED" || loadedState === "COMPLETED" || appointmentState === "APPOINTMENT_SUBMITTED",
+      appointmentSubmitted: priorAppointmentSubmitted || loadedState === "APPOINTMENT_SUBMITTED" || loadedState === "COMPLETED" || appointmentState === "APPOINTMENT_SUBMITTED",
       collectedSlots: {
-        preferredDate: appointmentDraft.requestedDate || undefined,
-        preferredTime: appointmentDraft.requestedTime || undefined,
-        fullName: appointmentDraft.patientName || undefined,
-        phone: appointmentDraft.patientPhone || undefined,
-        email: appointmentDraft.patientEmail || undefined,
-        treatment: appointmentDraft.requestedService || activeTreatment || undefined,
-        pendingAppointmentDate: (appointmentDraft as any).pendingAppointmentDate || undefined,
+        preferredDate: routingDraft.requestedDate || undefined,
+        preferredTime: routingDraft.requestedTime || undefined,
+        fullName: routingDraft.patientName || undefined,
+        phone: routingDraft.patientPhone || undefined,
+        email: routingDraft.patientEmail || undefined,
+        treatment: routingDraft.requestedService || activeTreatment || undefined,
+        pendingAppointmentDate: (routingDraft as any).pendingAppointmentDate || undefined,
       },
       activeTreatment,
       clinicContext: {
@@ -834,23 +850,9 @@ export async function handleClinicAgentTurn(
       let switchReply = "";
 
       if (isFlowActive) {
-        const missingSlots = ConversationStateEngine.getMissingSlots({
-          treatment: appointmentDraft.requestedService || undefined,
-          preferredDate: appointmentDraft.requestedDate || undefined,
-          preferredTime: appointmentDraft.requestedTime || undefined,
-          fullName: appointmentDraft.patientName || undefined,
-          phone: appointmentDraft.patientPhone || undefined,
-          email: appointmentDraft.patientEmail || undefined
-        });
+        const missingSlots = ConversationStateEngine.getMissingSlots(appointmentDraftSlots(appointmentDraft));
         const slotPrompt = ConversationStateEngine.generateNextSlotPrompt(
-          {
-            treatment: appointmentDraft.requestedService || undefined,
-            preferredDate: appointmentDraft.requestedDate || undefined,
-            preferredTime: appointmentDraft.requestedTime || undefined,
-            fullName: appointmentDraft.patientName || undefined,
-            phone: appointmentDraft.patientPhone || undefined,
-            email: appointmentDraft.patientEmail || undefined
-          },
+          appointmentDraftSlots(appointmentDraft),
           missingSlots,
           newLocale
         );
@@ -885,12 +887,17 @@ export async function handleClinicAgentTurn(
     }
 
     // 2. Cancellation Intent
-    const isCancel = conversationIntent.intent === "cancel" || /^(hayır|h|onaylamıyorum|iptal|vazgeçtim|hayir|no|cancel|stornieren|annuler|nein|non|لا)$/i.test(msgLower);
+    const isCancel =
+      conversationIntent.entities?.emailDeclined !== true &&
+      (conversationIntent.intent === "cancel" ||
+        /^(hayır|h|onaylamıyorum|onaylamiyorum|iptal|vazgeçtim|hayir|no|cancel|stornieren|annuler|nein|non|لا)$/i.test(controlPhraseKey(message)));
     if (isCancel && (appointmentState !== "IDLE" || pendingAppointmentData)) {
-      await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "IDLE", {}, {
+      appointmentDraft = createFreshAppointmentDraft(appointmentDraft);
+      await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "IDLE", appointmentDraft, {
         processedMessageIds: [...processedMessageIds, messageId],
-        conversationLocale
-      });
+        conversationLocale,
+        ...appointmentDraftBoundaryFields("CANCELLED"),
+      }, { replaceDraft: true });
       const cancelReply = conversationLocale.startsWith("en")
         ? "I have cancelled your appointment request. How else can I assist you?"
         : conversationLocale.startsWith("de")
@@ -1160,6 +1167,22 @@ export async function handleClinicAgentTurn(
       }
       console.log(`[INTENT_ROUTER] Mid-flow interruption detected: ${conversationIntent.intent}. Answering question while preserving appointment state: ${appointmentState}`);
     } else if (appointmentGate.allowed) {
+      if (appointmentGate.mode === "start") {
+        appointmentDraft = createFreshAppointmentDraft(appointmentDraft);
+        const persisted = loadedConversationLogData;
+        const persistedStateToReplace =
+          hasAppointmentDraftContent(persisted?.appointmentDraft) ||
+          Boolean(persisted?.pendingAction) ||
+          Boolean(persisted?.dateAlternatives) ||
+          (Boolean(loadedAppointmentId) && !loadedAppointmentFromClosedDraft);
+        if (adminDb && convId && persistedStateToReplace) {
+          await saveAppointmentState(
+            adminDb, actualClinicId, convId, appointmentVersion, appointmentState, appointmentDraft,
+            appointmentDraftBoundaryFields("NEW_APPOINTMENT"),
+            { replaceDraft: true }
+          );
+        }
+      }
       // 6. Handle slot extractions with immediate scheduling validation
       const clinicTzForScheduling = resolveClinicTimeZone(clinicData);
       const schedulingTimeZone = clinicTzForScheduling.confident
@@ -1250,6 +1273,11 @@ export async function handleClinicAgentTurn(
         }
         if (conversationIntent.entities.email) {
           appointmentDraft.patientEmail = conversationIntent.entities.email;
+          appointmentDraft.emailDisposition = "PROVIDED";
+        } else if (conversationIntent.entities.emailDeclined === true) {
+          // Persisted drafts merge, so an earlier address is blanked rather than omitted.
+          appointmentDraft.patientEmail = "";
+          appointmentDraft.emailDisposition = "DECLINED";
         }
         if (conversationIntent.entities.treatment) {
           const treatmentIds = [
@@ -1285,14 +1313,7 @@ export async function handleClinicAgentTurn(
         });
         appointmentDraft.requestedDoctor = doctorPref.draft.requestedDoctor;
         appointmentDraft.notes = doctorPref.draft.notes;
-        if (doctorPref.clarification && !ConversationStateEngine.getMissingSlots({
-          treatment: appointmentDraft.requestedService || undefined,
-          preferredDate: appointmentDraft.requestedDate || undefined,
-          preferredTime: appointmentDraft.requestedTime || undefined,
-          fullName: appointmentDraft.patientName || undefined,
-          phone: appointmentDraft.patientPhone || undefined,
-          email: appointmentDraft.patientEmail || undefined
-        }).length) {
+        if (doctorPref.clarification && !ConversationStateEngine.getMissingSlots(appointmentDraftSlots(appointmentDraft)).length) {
           await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, {
             processedMessageIds: [...processedMessageIds, messageId],
             conversationLocale,
@@ -1374,12 +1395,31 @@ export async function handleClinicAgentTurn(
             pendingAppointmentData: appointmentDraft
           }, basePersist({ appointmentState: "COLLECTING_PHONE" }));
         }
-      } else if (appointmentState === "COLLECTING_EMAIL" && !appointmentDraft.patientEmail) {
-        const extractedEmail = SlotExtractor.parseEmail(message.trim());
+      } else if (
+        appointmentState === "COLLECTING_EMAIL" &&
+        !appointmentDraft.patientEmail &&
+        appointmentDraft.emailDisposition !== "DECLINED"
+      ) {
+        const extractedEmail = SlotExtractor.parseEmail(message.trim()) ?? normalizeSpokenEmail(message);
         if (extractedEmail) {
           appointmentDraft.patientEmail = extractedEmail;
+          appointmentDraft.emailDisposition = "PROVIDED";
+          appointmentDraft.emailValidationFails = 0;
         } else {
-          const reply = ConversationStateEngine.generateNextSlotPrompt(appointmentDraft, ["email"], conversationLocale, undefined, "invalid_email");
+          // A malformed address is never treated as a decline: one plain retry, then offer to skip.
+          const fails = (appointmentDraft.emailValidationFails || 0) + 1;
+          appointmentDraft.emailValidationFails = fails;
+          await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, {
+            processedMessageIds: [...processedMessageIds, messageId],
+            conversationLocale,
+          });
+          const reply = ConversationStateEngine.generateNextSlotPrompt(
+            appointmentDraftSlots(appointmentDraft),
+            ["email"],
+            conversationLocale,
+            undefined,
+            fails >= 2 ? "invalid_email_offer_skip" : "invalid_email"
+          );
           return respondWithVisibleReply({
             responseType: "CHAT_REPLY",
             reply,
@@ -1393,15 +1433,8 @@ export async function handleClinicAgentTurn(
         }
       }
 
-      // Compute missing slots across all 6 fields
-      const missingSlots = ConversationStateEngine.getMissingSlots({
-        treatment: appointmentDraft.requestedService || undefined,
-        preferredDate: appointmentDraft.requestedDate || undefined,
-        preferredTime: appointmentDraft.requestedTime || undefined,
-        fullName: appointmentDraft.patientName || undefined,
-        phone: appointmentDraft.patientPhone || undefined,
-        email: appointmentDraft.patientEmail || undefined
-      });
+      // Compute missing slots across all 6 fields (email is satisfied by an explicit decline)
+      const missingSlots = ConversationStateEngine.getMissingSlots(appointmentDraftSlots(appointmentDraft));
 
       if (missingSlots.length === 0) {
         const preConfirmPolicy = validateAppointmentDateTime({
@@ -1470,14 +1503,7 @@ export async function handleClinicAgentTurn(
       });
 
       const nextSlotPrompt = ConversationStateEngine.generateNextSlotPrompt(
-        {
-          treatment: appointmentDraft.requestedService || undefined,
-          preferredDate: appointmentDraft.requestedDate || undefined,
-          preferredTime: appointmentDraft.requestedTime || undefined,
-          fullName: appointmentDraft.patientName || undefined,
-          phone: appointmentDraft.patientPhone || undefined,
-          email: appointmentDraft.patientEmail || undefined
-        },
+        appointmentDraftSlots(appointmentDraft),
         missingSlots,
         conversationLocale,
         undefined,
@@ -2456,23 +2482,9 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
     }
 
     if (isMidFlowInterruption) {
-      const missingSlots = ConversationStateEngine.getMissingSlots({
-        treatment: appointmentDraft.requestedService || undefined,
-        preferredDate: appointmentDraft.requestedDate || undefined,
-        preferredTime: appointmentDraft.requestedTime || undefined,
-        fullName: appointmentDraft.patientName || undefined,
-        phone: appointmentDraft.patientPhone || undefined,
-        email: appointmentDraft.patientEmail || undefined
-      });
+      const missingSlots = ConversationStateEngine.getMissingSlots(appointmentDraftSlots(appointmentDraft));
       const resumePrompt = ConversationStateEngine.generateNextSlotPrompt(
-        {
-          treatment: appointmentDraft.requestedService || undefined,
-          preferredDate: appointmentDraft.requestedDate || undefined,
-          preferredTime: appointmentDraft.requestedTime || undefined,
-          fullName: appointmentDraft.patientName || undefined,
-          phone: appointmentDraft.patientPhone || undefined,
-          email: appointmentDraft.patientEmail || undefined
-        },
+        appointmentDraftSlots(appointmentDraft),
         missingSlots,
         conversationLocale
       );

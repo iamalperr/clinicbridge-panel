@@ -163,6 +163,8 @@ export interface ConversationSlots {
   firstName?: string;
   lastName?: string;
   email?: string;
+  /** Explicit email decline; satisfies the optional email slot without an email value. */
+  emailDeclined?: boolean;
   phone?: string;
   contactTarget?: ContactTarget;
   visitType?: VisitType;

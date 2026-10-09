@@ -284,7 +284,7 @@ describe("processRuntimeTranscript", () => {
     caps.processTurn.mockImplementation(async (input) => turnResult(input, { replyText: reply }));
     const turn = expectProcessed(await bridge.processRuntimeTranscript({ runtimeCall: call, transcript: "Fiyat?" }));
     expect(turn.replyText).toBe(reply);
-    expect(turn.speechText).toBe("İmplant tedavisi sunuyoruz. Randevu 5 Şubat 14:00, ücret 2.500 TL. Muayene, Röntgen");
+    expect(turn.speechText).toBe("İmplant tedavisi sunuyoruz. Randevu 5 Şubat saat on dört, ücret 2.500 TL. Muayene, Röntgen");
   });
 
   it("11. appointment state comes from the structured result, never from reply text", async () => {
@@ -832,7 +832,7 @@ describe("end-to-end through the real composition (no Firebase)", () => {
     expect(env.agentInputs[0].context?.messageId).toBe(confirm.turnId);
     expect(confirm.allowBargeIn).toBe(false);
     expect(confirm.bufferedSpeech).toBe("DISCARD");
-    expect(confirm.speechText).toBe("Ön randevu talebinizin özeti: Ad Soyad: Ayşe Yılmaz. Tercih Edilen Saat: 14:00. Onaylıyor musunuz?");
+    expect(confirm.speechText).toBe("Ön randevu talebinizin özeti: Ad Soyad: Ayşe Yılmaz. Tercih Edilen Saat: on dört. Onaylıyor musunuz?");
 
     env.replies.push({
       replyText: "Talebiniz kliniğe iletildi.",
@@ -919,7 +919,7 @@ describe("module boundary", () => {
       );
     }
     expect(importsOf(bridgeSrc).sort()).toEqual(
-      ["../telephony/callBinding", "../telephony/didResolver", "../telephony/lifecyclePolicy", "../telephony/speechText", "../types"].sort()
+      ["../telephony/callBinding", "../telephony/didResolver", "../telephony/lifecyclePolicy", "../telephony/speechText", "../telephony/turkishSpeechRenderer", "../types"].sort()
     );
     expect(importsOf(composeSrc).every((p) => p.startsWith("../") || p.startsWith("./"))).toBe(true);
   });

@@ -61,6 +61,7 @@ import {
   type VoiceLifecyclePolicy,
 } from "../telephony/lifecyclePolicy";
 import { toSpeechText } from "../telephony/speechText";
+import { renderSpeechForLocale } from "../telephony/turkishSpeechRenderer";
 
 const MAX_TRANSCRIPT_LENGTH = 2_000;
 const MAX_ENDED_CALLS_TRACKED = 1_000;
@@ -534,7 +535,7 @@ export function createVoiceRuntimeBridge(options: VoiceRuntimeBridgeOptions): Vo
       turnId: allocated.turnId,
       turnSeq: allocated.turnSeq,
       replyText: result.replyText,
-      speechText: toSpeechText(result.replyText),
+      speechText: renderSpeechForLocale(toSpeechText(result.replyText), result.locale),
       appointmentCreated: Boolean(result.appointmentCreated),
       escalationRequested: Boolean(result.escalationRequested),
       endCallSuggested: Boolean(result.endCallSuggested),

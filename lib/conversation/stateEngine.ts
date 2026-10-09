@@ -15,7 +15,8 @@ import { buildAppointmentReviewMessage } from "./formatters";
 export class ConversationStateEngine {
   /**
    * Determine required appointment slots based on flow
-   * Strict 6-field requirement: Treatment, Preferred Date, Preferred Time, Full Name, Phone, Email.
+   * Collected in order: Treatment, Preferred Date, Preferred Time, Full Name, Phone, Email.
+   * Email is optional: it is asked for, and an explicit decline (`emailDeclined`) satisfies it.
    */
   public static getRequiredAppointmentSlots(slots?: Partial<ConversationSlots>): Array<keyof ConversationSlots> {
     return ["treatment", "preferredDate", "preferredTime", "fullName", "phone", "email"];
@@ -33,6 +34,9 @@ export class ConversationStateEngine {
       const val = slots[key];
       if (key === "fullName") {
         return !slots.fullName && !slots.firstName;
+      }
+      if (key === "email" && slots.emailDeclined === true) {
+        return false;
       }
       return !val || (typeof val === "string" && val.trim() === "");
     });
@@ -241,6 +245,14 @@ export class ConversationStateEngine {
       if (isAr) return "يبدو أن عنوان البريد الإلكتروني غير مكتمل. يرجى التحقق منه وإرساله مرة أخرى.";
       return "E-posta adresiniz eksik veya geçersiz görünüyor. Lütfen kontrol edip tekrar paylaşabilir misiniz?";
     }
+    // Repeated malformed email: never auto-decline; offer the optional path explicitly.
+    if (validationError === "invalid_email_offer_skip") {
+      if (isEn) return "I still couldn't get a valid email address. You can say it once more, or we can continue without an email.";
+      if (isDe) return "Ich konnte noch keine gültige E-Mail-Adresse erkennen. Sie können sie noch einmal nennen, oder wir fahren ohne E-Mail fort.";
+      if (isFr) return "Je n'ai toujours pas obtenu d'adresse e-mail valide. Vous pouvez la redire, ou nous pouvons continuer sans e-mail.";
+      if (isAr) return "لم أتمكن بعد من الحصول على بريد إلكتروني صالح. يمكنك ذكره مرة أخرى، أو يمكننا المتابعة بدون بريد إلكتروني.";
+      return "E-posta adresinizi hâlâ tam olarak alamadım. Dilerseniz bir kez daha söyleyebilir ya da e-posta vermeden devam edebiliriz.";
+    }
 
     // 2. Handle "Provided all information now" with missing slots
     if (allInfoProvidedIntent && missingSlots.length > 0) {
@@ -258,6 +270,7 @@ export class ConversationStateEngine {
           patientName: slots.fullName || slots.firstName || "",
           patientPhone: slots.phone || "",
           patientEmail: slots.email || "",
+          emailDisposition: slots.emailDeclined === true && !slots.email ? "DECLINED" : undefined,
           requestedService: slots.treatment || "",
           requestedDate: slots.preferredDate || slots.rawDateText || "",
           requestedTime: slots.preferredTime || ""

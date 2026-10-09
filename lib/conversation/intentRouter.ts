@@ -18,6 +18,7 @@ import {
   IntentClassificationResult,
   PendingAction
 } from "./types";
+import { controlPhraseKey } from "./controlPhrase";
 import { SlotExtractor } from "./slotExtractor";
 import { ContextResolver } from "./contextResolver";
 import { PendingActionManager } from "./PendingActionManager";
@@ -105,8 +106,24 @@ export class IntentRouter {
       };
     }
 
+    // Step 1.05: Email slot answer during appointment collection. An explicit decline
+    // ("E-posta vermek istemiyorum", bare "istemiyorum" to the email question) or a dictated
+    // address must not be read as cancel, a location question ("mail adresi…") or a malformed email.
+    const dictatedEmail = Boolean(extracted.email) && !SlotExtractor.parseEmail(raw);
+    if (isInAppointmentFlow && (extracted.emailDeclined || dictatedEmail)) {
+      return {
+        intent: "appointment_continuation",
+        confidence: 1.0,
+        entities: extracted,
+        targetSlot: "email",
+        requiresKnowledgeBase: false,
+        shouldContinueActiveFlow: true,
+        explanation: extracted.emailDeclined ? "Explicit email decline" : "Dictated email address",
+      };
+    }
+
     // Step 1.1: Cancel / Reset Detection
-    if (this.isCancel(lower)) {
+    if (this.isCancel(raw)) {
       return {
         intent: "cancel",
         confidence: 1.0,
@@ -704,11 +721,11 @@ export class IntentRouter {
     return { isSwitch: false };
   }
 
-  public static isCancel(lower: string): boolean {
-    const trimmed = lower.trim();
+  public static isCancel(message: string): boolean {
+    const key = controlPhraseKey(message);
     return (
-      /^(?:hayır|hayir|iptal|iptal\s+et|vazgeçtim|vazgectim|istemiyorum|no|cancel|stop|abort|stornieren|annuler|nein|non)$/i.test(trimmed) ||
-      /\b(randevuyu\s+iptal\s+et|randevu\s+almaktan\s+vazgeçtim|vazgectim|cancel\s+the\s+appointment|cancel\s+appointment)\b/i.test(trimmed)
+      /^(?:hayır|hayir|iptal|iptal\s+et|iptal\s+edin|iptal\s+etmek\s+istiyorum|vazgeçtim|vazgectim|istemiyorum|no|cancel|stop|abort|stornieren|annuler|nein|non)$/i.test(key) ||
+      /\b(randevuyu\s+iptal\s+et|randevu\s+almaktan\s+vazgeçtim|vazgectim|cancel\s+the\s+appointment|cancel\s+appointment)\b/i.test(key)
     );
   }
 

@@ -24,6 +24,8 @@ export interface AppointmentSummaryInput {
   patientName?: string | null;
   patientPhone?: string | null;
   patientEmail?: string | null;
+  /** "DECLINED" omits the email line from the summary (email is optional). */
+  emailDisposition?: string | null;
   requestedService?: string | null;
   requestedDate?: string | null;
   preferredDateDisplay?: string | null;
@@ -357,6 +359,8 @@ export function buildAppointmentReviewMessage(
   }
 
   const email = draft.patientEmail || "-";
+  const showEmail = Boolean(draft.patientEmail) || draft.emailDisposition !== "DECLINED";
+  const emailLine = (label: string) => (showEmail ? `${label}: ${email}\n` : "");
   const treatment = formatLocalizedTreatment(draft.requestedService, locale);
   
   const rawDate = draft.preferredDateDisplay || draft.requestedDate || "-";
@@ -399,7 +403,7 @@ export function buildAppointmentReviewMessage(
       `Preliminary appointment request summary:\n\n` +
       `Full name: ${name}\n` +
       `Phone: ${phone}\n` +
-      `Email: ${email}\n` +
+      emailLine("Email") +
       `Treatment: ${treatment}\n` +
       doctorLineEn +
       `Preferred date: ${localizedDate}\n` +
@@ -414,7 +418,7 @@ export function buildAppointmentReviewMessage(
       `Zusammenfassung Ihrer vorläufigen Terminanfrage:\n\n` +
       `Vollständiger Name: ${name}\n` +
       `Telefon: ${phone}\n` +
-      `E-Mail: ${email}\n` +
+      emailLine("E-Mail") +
       `Behandlung: ${treatment}\n` +
       doctorLineDe +
       `Bevorzugtes Datum: ${localizedDate}\n` +
@@ -429,7 +433,7 @@ export function buildAppointmentReviewMessage(
       `Récapitulatif de votre demande de rendez-vous préliminaire:\n\n` +
       `Nom complet: ${name}\n` +
       `Téléphone: ${phone}\n` +
-      `E-mail: ${email}\n` +
+      emailLine("E-mail") +
       `Traitement: ${treatment}\n` +
       doctorLineFr +
       `Date souhaitée: ${localizedDate}\n` +
@@ -444,7 +448,7 @@ export function buildAppointmentReviewMessage(
       `ملخص طلب الموعد المبدئي:\n\n` +
       `الاسم الكامل: ${name}\n` +
       `الهاتف: ${phone}\n` +
-      `البريد الإلكتروني: ${email}\n` +
+      emailLine("البريد الإلكتروني") +
       `العلاج: ${treatment}\n` +
       doctorLineAr +
       `التاريخ المفضل: ${localizedDate}\n` +
@@ -459,7 +463,7 @@ export function buildAppointmentReviewMessage(
     `Ön randevu talebinizin özeti:\n\n` +
     `Ad Soyad: ${name}\n` +
     `Telefon: ${phone}\n` +
-    `E-posta: ${email}\n` +
+    emailLine("E-posta") +
     `Hizmet: ${treatment}\n` +
     doctorLineTr +
     `Tercih Edilen Tarih: ${localizedDate}\n` +

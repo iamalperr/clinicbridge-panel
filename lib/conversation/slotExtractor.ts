@@ -25,6 +25,7 @@ import {
   normalizeTurkishSpokenTemporal,
   spokenTurkishPhoneDigits,
 } from "./turkishSpokenNumbers";
+import { detectEmailDecline, mentionsEmail, normalizeSpokenEmail } from "./emailCollection";
 
 const MONTHS_TR: Record<string, number> = {
   ocak: 1, şubat: 2, subat: 2, mart: 3, nisan: 4, mayıs: 5, mayis: 5, haziran: 6,
@@ -303,9 +304,16 @@ export class SlotExtractor {
     }
 
     // 2. Email Extraction & Validation
-    const emailRes = this.parseEmail(raw);
+    // Dictated addresses are normalized only in email context (pending email question, or the
+    // message names email); an explicit decline is a disposition, never a malformed attempt.
+    const expectingEmail = expectedSlot === "email";
+    const emailRes =
+      this.parseEmail(raw) ??
+      (expectingEmail || mentionsEmail(raw) ? normalizeSpokenEmail(raw) : null);
     if (emailRes) {
       extracted.email = emailRes;
+    } else if (detectEmailDecline(raw, { expectingEmail })) {
+      extracted.emailDeclined = true;
     } else if (
       expectedSlot === "email" ||
       (raw.includes("@") && !raw.includes(" ")) ||

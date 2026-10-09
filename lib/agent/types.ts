@@ -3,6 +3,8 @@
  * Operates on normalized text turns only — no audio/telephony concepts.
  */
 
+import type { EmailDisposition } from "@/lib/conversation/emailCollection";
+
 /** Internal agent channel. Maps to AI usage / conversation enums without migrating them. */
 export type AgentChannel = "web_widget" | "voice" | "api" | "other";
 
@@ -43,6 +45,11 @@ export interface AppointmentData {
   preferredTimeText?: string | null;
   timezone?: string;
   originalText: string;
+  /**
+   * Scoped to one appointment draft (absent ≡ UNSET). DECLINED satisfies the optional
+   * email slot; it is never a patient-level preference (see APPOINTMENT_DRAFT_FIELD_LIFECYCLE).
+   */
+  emailDisposition?: EmailDisposition;
   emailValidationFails?: number;
   requestedDoctor?: {
     id?: string;

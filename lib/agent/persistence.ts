@@ -14,7 +14,8 @@ export async function saveAppointmentState(
   expectedVersion: number, 
   newState: AppointmentState, 
   newDraft: Partial<AppointmentData>, 
-  extras: Record<string, any> = {}
+  extras: Record<string, any> = {},
+  options: { replaceDraft?: boolean } = {}
 ): Promise<boolean> {
   const logRef = adminDb.collection("clinics").doc(clinicId).collection("conversationLogs").doc(convId);
   try {
@@ -26,7 +27,9 @@ export async function saveAppointmentState(
       appointmentDraft: newDraft || {},
       ...extras,
     });
-    await logRef.set(payload, { merge: true });
+    // merge:true deep-merges appointmentDraft, so keys the new draft omits would survive.
+    // mergeFields replaces exactly the written top-level fields and leaves the rest of the log.
+    await logRef.set(payload, options.replaceDraft ? { mergeFields: Object.keys(payload) } : { merge: true });
     console.log(JSON.stringify({
       checkpoint: "APPT_STATE_SAVED",
       conversationId: convId,
