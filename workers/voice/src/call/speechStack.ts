@@ -23,16 +23,18 @@ export const VOICE_SPEECH_LANGUAGE = "tr";
 const VOICE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Endpointing overrides in milliseconds. Empty: LiveKit's audio-turn-detector defaults apply
- * (minDelay 300, maxDelay 2500 in @livekit/agents 1.9.1); the detector itself holds the turn
- * open while the caller sounds unfinished ("12 Ekim saat ...").
+ * Endpointing overrides in milliseconds, merged over LiveKit's audio-turn-detector defaults
+ * (minDelay 300, maxDelay 2500 in @livekit/agents 1.9.1). Both delays count from the caller's
+ * last voiced audio. minDelay applies when the detector judges the turn complete; maxDelay
+ * applies while the caller sounds unfinished ("12 Ekim saat ..."), and any resumed speech
+ * cancels the wait. maxDelay 1500 still leaves a 1.5 s pause for mid-sentence hesitation.
  */
 export interface VoiceEndpointingOverrides {
   minDelay?: number;
   maxDelay?: number;
 }
 
-export const VOICE_ENDPOINTING_OVERRIDES: Readonly<VoiceEndpointingOverrides> = Object.freeze({});
+export const VOICE_ENDPOINTING_OVERRIDES: Readonly<VoiceEndpointingOverrides> = Object.freeze({ maxDelay: 1_500 });
 
 /** Local Silero VAD thresholds, pinned to the @livekit/agents 1.9.1 defaults (milliseconds). */
 export const VOICE_VAD_OPTIONS = Object.freeze({

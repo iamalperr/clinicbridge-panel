@@ -25,6 +25,13 @@ export const WORKER_LOG_FIELDS = [
   "agentCoreMs",
   "ttsFirstAudioMs",
   "userTurnToFirstAudioMs",
+  "verifyMs",
+  "bridgeMs",
+  "eventLoopMaxMs",
+  "eventLoopP99Ms",
+  "speechKind",
+  "playoutMs",
+  "durationMs",
 ] as const;
 
 export type WorkerLogField = (typeof WORKER_LOG_FIELDS)[number];
@@ -58,5 +65,7 @@ export function controllerLogger(log: WorkerLogger): CallControllerLogger {
       turnSeq: entry.turnSeq,
       code: entry.code,
       reason: entry.reason,
+      verifyMs: entry.verifyMs,
+      bridgeMs: entry.bridgeMs,
     });
 }

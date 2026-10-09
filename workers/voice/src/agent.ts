@@ -17,6 +17,7 @@
 import { AutoSubscribe, defineAgent, type JobContext, type JobProcess, type VAD } from "@livekit/agents";
 import { ParticipantKind, RoomEvent, type RemoteParticipant, type Room } from "@livekit/rtc-node";
 import { assertVoiceWorkerAdminDb } from "./adminGuard";
+import { createEventLoopLagProbe, type EventLoopLagProbe } from "./call/eventLoopLag";
 import { buildVoiceSessionConfig } from "./call/sessionConfig";
 import { runVoiceCall } from "./call/voiceCall";
 import { createWorkerLogger } from "./call/workerLog";
@@ -28,6 +29,8 @@ import { LIVEKIT_SIP_PARTICIPANT_KIND } from "./sipIdentity";
 import { readVoiceWorkerConfig } from "./workerConfig";
 
 export const SIP_PARTICIPANT_WAIT_MS = 10_000;
+
+let eventLoopProbe: EventLoopLagProbe | null = null;
 
 export function assertSipKindContract(): void {
   if ((ParticipantKind.SIP as number) !== LIVEKIT_SIP_PARTICIPANT_KIND) {
@@ -93,6 +96,7 @@ export default defineAgent({
       sipTrust: config.sipTrust,
       bridge: runtime.bridge,
       lease: runtime.lease,
+      controllerOptions: runtime.controllerOptions,
       ownerId: `${ctx.workerId}:${jobId}`,
       speech: {
         available: () => speechStack.ok,
@@ -108,6 +112,7 @@ export default defineAgent({
       },
       transport: createLiveKitCallTransport(ctx, linkedParticipantIdentity),
       log,
+      eventLoop: (eventLoopProbe ??= createEventLoopLagProbe()),
     });
     ctx.addShutdownCallback(() => call.shutdown());
   },

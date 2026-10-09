@@ -151,6 +151,10 @@ export interface CallControllerLogEntry {
   turnSeq?: number;
   code?: string;
   reason?: VoiceCallEndReason;
+  /** Strong lease verification before the business turn. */
+  verifyMs?: number;
+  /** Bridge turn: turn id allocation + Agent Core turn + bookkeeping. */
+  bridgeMs?: number;
 }
 
 export type CallControllerLogger = (entry: CallControllerLogEntry) => void;
@@ -267,6 +271,12 @@ export interface CallControllerOptions {
   /** Capped at a third of the acquired lease duration. */
   renewIntervalMs?: number;
   verifyMinRemainingMs?: number;
+  /**
+   * Default false. When true, the per-turn lease verification (same checks, same
+   * minRemainingMs) runs inside the bridge's turn id transaction instead of a separate
+   * transaction before it. Requires a bridge composed with `allocateTurnIdUnderLease`.
+   */
+  verifyLeaseInTurnAllocation?: boolean;
   acquireRetry?: CallControllerAcquireRetry;
   releaseMaxAttempts?: number;
 }
@@ -308,6 +318,24 @@ function leaseFailure(code: RuntimeLeaseErrorCode): { ok: false; code: RuntimeLe
   return { ok: false, code };
 }
 
+const RUNTIME_LEASE_ERROR_CODES: Readonly<Record<RuntimeLeaseErrorCode, true>> = Object.freeze({
+  RUNTIME_LEASE_INVALID_INPUT: true,
+  RUNTIME_LEASE_HELD: true,
+  RUNTIME_LEASE_NOT_FOUND: true,
+  RUNTIME_LEASE_TENANT_CONFLICT: true,
+  RUNTIME_LEASE_OWNER_MISMATCH: true,
+  RUNTIME_LEASE_TOKEN_MISMATCH: true,
+  RUNTIME_LEASE_GENERATION_MISMATCH: true,
+  RUNTIME_LEASE_EXPIRED: true,
+  RUNTIME_LEASE_INVALID_STATE: true,
+  RUNTIME_LEASE_LOOKUP_FAILED: true,
+  RUNTIME_LEASE_UPDATE_FAILED: true,
+});
+
+function isRuntimeLeaseErrorCode(value: unknown): value is RuntimeLeaseErrorCode {
+  return typeof value === "string" && Object.prototype.hasOwnProperty.call(RUNTIME_LEASE_ERROR_CODES, value);
+}
+
 const NOT_ATTEMPTED = Object.freeze({ attempted: false as const });
 
 /* ── Controller ──────────────────────────────────────────────────────── */
@@ -324,6 +352,7 @@ export function createCallController(options: CallControllerOptions): CallContro
     "verifyMinRemainingMs",
     options.verifyMinRemainingMs ?? CALL_CONTROLLER_DEFAULT_VERIFY_MIN_REMAINING_MS
   );
+  const verifyLeaseInTurnAllocation = options.verifyLeaseInTurnAllocation === true;
   const acquireRetry = options.acquireRetry ?? CALL_CONTROLLER_DEFAULT_ACQUIRE_RETRY;
   positiveInteger("acquireRetry.maxAttempts", acquireRetry.maxAttempts);
   nonNegativeInteger("acquireRetry.delayMs", acquireRetry.delayMs);
@@ -372,6 +401,8 @@ export function createCallController(options: CallControllerOptions): CallContro
       ...(extra.turnSeq !== undefined ? { turnSeq: extra.turnSeq } : {}),
       ...(extra.code !== undefined ? { code: extra.code } : {}),
       ...(extra.reason !== undefined ? { reason: extra.reason } : {}),
+      ...(extra.verifyMs !== undefined ? { verifyMs: extra.verifyMs } : {}),
+      ...(extra.bridgeMs !== undefined ? { bridgeMs: extra.bridgeMs } : {}),
     };
     try {
       options.logger(entry);
@@ -498,6 +529,19 @@ export function createCallController(options: CallControllerOptions): CallContro
     clearDurationTimer();
     log("VOICE_CALL_CONTROLLER_OWNERSHIP_LOST", { code });
     emit({ type: "OWNERSHIP_LOST", code });
+  }
+
+  /** Outcome of a failed lease check (separate verify or fused into turn allocation); null = verified. */
+  function leaseVerdict(code: RuntimeLeaseErrorCode | null): { submitPending: boolean } | null {
+    if (code === null) return null;
+    if (TRANSIENT_LEASE_CODES.has(code)) {
+      log("VOICE_CALL_CONTROLLER_VERIFY_TRANSIENT", { code });
+      emitOutcome({ kind: "NOT_PROCESSED", code: "LEASE_UNVERIFIED" });
+      return { submitPending: true };
+    }
+    loseOwnership(code);
+    emitOutcome({ kind: "SUPPRESSED", reason: "OWNERSHIP_LOST" });
+    return { submitPending: false };
   }
 
   function requestEnd(reason: VoiceCallEndReason): void {
@@ -635,31 +679,38 @@ export function createCallController(options: CallControllerOptions): CallContro
       return { submitPending: false };
     }
 
-    let verified: VerifyRuntimeLeaseResult;
-    try {
-      verified = await lease.verify(current, { minRemainingMs: verifyMinRemainingMs });
-    } catch {
-      verified = leaseFailure("RUNTIME_LEASE_LOOKUP_FAILED");
-    }
-    if (!verified.ok && TRANSIENT_LEASE_CODES.has(verified.code)) {
-      log("VOICE_CALL_CONTROLLER_VERIFY_TRANSIENT", { code: verified.code });
-      emitOutcome({ kind: "NOT_PROCESSED", code: "LEASE_UNVERIFIED" });
-      return { submitPending: true };
-    }
-    if (!verified.ok || verified.generation !== current.generation) {
-      loseOwnership(verified.ok ? "RUNTIME_LEASE_GENERATION_MISMATCH" : verified.code);
-      emitOutcome({ kind: "SUPPRESSED", reason: "OWNERSHIP_LOST" });
-      return { submitPending: false };
-    }
-    if (state !== "ACTIVE") {
-      emitOutcome({ kind: "NOT_PROCESSED", code: "CALL_ENDING" });
-      return { submitPending: false };
+    let verifyMs: number | undefined;
+    if (!verifyLeaseInTurnAllocation) {
+      const verifyStartedAt = clock.now();
+      let verified: VerifyRuntimeLeaseResult;
+      try {
+        verified = await lease.verify(current, { minRemainingMs: verifyMinRemainingMs });
+      } catch {
+        verified = leaseFailure("RUNTIME_LEASE_LOOKUP_FAILED");
+      }
+      verifyMs = Math.max(0, clock.now() - verifyStartedAt);
+      let failedCode: RuntimeLeaseErrorCode | null = null;
+      if (!verified.ok) failedCode = verified.code;
+      else if (verified.generation !== current.generation) failedCode = "RUNTIME_LEASE_GENERATION_MISMATCH";
+      const rejected = leaseVerdict(failedCode);
+      if (rejected) return rejected;
+      if (state !== "ACTIVE") {
+        emitOutcome({ kind: "NOT_PROCESSED", code: "CALL_ENDING" });
+        return { submitPending: false };
+      }
     }
 
     // The business turn starts here and always settles: no cancellation path exists.
+    // In fused mode the bridge verifies the lease atomically with turn id allocation and
+    // starts no business turn when that check fails.
+    const bridgeStartedAt = clock.now();
     let result: ProcessRuntimeTranscriptResult;
     try {
-      result = await bridge.processRuntimeTranscript({ runtimeCall: call, transcript });
+      result = await bridge.processRuntimeTranscript(
+        verifyLeaseInTurnAllocation
+          ? { runtimeCall: call, transcript, lease: { proof: current, minRemainingMs: verifyMinRemainingMs } }
+          : { runtimeCall: call, transcript }
+      );
     } catch {
       result = {
         ok: false,
@@ -670,13 +721,19 @@ export function createCallController(options: CallControllerOptions): CallContro
         fallback: fallbackForEndReason("RUNTIME_FAILURE"),
       };
     }
+    const bridgeMs = Math.max(0, clock.now() - bridgeStartedAt);
+    if (!result.ok && result.code === "LEASE_REJECTED") {
+      // Never ran Agent Core; mapped exactly like a failed separate verify.
+      const leaseCode = isRuntimeLeaseErrorCode(result.reasonCode) ? result.reasonCode : "RUNTIME_LEASE_INVALID_STATE";
+      return leaseVerdict(leaseCode) ?? { submitPending: false };
+    }
     const suppressed = suppressionReason();
 
     if (result.ok) {
       const { turn } = result;
       processedTurns += 1;
       lastTurnSeq = turn.turnSeq;
-      log("VOICE_CALL_CONTROLLER_TURN_COMPLETED", { turnSeq: turn.turnSeq, code: turn.bufferedSpeech });
+      log("VOICE_CALL_CONTROLLER_TURN_COMPLETED", { turnSeq: turn.turnSeq, code: turn.bufferedSpeech, verifyMs, bridgeMs });
       if (suppressed) {
         log("VOICE_CALL_CONTROLLER_TURN_SUPPRESSED", { turnSeq: turn.turnSeq, code: suppressed });
         emitOutcome({ kind: "SUPPRESSED", reason: suppressed, turnSeq: turn.turnSeq });
@@ -705,7 +762,7 @@ export function createCallController(options: CallControllerOptions): CallContro
       return { submitPending: false };
     }
 
-    log("VOICE_CALL_CONTROLLER_TURN_FAILED", { code: result.code });
+    log("VOICE_CALL_CONTROLLER_TURN_FAILED", { code: result.code, verifyMs, bridgeMs });
     if (suppressed) {
       emitOutcome({ kind: "SUPPRESSED", reason: suppressed });
       return { submitPending: false };

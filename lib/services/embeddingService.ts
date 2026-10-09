@@ -14,14 +14,25 @@ export function getOpenAI(): OpenAI {
 /**
  * Generates embeddings for a given array of texts using text-embedding-3-small.
  */
-export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
+export async function generateEmbeddings(
+  texts: string[],
+  requestOptions?: { timeoutMs?: number; maxRetries?: number }
+): Promise<number[][]> {
   if (!texts || texts.length === 0) return [];
 
   const openai = getOpenAI();
-  const response = await openai.embeddings.create({
-    model: "text-embedding-3-small",
-    input: texts,
-  });
+  const response = await openai.embeddings.create(
+    {
+      model: "text-embedding-3-small",
+      input: texts,
+    },
+    requestOptions
+      ? {
+          ...(requestOptions.timeoutMs !== undefined ? { timeout: requestOptions.timeoutMs } : {}),
+          ...(requestOptions.maxRetries !== undefined ? { maxRetries: requestOptions.maxRetries } : {}),
+        }
+      : undefined
+  );
 
   return response.data.map(d => d.embedding);
 }

@@ -43,10 +43,8 @@ import {
   type ClinicDoctorMatchInput,
 } from "@/lib/appointment/requestedDoctorPreference";
 import { RequestTimer } from "@/lib/performance/requestTimer";
-import {
-  getCachedClinicRuntime,
-  setCachedClinicRuntime,
-} from "@/lib/performance/clinicRuntimeCache";
+import { getCachedClinicRuntime } from "@/lib/performance/clinicRuntimeCache";
+import { loadTopLevelClinicRuntime } from "@/lib/performance/clinicRuntimeLoader";
 import { stripUndefinedDeep } from "@/lib/firestore/stripUndefined";
 import { toAIUsageChannel } from "./channel";
 import { isConfirmation, normalizeConfirmationInput } from "./confirmationDetect";
@@ -132,35 +130,15 @@ export async function handleClinicAgentTurn(
           cacheHit: true,
         });
       } else {
-      const [clinicSnap, promptSnap, materialsSnap] = await Promise.all([
-        adminDb.collection("clinics").doc(clinicId).get(),
-        adminDb.collection("promptSettings").doc(clinicId).get(),
-        adminDb.collection("trainingMaterials").where("clinicId", "==", clinicId).limit(250).get(),
-      ]);
-      if (clinicSnap.exists) {
-        const cData = clinicSnap.data()!;
-        clinicData      = cData;
-        clinicName      = cData.name          ?? "Klinik";
-        clinicWhatsapp  = cData.whatsappNumber  ?? "";
-        clinicTelegram  = cData.telegramUsername ?? "";
-        clinicLanguage  = cData.language         ?? "tr";
-        
-        if (promptSnap.exists) promptSettings = promptSnap.data();
-        trainingDocs = materialsSnap.docs.map((d: any) => ({ 
-          id: d.id, 
-          title: d.data().title ?? "", 
-          content: d.data().content ?? "",
-          embeddingChunks: d.data().embeddingChunks || []
-        }));
-        setCachedClinicRuntime(clinicId, {
-          clinicData,
-          clinicName,
-          clinicWhatsapp,
-          clinicTelegram,
-          clinicLanguage,
-          promptSettings,
-          trainingDocs,
-        });
+      const loadedRuntime = await loadTopLevelClinicRuntime(adminDb, clinicId);
+      if (loadedRuntime) {
+        clinicData      = loadedRuntime.clinicData;
+        clinicName      = loadedRuntime.clinicName;
+        clinicWhatsapp  = loadedRuntime.clinicWhatsapp;
+        clinicTelegram  = loadedRuntime.clinicTelegram;
+        clinicLanguage  = loadedRuntime.clinicLanguage;
+        promptSettings  = loadedRuntime.promptSettings;
+        trainingDocs    = loadedRuntime.trainingDocs;
         debugLog.push(`[admin] clinic="${clinicName}" docs=${trainingDocs.length}`);
       } else {
         // Fallback for Agency Clinics
@@ -370,6 +348,7 @@ export async function handleClinicAgentTurn(
       detectedLanguage: conversationLocale,
       tenantId: agencyIdForClinic || clinicId,
       sourceDomain: sourceDomain,
+      ...(channel === "voice" ? { persistMode: "VOICE_SINGLE_BATCH" as const } : {}),
       ...extra,
     });
 
@@ -2017,7 +1996,10 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
     }
 
     perf.start("rag_hybrid_search");
-    const topDocs = await hybridSearch(searchMessage, trainingDocs, clinicName, sliceLimit);
+    const topDocs =
+      channel === "voice"
+        ? await hybridSearch(searchMessage, trainingDocs, clinicName, sliceLimit, { voiceBudget: {} })
+        : await hybridSearch(searchMessage, trainingDocs, clinicName, sliceLimit);
     perf.end("rag_hybrid_search", {
       topK: topDocs.length,
       trainingDocs: trainingDocs.length,

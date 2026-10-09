@@ -1015,6 +1015,8 @@ describe("CallController — telemetry and secrecy", () => {
     "turnSeq",
     "code",
     "reason",
+    "verifyMs",
+    "bridgeMs",
   ]);
 
   async function exercise() {
@@ -1040,6 +1042,11 @@ describe("CallController — telemetry and secrecy", () => {
       expect(serialized).not.toContain(secret);
     }
     for (const entry of logs) for (const key of Object.keys(entry)) expect(ALLOWED_LOG_KEYS.has(key)).toBe(true);
+    for (const entry of logs) {
+      if (entry.verifyMs !== undefined) expect(typeof entry.verifyMs).toBe("number");
+      if (entry.bridgeMs !== undefined) expect(typeof entry.bridgeMs).toBe("number");
+    }
+    expect(logs.some((l) => l.checkpoint === "VOICE_CALL_CONTROLLER_TURN_COMPLETED" && typeof l.bridgeMs === "number")).toBe(true);
     expect(logs.some((l) => l.turnSeq === 2)).toBe(true);
     expect(logs.every((l) => l.bindingId === BINDING_ID)).toBe(true);
   });

@@ -47,6 +47,7 @@ import { finalReplyPlaybackOutcome, type SpeechPlaybackOutcome } from "./playbac
 import type { CallTransportPort, SpeechPlayback, SpeechSessionFactory, SpeechSessionHandlers, SpeechSessionPort } from "./ports";
 import { createSilenceScheduler, type SilenceScheduler } from "./silenceScheduler";
 import { endReasonForJobShutdown, endReasonForSessionClose, type SpeechSessionClose } from "./transportEvents";
+import type { EventLoopLagProbe } from "./eventLoopLag";
 import { computeTurnLatency, type TurnLatencyMarks } from "./turnLatency";
 import { controllerLogger, type WorkerLogFields, type WorkerLogger } from "./workerLog";
 
@@ -80,10 +81,18 @@ export interface VoiceCallDeps {
   transport: CallTransportPort;
   log: WorkerLogger;
   createController?: (options: CallControllerOptions) => CallController;
-  controllerOptions?: Pick<CallControllerOptions, "clock" | "renewIntervalMs" | "verifyMinRemainingMs" | "acquireRetry" | "releaseMaxAttempts">;
+  controllerOptions?: Pick<
+    CallControllerOptions,
+    "clock" | "renewIntervalMs" | "verifyMinRemainingMs" | "verifyLeaseInTurnAllocation" | "acquireRetry" | "releaseMaxAttempts"
+  >;
   timer?: VoiceCallTimer;
   limits?: Partial<VoiceCallLimits>;
+  /** Per-turn event-loop delay telemetry; omitted in tests. */
+  eventLoop?: EventLoopLagProbe;
 }
+
+/** What a playout was, for telemetry only (never the spoken text). */
+export type SpeechKind = "GREETING" | "REPLY" | "REPROMPT" | "FAREWELL";
 
 export type VoiceCallResult =
   | { outcome: "IDENTITY_REJECTED"; code: TrustedSipIdentityErrorCode }
@@ -215,7 +224,11 @@ export function runVoiceCall(deps: VoiceCallDeps): VoiceCall {
     const decision = onSilenceTimeout(silence, policy);
     silence = decision.state;
     log("VOICE_WORKER_SILENCE_TIMEOUT", { ...ids(), outcome: decision.action });
-    const playback = speak(getFallbackSpeech(decision.fallback, runtimeCall?.locale), decision.action === "REPROMPT");
+    const playback = speak(
+      getFallbackSpeech(decision.fallback, runtimeCall?.locale),
+      decision.action === "REPROMPT",
+      decision.action === "REPROMPT" ? "REPROMPT" : "FAREWELL"
+    );
     if (decision.action === "END_CALL") {
       if (playback) farewell = playback.outcome;
       requestFinish(decision.endReason);
@@ -227,12 +240,14 @@ export function runVoiceCall(deps: VoiceCallDeps): VoiceCall {
 
   /* ── Speech ─────────────────────────────────────────────────────── */
 
-  function speak(text: string, allowInterruptions: boolean): SpeechPlayback | null {
+  function speak(text: string, allowInterruptions: boolean, kind: SpeechKind, turnSeq?: number): SpeechPlayback | null {
     if (!speech || speechSuppressed || callerGone) return null;
+    const requestedAt = now();
     let playback: SpeechPlayback;
     try {
       playback = speech.say(text, { allowInterruptions });
     } catch {
+      observePlayout(FAILED_PLAYBACK, kind, turnSeq, requestedAt);
       return FAILED_PLAYBACK;
     }
     activeSpeech += 1;
@@ -241,7 +256,36 @@ export function runVoiceCall(deps: VoiceCallDeps): VoiceCall {
       activeSpeech -= 1;
       syncSilence();
     });
+    observePlayout(playback, kind, turnSeq, requestedAt);
     return playback;
+  }
+
+  /** PLAYOUT_STARTED, then exactly one of PLAYOUT_COMPLETED / _INTERRUPTED / _FAILED. */
+  function observePlayout(playback: SpeechPlayback, speechKind: SpeechKind, turnSeq: number | undefined, requestedAt: number): void {
+    const fields = (): WorkerLogFields => {
+      const leaseGeneration = controller?.snapshot().leaseGeneration;
+      return {
+        ...ids(),
+        speechKind,
+        ...(turnSeq !== undefined ? { turnSeq } : {}),
+        ...(typeof leaseGeneration === "number" ? { leaseGeneration } : {}),
+      };
+    };
+    const started = (playback.started ?? Promise.resolve(null)).catch(() => null);
+    void started.then((startedAt) => {
+      if (startedAt !== null) {
+        log("VOICE_WORKER_PLAYOUT_STARTED", { ...fields(), ttsFirstAudioMs: Math.max(0, Math.round(startedAt - requestedAt)) });
+      }
+    });
+    void Promise.all([playback.outcome, started]).then(([outcome, startedAt]) => {
+      const endedAt = now();
+      log(`VOICE_WORKER_PLAYOUT_${outcome}`, {
+        ...fields(),
+        outcome,
+        durationMs: Math.max(0, Math.round(endedAt - requestedAt)),
+        ...(startedAt !== null ? { playoutMs: Math.max(0, Math.round(endedAt - startedAt)) } : {}),
+      });
+    });
   }
 
   function watchForPlaybackFailure(playback: SpeechPlayback): void {
@@ -265,7 +309,13 @@ export function runVoiceCall(deps: VoiceCallDeps): VoiceCall {
   function logTurnLatency(turnSeq: number, marks: TurnLatencyMarks, playback: SpeechPlayback): void {
     const firstAudio = playback.started ?? Promise.resolve(null);
     void Promise.race([firstAudio, playback.outcome.then(() => null)]).then(
-      (firstAudioAt) => log("VOICE_WORKER_TURN_LATENCY", { ...ids(), turnSeq, ...computeTurnLatency(marks, firstAudioAt) }),
+      (firstAudioAt) =>
+        log("VOICE_WORKER_TURN_LATENCY", {
+          ...ids(),
+          turnSeq,
+          ...computeTurnLatency(marks, firstAudioAt),
+          ...(deps.eventLoop?.read() ?? {}),
+        }),
       () => undefined
     );
   }
@@ -286,7 +336,7 @@ export function runVoiceCall(deps: VoiceCallDeps): VoiceCall {
     completion.supersede();
     const token = reply.endAfterPlayback === "AGENT_COMPLETED" ? completion.arm(reply.turnSeq) : null;
     if (marks) marks.speakRequestedAt = now();
-    const playback = reply.speechText ? speak(reply.speechText, reply.allowBargeIn) : NOTHING_TO_SPEAK;
+    const playback = reply.speechText ? speak(reply.speechText, reply.allowBargeIn, "REPLY", reply.turnSeq) : NOTHING_TO_SPEAK;
     if (!playback) return;
     if (marks) logTurnLatency(reply.turnSeq, marks, playback);
     const outcome = await playback.outcome;
@@ -307,7 +357,7 @@ export function runVoiceCall(deps: VoiceCallDeps): VoiceCall {
   }
 
   function speakGreeting(text: string): void {
-    const playback = speak(text, true);
+    const playback = speak(text, true, "GREETING");
     if (playback) watchForPlaybackFailure(playback);
   }
 
@@ -331,7 +381,7 @@ export function runVoiceCall(deps: VoiceCallDeps): VoiceCall {
         finishRequested = true;
         silenceTimer?.stop();
         if (!event.fallback) return;
-        const playback = speak(getFallbackSpeech(event.fallback, runtimeCall?.locale), false);
+        const playback = speak(getFallbackSpeech(event.fallback, runtimeCall?.locale), false, "FAREWELL");
         if (playback) farewell = playback.outcome;
         return;
       }
@@ -383,7 +433,10 @@ export function runVoiceCall(deps: VoiceCallDeps): VoiceCall {
       }
       silence = onCallerSpeech();
       completion.supersede();
-      turnMarks ??= { callerStoppedAt, finalTranscriptAt: finalAt };
+      if (!turnMarks) {
+        turnMarks = { callerStoppedAt, finalTranscriptAt: finalAt };
+        deps.eventLoop?.reset();
+      }
       syncSilence();
       syncSilenceWhenIdle();
     },

@@ -74,20 +74,87 @@ export async function logConversation(params: {
   retrievedDocumentCount?: number;
   fallbackReason?: string;
   appointmentState?: AppointmentState;
+  /** Default SEQUENTIAL. VOICE_SINGLE_BATCH: same writes, two round trips, one atomic batch. */
+  persistMode?: ConversationPersistMode;
 }) {
   const adminDb = getAdminDb();
   if (!adminDb) return;
 
   try {
-    const { syncConversationLogMessagesFromHistory } = await import(
+    const { syncConversationLogMessagesFromHistory, commitConversationLogTurnInSingleBatch } = await import(
       "@/lib/services/conversations/conversationTranscriptService"
     );
-    const logRef = adminDb.collection("clinics").doc(params.clinicId).collection("conversationLogs").doc(params.convId);
-    
-    // Check existing
-    const snap = await logRef.get();
-    const existing = snap.exists ? snap.data() : null;
+    const nowStr = new Date().toISOString();
+    let logData: Record<string, any> | null = null;
 
+    if (params.persistMode === "VOICE_SINGLE_BATCH") {
+      const single = await commitConversationLogTurnInSingleBatch(adminDb, {
+        clinicId: params.clinicId,
+        conversationId: params.convId,
+        history: params.history,
+        userMessage: params.userMessage,
+        aiReply: params.aiReply,
+        includeLiveSupportSystem: Boolean(params.isLiveSupport),
+        nowIso: nowStr,
+        buildLogData: (existing, messageCount) =>
+          stripUndefinedDeep(buildConversationLogData(params, existing, messageCount, nowStr)),
+      });
+      if (single.committed) logData = single.logData;
+    }
+
+    if (!logData) {
+      const logRef = adminDb.collection("clinics").doc(params.clinicId).collection("conversationLogs").doc(params.convId);
+
+      // Check existing
+      const snap = await logRef.get();
+      const existing = snap.exists ? snap.data() : null;
+
+      // Sync full visible history (client history + current turn) into messages.
+      // This prevents "14 mesaj" counts with only the last turn persisted.
+      const actualMessageCount = await syncConversationLogMessagesFromHistory(adminDb, {
+        clinicId: params.clinicId,
+        conversationId: params.convId,
+        history: params.history,
+        userMessage: params.userMessage,
+        aiReply: params.aiReply,
+        baseIso: existing?.createdAt || nowStr,
+        includeLiveSupportSystem: Boolean(params.isLiveSupport),
+      });
+
+      // Write log doc — strip undefined so Firestore cannot silently reject the whole update
+      logData = stripUndefinedDeep(buildConversationLogData(params, existing, actualMessageCount, nowStr));
+      await logRef.set(logData, { merge: true });
+    }
+
+    console.log(JSON.stringify({
+      checkpoint: "APPT_CONVERSATION_LOG_WRITTEN",
+      conversationId: params.convId,
+      clinicId: params.clinicId,
+      appointmentState: logData.appointmentState || null,
+      appointmentStatus: logData.appointmentStatus || null,
+      status: logData.status,
+      appointmentPersisted: Boolean(params.isAppointmentCreated && params.appointmentId),
+      appointmentId: params.appointmentId || null,
+    }));
+
+    // Message docs are upserted via syncConversationLogMessagesFromHistory above.
+
+  } catch (err: any) {
+    console.error("[logConversation] Error:", JSON.stringify(safeErrorMeta(err)));
+  }
+}
+
+export type ConversationPersistMode = "SEQUENTIAL" | "VOICE_SINGLE_BATCH";
+
+type LogConversationParams = Parameters<typeof logConversation>[0];
+
+/** Conversation log doc fields for one visible turn (pure; `existing` is the doc before it). */
+function buildConversationLogData(
+  params: LogConversationParams,
+  existing: Record<string, any> | null | undefined,
+  actualMessageCount: number,
+  nowStr: string
+): Record<string, any> {
     let status = existing?.status || "open";
     let needsTraining = existing?.needsTraining || false;
     let trainingTopic = existing?.trainingTopic || "";
@@ -132,20 +199,6 @@ export async function logConversation(params: {
       // Written below onto logData.
     }
 
-    const nowStr = new Date().toISOString();
-
-    // Sync full visible history (client history + current turn) into messages.
-    // This prevents "14 mesaj" counts with only the last turn persisted.
-    const actualMessageCount = await syncConversationLogMessagesFromHistory(adminDb, {
-      clinicId: params.clinicId,
-      conversationId: params.convId,
-      history: params.history,
-      userMessage: params.userMessage,
-      aiReply: params.aiReply,
-      baseIso: existing?.createdAt || nowStr,
-      includeLiveSupportSystem: Boolean(params.isLiveSupport),
-    });
-    
     const logData: any = {
       clinicId: params.clinicId,
       updatedAt: nowStr,
@@ -268,25 +321,7 @@ export async function logConversation(params: {
       }
     }
 
-    // Write log doc — strip undefined so Firestore cannot silently reject the whole update
-    await logRef.set(stripUndefinedDeep(logData), { merge: true });
-
-    console.log(JSON.stringify({
-      checkpoint: "APPT_CONVERSATION_LOG_WRITTEN",
-      conversationId: params.convId,
-      clinicId: params.clinicId,
-      appointmentState: logData.appointmentState || null,
-      appointmentStatus: logData.appointmentStatus || null,
-      status: logData.status,
-      appointmentPersisted: Boolean(params.isAppointmentCreated && params.appointmentId),
-      appointmentId: params.appointmentId || null,
-    }));
-
-    // Message docs are upserted via syncConversationLogMessagesFromHistory above.
-
-  } catch (err: any) {
-    console.error("[logConversation] Error:", JSON.stringify(safeErrorMeta(err)));
-  }
+    return logData;
 }
 
 /**
@@ -320,6 +355,7 @@ export async function respondWithVisibleReply(
     appointmentState?: AppointmentState;
     /** When false, skip persistence (empty duplicate / no visible reply). Default true when reply non-empty. */
     skipPersist?: boolean;
+    persistMode?: ConversationPersistMode;
   }
 ): Promise<AgentTurnResult> {
   const reply = typeof payload.reply === "string" ? payload.reply : "";
@@ -327,6 +363,7 @@ export async function respondWithVisibleReply(
     !persist.skipPersist && Boolean(persist.clinicId && persist.convId && reply.trim());
 
   if (shouldPersist) {
+    const persistStartedAt = performance.now();
     await logConversation({
       clinicId: persist.clinicId,
       convId: persist.convId,
@@ -351,7 +388,15 @@ export async function respondWithVisibleReply(
       retrievedDocumentCount: persist.retrievedDocumentCount,
       fallbackReason: persist.fallbackReason,
       appointmentState: persist.appointmentState,
+      ...(persist.persistMode ? { persistMode: persist.persistMode } : {}),
     });
+    console.log(JSON.stringify({
+      checkpoint: "AGENT_TURN_PERSIST_PERF",
+      clinicId: persist.clinicId,
+      conversationId: persist.convId,
+      persistMode: persist.persistMode ?? "SEQUENTIAL",
+      persistMs: Math.round(performance.now() - persistStartedAt),
+    }));
   }
 
   if (persist.convId && payload.conversationId === undefined) {

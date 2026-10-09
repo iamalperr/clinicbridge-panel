@@ -256,7 +256,7 @@ function isExpired(doc: RuntimeLeaseDoc, nowMs: number): boolean {
 
 function snapshotNow(
   snap: RuntimeLeaseSnapshot,
-  deps: RuntimeLeaseDeps
+  deps: Pick<RuntimeLeaseDeps, "localClock">
 ): { nowMs: number; clockSource: RuntimeLeaseClockSource } | null {
   try {
     const ms = snap.readTime?.toMillis();
@@ -290,7 +290,14 @@ type Loaded =
   | { kind: "error"; error: RuntimeLeaseError };
 
 async function load(tx: RuntimeLeaseTransaction, ref: object, bindingId: string, deps: RuntimeLeaseDeps): Promise<Loaded> {
-  const snap = await tx.get(ref);
+  return loadSnapshot(await tx.get(ref), bindingId, deps);
+}
+
+function loadSnapshot(
+  snap: RuntimeLeaseSnapshot,
+  bindingId: string,
+  deps: Pick<RuntimeLeaseDeps, "localClock">
+): Loaded {
   const clock = snapshotNow(snap, deps);
   if (!clock) {
     logLeaseError("VOICE_RUNTIME_LEASE_NO_SERVER_TIME", bindingId, "snapshot has no server read time");
@@ -304,6 +311,36 @@ async function load(tx: RuntimeLeaseTransaction, ref: object, bindingId: string,
 
 function leaseRef(db: RuntimeLeaseFirestore, bindingId: string): object {
   return db.collection(VOICE_RUNTIME_LEASES_COLLECTION).doc(bindingId);
+}
+
+function verifyLoaded(loaded: Loaded, proof: RuntimeLeaseProof, minRemainingMs: number): VerifyRuntimeLeaseResult {
+  if (loaded.kind === "error") return loaded.error;
+  if (loaded.kind === "missing") return fail("RUNTIME_LEASE_NOT_FOUND");
+  const { doc, nowMs, clockSource } = loaded;
+  const denied = checkOwnership(doc, proof);
+  if (denied) return denied;
+  if (doc.status === "RELEASED") return fail("RUNTIME_LEASE_NOT_FOUND");
+  const remainingMs = Date.parse(doc.expiresAt) - nowMs;
+  if (remainingMs <= minRemainingMs || remainingMs <= 0) return fail("RUNTIME_LEASE_EXPIRED");
+  return { ok: true, generation: doc.generation, expiresAt: doc.expiresAt, remainingMs, clockSource };
+}
+
+export function isValidRuntimeLeaseProof(proof: unknown): proof is RuntimeLeaseProof {
+  return isValidProof(proof);
+}
+
+/**
+ * The checks of `verifyRuntimeLease`, applied to a lease snapshot the caller read inside its
+ * own transaction (so the verdict and the caller's writes commit atomically). Pure; the
+ * caller validates the proof and minRemainingMs and must read `voiceRuntimeLeases/{bindingId}`.
+ */
+export function verifyRuntimeLeaseSnapshot(
+  snap: RuntimeLeaseSnapshot,
+  proof: RuntimeLeaseProof,
+  options: { minRemainingMs: number },
+  deps: Pick<RuntimeLeaseDeps, "localClock"> = {}
+): VerifyRuntimeLeaseResult {
+  return verifyLoaded(loadSnapshot(snap, proof.bindingId, deps), proof, options.minRemainingMs);
 }
 
 /* ── Operations ──────────────────────────────────────────────────────── */
@@ -440,18 +477,9 @@ export async function verifyRuntimeLease(
   const ref = leaseRef(db, proof.bindingId);
 
   try {
-    return await db.runTransaction<VerifyRuntimeLeaseResult>(async (tx) => {
-      const loaded = await load(tx, ref, proof.bindingId, deps);
-      if (loaded.kind === "error") return loaded.error;
-      if (loaded.kind === "missing") return fail("RUNTIME_LEASE_NOT_FOUND");
-      const { doc, nowMs, clockSource } = loaded;
-      const denied = checkOwnership(doc, proof);
-      if (denied) return denied;
-      if (doc.status === "RELEASED") return fail("RUNTIME_LEASE_NOT_FOUND");
-      const remainingMs = Date.parse(doc.expiresAt) - nowMs;
-      if (remainingMs <= minRemainingMs || remainingMs <= 0) return fail("RUNTIME_LEASE_EXPIRED");
-      return { ok: true, generation: doc.generation, expiresAt: doc.expiresAt, remainingMs, clockSource };
-    });
+    return await db.runTransaction<VerifyRuntimeLeaseResult>(async (tx) =>
+      verifyLoaded(await load(tx, ref, proof.bindingId, deps), proof, minRemainingMs)
+    );
   } catch (err) {
     logLeaseError("VOICE_RUNTIME_LEASE_VERIFY_FAILED", proof.bindingId, err);
     return fail("RUNTIME_LEASE_LOOKUP_FAILED");

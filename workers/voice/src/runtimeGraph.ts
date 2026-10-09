@@ -5,7 +5,11 @@
  * connections; the Admin Firestore handle is passed in by the job entry.
  */
 
-import { createRuntimeLeaseOperations, type RuntimeLeaseOperations } from "@/lib/voice/runtime/callController";
+import {
+  createRuntimeLeaseOperations,
+  type CallControllerOptions,
+  type RuntimeLeaseOperations,
+} from "@/lib/voice/runtime/callController";
 import { composeVoiceRuntimeCapabilities } from "@/lib/voice/runtime/composeVoiceRuntime";
 import { createVoiceRuntimeBridge, type VoiceRuntimeBridge } from "@/lib/voice/runtime/voiceRuntimeBridge";
 import type { VoiceWorkerAdminDb } from "./adminGuard";
@@ -17,11 +21,14 @@ export { createCallController, createRuntimeLeaseOperations } from "@/lib/voice/
 export interface VoiceRuntimeGraph {
   bridge: VoiceRuntimeBridge;
   lease: RuntimeLeaseOperations;
+  /** The composed bridge verifies the lease inside its turn id transaction. */
+  controllerOptions: Pick<CallControllerOptions, "verifyLeaseInTurnAllocation">;
 }
 
 export function createVoiceRuntimeGraph(adminDb: VoiceWorkerAdminDb): VoiceRuntimeGraph {
   return {
     bridge: createVoiceRuntimeBridge({ capabilities: composeVoiceRuntimeCapabilities({ adminDb }) }),
     lease: createRuntimeLeaseOperations({ adminDb }),
+    controllerOptions: { verifyLeaseInTurnAllocation: true },
   };
 }

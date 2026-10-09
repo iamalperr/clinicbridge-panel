@@ -4,6 +4,8 @@
  */
 
 import type { AppointmentData, AppointmentState } from "@/lib/agent/types";
+import type { RuntimeLeaseErrorCode, RuntimeLeaseProof } from "./runtime/runtimeLease";
+import type { AllocateTurnIdResult } from "./telephony/callBinding";
 
 export type CallSessionStatus = "STARTED" | "ACTIVE" | "COMPLETED" | "FAILED";
 
@@ -58,6 +60,39 @@ export interface VoiceTurnInput {
   /** Optional soft check — must match session.clinicId when provided. */
   clinicId?: string;
 }
+
+/**
+ * Read-only turn context loaded ahead of processVoiceTurn (in parallel with turn id
+ * allocation). Never rejects; processVoiceTurn validates it against the session it describes.
+ */
+export interface VoiceTurnPrefetch {
+  callSessionId: string;
+  clinicId: string;
+  conversationId: string;
+  session: { ok: true; value: CallSession | null } | { ok: false; error: unknown };
+  history: { ok: true; value: Array<{ role: "user" | "assistant"; content: string }> } | { ok: false };
+  sessionReadMs: number;
+  historyMs: number;
+}
+
+export interface ProcessVoiceTurnOptions {
+  prefetch?: Promise<VoiceTurnPrefetch>;
+}
+
+export type VoiceTurnLeaseErrorCode = RuntimeLeaseErrorCode;
+
+/**
+ * Runtime-lease ownership check verified in the same transaction that allocates the turn id.
+ * `proof` is the controller's in-memory lease handle; it is never logged or persisted.
+ */
+export interface VoiceTurnLeaseCheck {
+  proof: RuntimeLeaseProof;
+  minRemainingMs: number;
+}
+
+export type LeasedTurnAllocationResult =
+  | AllocateTurnIdResult
+  | { ok: false; code: "TURN_LEASE_REJECTED"; leaseCode: VoiceTurnLeaseErrorCode };
 
 export interface VoiceTurnEscalation {
   kind: "live_support";

@@ -21,7 +21,10 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
  * Uses an in-memory cache to avoid repeated reads.
  */
 async function loadPricingCache(): Promise<AIModelPricing[]> {
-  if (Date.now() - pricingCacheTime < CACHE_TTL_MS && pricingCache.length > 0) {
+  // A successful load is reused for the TTL even when it found no active pricing; otherwise
+  // every AI request would re-query Firestore before returning its content. Failed loads
+  // are not cached.
+  if (pricingCacheTime > 0 && Date.now() - pricingCacheTime < CACHE_TTL_MS) {
     return pricingCache;
   }
 

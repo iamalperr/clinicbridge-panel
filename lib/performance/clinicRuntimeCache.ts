@@ -42,6 +42,13 @@ export function getCachedClinicRuntime(clinicId: string): CachedClinicRuntimeBun
   return entry.value;
 }
 
+/** Remaining lifetime of a cached entry in ms; 0 when absent or expired. */
+export function getClinicRuntimeCacheRemainingMs(clinicId: string): number {
+  const entry = cache.get(clinicId);
+  if (!entry) return 0;
+  return Math.max(0, entry.expiresAt - Date.now());
+}
+
 export function setCachedClinicRuntime(
   clinicId: string,
   value: Omit<CachedClinicRuntimeBundle, "fetchedAt">,

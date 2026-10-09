@@ -392,14 +392,22 @@ describe("A. speech providers", () => {
     expect(sessionSource).toContain("vad: providers.vad");
   });
 
-  it("4. the LiveKit audio turn detector is supplied explicitly; LiveKit endpointing defaults are kept", () => {
+  it("4. the LiveKit audio turn detector is supplied explicitly; only maxDelay is overridden (Turkish phone hold)", () => {
     expect(plan().turnDetector).toEqual({ version: "v1" });
     const resolved = resolveSpeechStack(plan(), fakeFactories());
     expect(resolved.ok && resolved.providers.turnDetection).toEqual({ kind: "eot", p: { version: "v1" } });
     expect(providersSource).toContain("new inference.TurnDetector({ version: plan.version })");
     expect(sessionSource).toContain("turnDetection: providers.turnDetection");
-    expect(VOICE_ENDPOINTING_OVERRIDES).toEqual({});
-    expect(buildVoiceSessionConfig().session.turnHandling.endpointing).toEqual({});
+    // minDelay stays LiveKit's 300 ms; maxDelay 2500 → 1500 bounds the "caller sounds unfinished" hold.
+    expect(VOICE_ENDPOINTING_OVERRIDES).toEqual({ maxDelay: 1_500 });
+    expect(Object.isFrozen(VOICE_ENDPOINTING_OVERRIDES)).toBe(true);
+    expect(buildVoiceSessionConfig().session.turnHandling.endpointing).toEqual({ maxDelay: 1_500 });
+    // Conservative bounds: never below the 1.2 s hesitation floor, never above the old default.
+    expect(VOICE_ENDPOINTING_OVERRIDES.maxDelay).toBeGreaterThanOrEqual(1_200);
+    expect(VOICE_ENDPOINTING_OVERRIDES.maxDelay).toBeLessThan(2_500);
+    expect(VOICE_ENDPOINTING_OVERRIDES.minDelay).toBeUndefined();
+    // The VAD silence that precedes the hold is unchanged (turn detector needs ≥ 250 ms).
+    expect(VOICE_VAD_OPTIONS.minSilenceDuration).toBe(250);
     const failing = fakeFactories({
       createTurnDetector: () => {
         throw new Error("apiKey is required");

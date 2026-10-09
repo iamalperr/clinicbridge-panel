@@ -70,11 +70,50 @@ function calculateKeywordScore(text: string, queries: string[]): number {
  * Performs a hybrid search over clinic documents containing embedding chunks.
  * clinicDocs format: Array of { id, title, content, embeddingChunks: [{ text, embedding, chunk_index }] }
  */
+/** Spoken-turn query embedding budget; past it the turn is scored with keywords only. */
+export const VOICE_RAG_EMBED_BUDGET_MS = 1_500;
+
+export interface HybridSearchOptions {
+  /**
+   * Bounded retrieval for realtime voice: no LLM query rewrite (the raw message is the query,
+   * as when a rewrite fails) and one embedding call capped at `embedBudgetMs`
+   * (default VOICE_RAG_EMBED_BUDGET_MS). A timeout or failure falls back to keyword scoring
+   * over the same clinic documents.
+   */
+  voiceBudget?: { embedBudgetMs?: number };
+}
+
+export type VoiceRagOutcome = "VECTOR" | "KEYWORD_TIMEOUT" | "KEYWORD_ERROR";
+
+async function embedWithinBudget(
+  userMessage: string,
+  budgetMs: number
+): Promise<{ embeddings: number[][]; outcome: VoiceRagOutcome }> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<"TIMEOUT">((resolve) => {
+    timer = setTimeout(() => resolve("TIMEOUT"), budgetMs);
+  });
+  const embed = generateEmbeddings([userMessage], { timeoutMs: budgetMs, maxRetries: 0 });
+  // A late rejection after the deadline already won must not surface as unhandled.
+  embed.catch(() => undefined);
+  try {
+    const winner = await Promise.race([embed, deadline]);
+    if (winner === "TIMEOUT") return { embeddings: [], outcome: "KEYWORD_TIMEOUT" };
+    return { embeddings: winner, outcome: "VECTOR" };
+  } catch (err) {
+    console.warn("[retrievalService] voice embedding failed, keyword scoring only:", JSON.stringify(safeErrorMeta(err)));
+    return { embeddings: [], outcome: "KEYWORD_ERROR" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function hybridSearch(
   userMessage: string,
   clinicDocs: any[],
   clinicName: string = "",
-  topK: number = 5
+  topK: number = 5,
+  options: HybridSearchOptions = {}
 ): Promise<RetrievedChunk[]> {
   if (!clinicDocs || clinicDocs.length === 0) return [];
 
@@ -82,7 +121,22 @@ export async function hybridSearch(
   let queries = [userMessage];
   let queryEmbeddings: number[][] = [];
 
-  if (process.env.OPENAI_API_KEY) {
+  if (options.voiceBudget && process.env.OPENAI_API_KEY) {
+    const budgetMs = options.voiceBudget.embedBudgetMs ?? VOICE_RAG_EMBED_BUDGET_MS;
+    const embedStarted = performance.now();
+    const embedded = await embedWithinBudget(userMessage, budgetMs);
+    queryEmbeddings = embedded.embeddings;
+    console.log(JSON.stringify({
+      checkpoint: "RAG_PERF",
+      mode: "voice_budget",
+      rewriteMs: 0,
+      embedMs: Math.round(performance.now() - embedStarted),
+      embedBudgetMs: budgetMs,
+      outcome: embedded.outcome,
+      queryCount: 1,
+      clinicName: clinicName || undefined,
+    }));
+  } else if (process.env.OPENAI_API_KEY) {
     try {
       const rewriteStarted = performance.now();
       const rewritten = await rewriteQuery(userMessage, clinicName);

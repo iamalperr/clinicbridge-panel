@@ -2,7 +2,7 @@
  * Load + reconcile single-clinic conversation transcripts (admin SDK).
  */
 
-import type { Firestore } from "firebase-admin/firestore";
+import type { DocumentReference, Firestore, QuerySnapshot, WriteBatch } from "firebase-admin/firestore";
 import {
   buildTurnsFromClientHistory,
   countVisibleConversationMessages,
@@ -62,14 +62,29 @@ export async function loadClinicConversationTranscript(
     .collection("conversationLogs")
     .doc(conversationId);
 
-  const logSnap = await logRef.get();
   // Allow legacy-only conversations that never got a conversationLogs doc.
   const legacyRef = adminDb
     .collection("clinics")
     .doc(clinicId)
     .collection("conversations")
     .doc(conversationId);
-  const legacySnap = await legacyRef.get();
+
+  // The four reads are independent: issue them together. Document reads still reject the
+  // load; a failed messages subcollection read (missing index / empty) still falls through.
+  const [logSnap, legacySnap, canonicalMessages, legacyTurnMessages] = await Promise.all([
+    logRef.get(),
+    legacyRef.get(),
+    readMessagesSubcollection(adminDb, {
+      clinicId,
+      collection: "conversationLogs",
+      conversationId,
+    }).catch((): RawTranscriptMessage[] => []),
+    readMessagesSubcollection(adminDb, {
+      clinicId,
+      collection: "conversations",
+      conversationId,
+    }).catch((): RawTranscriptMessage[] => []),
+  ]);
 
   if (!logSnap.exists && !legacySnap.exists) {
     return null;
@@ -78,31 +93,9 @@ export async function loadClinicConversationTranscript(
   const logData = logSnap.exists ? logSnap.data() || {} : {};
   const legacyData = legacySnap.exists ? legacySnap.data() || {} : {};
 
-  let canonicalMessages: RawTranscriptMessage[] = [];
-  let legacyTurnMessages: RawTranscriptMessage[] = [];
   const sourcesUsed: string[] = [];
-
-  try {
-    canonicalMessages = await readMessagesSubcollection(adminDb, {
-      clinicId,
-      collection: "conversationLogs",
-      conversationId,
-    });
-    if (canonicalMessages.length) sourcesUsed.push("conversationLogs.messages");
-  } catch {
-    // Missing index / empty — fall through
-  }
-
-  try {
-    legacyTurnMessages = await readMessagesSubcollection(adminDb, {
-      clinicId,
-      collection: "conversations",
-      conversationId,
-    });
-    if (legacyTurnMessages.length) sourcesUsed.push("legacy.conversations.messages");
-  } catch {
-    /* ignore */
-  }
+  if (canonicalMessages.length) sourcesUsed.push("conversationLogs.messages");
+  if (legacyTurnMessages.length) sourcesUsed.push("legacy.conversations.messages");
 
   const fullMessagesArray = Array.isArray(logData.messages)
     ? (logData.messages as RawTranscriptMessage[])
@@ -176,28 +169,96 @@ export async function loadClinicConversationTranscript(
   };
 }
 
+type ConversationLogMessageSyncParams = {
+  clinicId: string;
+  conversationId: string;
+  history?: Array<{ role?: string; content?: string }> | null;
+  userMessage: string;
+  aiReply: string;
+  baseIso?: string;
+  includeLiveSupportSystem?: boolean;
+};
+
+function conversationLogRef(adminDb: Firestore, clinicId: string, conversationId: string): DocumentReference {
+  return adminDb.collection("clinics").doc(clinicId).collection("conversationLogs").doc(conversationId);
+}
+
 /**
  * Upsert client history turns into conversationLogs messages (idempotent).
  * Returns the number of visible messages after sync.
  */
 export async function syncConversationLogMessagesFromHistory(
   adminDb: Firestore,
-  params: {
-    clinicId: string;
-    conversationId: string;
-    history?: Array<{ role?: string; content?: string }> | null;
-    userMessage: string;
-    aiReply: string;
-    baseIso?: string;
-    includeLiveSupportSystem?: boolean;
-  }
+  params: ConversationLogMessageSyncParams
 ): Promise<number> {
-  const logRef = adminDb
-    .collection("clinics")
-    .doc(params.clinicId)
-    .collection("conversationLogs")
-    .doc(params.conversationId);
+  const logRef = conversationLogRef(adminDb, params.clinicId, params.conversationId);
+  const existingSnap = await logRef.collection("messages").get();
+  const batch = adminDb.batch();
+  const { writes } = stageConversationLogMessages(logRef, batch, existingSnap, params);
 
+  if (writes > 0) {
+    await batch.commit();
+  }
+
+  // Count after sync (prefer counting synced turns; include existing extras).
+  const after = await logRef.collection("messages").get();
+  return after.size;
+}
+
+/** Firestore's per-batch limit is 500 writes; leave headroom for the log doc itself. */
+export const CONVERSATION_LOG_SINGLE_BATCH_MAX_WRITES = 450;
+
+export type SingleBatchConversationLogResult =
+  | { committed: true; logData: Record<string, unknown>; messageCount: number }
+  | { committed: false; reason: "TOO_MANY_WRITES" };
+
+/**
+ * One visible turn persisted with two round trips instead of five: the log doc and its
+ * messages are read in parallel, then the message upserts and the log doc merge commit in
+ * ONE atomic batch (all-or-nothing). Same documents and fields as
+ * `syncConversationLogMessagesFromHistory` + the caller's log doc `set(merge)`.
+ *
+ * `messageCount` is the union of existing and upserted message ids, which equals the
+ * sequential path's re-read count unless another writer adds messages concurrently.
+ * Callers fall back to the sequential path when `committed` is false.
+ */
+export async function commitConversationLogTurnInSingleBatch(
+  adminDb: Firestore,
+  params: Omit<ConversationLogMessageSyncParams, "baseIso"> & {
+    nowIso: string;
+    buildLogData(existing: Record<string, any> | null, messageCount: number): Record<string, unknown>;
+  }
+): Promise<SingleBatchConversationLogResult> {
+  const logRef = conversationLogRef(adminDb, params.clinicId, params.conversationId);
+  const [logSnap, existingSnap] = await Promise.all([logRef.get(), logRef.collection("messages").get()]);
+  const existing = logSnap.exists ? (logSnap.data() ?? null) : null;
+
+  const batch = adminDb.batch();
+  const { writes, docIds } = stageConversationLogMessages(logRef, batch, existingSnap, {
+    ...params,
+    baseIso: existing?.createdAt || params.nowIso,
+  });
+  if (writes + 1 > CONVERSATION_LOG_SINGLE_BATCH_MAX_WRITES) {
+    return { committed: false, reason: "TOO_MANY_WRITES" };
+  }
+
+  const messageCount = new Set([...existingSnap.docs.map((d) => d.id), ...docIds]).size;
+  const logData = params.buildLogData(existing, messageCount);
+  batch.set(logRef, logData, { merge: true });
+  await batch.commit();
+  return { committed: true, logData, messageCount };
+}
+
+/**
+ * Stages the idempotent message upserts of one history sync on `batch`.
+ * Returns the number of staged writes and the ids of the staged message docs.
+ */
+function stageConversationLogMessages(
+  logRef: DocumentReference,
+  batch: WriteBatch,
+  existingSnap: QuerySnapshot,
+  params: ConversationLogMessageSyncParams
+): { writes: number; docIds: string[] } {
   const turns = buildTurnsFromClientHistory({
     history: params.history,
     userMessage: params.userMessage,
@@ -206,7 +267,6 @@ export async function syncConversationLogMessagesFromHistory(
 
   const base = Date.parse(params.baseIso || "") || Date.now();
   // Preserve first-write timestamps: re-sync must not shuffle chronology.
-  const existingSnap = await logRef.collection("messages").get();
   const existingById = new Map(existingSnap.docs.map((d) => [d.id, d.data() || {}]));
   let nextSequence =
     Math.max(
@@ -217,12 +277,13 @@ export async function syncConversationLogMessagesFromHistory(
       })
     ) + 1;
 
-  const batch = adminDb.batch();
   let writes = 0;
+  const docIds: string[] = [];
   const now = Date.now();
 
   turns.forEach((turn, index) => {
     const docId = stableHistoryMessageDocId(turn.role, turn.content, index);
+    docIds.push(docId);
     const ref = logRef.collection("messages").doc(docId);
     const prior = existingById.get(docId);
     const isNew = !prior;
@@ -252,6 +313,7 @@ export async function syncConversationLogMessagesFromHistory(
   if (params.includeLiveSupportSystem) {
     const sysContent = "Canlı Destek Yönlendirmesi Gösterildi";
     const sysId = stableHistoryMessageDocId("system", sysContent, turns.length);
+    docIds.push(sysId);
     const prior = existingById.get(sysId);
     batch.set(
       logRef.collection("messages").doc(sysId),
@@ -274,13 +336,7 @@ export async function syncConversationLogMessagesFromHistory(
     writes++;
   }
 
-  if (writes > 0) {
-    await batch.commit();
-  }
-
-  // Count after sync (prefer counting synced turns; include existing extras).
-  const after = await logRef.collection("messages").get();
-  return after.size;
+  return { writes, docIds };
 }
 
 export interface PersistVisibleChatTurnParams {

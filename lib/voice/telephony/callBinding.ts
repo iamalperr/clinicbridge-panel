@@ -508,24 +508,51 @@ export async function allocateNextTurnId(
   const ref = db.collection(VOICE_CALLS_COLLECTION).doc(bindingId);
   try {
     return await db.runTransaction<AllocateTurnIdResult>(async (tx) => {
-      const snap = await tx.get(ref);
-      if (!snap.exists) return fail("CALL_BINDING_NOT_FOUND", bindingId);
-      const doc = parseDoc(snap.data());
-      if (!doc) return fail("CALL_BINDING_LOOKUP_FAILED", bindingId);
-      if (doc.clinicId !== input.clinicId) return fail("CALL_BINDING_TENANT_CONFLICT", bindingId);
-      const terminal = statusError(doc);
-      if (terminal) return terminal;
-      if (doc.status !== "ACTIVE") return fail("CALL_BINDING_INITIALIZING", bindingId);
-      if (doc.turnSeq >= CALL_BINDING_MAX_TURNS) return fail("CALL_BINDING_TURN_LIMIT", bindingId);
-
-      const turnSeq = doc.turnSeq + 1;
-      tx.update(ref, { turnSeq, updatedAt: nowIso(deps) });
-      return { ok: true, bindingId, turnSeq, turnId: formatTurnId(bindingId, turnSeq) };
+      const planned = planTurnAllocation(await tx.get(ref), { bindingId, clinicId: input.clinicId }, deps);
+      if (!planned.ok) return planned;
+      tx.update(ref, planned.patch);
+      return planned.result;
     });
   } catch (err) {
     logBindingError("VOICE_CALL_BINDING_TURN_ALLOC_FAILED", bindingId, err);
     return fail("CALL_BINDING_UPDATE_FAILED", bindingId);
   }
+}
+
+export type PlannedTurnAllocation =
+  | {
+      ok: true;
+      result: Extract<AllocateTurnIdResult, { ok: true }>;
+      patch: { turnSeq: number; updatedAt: string };
+    }
+  | CallBindingError;
+
+/**
+ * The allocation rules of `allocateNextTurnId` for a `voiceCalls/{bindingId}` snapshot read
+ * inside the caller's transaction. Pure: the caller applies `patch` with `tx.update` in the
+ * same transaction. Inputs must already be validated.
+ */
+export function planTurnAllocation(
+  snap: CallBindingSnapshot,
+  input: { bindingId: string; clinicId: string },
+  deps: Pick<CallBindingStoreDeps, "now">
+): PlannedTurnAllocation {
+  const { bindingId } = input;
+  if (!snap.exists) return fail("CALL_BINDING_NOT_FOUND", bindingId);
+  const doc = parseDoc(snap.data());
+  if (!doc) return fail("CALL_BINDING_LOOKUP_FAILED", bindingId);
+  if (doc.clinicId !== input.clinicId) return fail("CALL_BINDING_TENANT_CONFLICT", bindingId);
+  const terminal = statusError(doc);
+  if (terminal) return terminal;
+  if (doc.status !== "ACTIVE") return fail("CALL_BINDING_INITIALIZING", bindingId);
+  if (doc.turnSeq >= CALL_BINDING_MAX_TURNS) return fail("CALL_BINDING_TURN_LIMIT", bindingId);
+
+  const turnSeq = doc.turnSeq + 1;
+  return {
+    ok: true,
+    result: { ok: true, bindingId, turnSeq, turnId: formatTurnId(bindingId, turnSeq) },
+    patch: { turnSeq, updatedAt: (deps.now?.() ?? new Date()).toISOString() },
+  };
 }
 
 type TerminalTransition =

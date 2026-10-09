@@ -17,6 +17,7 @@ import type {
 import { deriveCallBindingId, formatTurnId } from "@/lib/voice/telephony/callBinding";
 import { fallbackForEndReason, getFallbackSpeech, INITIAL_SILENCE_STATE } from "@/lib/voice/telephony/lifecyclePolicy";
 import { createCompletionGuard } from "@/workers/voice/src/call/completionGuard";
+import { createEventLoopLagProbe } from "@/workers/voice/src/call/eventLoopLag";
 import { resolveCallGreeting } from "@/workers/voice/src/call/greeting";
 import { classifySpeechPlayback, finalReplyPlaybackOutcome, type SpeechPlaybackOutcome } from "@/workers/voice/src/call/playback";
 import type { SpeechSessionHandlers, SpeechSessionPort } from "@/workers/voice/src/call/ports";
@@ -944,5 +945,87 @@ describe("H. privacy", () => {
     const unsafe = { bindingId: "vc_1", transcript: "TRANSCRIPT_SECRET", callerPhone: CALLER_PHONE, leaseToken: TOKEN };
     log("CHECK", unsafe as unknown as Parameters<typeof log>[1]);
     expect(JSON.parse(lines[0])).toEqual({ checkpoint: "CHECK", bindingId: "vc_1" });
+  });
+});
+
+/* ── I. Playout telemetry ────────────────────────────────────────────── */
+
+describe("I. playout telemetry", () => {
+  function playoutLogs(h: ReturnType<typeof harness>) {
+    return h.lines.map((l) => JSON.parse(l) as Record<string, unknown>).filter((l) => String(l.checkpoint).startsWith("VOICE_WORKER_PLAYOUT_"));
+  }
+
+  it("each reply logs exactly one outcome with turnSeq, speech kind, lease generation and duration", async () => {
+    const h = await startedCall();
+    await exchange(h, "bir", turnResult(1));
+    vi.advanceTimersByTime(1_200);
+    h.speech.says[0].finish("INTERRUPTED");
+    await flush();
+    await exchange(h, "iki", turnResult(2));
+    h.speech.says[1].finish("COMPLETED");
+    await flush();
+
+    const replies = playoutLogs(h).filter((l) => l.speechKind === "REPLY");
+    expect(replies.map((l) => [l.checkpoint, l.turnSeq, l.outcome])).toEqual([
+      ["VOICE_WORKER_PLAYOUT_INTERRUPTED", 1, "INTERRUPTED"],
+      ["VOICE_WORKER_PLAYOUT_COMPLETED", 2, "COMPLETED"],
+    ]);
+    expect(replies[0]).toMatchObject({ leaseGeneration: 1, durationMs: 1_200, bindingId: BINDING_ID });
+  });
+
+  it("a failed reply logs PLAYOUT_FAILED; the greeting is tagged GREETING", async () => {
+    const h = harness();
+    await flush();
+    h.speech.says[0].finish("COMPLETED");
+    await flush();
+    await exchange(h, "merhaba", turnResult(1));
+    h.speech.says[1].finish("FAILED");
+    await flush();
+    const logs = playoutLogs(h);
+    expect(logs.find((l) => l.speechKind === "GREETING")).toMatchObject({ checkpoint: "VOICE_WORKER_PLAYOUT_COMPLETED" });
+    expect(logs.find((l) => l.speechKind === "REPLY")).toMatchObject({ checkpoint: "VOICE_WORKER_PLAYOUT_FAILED", turnSeq: 1, outcome: "FAILED" });
+  });
+
+  it("PLAYOUT_STARTED reports time to first audio and playoutMs covers audible time", async () => {
+    const h = await startedCall();
+    const firstAudio = deferred<number | null>();
+    const outcome = deferred<SpeechPlaybackOutcome>();
+    h.speech.port.say.mockImplementationOnce(() => ({ outcome: outcome.promise, started: firstAudio.promise }));
+    await exchange(h, "merhaba", turnResult(1));
+    vi.advanceTimersByTime(400);
+    firstAudio.resolve(Date.now());
+    await flush();
+    vi.advanceTimersByTime(2_000);
+    outcome.resolve("COMPLETED");
+    await flush();
+    const logs = playoutLogs(h).filter((l) => l.speechKind === "REPLY");
+    expect(logs.map((l) => l.checkpoint)).toEqual(["VOICE_WORKER_PLAYOUT_STARTED", "VOICE_WORKER_PLAYOUT_COMPLETED"]);
+    expect(logs[0]).toMatchObject({ turnSeq: 1, ttsFirstAudioMs: 400 });
+    expect(logs[1]).toMatchObject({ playoutMs: 2_000, durationMs: 2_400 });
+  });
+
+  it("playout logs carry no speech, reply or transcript text", async () => {
+    const h = await startedCall();
+    await exchange(h, "TRANSCRIPT_SECRET_9", turnResult(1));
+    h.speech.says[0].finish("INTERRUPTED");
+    await flush();
+    const serialized = JSON.stringify(playoutLogs(h));
+    for (const secret of ["SPEECH_SECRET", "REPLY_SECRET", "TRANSCRIPT_SECRET", CALLER_PHONE]) expect(serialized).not.toContain(secret);
+  });
+
+  it("barge-in settings are untouched: replies still map allowBargeIn to allowInterruptions", async () => {
+    const h = await startedCall();
+    await exchange(h, "bir", turnResult(1, UNINTERRUPTIBLE));
+    expect(h.speech.says[0].allowInterruptions).toBe(false);
+  });
+
+  it("the event-loop probe reports integer millisecond stats", () => {
+    const probe = createEventLoopLagProbe(10);
+    probe.reset();
+    const sample = probe.read();
+    if (sample) {
+      expect(Number.isInteger(sample.eventLoopMaxMs)).toBe(true);
+      expect(Number.isInteger(sample.eventLoopP99Ms)).toBe(true);
+    }
   });
 });

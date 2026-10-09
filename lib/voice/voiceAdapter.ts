@@ -21,12 +21,16 @@ import type {
   CallSession,
   EndCallSessionInput,
   EndCallSessionResult,
+  ProcessVoiceTurnOptions,
   StartCallSessionInput,
   StartCallSessionResult,
   VoiceErrorResult,
   VoiceTurnInput,
+  VoiceTurnPrefetch,
   VoiceTurnResult,
 } from "./types";
+
+export type { ProcessVoiceTurnOptions, VoiceTurnPrefetch } from "./types";
 
 export interface VoiceAdapterDeps {
   sessionStore: CallSessionStore;
@@ -46,6 +50,69 @@ export interface VoiceAdapterDeps {
   }) => Promise<AgentHistoryTurn[]>;
   now?: () => Date;
   generateId?: (prefix: string) => string;
+  /**
+   * Write post-turn session bookkeeping (status/locale/processed turn ids) after the reply is
+   * returned instead of before. Writes stay ordered per call session: the next turn, a prefetch
+   * and endCallSession all wait for it first.
+   */
+  deferSessionBookkeeping?: boolean;
+}
+
+const pendingSessionWrites = new Map<string, Promise<void>>();
+
+/** Resolves once deferred bookkeeping writes for this call session have settled. */
+export function awaitVoiceSessionWrites(callSessionId: string): Promise<void> {
+  return pendingSessionWrites.get(callSessionId) ?? Promise.resolve();
+}
+
+function enqueueSessionWrite(
+  callSessionId: string,
+  write: () => Promise<void>,
+  onError: (err: unknown) => void
+): void {
+  const queued: Promise<void> = awaitVoiceSessionWrites(callSessionId)
+    .then(write)
+    .catch(onError)
+    .finally(() => {
+      if (pendingSessionWrites.get(callSessionId) === queued) pendingSessionWrites.delete(callSessionId);
+    });
+  pendingSessionWrites.set(callSessionId, queued);
+}
+
+function elapsedMs(startedAt: number): number {
+  return Math.round(performance.now() - startedAt);
+}
+
+/**
+ * Load the session and server history for the next turn of a known call. Reads only.
+ * `clinicId`/`conversationId` must come from the trusted call binding.
+ */
+export async function prefetchVoiceTurnContext(
+  deps: VoiceAdapterDeps,
+  input: { callSessionId: string; clinicId: string; conversationId: string }
+): Promise<VoiceTurnPrefetch> {
+  const { callSessionId, clinicId, conversationId } = input;
+  const sessionRead = (async (): Promise<Pick<VoiceTurnPrefetch, "session" | "sessionReadMs">> => {
+    await awaitVoiceSessionWrites(callSessionId);
+    const startedAt = performance.now();
+    try {
+      const value = await deps.sessionStore.get(callSessionId);
+      return { session: { ok: true, value }, sessionReadMs: elapsedMs(startedAt) };
+    } catch (error) {
+      return { session: { ok: false, error }, sessionReadMs: elapsedMs(startedAt) };
+    }
+  })();
+  const historyRead = (async (): Promise<Pick<VoiceTurnPrefetch, "history" | "historyMs">> => {
+    const startedAt = performance.now();
+    try {
+      const value = await (deps.loadHistory ?? loadServerAgentHistory)({ adminDb: deps.adminDb, clinicId, conversationId });
+      return { history: { ok: true, value }, historyMs: elapsedMs(startedAt) };
+    } catch {
+      return { history: { ok: false }, historyMs: elapsedMs(startedAt) };
+    }
+  })();
+  const [s, h] = await Promise.all([sessionRead, historyRead]);
+  return { callSessionId, clinicId, conversationId, ...s, ...h };
 }
 
 function defaultId(prefix: string): string {
@@ -250,7 +317,8 @@ export async function startCallSession(
  */
 export async function processVoiceTurn(
   deps: VoiceAdapterDeps,
-  input: VoiceTurnInput
+  input: VoiceTurnInput,
+  options: ProcessVoiceTurnOptions = {}
 ): Promise<VoiceTurnResult | VoiceErrorResult> {
   const callSessionId = String(input.callSessionId || "").trim();
   if (!callSessionId) {
@@ -262,7 +330,21 @@ export async function processVoiceTurn(
     return err("EMPTY_TRANSCRIPT", "Transcript text is empty", { callSessionId });
   }
 
-  const session = await deps.sessionStore.get(callSessionId);
+  const prefetched = options.prefetch ? await options.prefetch : null;
+  const usablePrefetch = prefetched && prefetched.callSessionId === callSessionId ? prefetched : null;
+
+  let session: CallSession | null;
+  let sessionReadMs: number;
+  if (usablePrefetch) {
+    if (!usablePrefetch.session.ok) throw usablePrefetch.session.error;
+    session = usablePrefetch.session.value;
+    sessionReadMs = usablePrefetch.sessionReadMs;
+  } else {
+    await awaitVoiceSessionWrites(callSessionId);
+    const startedAt = performance.now();
+    session = await deps.sessionStore.get(callSessionId);
+    sessionReadMs = elapsedMs(startedAt);
+  }
   if (!session) {
     return err("SESSION_NOT_FOUND", "Call session not found", { callSessionId });
   }
@@ -296,11 +378,28 @@ export async function processVoiceTurn(
     });
   }
 
-  const history = await (deps.loadHistory ?? loadServerAgentHistory)({
-    adminDb: deps.adminDb,
-    clinicId: session.clinicId,
-    conversationId: session.conversationId,
-  });
+  // Prefetched history is only used when it was loaded for this session's own conversation.
+  const prefetchedHistory =
+    usablePrefetch &&
+    usablePrefetch.history.ok &&
+    usablePrefetch.clinicId === session.clinicId &&
+    usablePrefetch.conversationId === session.conversationId
+      ? { value: usablePrefetch.history.value, ms: usablePrefetch.historyMs }
+      : null;
+  let history: AgentHistoryTurn[];
+  let historyMs: number;
+  if (prefetchedHistory) {
+    history = prefetchedHistory.value;
+    historyMs = prefetchedHistory.ms;
+  } else {
+    const startedAt = performance.now();
+    history = await (deps.loadHistory ?? loadServerAgentHistory)({
+      adminDb: deps.adminDb,
+      clinicId: session.clinicId,
+      conversationId: session.conversationId,
+    });
+    historyMs = elapsedMs(startedAt);
+  }
 
   const locale = input.locale || session.locale;
   const runAgent = deps.runAgentTurn ?? handleClinicAgentTurn;
@@ -308,6 +407,7 @@ export async function processVoiceTurn(
   const debugLog: string[] = [];
   const perf = new RequestTimer({});
 
+  const agentStartedAt = performance.now();
   let agentResult;
   try {
     agentResult = await runAgent({
@@ -348,6 +448,7 @@ export async function processVoiceTurn(
       conversationId: session.conversationId,
     });
   }
+  const agentMs = elapsedMs(agentStartedAt);
 
   if ((agentResult.httpStatus ?? 200) >= 400 && agentResult.payload?.error) {
     const msg = String(agentResult.payload.error);
@@ -394,13 +495,38 @@ export async function processVoiceTurn(
     ? putTurnResultCache(session.turnResultCache, turnId, result)
     : session.turnResultCache;
 
-  await deps.sessionStore.update(callSessionId, {
+  const sessionPatch: Partial<CallSession> = {
     status: "ACTIVE",
     lastActivityAt: nowIso,
     locale: result.locale || session.locale,
     processedTurnIds,
     turnResultCache,
-  });
+  };
+
+  let sessionWriteMs: number | null = null;
+  if (deps.deferSessionBookkeeping) {
+    const { clinicId, conversationId } = session;
+    enqueueSessionWrite(
+      callSessionId,
+      async () => {
+        await deps.sessionStore.update(callSessionId, sessionPatch);
+      },
+      (e) => {
+        console.error(JSON.stringify({
+          checkpoint: "VOICE_SESSION_BOOKKEEPING_FAILED",
+          callSessionId,
+          conversationId,
+          clinicId,
+          turnId: turnId || null,
+          ...safeErrorMeta(e),
+        }));
+      }
+    );
+  } else {
+    const startedAt = performance.now();
+    await deps.sessionStore.update(callSessionId, sessionPatch);
+    sessionWriteMs = elapsedMs(startedAt);
+  }
 
   console.log(JSON.stringify({
     checkpoint: "VOICE_TURN_PROCESSED",
@@ -412,6 +538,14 @@ export async function processVoiceTurn(
     appointmentState: result.appointmentState || null,
     appointmentCreated: Boolean(result.appointmentCreated),
     escalationRequested: Boolean(result.escalationRequested),
+    prefetchUsed: Boolean(usablePrefetch),
+    historyFromPrefetch: Boolean(prefetchedHistory),
+    sessionReadMs,
+    historyMs,
+    historyTurns: history.length,
+    agentMs,
+    sessionWrite: deps.deferSessionBookkeeping ? "DEFERRED" : "SYNC",
+    ...(sessionWriteMs !== null ? { sessionWriteMs } : {}),
   }));
 
   return result;
@@ -429,6 +563,8 @@ export async function endCallSession(
     return err("SESSION_NOT_FOUND", "callSessionId is required");
   }
 
+  // A deferred turn write must not land after (and overwrite) the terminal status.
+  await awaitVoiceSessionWrites(callSessionId);
   const session = await deps.sessionStore.get(callSessionId);
   if (!session) {
     return err("SESSION_NOT_FOUND", "Call session not found", { callSessionId });

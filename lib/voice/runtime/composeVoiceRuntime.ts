@@ -6,6 +6,7 @@
  * environment variables or initializes Firebase.
  */
 
+import { warmClinicRuntime } from "../../performance/clinicRuntimeLoader";
 import { createFirestoreCallSessionStore, type CallSessionStore } from "../callSessionStore";
 import {
   allocateNextTurnId,
@@ -16,16 +17,29 @@ import {
 } from "../telephony/callBinding";
 import { resolveClinicByDid, type DidResolverFirestore } from "../telephony/didResolver";
 import { createPhase2BoundSessionStarter } from "../telephony/phase2SessionStarter";
-import { endCallSession, processVoiceTurn, type VoiceAdapterDeps } from "../voiceAdapter";
+import {
+  endCallSession,
+  prefetchVoiceTurnContext,
+  processVoiceTurn,
+  type VoiceAdapterDeps,
+} from "../voiceAdapter";
+import { allocateTurnIdUnderLease, type LeasedTurnFirestore } from "./leasedTurnAllocation";
 import type { VoiceRuntimeCapabilities } from "./voiceRuntimeBridge";
 
+/** Refresh the clinic runtime cache ahead of the next turn when less than this is left. */
+export const VOICE_CLINIC_RUNTIME_REFRESH_AHEAD_MS = 25_000;
+
 export interface VoiceRuntimeCompositionDeps {
-  adminDb: CallBindingFirestore & DidResolverFirestore;
+  adminDb: CallBindingFirestore & DidResolverFirestore & LeasedTurnFirestore;
   /** Defaults to the Firestore-backed `voiceCallSessions` store. */
   sessionStore?: CallSessionStore;
   runAgentTurn?: VoiceAdapterDeps["runAgentTurn"];
   loadHistory?: VoiceAdapterDeps["loadHistory"];
   now?: () => Date;
+  /** Default true: post-turn session bookkeeping is written after the reply, in order. */
+  deferSessionBookkeeping?: boolean;
+  /** Default true: pre-warm the clinic runtime cache for the trusted clinicId. */
+  warmClinicRuntime?: boolean;
 }
 
 export function composeVoiceRuntimeCapabilities(deps: VoiceRuntimeCompositionDeps): VoiceRuntimeCapabilities {
@@ -36,6 +50,7 @@ export function composeVoiceRuntimeCapabilities(deps: VoiceRuntimeCompositionDep
     ...(deps.runAgentTurn ? { runAgentTurn: deps.runAgentTurn } : {}),
     ...(deps.loadHistory ? { loadHistory: deps.loadHistory } : {}),
     ...(now ? { now } : {}),
+    deferSessionBookkeeping: deps.deferSessionBookkeeping ?? true,
   };
   const bindingDeps = { adminDb, ...(now ? { now } : {}) };
   const startSession = createPhase2BoundSessionStarter(voiceDeps);
@@ -44,9 +59,27 @@ export function composeVoiceRuntimeCapabilities(deps: VoiceRuntimeCompositionDep
     resolveDid: (input) => resolveClinicByDid({ adminDb }, input),
     getOrCreateBinding: (input) => getOrCreateCallBinding({ ...bindingDeps, startSession }, input),
     allocateTurnId: (input) => allocateNextTurnId(bindingDeps, input),
+    allocateTurnIdUnderLease: (input) => allocateTurnIdUnderLease(bindingDeps, input),
     endBinding: (input) => endCallBinding(bindingDeps, input),
     failBinding: (input) => failCallBinding(bindingDeps, input),
-    processTurn: (input) => processVoiceTurn(voiceDeps, input),
+    processTurn: (input, options) => processVoiceTurn(voiceDeps, input, options),
+    prefetchTurn: (input) => prefetchVoiceTurnContext(voiceDeps, input),
     endSession: (input) => endCallSession(voiceDeps, input),
+    ...(deps.warmClinicRuntime ?? true
+      ? {
+          warmClinicRuntime: async ({ clinicId }: { clinicId: string }) => {
+            const startedAt = performance.now();
+            const outcome = await warmClinicRuntime(voiceDeps.adminDb, clinicId, {
+              minRemainingMs: VOICE_CLINIC_RUNTIME_REFRESH_AHEAD_MS,
+            });
+            console.log(JSON.stringify({
+              checkpoint: "VOICE_CLINIC_RUNTIME_WARM",
+              clinicId,
+              outcome,
+              warmMs: Math.round(performance.now() - startedAt),
+            }));
+          },
+        }
+      : {}),
   };
 }

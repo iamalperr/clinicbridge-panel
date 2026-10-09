@@ -19,9 +19,14 @@
 import type {
   EndCallSessionInput,
   EndCallSessionResult,
+  LeasedTurnAllocationResult,
+  ProcessVoiceTurnOptions,
   VoiceErrorCode,
   VoiceErrorResult,
   VoiceTurnInput,
+  VoiceTurnLeaseCheck,
+  VoiceTurnLeaseErrorCode,
+  VoiceTurnPrefetch,
   VoiceTurnResult,
 } from "../types";
 import {
@@ -69,8 +74,24 @@ export interface VoiceRuntimeCapabilities {
   allocateTurnId(input: { bindingId: string; clinicId: string }): Promise<AllocateTurnIdResult>;
   endBinding(input: { bindingId: string; clinicId: string; reason: CallBindingEndReason }): Promise<CallBindingResult>;
   failBinding(input: { bindingId: string; clinicId: string; failureCode: string }): Promise<CallBindingResult>;
-  processTurn(input: VoiceTurnInput): Promise<VoiceTurnResult | VoiceErrorResult>;
+  processTurn(input: VoiceTurnInput, options?: ProcessVoiceTurnOptions): Promise<VoiceTurnResult | VoiceErrorResult>;
   endSession(input: EndCallSessionInput): Promise<EndCallSessionResult | VoiceErrorResult>;
+  /**
+   * Read-only load of the next turn's session + history, started together with turn id
+   * allocation. Must never reject; processTurn validates it against the session.
+   */
+  prefetchTurn?(input: { callSessionId: string; clinicId: string; conversationId: string }): Promise<VoiceTurnPrefetch>;
+  /** Best-effort clinic runtime cache warm-up for the trusted clinicId; never blocks a turn. */
+  warmClinicRuntime?(input: { clinicId: string }): Promise<void>;
+  /**
+   * Turn id allocation that verifies the runtime lease in the same transaction. Required
+   * whenever processRuntimeTranscript receives a `lease`; without it such turns fail closed.
+   */
+  allocateTurnIdUnderLease?(input: {
+    bindingId: string;
+    clinicId: string;
+    lease: VoiceTurnLeaseCheck;
+  }): Promise<LeasedTurnAllocationResult>;
 }
 
 export interface VoiceRuntimeBridgeOptions {
@@ -119,10 +140,16 @@ export type VoiceRuntimeFailureCode =
   | "TURN_LIMIT_REACHED"
   | "AGENT_FAILED"
   | "SESSION_FAILED"
-  | "INTERNAL_ERROR";
+  | "INTERNAL_ERROR"
+  /** The lease check fused into turn allocation failed (reasonCode: the lease code); no turn ran. */
+  | "LEASE_REJECTED";
 
 /** Machine-readable detail from ClinicBridge's own closed code sets (never raw error text). */
-export type VoiceRuntimeReasonCode = DidResolutionErrorCode | CallBindingErrorCode | VoiceErrorCode;
+export type VoiceRuntimeReasonCode =
+  | DidResolutionErrorCode
+  | CallBindingErrorCode
+  | VoiceErrorCode
+  | VoiceTurnLeaseErrorCode;
 
 export interface VoiceRuntimeFailure {
   ok: false;
@@ -189,12 +216,16 @@ export interface RuntimeCallEnded {
 
 export type EndRuntimeCallResult = RuntimeCallEnded | VoiceRuntimeFailure;
 
+export interface ProcessRuntimeTranscriptInput {
+  runtimeCall: VoiceRuntimeCall;
+  transcript: string;
+  /** When set, the turn id is allocated only if this lease verifies in the same transaction. */
+  lease?: VoiceTurnLeaseCheck;
+}
+
 export interface VoiceRuntimeBridge {
   startRuntimeCall(input: StartRuntimeCallInput): Promise<StartRuntimeCallResult>;
-  processRuntimeTranscript(input: {
-    runtimeCall: VoiceRuntimeCall;
-    transcript: string;
-  }): Promise<ProcessRuntimeTranscriptResult>;
+  processRuntimeTranscript(input: ProcessRuntimeTranscriptInput): Promise<ProcessRuntimeTranscriptResult>;
   endRuntimeCall(input: EndRuntimeCallInput): Promise<EndRuntimeCallResult>;
 }
 
@@ -236,6 +267,21 @@ function logRuntimeError(checkpoint: string, bindingId: string | null, err: unkn
   console.error(
     JSON.stringify({ checkpoint, bindingId, ...voiceErrorLogMeta(err) })
   );
+}
+
+/** Durations and closed-set codes only. */
+function logTurnTiming(fields: {
+  bindingId: string;
+  clinicId: string;
+  callSessionId: string;
+  turnSeq: number | null;
+  outcome: string;
+  prefetch: boolean;
+  allocateMs: number;
+  processTurnMs?: number;
+  totalMs: number;
+}): void {
+  console.log(JSON.stringify({ checkpoint: "VOICE_RUNTIME_TURN_TIMING", ...fields }));
 }
 
 function bindingFailure(code: CallBindingErrorCode): VoiceRuntimeFailure {
@@ -385,6 +431,7 @@ export function createVoiceRuntimeBridge(options: VoiceRuntimeBridgeOptions): Vo
       ending: null,
       ended: null,
     });
+    warmClinic(call);
     return { ok: true, call, created: bound.created };
   }
 
@@ -408,21 +455,71 @@ export function createVoiceRuntimeBridge(options: VoiceRuntimeBridgeOptions): Vo
     }
   }
 
-  async function runTurn(state: LocalCallState, text: string): Promise<ProcessRuntimeTranscriptResult> {
-    const { bindingId, clinicId, callSessionId } = state.call;
+  /** Fire-and-forget; the clinicId is the binding's DID-derived tenant. */
+  function warmClinic(call: VoiceRuntimeCall): void {
+    if (!caps.warmClinicRuntime) return;
+    caps.warmClinicRuntime({ clinicId: call.clinicId }).catch((err) => {
+      logRuntimeError("VOICE_RUNTIME_WARM_FAILED", call.bindingId, err);
+    });
+  }
 
-    const allocated = await caps.allocateTurnId({ bindingId, clinicId });
-    if (!allocated.ok) return { ...bindingFailure(allocated.code), action: "DISCARD" };
+  function allocate(
+    call: VoiceRuntimeCall,
+    lease: VoiceTurnLeaseCheck | undefined
+  ): Promise<LeasedTurnAllocationResult> {
+    const { bindingId, clinicId } = call;
+    if (!lease) return caps.allocateTurnId({ bindingId, clinicId });
+    // A requested lease check is never skipped: without the fused capability the turn fails closed.
+    if (!caps.allocateTurnIdUnderLease) {
+      return Promise.resolve({ ok: false, code: "TURN_LEASE_REJECTED", leaseCode: "RUNTIME_LEASE_INVALID_STATE" });
+    }
+    return caps.allocateTurnIdUnderLease({ bindingId, clinicId, lease });
+  }
+
+  async function runTurn(
+    state: LocalCallState,
+    text: string,
+    lease: VoiceTurnLeaseCheck | undefined
+  ): Promise<ProcessRuntimeTranscriptResult> {
+    const { bindingId, clinicId, callSessionId, conversationId } = state.call;
+    const startedAt = performance.now();
+    const since = (t: number): number => Math.round(performance.now() - t);
+
+    // Reads only, so they may overlap the turn id transaction; the turn itself still starts
+    // strictly after allocation (and, when requested, lease verification) succeeds.
+    const prefetch = caps.prefetchTurn?.({ callSessionId, clinicId, conversationId });
+    const allocated = await allocate(state.call, lease);
+    const allocateMs = since(startedAt);
+    if (!allocated.ok) {
+      const leaseRejected = allocated.code === "TURN_LEASE_REJECTED";
+      logTurnTiming({
+        bindingId, clinicId, callSessionId, turnSeq: null,
+        outcome: leaseRejected ? "LEASE_REJECTED" : "ALLOCATE_FAILED",
+        prefetch: Boolean(prefetch), allocateMs, totalMs: since(startedAt),
+      });
+      if (allocated.code === "TURN_LEASE_REJECTED") {
+        return transcriptFailure("DISCARD", "LEASE_REJECTED", { reasonCode: allocated.leaseCode });
+      }
+      return { ...bindingFailure(allocated.code), action: "DISCARD" };
+    }
 
     // From here the business turn runs to completion: there is no abort, timeout or cancellation hook.
+    const turnInput: VoiceTurnInput = { callSessionId, clinicId, text, turnId: allocated.turnId };
+    const processStartedAt = performance.now();
     let result: VoiceTurnResult | VoiceErrorResult;
     try {
-      result = await caps.processTurn({ callSessionId, clinicId, text, turnId: allocated.turnId });
+      result = prefetch ? await caps.processTurn(turnInput, { prefetch }) : await caps.processTurn(turnInput);
     } catch (err) {
       logRuntimeError("VOICE_RUNTIME_TURN_THREW", bindingId, err);
       return transcriptFailure("DISCARD", "AGENT_FAILED", { endReason: "AGENT_FAILURE" });
     }
+    logTurnTiming({
+      bindingId, clinicId, callSessionId, turnSeq: allocated.turnSeq,
+      outcome: result.ok ? "OK" : result.errorCode,
+      prefetch: Boolean(prefetch), allocateMs, processTurnMs: since(processStartedAt), totalMs: since(startedAt),
+    });
     if (!result.ok) return { ...phase2Failure(result.errorCode), action: "DISCARD" };
+    warmClinic(state.call);
 
     if (result.clinicId !== clinicId || result.callSessionId !== callSessionId) {
       return transcriptFailure("DISCARD", "SESSION_FAILED", {
@@ -452,10 +549,7 @@ export function createVoiceRuntimeBridge(options: VoiceRuntimeBridgeOptions): Vo
     return { ok: true, action: "PROCESS", turn };
   }
 
-  async function processRuntimeTranscript(input: {
-    runtimeCall: VoiceRuntimeCall;
-    transcript: string;
-  }): Promise<ProcessRuntimeTranscriptResult> {
+  async function processRuntimeTranscript(input: ProcessRuntimeTranscriptInput): Promise<ProcessRuntimeTranscriptResult> {
     // Everything up to claiming the in-flight slot is synchronous, so concurrent
     // transcripts for one call cannot both pass the check.
     const state = lookup(input?.runtimeCall);
@@ -474,7 +568,7 @@ export function createVoiceRuntimeBridge(options: VoiceRuntimeBridgeOptions): Vo
       release = resolve;
     });
     try {
-      return await runTurn(state, text);
+      return await runTurn(state, text, input.lease);
     } catch (err) {
       logRuntimeError("VOICE_RUNTIME_TURN_FAILED", state.call.bindingId, err);
       return transcriptFailure("DISCARD", "INTERNAL_ERROR", { endReason: "RUNTIME_FAILURE" });

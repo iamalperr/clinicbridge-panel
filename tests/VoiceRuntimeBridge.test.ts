@@ -31,6 +31,7 @@ import {
   composeVoiceRuntimeCapabilities,
   type VoiceRuntimeCompositionDeps,
 } from "@/lib/voice/runtime/composeVoiceRuntime";
+import type { LeasedTurnFirestore, LeasedTurnTransaction } from "@/lib/voice/runtime/leasedTurnAllocation";
 
 const REPO = resolve(__dirname, "..");
 const DID = "+908502428852";
@@ -747,13 +748,14 @@ function createMemoryDb() {
   const col = (path: string) => ({ doc: (id: string) => ref(`${path}/${id}`) });
 
   let chain: Promise<unknown> = Promise.resolve();
-  const db: CallBindingFirestore & { collection(path: string): { doc(id: string): MemRef } } = {
+  const db: CallBindingFirestore & LeasedTurnFirestore & { collection(path: string): { doc(id: string): MemRef } } = {
     collection: col,
-    runTransaction<T>(fn: (tx: CallBindingTransaction) => Promise<T>): Promise<T> {
+    runTransaction<T>(fn: (tx: CallBindingTransaction & LeasedTurnTransaction) => Promise<T>): Promise<T> {
       const run = chain.then(async () => {
         const writes: Array<() => void> = [];
-        const tx: CallBindingTransaction = {
+        const tx: CallBindingTransaction & LeasedTurnTransaction = {
           get: (r) => (r as MemRef).get(),
+          getAll: (...refs) => Promise.all(refs.map((r) => (r as MemRef).get())),
           create: (r, data) =>
             writes.push(() => {
               const p = (r as MemRef).path;
