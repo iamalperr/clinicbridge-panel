@@ -63,8 +63,7 @@ import {
   type VoiceFallbackCategory,
   type VoiceLifecyclePolicy,
 } from "../telephony/lifecyclePolicy";
-import { toSpeechText } from "../telephony/speechText";
-import { renderSpeechForLocale } from "../telephony/turkishSpeechRenderer";
+import { renderVoiceSpeech, voiceSpeechPresentationLogFields } from "../telephony/renderVoiceSpeech";
 import {
   isVoiceConfigTenantViolation,
   startVoiceConfigShadow,
@@ -599,11 +598,21 @@ export function createVoiceRuntimeBridge(options: VoiceRuntimeBridgeOptions): Vo
 
     state.completedTurns += 1;
     const bargeIn = resolveBargeIn(result, policy);
+    const presented = renderVoiceSpeech({ text: result.replyText, locale: result.locale });
+    console.log(
+      JSON.stringify({
+        checkpoint: "VOICE_SPEECH_PRESENTATION",
+        bindingId,
+        clinicId,
+        turnSeq: allocated.turnSeq,
+        ...voiceSpeechPresentationLogFields(presented.telemetry),
+      })
+    );
     const turn: RuntimeTurnOutput = {
       turnId: allocated.turnId,
       turnSeq: allocated.turnSeq,
       replyText: result.replyText,
-      speechText: renderSpeechForLocale(toSpeechText(result.replyText), result.locale),
+      speechText: presented.spokenText,
       appointmentCreated: Boolean(result.appointmentCreated),
       escalationRequested: Boolean(result.escalationRequested),
       endCallSuggested: Boolean(result.endCallSuggested),

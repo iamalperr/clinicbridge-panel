@@ -42,6 +42,7 @@ import {
 } from "@/lib/voice/telephony/lifecyclePolicy";
 import { extractTrustedSipIdentity, type SipParticipantLike, type SipTrustPolicy, type TrustedSipIdentityErrorCode } from "../sipIdentity";
 import { createCompletionGuard, type CompletionToken } from "./completionGuard";
+import { renderVoiceSpeech, voiceSpeechPresentationLogFields } from "@/lib/voice/telephony/renderVoiceSpeech";
 import { greetingForStartedCall } from "./greeting";
 import { finalReplyPlaybackOutcome, type SpeechPlaybackOutcome } from "./playback";
 import type { CallTransportPort, SpeechPlayback, SpeechSessionFactory, SpeechSessionHandlers, SpeechSessionPort } from "./ports";
@@ -242,10 +243,18 @@ export function runVoiceCall(deps: VoiceCallDeps): VoiceCall {
 
   function speak(text: string, allowInterruptions: boolean, kind: SpeechKind, turnSeq?: number): SpeechPlayback | null {
     if (!speech || speechSuppressed || callerGone) return null;
+    const presented = renderVoiceSpeech({ text, locale: runtimeCall?.locale });
+    if (kind !== "REPLY") {
+      log("VOICE_SPEECH_PRESENTATION", {
+        ...ids(),
+        speechKind: kind,
+        ...voiceSpeechPresentationLogFields(presented.telemetry),
+      });
+    }
     const requestedAt = now();
     let playback: SpeechPlayback;
     try {
-      playback = speech.say(text, { allowInterruptions });
+      playback = speech.say(presented.spokenText, { allowInterruptions });
     } catch {
       observePlayout(FAILED_PLAYBACK, kind, turnSeq, requestedAt);
       return FAILED_PLAYBACK;

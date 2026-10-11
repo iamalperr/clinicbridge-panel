@@ -32,6 +32,16 @@ export const WORKER_LOG_FIELDS = [
   "speechKind",
   "playoutMs",
   "durationMs",
+  "locale",
+  "canonicalLength",
+  "spokenLength",
+  "hasMarkdownTransformation",
+  "hasDateTransformation",
+  "hasTimeTransformation",
+  "hasPhoneTransformation",
+  "hasEmailTransformation",
+  "hasLabelColonTransformation",
+  "rendererStatus",
 ] as const;
 
 export type WorkerLogField = (typeof WORKER_LOG_FIELDS)[number];

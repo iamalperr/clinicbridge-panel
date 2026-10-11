@@ -34,7 +34,7 @@ describe("time", () => {
   });
 
   it("does not double 'saat' after a saat label or word", () => {
-    expect(renderTurkishSpeech("Tercih Edilen Saat: 14:00.")).toBe("Tercih Edilen Saat: on dört.");
+    expect(renderTurkishSpeech("Tercih Edilen Saat: 14:00.")).toBe("Tercih Edilen Saat, on dört.");
     expect(renderTurkishSpeech("saat 09:30 uygun mu?")).toBe("saat dokuz otuz uygun mu?");
   });
 
@@ -60,6 +60,11 @@ describe("time", () => {
 describe("date", () => {
   it("12.10.2026 → natural Turkish spoken date", () => {
     expect(renderTurkishSpeech("12.10.2026")).toBe("on iki Ekim iki bin yirmi altı");
+  });
+
+  it("localized confirmation dates (day Month year [weekday]) are spoken as cardinals", () => {
+    expect(renderTurkishSpeech("12 Ekim 2026 Pazartesi")).toBe("on iki Ekim iki bin yirmi altı Pazartesi");
+    expect(renderTurkishSpeech("Randevu 5 Şubat saat 14:00")).toBe("Randevu beş Şubat saat on dört");
   });
 
   it("slash and hyphen day-first dates are spoken the same way", () => {
@@ -94,13 +99,13 @@ describe("date", () => {
 describe("email, phone, URL, prose", () => {
   it("email symbols → natural Turkish speech", () => {
     expect(renderTurkishSpeech("E-posta: yusuf.alper_oz-1@gmail.com.")).toBe(
-      "E-posta: yusuf nokta alper alt çizgi oz tire 1 et gmail nokta com."
+      "E-posta, yusuf nokta alper alt çizgi oz tire 1 et gmail nokta com."
     );
   });
 
   it("phone numbers are grouped for comprehension, never one giant number", () => {
     expect(renderTurkishSpeech("Telefon: 0532 123 45 67")).toBe(
-      "Telefon: sıfır beş yüz otuz iki, yüz yirmi üç, kırk beş, altmış yedi"
+      "Telefon, sıfır beş yüz otuz iki, yüz yirmi üç, kırk beş, altmış yedi"
     );
     expect(renderTurkishSpeech("+90 850 242 88 52")).toBe("artı doksan, sekiz yüz elli, iki yüz kırk iki, seksen sekiz, elli iki");
     expect(renderTurkishSpeech("05321234567")).toBe("sıfır beş yüz otuz iki, yüz yirmi üç, kırk beş, altmış yedi");
@@ -108,7 +113,7 @@ describe("email, phone, URL, prose", () => {
 
   it("URLs are not corrupted (dates, times or dots inside them stay)", () => {
     const url = "https://klinik.example.com/randevu/2026-10-12?saat=14:00&v=1.2.3";
-    expect(renderTurkishSpeech(`Detaylar: ${url} adresinde.`)).toBe(`Detaylar: ${url} adresinde.`);
+    expect(renderTurkishSpeech(`Detaylar: ${url} adresinde.`)).toBe(`Detaylar, ${url} adresinde.`);
     expect(renderTurkishSpeech("www.klinik.com.tr/12.10.2026")).toBe("www.klinik.com.tr/12.10.2026");
   });
 
@@ -121,6 +126,13 @@ describe("email, phone, URL, prose", () => {
   it("is idempotent on already-rendered speech", () => {
     const once = renderTurkishSpeech("12.10.2026 saat 14:30, telefon 0532 123 45 67");
     expect(renderTurkishSpeech(once)).toBe(once);
+  });
+});
+
+describe("chat label colons (production iki nokta defect)", () => {
+  it("does not leave a colon after converting 14:00 in a labeled confirmation line", () => {
+    expect(renderTurkishSpeech("Tercih Edilen Saat: 14:00")).toBe("Tercih Edilen Saat, on dört");
+    expect(renderTurkishSpeech("Tercih Edilen Saat: 14:00")).not.toMatch(/:/);
   });
 });
 
@@ -142,10 +154,10 @@ describe("appointment review summary as spoken", () => {
 
     expect(canonical).toBe(before);
     expect(canonical).toContain("Tercih Edilen Saat: 14:00");
-    expect(speech).toContain("Tercih Edilen Saat: on dört");
-    expect(speech).toContain("12 Ekim 2026");
-    expect(speech).toContain("Telefon: artı doksan, beş yüz otuz iki, yüz yirmi üç, kırk beş, altmış yedi.");
-    expect(speech).not.toMatch(/\d:\d|E-posta/);
+    expect(speech).toContain("Tercih Edilen Saat, on dört");
+    expect(speech).toMatch(/on iki Ekim iki bin yirmi altı/);
+    expect(speech).toContain("Telefon, artı doksan, beş yüz otuz iki, yüz yirmi üç, kırk beş, altmış yedi.");
+    expect(speech).not.toMatch(/\d:\d|E-posta|:/);
   });
 });
 
