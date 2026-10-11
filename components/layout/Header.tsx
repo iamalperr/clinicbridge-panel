@@ -1,17 +1,24 @@
 "use client";
 
+import type { RefObject } from "react";
 import LanguageSwitcher from "@/components/ui/LanguageSwitcher";
 import { UI_COLORS } from "@/components/ui/ui-shared";
-import { Search, Bell, HelpCircle } from "lucide-react";
+import { Search, Bell, HelpCircle, Menu } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n-context";
 
-export default function Header() {
+interface HeaderProps {
+  onMenuClick?: () => void;
+  menuOpen?: boolean;
+  menuTriggerRef?: RefObject<HTMLButtonElement | null>;
+}
+
+export default function Header({ onMenuClick, menuOpen = false, menuTriggerRef }: HeaderProps = {}) {
   const { profile } = useAuth();
   const { t } = useI18n();
 
   return (
-    <header style={{
+    <header className="cb-header" style={{
       height: 64,
       background: "linear-gradient(to right, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1), rgba(59, 130, 246, 0.1))",
       backdropFilter: "blur(24px)",
@@ -19,12 +26,37 @@ export default function Header() {
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
-      padding: "0 24px",
+      gap: 12,
       zIndex: 50
     }}>
+      {onMenuClick && (
+        <button
+          ref={menuTriggerRef}
+          type="button"
+          className="cb-menu-trigger"
+          onClick={onMenuClick}
+          aria-label="Menüyü aç"
+          aria-expanded={menuOpen}
+          aria-controls="cb-dashboard-drawer"
+          style={{
+            alignItems: "center",
+            justifyContent: "center",
+            width: 40,
+            height: 40,
+            borderRadius: 10,
+            border: `1px solid ${UI_COLORS.border}`,
+            background: "rgba(255, 255, 255, 0.03)",
+            color: UI_COLORS.textPrimary,
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          <Menu size={18} aria-hidden />
+        </button>
+      )}
+
       {/* Search area - placeholder */}
-      <div style={{ 
-        display: "flex", 
+      <div className="cb-header-search" style={{ 
         alignItems: "center", 
         gap: 10, 
         background: "rgba(255, 255, 255, 0.03)", 
@@ -48,10 +80,10 @@ export default function Header() {
         />
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+      <div className="cb-header-actions" style={{ display: "flex", alignItems: "center", gap: 18, marginLeft: "auto" }}>
         <LanguageSwitcher />
         
-        <div style={{ display: "flex", alignItems: "center", gap: 12, borderRight: `1px solid ${UI_COLORS.border}`, paddingRight: 18 }}>
+        <div className="cb-header-icons" style={{ alignItems: "center", gap: 12, borderRight: `1px solid ${UI_COLORS.border}`, paddingRight: 18 }}>
           <button style={{ background: "none", border: "none", color: UI_COLORS.textMuted, cursor: "pointer", display: "flex" }}>
             <Bell size={19} />
           </button>
@@ -62,7 +94,7 @@ export default function Header() {
 
         {/* Mini profile info */}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ textAlign: "right" }}>
+          <div className="cb-header-profile-text" style={{ textAlign: "right" }}>
             <p style={{ fontSize: 13, fontWeight: 700, color: UI_COLORS.textPrimary }}>{profile?.name || "User"}</p>
             <p style={{ fontSize: 11, color: UI_COLORS.brand, fontWeight: 600, textTransform: "uppercase" }}>{profile?.role || "Admin"}</p>
           </div>

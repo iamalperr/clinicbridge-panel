@@ -451,7 +451,8 @@ describe("Voice Phase 2 architecture boundaries", () => {
       expect(src).not.toMatch(/twilio|elevenlabs|WebSocket|speechToText|textToSpeech|vonage|telnyx/i);
     }
     expect(route).toContain("handleClinicAgentTurn");
-    expect(sesli).toContain("Save Voice Settings");
+    expect(sesli).not.toMatch(/ElevenLabs|Rachel|Save Voice Settings/);
+    expect(sesli).toContain("VoiceControlCenter");
     expect(adapter).toContain('channel: "voice"');
     expect(adapter).toContain("handleClinicAgentTurn");
   });

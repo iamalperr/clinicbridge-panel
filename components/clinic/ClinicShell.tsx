@@ -67,10 +67,10 @@ export default function ClinicShell({
   }, [clinicId]);
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
 
       {/* Workspace Header */}
-      <div style={{ padding: "24px 40px 0", borderBottom: `1px solid ${UI_COLORS.border}`, background: "var(--bg-app)" }}>
+      <div className="cb-clinic-header" style={{ borderBottom: `1px solid ${UI_COLORS.border}`, background: "var(--bg-app)" }}>
         <Link href="/clinics" style={{ fontSize: 12, color: "var(--text-muted)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4, marginBottom: 18 }}>
           ← {t("clinics.allClinics")}
         </Link>
@@ -107,7 +107,7 @@ export default function ClinicShell({
         </div>
 
         {/* Tab Bar */}
-        <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: -1 }}>
+        <nav aria-label="Klinik sekmeleri" className="cb-clinic-tabs" style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: -1 }}>
           {TABS.map((tab) => {
             const href = base + tab.path;
             const active = tab.path === "" ? pathname === base : pathname.startsWith(href);
@@ -129,11 +129,11 @@ export default function ClinicShell({
               </Link>
             );
           })}
-        </div>
+        </nav>
       </div>
 
       {/* Tab Content */}
-      <main style={{ flex: 1, overflowY: "auto", padding: "32px 40px" }}>
+      <main className="cb-clinic-main" style={{ flex: 1 }}>
         {children}
       </main>
     </div>

@@ -270,11 +270,11 @@ export default function TrainingPage({ params }: PageProps) {
 
       {/* Library */}
       <div style={{ marginTop: 40 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 24 }}>
           <h2 style={{ fontSize: 20, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.5px" }}>
             {t("training.library")}
           </h2>
-          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", minWidth: 0, maxWidth: "100%" }}>
             <Button 
               variant="secondary" 
               onClick={handleReindexAll} 
@@ -283,7 +283,7 @@ export default function TrainingPage({ params }: PageProps) {
             >
               {isReindexing ? "İndeksleniyor..." : "AI Bilgi Havuzunu Yeniden İndeksle"}
             </Button>
-            <div style={{ position: "relative", width: 300 }}>
+            <div style={{ position: "relative", width: 300, maxWidth: "100%" }}>
               <Search size={18} style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: UI_COLORS.textMuted }} />
               <input
                 type="text" placeholder={t("common.search")} value={searchQuery}
