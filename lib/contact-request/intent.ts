@@ -15,6 +15,8 @@ export interface ContactHandoffDetection {
   isCancel: boolean;
   /** Patient is amending preferred method on an existing request. */
   isPreferenceAmendment: boolean;
+  /** Patient asked to be put through to / speak with a person. */
+  asksForLiveAgent: boolean;
 }
 
 /**
@@ -139,7 +141,21 @@ function hasOutboundContactRequest(lower: string): boolean {
     /\b(konu[sş]am[ıi]yorum|konusamiyorum).{0,50}(yaz|mesaj|sms|text)\b/i,
   ];
 
-  return patterns.some((p) => p.test(lower));
+  return patterns.some((p) => p.test(lower)) || isLiveAgentRequest(lower);
+}
+
+const LIVE_AGENT_TARGET = String.raw`(?:temsilci|yetkili|operat[öo]r|biri|birisi|insan|ger[çc]ek\s+bir\s+ki[sş]i)\p{L}*`;
+
+/**
+ * Patient asks to be put through to / speak with a person ("Temsilciye bağlar mısınız?",
+ * "Bir yetkiliyle görüşebilir miyim?"). Asking about staff ("Temsilciniz kim?") is not one.
+ */
+export function isLiveAgentRequest(text: string): boolean {
+  const lower = (text || "").toLocaleLowerCase("tr-TR");
+  return (
+    new RegExp(String.raw`(?<!\p{L})${LIVE_AGENT_TARGET}\s+(?:ile\s+)?ba[ğg]la(?:r|n|y|t)\p{L}*`, "u").test(lower) ||
+    new RegExp(String.raw`(?<!\p{L})${LIVE_AGENT_TARGET}\s+(?:ile\s+)?(?:g[öo]r[üu][sş]|konu[sş])(?:ebilir|abilir|mek|mak|eyim|ay[ıi]m|mem|mam)\p{L}*`, "u").test(lower)
+  );
 }
 
 /**
@@ -169,6 +185,9 @@ export function isAmbiguousContactHandoff(text: string): boolean {
   ) {
     return false;
   }
+
+  // No live transfer exists: confirm forwarding a contact request instead.
+  if (isLiveAgentRequest(lower)) return true;
 
   // Capability-style questions without "please" — confirm forwarding
   if (
@@ -200,6 +219,7 @@ export function detectContactHandoff(text: string): ContactHandoffDetection {
     preferredMethod,
     isCancel,
     isPreferenceAmendment,
+    asksForLiveAgent: isHandoffIntent && isLiveAgentRequest(text),
   };
 }
 

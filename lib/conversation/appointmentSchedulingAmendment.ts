@@ -11,6 +11,7 @@
 
 import { SlotExtractor } from "./slotExtractor";
 import type { ConversationSlots } from "./types";
+import type { MeridiemContext } from "./slotParsing";
 import type { AppointmentDraftLike } from "./appointmentConfirmationAmendment";
 import {
   validateAppointmentDateOnly,
@@ -347,6 +348,7 @@ function resolveExtractedSlots(params: {
   clinicTimeZone: string;
   now: Date;
   expectedSlot?: string;
+  meridiem?: MeridiemContext;
 }): Partial<ConversationSlots> {
   const hasUsableExtracted =
     params.extracted &&
@@ -368,7 +370,8 @@ function resolveExtractedSlots(params: {
     params.locale,
     params.clinicTimeZone,
     params.expectedSlot,
-    params.now
+    params.now,
+    { meridiem: params.meridiem }
   ).extracted;
 }
 
@@ -386,6 +389,8 @@ export function applyAppointmentSchedulingAmendment(params: {
   is24_7?: boolean;
   /** Active collection slot — required for bare-day completion eligibility. */
   expectedSlot?: string;
+  /** Same clock-reading context the router used; omitted → literal 24h reading. */
+  meridiem?: MeridiemContext;
 }): SchedulingAmendmentResult {
   const locale = params.locale || "tr";
   const now = params.now ?? new Date();
@@ -413,6 +418,7 @@ export function applyAppointmentSchedulingAmendment(params: {
     clinicTimeZone: params.clinicTimeZone,
     now,
     expectedSlot: params.expectedSlot,
+    meridiem: params.meridiem,
   });
 
   if (extracted.invalidCivilDate) {

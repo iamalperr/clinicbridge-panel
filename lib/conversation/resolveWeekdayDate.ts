@@ -162,3 +162,8 @@ export function clinicLocalTomorrowIso(timeZone: string, now: Date = new Date())
   const today = clinicLocalTodayIso(timeZone, now);
   return addDaysToIsoDate(today, 1, timeZone);
 }
+
+export function clinicLocalDayAfterTomorrowIso(timeZone: string, now: Date = new Date()): string {
+  const today = clinicLocalTodayIso(timeZone, now);
+  return addDaysToIsoDate(today, 2, timeZone);
+}

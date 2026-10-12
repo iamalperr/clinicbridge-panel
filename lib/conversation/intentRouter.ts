@@ -22,45 +22,59 @@ import { controlPhraseKey } from "./controlPhrase";
 import { SlotExtractor } from "./slotExtractor";
 import { ContextResolver } from "./contextResolver";
 import { PendingActionManager } from "./PendingActionManager";
+import { slotNameForExpected, splitUtteranceClauses, type MeridiemContext, type SlotOutcomes } from "./slotParsing";
 import { detectExplicitBookingIntent } from "./appointmentIntentGate";
 import {
   detectPreferredContactMethod as detectPreferredContactMethodFromDomain,
   isPatientContactHandoffIntent,
 } from "@/lib/contact-request/intent";
 
+export interface ClassifyConversationIntentParams {
+  message: string;
+  conversationHistory?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+  currentState?: ConversationState;
+  currentFlow?: "appointment" | "lead" | "quote" | "general";
+  collectedSlots?: Partial<ConversationSlots>;
+  activeTreatment?: string;
+  activeTopic?: string;
+  activeClinic?: string;
+  lastIntent?: ConversationIntent;
+  pendingAction?: PendingAction | null;
+  appointmentSubmitted?: boolean;
+  clinicContext?: {
+    clinicId?: string;
+    clinicName?: string;
+    turkishContactNumber?: string;
+    internationalContactNumber?: string;
+  };
+  agencyContext?: {
+    agencyId?: string;
+    agencySlug?: string;
+  };
+  locale?: string;
+  expectedSlot?: string;
+  /** Clinic IANA TZ for appointment date resolution. Falls back to Europe/Istanbul. */
+  clinicTimeZone?: string;
+  /** Injectable clock for deterministic date resolution (tests). */
+  now?: Date;
+  /** Clinic hours for reading 12-hour-ambiguous clocks; omitted → literal 24h reading. */
+  meridiem?: MeridiemContext;
+  /** Forwarded to the extractor; see `ExtractSlotsOptions.surnameCorrection`. */
+  surnameCorrection?: boolean;
+}
+
 export class IntentRouter {
   /**
-   * Classify user message intent considering conversation state, extracted entities, and history
+   * Classify user message intent considering conversation state, extracted entities, and history.
+   * Every result carries the extractor's value-free `slotOutcomes`.
    */
-  public static classifyConversationIntent(params: {
-    message: string;
-    conversationHistory?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
-    currentState?: ConversationState;
-    currentFlow?: "appointment" | "lead" | "quote" | "general";
-    collectedSlots?: Partial<ConversationSlots>;
-    activeTreatment?: string;
-    activeTopic?: string;
-    activeClinic?: string;
-    lastIntent?: ConversationIntent;
-    pendingAction?: PendingAction | null;
-    appointmentSubmitted?: boolean;
-    clinicContext?: {
-      clinicId?: string;
-      clinicName?: string;
-      turkishContactNumber?: string;
-      internationalContactNumber?: string;
-    };
-    agencyContext?: {
-      agencyId?: string;
-      agencySlug?: string;
-    };
-    locale?: string;
-    expectedSlot?: string;
-    /** Clinic IANA TZ for appointment date resolution. Falls back to Europe/Istanbul. */
-    clinicTimeZone?: string;
-    /** Injectable clock for deterministic date resolution (tests). */
-    now?: Date;
-  }): IntentClassificationResult {
+  public static classifyConversationIntent(params: ClassifyConversationIntentParams): IntentClassificationResult {
+    const extraction: { slotOutcomes?: SlotOutcomes } = {};
+    const result = this.classifyWithExtraction(params, extraction);
+    return extraction.slotOutcomes ? { ...result, slotOutcomes: extraction.slotOutcomes } : result;
+  }
+
+  private static classifyWithExtraction(params: ClassifyConversationIntentParams, extraction: { slotOutcomes?: SlotOutcomes }): IntentClassificationResult {
     const raw = (params.message || "").trim();
     const lower = raw.toLowerCase();
     const currentState = params.currentState || "INITIAL";
@@ -71,14 +85,16 @@ export class IntentRouter {
     const now = params.now ?? new Date();
 
     // Step 1: Extract all identifiable entities, slots, and corrections
-    const { extracted, isCorrection, correctedSlotKey, invalidEmailAttempt, allInfoProvidedIntent } = SlotExtractor.extractSlots(
+    const { extracted, isCorrection, correctedSlotKey, invalidEmailAttempt, allInfoProvidedIntent, slotOutcomes } = SlotExtractor.extractSlots(
       raw,
       existingSlots,
       locale,
       clinicTimeZone,
       expectedSlot,
-      now
+      now,
+      { meridiem: params.meridiem, surnameCorrection: params.surnameCorrection }
     );
+    extraction.slotOutcomes = slotOutcomes;
 
     // Merge active treatment if not explicitly in current message
     if (!extracted.treatment && params.activeTreatment) {
@@ -123,7 +139,7 @@ export class IntentRouter {
     }
 
     // Step 1.1: Cancel / Reset Detection
-    if (this.isCancel(raw)) {
+    if (this.isCancel(raw) || (isInAppointmentFlow && this.hasExplicitCancelClause(raw))) {
       return {
         intent: "cancel",
         confidence: 1.0,
@@ -131,6 +147,32 @@ export class IntentRouter {
         requiresKnowledgeBase: false,
         shouldContinueActiveFlow: false,
         explanation: "Appointment cancellation or reset requested"
+      };
+    }
+
+    // Step 1.15: The expected slot is parsed first. A valid answer to the pending question
+    // ("Evet, Yusuf Alper Özgül.", "Telefonum 0532 …") continues the flow even when its
+    // wording also resembles a confirmation or a contact phrase. Questions, complaints,
+    // emergencies and explicit handoff / live-support requests still take precedence.
+    const expectedSlotName = slotNameForExpected(expectedSlot);
+    if (
+      isInAppointmentFlow &&
+      expectedSlotName &&
+      slotOutcomes?.[expectedSlotName]?.status === "filled" &&
+      !this.isEmergency(lower) &&
+      !this.isPatientContactHandoff(lower) &&
+      !this.isLiveSupport(lower) &&
+      !this.isComplaint(lower) &&
+      !this.isInformationalQuestion(lower).isQuestion
+    ) {
+      return {
+        intent: "appointment_continuation",
+        confidence: 1.0,
+        entities: extracted,
+        targetSlot: expectedSlot as IntentClassificationResult["targetSlot"],
+        requiresKnowledgeBase: false,
+        shouldContinueActiveFlow: true,
+        explanation: `Expected slot ${expectedSlotName} answered`,
       };
     }
 
@@ -727,6 +769,21 @@ export class IntentRouter {
       /^(?:hayır|hayir|iptal|iptal\s+et|iptal\s+edin|iptal\s+etmek\s+istiyorum|vazgeçtim|vazgectim|istemiyorum|no|cancel|stop|abort|stornieren|annuler|nein|non)$/i.test(key) ||
       /\b(randevuyu\s+iptal\s+et|randevu\s+almaktan\s+vazgeçtim|vazgectim|cancel\s+the\s+appointment|cancel\s+appointment)\b/i.test(key)
     );
+  }
+
+  /**
+   * An explicit appointment cancellation stated as its own clause, even when another clause
+   * follows ("Randevuyu iptal etmek istiyorum. Otopark var mı?"). Bare "hayır" / "istemiyorum"
+   * are not explicit cancellations here.
+   */
+  public static hasExplicitCancelClause(message: string): boolean {
+    return splitUtteranceClauses(message).some((clause) => {
+      const key = controlPhraseKey(clause).replace(/[.!?…,;]+$/u, "");
+      return (
+        /^(?:iptal|iptal\s+et|iptal\s+edin|iptal\s+etmek\s+istiyorum|vazgeçtim|vazgectim|cancel)$/iu.test(key) ||
+        /(?<![\p{L}])(?:randevu(?:yu|mu|muzu)?\s+iptal\s+(?:et|edin|edelim|etmek\s+istiyorum|etmek\s+isterim|ettirmek\s+istiyorum|ediyorum|eder\s+misiniz|edebilir\s+misiniz)|randevu\s+almaktan\s+vazge[çc]tim|cancel\s+(?:the\s+|my\s+)?appointment)(?![\p{L}])/iu.test(key)
+      );
+    });
   }
 
   public static detectMultiIntent(

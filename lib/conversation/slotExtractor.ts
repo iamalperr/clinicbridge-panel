@@ -6,7 +6,6 @@
 
 import { ConversationSlots, VisitType, InformationType, ContactTarget } from "./types";
 import { AppointmentDateValidator } from "../skills/AppointmentDateValidator";
-import { normalizeTurkishPhone } from "../phoneUtils";
 import {
   canonicalResolveAppointmentDate,
   composeDayWithPendingAppointmentDate,
@@ -16,16 +15,63 @@ import {
   type PendingAppointmentDate,
 } from "../appointment/canonicalAppointmentDate";
 import {
+  clinicLocalDayAfterTomorrowIso,
   clinicLocalTodayIso,
   clinicLocalTomorrowIso,
   resolveWeekdayFromMessage,
 } from "./resolveWeekdayDate";
 import { detectPreferredContactMethod } from "@/lib/contact-request/intent";
-import {
-  normalizeTurkishSpokenTemporal,
-  spokenTurkishPhoneDigits,
-} from "./turkishSpokenNumbers";
+import { normalizeTurkishSpokenTemporal } from "./turkishSpokenNumbers";
 import { detectEmailDecline, mentionsEmail, normalizeSpokenEmail } from "./emailCollection";
+import {
+  isQuestionClause,
+  parseFullNameSlot,
+  parsePhoneSlot,
+  parseSurnameCorrection,
+  resolveClockMeridiem,
+  selectPendingClockCandidate,
+  splitUtteranceClauses,
+  statementClauses,
+  summarizeSlotResult,
+  toSlotInput,
+  type MeridiemContext,
+  type SlotOutcomes,
+} from "./slotParsing";
+
+export { looksLikeRequestPhrase } from "./slotParsing";
+
+export interface ExtractSlotsOptions {
+  /** Clinic hours used to read 12-hour-ambiguous clocks ("saat iki"). Omitted → literal 24h reading. */
+  meridiem?: MeridiemContext;
+  /**
+   * "Soyadım Kaya olacaktı" replaces the last word of the collected full name. Opt-in: callers
+   * that persist first/last name separately from the full name must not receive a partial edit.
+   */
+  surnameCorrection?: boolean;
+}
+
+export interface ParsedTimeResult {
+  time: string;
+  rawText: string;
+  timePreference?: string;
+  /** Hour 1–11 with no daypart, am/pm or zero-padded 24h form: it could mean either half of the day. */
+  clockAmbiguous?: boolean;
+}
+
+/** Unicode-safe word test: JS `\b` is ASCII-only and fails around ç ğ ı ö ş ü. */
+function hasWord(text: string, alternatives: string): boolean {
+  return new RegExp(`(?<![\\p{L}\\p{N}])(?:${alternatives})(?![\\p{L}\\p{N}])`, "iu").test(text);
+}
+
+/** "ayın 15", "ayın 15'i" as a whole reply (digit view) → 15. */
+function dayOfPendingMonthReply(temporalRaw: string): number | null {
+  const match = temporalRaw
+    .trim()
+    .match(/^ay[ıi]n\s+(\d{1,2})(?:['’]?(?:si|sı|su|sü|i|ı|u|ü|inde|ında|unda|ünde|sinde|sında|sunda|sünde|nde|nda))?\s*(?:olsun|uygun|lütfen|lutfen)?[.!]?$/iu);
+  if (!match) return null;
+  const day = parseInt(match[1], 10);
+  return day >= 1 && day <= 31 ? day : null;
+}
 
 const MONTHS_TR: Record<string, number> = {
   ocak: 1, şubat: 2, subat: 2, mart: 3, nisan: 4, mayıs: 5, mayis: 5, haziran: 6,
@@ -53,6 +99,12 @@ export type ParsedAppointmentDateResult =
   | {
       status: "invalid_calendar";
       rawText: string;
+    }
+  | {
+      /** "ayın beşi" after the 5th has passed: this month or next is the caller's choice. */
+      status: "ambiguous";
+      rawText: string;
+      reason: "DATE_DAY_OF_MONTH_PASSED";
     };
 
 export interface CanonicalTreatment {
@@ -205,56 +257,6 @@ export const CANONICAL_TREATMENTS: CanonicalTreatment[] = [
   }
 ];
 
-/**
- * Endings that only ever appear on a conjugated verb, never on a Turkish name.
- * These catch requests such as "implant yaptırmak istiyorum" without relying on
- * an exhaustive vocabulary list.
- */
-const CONJUGATED_VERB_SUFFIX =
-  /(?:yorum|yoruz|yorsun|yorsunuz|iyor|ıyor|uyor|üyor|acağım|eceğim|acagim|ecegim|malıyım|meliyim|maliyim|istiyor)$/;
-
-/**
- * Words that describe an enquiry, a treatment or an attribute rather than a
- * person. A bare phrase containing any of them is never accepted as a name.
- */
-const NON_NAME_WORDS = new Set([
-  // Enquiry and conversational filler
-  "randevu", "fiyat", "fiyatı", "fiyati", "tarih", "saat", "doktor", "klinik", "bilgi",
-  "evet", "hayır", "hayir", "tamam", "merhaba", "selam", "hakkında", "hakkinda",
-  "yes", "no", "okay", "please", "speak", "switch", "about", "price", "cost",
-  // Language and question words
-  "english", "turkish", "türkçe", "turkce", "deutsch", "french",
-  "what", "who", "which", "where", "when", "how", "hangi", "nerede", "nasıl", "kim",
-  // Gender and age tokens
-  "erkek", "kadın", "kadin", "erkeğim", "erkeim", "kadınım", "kadinim",
-  "male", "female", "bayan", "bay",
-  "yaşındayım", "yasindayim", "yaşında", "yasinda",
-  // Treatment vocabulary
-  "implant", "implantı", "implanti", "tedavi", "tedavisi", "tedavim",
-  "diş", "dis", "dişçi", "disci", "saç", "sac", "ekimi", "ekim",
-  "estetik", "ameliyat", "operasyon", "burun", "protez", "dolgu", "kaplama",
-  "zirkonyum", "botoks", "lazer", "muayene", "konsültasyon", "konsultasyon",
-  "gülüş", "gulus", "tasarımı", "tasarimi",
-  "treatment", "surgery", "dental", "hair", "transplant", "veneer", "crown",
-  // Intent verbs that are not caught by the suffix rule
-  "olmak", "yaptırmak", "yaptirmak", "almak", "yaptırmayı", "yaptirmayi",
-  "want", "need", "looking", "would", "like",
-]);
-
-/**
- * True when a phrase reads as a request or description instead of a name.
- * Exported so callers that receive a name from a model can reject text such as
- * "implant yaptırmak istiyorum" before storing it as patient information.
- */
-export function looksLikeRequestPhrase(segment: string): boolean {
-  if (!segment) return false;
-  return segment
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean)
-    .some((token) => NON_NAME_WORDS.has(token) || CONJUGATED_VERB_SUFFIX.test(token));
-}
-
 export class SlotExtractor {
   /**
    * Extract all identifiable slots and entities from a message, optionally in context of previous slots and expectedSlot
@@ -265,16 +267,20 @@ export class SlotExtractor {
     locale: string = "tr",
     timeZone: string = "Europe/Istanbul",
     expectedSlot?: string,
-    now: Date = new Date()
+    now: Date = new Date(),
+    options: ExtractSlotsOptions = {}
   ): {
     extracted: Partial<ConversationSlots>;
     isCorrection: boolean;
     correctedSlotKey?: keyof ConversationSlots;
     invalidEmailAttempt?: boolean;
     allInfoProvidedIntent?: boolean;
+    /** Value-free per-slot parse outcomes (status + reason code) for routing and telemetry. */
+    slotOutcomes?: SlotOutcomes;
   } {
     const raw = (message || "").trim();
-    if (!raw) return { extracted: {}, isCorrection: false };
+    if (!raw) return { extracted: {}, isCorrection: false, slotOutcomes: {} };
+    const slotOutcomes: SlotOutcomes = {};
 
     const lower = raw.toLowerCase();
     // Date/time parsers read spoken Turkish numbers through their digit view;
@@ -291,7 +297,8 @@ export class SlotExtractor {
       return {
         extracted: {},
         isCorrection: false,
-        allInfoProvidedIntent: true
+        allInfoProvidedIntent: true,
+        slotOutcomes: {},
       };
     }
 
@@ -307,13 +314,21 @@ export class SlotExtractor {
     // Dictated addresses are normalized only in email context (pending email question, or the
     // message names email); an explicit decline is a disposition, never a malformed attempt.
     const expectingEmail = expectedSlot === "email";
+    const typedEmail = this.parseEmail(raw);
     const emailRes =
-      this.parseEmail(raw) ??
+      typedEmail ??
       (expectingEmail || mentionsEmail(raw) ? normalizeSpokenEmail(raw) : null);
     if (emailRes) {
       extracted.email = emailRes;
-    } else if (detectEmailDecline(raw, { expectingEmail })) {
+      slotOutcomes.email = { status: "filled", reasonCode: typedEmail ? "EMAIL_TYPED" : "EMAIL_DICTATED", confidence: "high" };
+    } else if (
+      detectEmailDecline(raw, { expectingEmail }) ||
+      // "E-posta vermek istemiyorum. Randevum yine oluşturulabilir mi?" — the decline clause stands on its own.
+      (statementClauses(raw).hadQuestion &&
+        splitUtteranceClauses(raw).some((clause) => !isQuestionClause(clause) && detectEmailDecline(clause, { expectingEmail })))
+    ) {
       extracted.emailDeclined = true;
+      slotOutcomes.email = { status: "declined", reasonCode: "EMAIL_DECLINED" };
     } else if (
       expectedSlot === "email" ||
       (raw.includes("@") && !raw.includes(" ")) ||
@@ -321,6 +336,7 @@ export class SlotExtractor {
     ) {
       // User sent an incomplete or malformed email
       invalidEmailAttempt = true;
+      slotOutcomes.email = { status: "rejected", reasonCode: "EMAIL_MALFORMED" };
     }
 
     // 3. Time hint for combined date+time phrases ("Saturday 3pm")
@@ -331,7 +347,8 @@ export class SlotExtractor {
     if (!extracted.preferredDate && !extracted.pendingAppointmentDate && !extracted.invalidCivilDate) {
       // 4a. Bare day-of-month ONLY when pending is day-eligible AND expectedSlot is preferredDate
       const pending = existingSlots.pendingAppointmentDate as PendingAppointmentDate | undefined;
-      const bareDay = pending ? isBareDayOfMonthMessage(temporalRaw) : null;
+      // After "O ayın hangi günü?", "ayın on beşi" is a day of the PENDING month, never this month.
+      const bareDay = pending ? isBareDayOfMonthMessage(temporalRaw) ?? dayOfPendingMonthReply(temporalRaw) : null;
       const dayEligible = isPendingDayCompletionEligible({
         pending,
         expectedSlot,
@@ -386,9 +403,18 @@ export class SlotExtractor {
           } else if (dateRes.status === "invalid_calendar") {
             extracted.invalidCivilDate = true;
             extracted.rawDateText = dateRes.rawText;
+          } else if (dateRes.status === "ambiguous") {
+            slotOutcomes.preferredDate = { status: "ambiguous", reasonCode: dateRes.reason };
           }
         }
       }
+    }
+    if (extracted.preferredDate) {
+      slotOutcomes.preferredDate = { status: "filled", reasonCode: "DATE_RESOLVED", confidence: "high" };
+    } else if (extracted.pendingAppointmentDate) {
+      slotOutcomes.preferredDate = { status: "ambiguous", reasonCode: "DATE_PARTIAL_MONTH" };
+    } else if (extracted.invalidCivilDate) {
+      slotOutcomes.preferredDate = { status: "rejected", reasonCode: "DATE_INVALID_CALENDAR" };
     }
 
     // 5. Time Extraction — skip when message was only a day numeral composing pending month
@@ -399,11 +425,44 @@ export class SlotExtractor {
       const skipBareAsTime = bareForTimeGuard != null && expectedSlot === "preferredDate";
       if (!skipBareAsTime) {
         const timeRes = timeHintRes || this.parseTime(temporalRaw, temporalLower);
-        if (timeRes) {
-          extracted.preferredTime = timeRes.time;
-          extracted.time = timeRes.time;
-          extracted.rawTimeText = timeRes.rawText;
-          extracted.timePreference = timeRes.timePreference;
+        const meridiem = options.meridiem;
+        const pendingClock = meridiem?.pendingCandidates?.length
+          ? selectPendingClockCandidate(raw, meridiem.pendingCandidates, timeRes?.time ?? null)
+          : null;
+        if (pendingClock) {
+          extracted.preferredTime = pendingClock;
+          extracted.time = pendingClock;
+          extracted.rawTimeText = timeRes?.rawText ?? raw;
+          extracted.timePreference = "specific";
+          slotOutcomes.preferredTime = { status: "filled", reasonCode: "TIME_MERIDIEM_FROM_REPLY", confidence: "high" };
+        } else if (timeRes) {
+          let time = timeRes.time;
+          let outcome: SlotOutcomes["preferredTime"] = {
+            status: "filled",
+            reasonCode: timeRes.timePreference === "specific" ? "TIME_EXPLICIT" : "TIME_DAYPART",
+            confidence: "high",
+          };
+          if (timeRes.clockAmbiguous && meridiem) {
+            const resolved = resolveClockMeridiem(time, {
+              ...meridiem,
+              isoDate: extracted.preferredDate ?? existingSlots.preferredDate ?? null,
+            });
+            if (resolved.status === "filled") {
+              time = resolved.value;
+              outcome = summarizeSlotResult(resolved);
+            } else {
+              outcome = summarizeSlotResult(resolved, {
+                clockCandidates: resolved.status === "ambiguous" ? resolved.candidates : undefined,
+              });
+            }
+          }
+          if (outcome.status === "filled") {
+            extracted.preferredTime = time;
+            extracted.time = time;
+            extracted.rawTimeText = timeRes.rawText;
+            extracted.timePreference = timeRes.timePreference;
+          }
+          slotOutcomes.preferredTime = outcome;
         }
       }
     }
@@ -417,13 +476,14 @@ export class SlotExtractor {
     }
 
     // 6. Treatment Entity Extraction (Canonicalized) — preserve all mentioned procedures
+    let treatmentMatches: Array<{ id: string; matchedRaw: string; index: number }> = [];
     if (!extracted.treatment) {
-      const treatments = this.parseAllCanonicalTreatments(lower);
-      if (treatments.length > 0) {
-        extracted.treatment = treatments[0].id;
-        extracted.rawTreatmentText = treatments.map((t) => t.matchedRaw).join(", ");
-        if (treatments.length > 1) {
-          extracted.additionalTreatments = treatments.slice(1).map((t) => t.id);
+      treatmentMatches = this.parseAllCanonicalTreatments(lower);
+      if (treatmentMatches.length > 0) {
+        extracted.treatment = treatmentMatches[0].id;
+        extracted.rawTreatmentText = treatmentMatches.map((t) => t.matchedRaw).join(", ");
+        if (treatmentMatches.length > 1) {
+          extracted.additionalTreatments = treatmentMatches.slice(1).map((t) => t.id);
         }
       }
     }
@@ -453,10 +513,13 @@ export class SlotExtractor {
       extracted.currency = currency;
     }
 
-    // 10. Phone Extraction
-    const phoneRes = this.parsePhone(raw);
-    if (phoneRes) {
-      extracted.phone = phoneRes;
+    // 10. Phone Extraction — an ambiguous spoken grouping is reported, never picked.
+    const phoneSlot = parsePhoneSlot(toSlotInput(raw));
+    if (phoneSlot.status === "filled") {
+      extracted.phone = phoneSlot.value;
+    }
+    if (phoneSlot.status !== "rejected" || phoneSlot.reasonCode === "PHONE_INVALID" || expectedSlot === "phone") {
+      slotOutcomes.phone = summarizeSlotResult(phoneSlot);
     }
 
     // 11. Age Extraction
@@ -487,14 +550,33 @@ export class SlotExtractor {
       const hasIdentitySignal =
         extracted.patientAge !== undefined || Boolean(extracted.patientGender);
       const mentionsTreatment = Boolean(extracted.treatment || extracted.rawTreatmentText);
-      const allowBareName = (expectsName || hasIdentitySignal) && !mentionsTreatment;
+      // When the name is the expected answer, a treatment keyword alone (a surname such as
+      // "Kanal") does not block the parse; request phrases are still rejected token-wise.
+      const allowBareName = expectsName || (hasIdentitySignal && !mentionsTreatment);
 
-      const nameRes = this.parseName(raw, lower, existingSlots, expectedSlot, { allowBareName });
-      if (nameRes) {
+      const nameSlot = parseFullNameSlot(toSlotInput(raw), { allowBare: allowBareName });
+      if (nameSlot.status === "filled") {
+        const nameRes = nameSlot.value;
         extracted.fullName = nameRes.fullName;
         extracted.firstName = nameRes.firstName;
         extracted.lastName = nameRes.lastName;
         extracted.patientName = nameRes.fullName;
+        if (treatmentMatches.length > 0) {
+          this.dropTreatmentsInsideName(extracted, treatmentMatches, nameRes.fullName);
+        }
+      }
+      const surnameEdit =
+        nameSlot.status === "filled" || !options.surnameCorrection
+          ? null
+          : parseSurnameCorrection(toSlotInput(raw), existingSlots.fullName);
+      if (surnameEdit?.status === "filled") {
+        extracted.fullName = surnameEdit.value.fullName;
+        extracted.firstName = surnameEdit.value.firstName;
+        extracted.lastName = surnameEdit.value.lastName;
+        extracted.patientName = surnameEdit.value.fullName;
+        slotOutcomes.fullName = summarizeSlotResult(surnameEdit);
+      } else if (nameSlot.status === "filled" || expectsName) {
+        slotOutcomes.fullName = summarizeSlotResult(nameSlot);
       }
     }
 
@@ -517,13 +599,61 @@ export class SlotExtractor {
       extracted.kvkkConsent = true;
     }
 
+    // Expected slot with no evidence at all: an explicit, value-free "not found".
+    if (extracted.treatment) {
+      slotOutcomes.treatment = { status: "filled", reasonCode: "TREATMENT_MATCHED", confidence: "high" };
+    } else if (expectedSlot === "treatment") {
+      slotOutcomes.treatment = { status: "rejected", reasonCode: "TREATMENT_NOT_FOUND" };
+    }
+    if (extracted.preferredTime && !slotOutcomes.preferredTime) {
+      slotOutcomes.preferredTime = { status: "filled", reasonCode: "TIME_EXPLICIT", confidence: "high" };
+    }
+    if (expectedSlot === "preferredDate" && !slotOutcomes.preferredDate) {
+      slotOutcomes.preferredDate = { status: "rejected", reasonCode: "DATE_NOT_FOUND" };
+    }
+    if (expectedSlot === "preferredTime" && !slotOutcomes.preferredTime) {
+      slotOutcomes.preferredTime = { status: "rejected", reasonCode: "TIME_NOT_FOUND" };
+    }
+    if (expectedSlot === "email" && !slotOutcomes.email) {
+      slotOutcomes.email = { status: "rejected", reasonCode: "EMAIL_NOT_FOUND" };
+    }
+
     return {
       extracted,
       isCorrection,
       correctedSlotKey,
       invalidEmailAttempt,
-      allInfoProvidedIntent: false
+      allInfoProvidedIntent: false,
+      slotOutcomes,
     };
+  }
+
+  /**
+   * A treatment keyword that sits inside the patient's own name ("Ahmet Kanal") is a
+   * surname, not a procedure request.
+   */
+  private static dropTreatmentsInsideName(
+    extracted: Partial<ConversationSlots>,
+    matches: Array<{ id: string; matchedRaw: string; index: number }>,
+    fullName: string
+  ): void {
+    const nameKey = SlotExtractor.normalizeForKeywordMatch(fullName);
+    const nameWords = new Set(nameKey.split(/\s+/));
+    const kept = matches.filter((m) => {
+      const kw = SlotExtractor.normalizeForKeywordMatch(m.matchedRaw);
+      return !kw.split(/\s+/).every((w) => nameWords.has(w));
+    });
+    if (kept.length === matches.length) return;
+    if (kept.length === 0) {
+      delete extracted.treatment;
+      delete extracted.rawTreatmentText;
+      delete extracted.additionalTreatments;
+      return;
+    }
+    extracted.treatment = kept[0].id;
+    extracted.rawTreatmentText = kept.map((t) => t.matchedRaw).join(", ");
+    if (kept.length > 1) extracted.additionalTreatments = kept.slice(1).map((t) => t.id);
+    else delete extracted.additionalTreatments;
   }
 
   /**
@@ -731,37 +861,43 @@ export class SlotExtractor {
   }
 
   /**
-   * Parse time preference (exact 24h clock, e.g. 14:00, or fuzzy: sabah, öğleden sonra, morning, afternoon)
+   * Parse time preference (exact 24h clock, e.g. 14:00, or fuzzy: sabah, öğleden sonra, morning, afternoon).
+   * An hour 1–11 without daypart / am-pm / zero padding is returned literally with
+   * `clockAmbiguous`, so callers holding clinic hours can resolve or ask instead of guessing.
    */
-  public static parseTime(
-    raw: string,
-    lower: string
-  ): { time: string; rawText: string; timePreference?: string } | null {
+  public static parseTime(raw: string, lower: string): ParsedTimeResult | null {
+    const hhmm = (h: number, m: string | number) => `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    const isAmbiguousHour = (hourText: string, h: number, meridiem?: string) =>
+      !meridiem && h >= 1 && h <= 11 && !hourText.startsWith("0");
+
+    // "öğleden sonra" is a daypart, never an "after <hour>" constraint.
+    const constraintView = lower.replace(/(?:öğleden|ogleden)\s+(?:sonra|önce|once)/giu, (m) => " ".repeat(m.length));
+
     // Constraint windows: "anytime after 9 AM", "after 14:00", "before 11"
     // Must not be collapsed to an exact clock time without preserving the constraint.
     const afterMatch =
-      lower.match(/\b(?:anytime\s+)?(?:after|sonra)\s*(?:saat\s*)?([01]?\d|2[0-3])(?::([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?)?\b/i) ||
-      lower.match(/\b([01]?\d|2[0-3])(?::([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?)?\s*(?:(?:'|;|,)?\s*)?(?:sonra|dan sonra|den sonra)\b/i);
+      constraintView.match(/\b(?:anytime\s+)?(?:after|sonra)\s*(?:saat\s*)?([01]?\d|2[0-3])(?::([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?)?\b/i) ||
+      constraintView.match(/\b([01]?\d|2[0-3])(?::([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?)?\s*(?:(?:'|;|,)?\s*)?(?:sonra|dan sonra|den sonra)\b/i);
     if (afterMatch) {
       let h = parseInt(afterMatch[1], 10);
       const m = afterMatch[2] || "00";
       const ampm = afterMatch[3]?.replace(/\./g, "").toLowerCase();
+      const clockAmbiguous = isAmbiguousHour(afterMatch[1], h, ampm);
       if (ampm === "pm" && h < 12) h += 12;
       if (ampm === "am" && h === 12) h = 0;
-      const time = `${String(h).padStart(2, "0")}:${m}`;
-      return { time, rawText: afterMatch[0], timePreference: "after" };
+      return { time: hhmm(h, m), rawText: afterMatch[0], timePreference: "after", clockAmbiguous };
     }
 
     const beforeMatch =
-      lower.match(/\b(?:anytime\s+)?(?:before|önce|once)\s*(?:saat\s*)?([01]?\d|2[0-3])(?::([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?)?\b/i);
+      constraintView.match(/\b(?:anytime\s+)?(?:before|önce|once)\s*(?:saat\s*)?([01]?\d|2[0-3])(?::([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?)?\b/i);
     if (beforeMatch) {
       let h = parseInt(beforeMatch[1], 10);
       const m = beforeMatch[2] || "00";
       const ampm = beforeMatch[3]?.replace(/\./g, "").toLowerCase();
+      const clockAmbiguous = isAmbiguousHour(beforeMatch[1], h, ampm);
       if (ampm === "pm" && h < 12) h += 12;
       if (ampm === "am" && h === 12) h = 0;
-      const time = `${String(h).padStart(2, "0")}:${m}`;
-      return { time, rawText: beforeMatch[0], timePreference: "before" };
+      return { time: hhmm(h, m), rawText: beforeMatch[0], timePreference: "before", clockAmbiguous };
     }
 
     // Exact clock time: "14:00", "14.30", "09:15", "9:00", "2:00 PM", "14:00'te"
@@ -770,9 +906,10 @@ export class SlotExtractor {
       let h = parseInt(exactMatch[1], 10);
       const m = exactMatch[2];
       const ampm = exactMatch[3]?.toLowerCase();
+      const clockAmbiguous = isAmbiguousHour(exactMatch[1], h, ampm) && !SlotExtractor.hasDaypart(lower);
       if (ampm === "pm" && h < 12) h += 12;
       if (ampm === "am" && h === 12) h = 0;
-      return { time: `${String(h).padStart(2, "0")}:${m}`, rawText: exactMatch[0], timePreference: "specific" };
+      return { time: hhmm(h, m), rawText: exactMatch[0], timePreference: "specific", clockAmbiguous };
     }
 
     // Comma decimal (TR): "11,00", "11,30 sabah" — must beat fuzzy "sabah"→10:00
@@ -780,7 +917,8 @@ export class SlotExtractor {
     if (commaMatch) {
       const h = parseInt(commaMatch[1], 10);
       const m = commaMatch[2];
-      return { time: `${String(h).padStart(2, "0")}:${m}`, rawText: commaMatch[0], timePreference: "specific" };
+      const clockAmbiguous = isAmbiguousHour(commaMatch[1], h) && !SlotExtractor.hasDaypart(lower);
+      return { time: hhmm(h, m), rawText: commaMatch[0], timePreference: "specific", clockAmbiguous };
     }
 
     // Hour + meridiem without minutes: "12pm", "12 pm", "9am", "9 a.m."
@@ -791,8 +929,13 @@ export class SlotExtractor {
       const meridiem = ampmBareMatch[2].replace(/\./g, "").toLowerCase();
       if (meridiem === "pm" && h < 12) h += 12;
       if (meridiem === "am" && h === 12) h = 0;
-      return { time: `${String(h).padStart(2, "0")}:00`, rawText: ampmBareMatch[0], timePreference: "specific" };
+      return { time: hhmm(h, 0), rawText: ampmBareMatch[0], timePreference: "specific" };
     }
+
+    // Daypart + hour ("öğleden sonra 2", "akşam 7", "sabah 11"): the daypart fixes the half of the day.
+    // Numeric hour always wins over fuzzy period defaults (e.g. sabah→10:00).
+    const daypartHour = SlotExtractor.parseDaypartHour(lower);
+    if (daypartHour) return daypartHour;
 
     // Exact hour: "saat 14", "saat 2'de", "at 2 PM", "at 14:00", "12 o'clock"
     const hourMatch = lower.match(/\bsaat\s*([01]?\d|2[0-3])(?:\s*(?:de|da|te|ta|civarı))?\b/i) ||
@@ -800,43 +943,71 @@ export class SlotExtractor {
       lower.match(/\b(1[0-2]|0?[1-9])\s*o['’]?clock\b/i);
     if (hourMatch) {
       let h = parseInt(hourMatch[1], 10);
-      if (hourMatch[2] && hourMatch[2].toLowerCase() === "pm" && h < 12) {
-        h += 12;
-      }
-      return { time: `${String(h).padStart(2, "0")}:00`, rawText: hourMatch[0], timePreference: "specific" };
+      const pm = hourMatch[2]?.toLowerCase() === "pm";
+      const clockAmbiguous = isAmbiguousHour(hourMatch[1], h, pm ? "pm" : undefined);
+      if (pm && h < 12) h += 12;
+      return { time: hhmm(h, 0), rawText: hourMatch[0], timePreference: "specific", clockAmbiguous };
     }
 
-    // Bare hour with optional period word: "11", "11 sabah", "sabah 11"
-    // Numeric hour always wins over fuzzy period defaults (e.g. sabah→10:00).
-    const bareHourOnly = lower.trim().match(/^([01]?\d|2[0-3])$/);
+    // Bare hour: "11", "14'te", "2'de"
+    const bareHourOnly = lower.trim().match(/^([01]?\d|2[0-3])(?:['’]?(?:de|da|te|ta))?$/);
     if (bareHourOnly) {
       const h = parseInt(bareHourOnly[1], 10);
-      return { time: `${String(h).padStart(2, "0")}:00`, rawText: bareHourOnly[0], timePreference: "specific" };
-    }
-    if (/\b(sabah|morning|öğleden\s+sonra|ogleden\s+sonra|afternoon|akşam|aksam|evening)\b/i.test(lower)) {
-      const hourInPeriod = lower.match(/\b([01]?\d|2[0-3])\b/);
-      if (hourInPeriod) {
-        const h = parseInt(hourInPeriod[1], 10);
-        if (h >= 0 && h <= 23) {
-          return { time: `${String(h).padStart(2, "0")}:00`, rawText: hourInPeriod[0], timePreference: "specific" };
-        }
-      }
+      return {
+        time: hhmm(h, 0),
+        rawText: bareHourOnly[0],
+        timePreference: "specific",
+        clockAmbiguous: isAmbiguousHour(bareHourOnly[1], h),
+      };
     }
 
-    // Fuzzy Time: Turkish — only when no explicit hour was present
-    if (/\b(sabah|sabahları|öğleden önce|ogleden once|morning)\b/i.test(lower)) {
-      return { time: "10:00", rawText: "sabah", timePreference: "morning" };
-    }
-    if (/\b(öğle|ogle|öğlen|oglen|noon|midday)\b/i.test(lower)) {
-      return { time: "12:00", rawText: "öğlen", timePreference: "afternoon" };
-    }
-    if (/\b(öğleden sonra|ogleden sonra|afternoon)\b/i.test(lower)) {
+    // Fuzzy Time: only when no explicit hour was present
+    if (hasWord(lower, "öğleden sonra|ogleden sonra|afternoon")) {
       return { time: "14:00", rawText: "öğleden sonra", timePreference: "afternoon" };
     }
-    if (/\b(akşam|aksam|akşamüstü|aksamustu|evening)\b/i.test(lower)) {
+    if (hasWord(lower, "sabah|sabahları|sabahlari|öğleden önce|ogleden once|morning")) {
+      return { time: "10:00", rawText: "sabah", timePreference: "morning" };
+    }
+    if (hasWord(lower, "öğle|ogle|öğlen|oglen|noon|midday")) {
+      return { time: "12:00", rawText: "öğlen", timePreference: "afternoon" };
+    }
+    if (hasWord(lower, "akşam|aksam|akşamüstü|aksamustu|evening")) {
       return { time: "17:00", rawText: "akşam", timePreference: "evening" };
     }
 
+    return null;
+  }
+
+  private static hasDaypart(lower: string): boolean {
+    return hasWord(
+      lower,
+      "sabah|sabahları|sabahlari|öğleden sonra|ogleden sonra|öğleden önce|ogleden once|öğle|ogle|öğlen|oglen|akşam|aksam|akşamüstü|aksamustu|gece|morning|afternoon|evening|night|noon"
+    );
+  }
+
+  private static parseDaypartHour(lower: string): ParsedTimeResult | null {
+    const periods: Array<{ words: string; kind: "am" | "pm" | "noon" | "night" }> = [
+      { words: "öğleden sonra|ogleden sonra|afternoon", kind: "pm" },
+      { words: "öğleden önce|ogleden once|sabah|sabahları|sabahlari|morning", kind: "am" },
+      { words: "akşamüstü|aksamustu|akşam|aksam|evening", kind: "pm" },
+      { words: "öğlen|oglen|öğle|ogle|noon", kind: "noon" },
+      { words: "gece|night", kind: "night" },
+    ];
+    for (const period of periods) {
+      const adjacent =
+        lower.match(new RegExp(`(?<![\\p{L}\\p{N}])(?:${period.words})\\s+(?:saat\\s*)?(\\d{1,2})(?![\\d:.,])`, "iu")) ||
+        lower.match(new RegExp(`(?<![\\p{L}\\p{N}:.,])(\\d{1,2})(?:['’]?(?:de|da|te|ta))?\\s+(?:${period.words})(?![\\p{L}\\p{N}])`, "iu"));
+      if (!adjacent) continue;
+      let h = parseInt(adjacent[1], 10);
+      if (h > 23) continue;
+      if (period.kind === "pm" && h >= 1 && h <= 11) h += 12;
+      if (period.kind === "noon" && h >= 1 && h <= 6) h += 12;
+      if (period.kind === "night") {
+        if (h >= 8 && h <= 11) h += 12;
+        if (h === 12) h = 0;
+      }
+      return { time: `${String(h).padStart(2, "0")}:00`, rawText: adjacent[0], timePreference: "specific" };
+    }
     return null;
   }
 
@@ -970,16 +1141,37 @@ export class SlotExtractor {
       return { status: "invalid_calendar", rawText };
     };
 
+    // Relative dates: "öbür gün" / "yarından sonra" / "day after tomorrow" (before "yarın")
+    if (hasWord(lower, "öbür gün|öbürgün|obur gun|oburgun|yarından sonra|yarindan sonra|day after tomorrow")) {
+      const iso = clinicLocalDayAfterTomorrowIso(timeZone, now);
+      return finalizeComplete(iso, raw, false);
+    }
+
     // Relative dates: "yarın" / "tomorrow"
-    if (/\b(yarın|yarin|tomorrow)\b/i.test(lower)) {
+    if (hasWord(lower, "yarın|yarin|yarına|yarina|yarında|yarinda|tomorrow")) {
       const iso = clinicLocalTomorrowIso(timeZone, now);
       return finalizeComplete(iso, raw, false);
     }
 
     // Relative dates: "bugün" / "today"
-    if (/\b(bugün|bugun|today)\b/i.test(lower)) {
+    if (hasWord(lower, "bugün|bugun|bugüne|bugune|today")) {
       const iso = clinicLocalTodayIso(timeZone, now);
       return finalizeComplete(iso, raw, false);
+    }
+
+    // Day of the current month: "ayın 12'si", "ayın on ikisi" (digit view). A day that has
+    // already passed this month is ambiguous (this month vs next) and is never guessed.
+    const dayOfMonth = lower.match(
+      /(?<![\p{L}\p{N}])ay[ıi]n\s+(\d{1,2})(?:['’]?(?:si|sı|su|sü|i|ı|u|ü|inde|ında|unda|ünde|sinde|sında|sunda|sünde|nde|nda))?(?![\p{L}\p{N}])/iu
+    );
+    if (dayOfMonth) {
+      const day = parseInt(dayOfMonth[1], 10);
+      const [y, m, d] = clinicLocalTodayIso(timeZone, now).split("-").map((n) => parseInt(n, 10));
+      const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      if (day < 1 || day > daysInMonth) return { status: "invalid_calendar", rawText: dayOfMonth[0] };
+      if (day < d) return { status: "ambiguous", rawText: dayOfMonth[0], reason: "DATE_DAY_OF_MONTH_PASSED" };
+      const iso = `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      return finalizeComplete(iso, dayOfMonth[0], false);
     }
 
     // 1. Regex for D/M/YYYY or DD.MM.YYYY or DD-MM-YYYY (explicit year)
@@ -1118,113 +1310,29 @@ export class SlotExtractor {
   }
 
   /**
-   * Parse and normalize phone number (Turkish and international)
+   * Parse and normalize phone number (Turkish and international).
+   * Compatibility wrapper over `parsePhoneSlot`: ambiguous spoken groupings return null.
    */
   public static parsePhone(raw: string): string | null {
     if (!raw) return null;
-    const norm = normalizeTurkishPhone(raw);
-    if (norm.valid) {
-      return norm.display;
-    }
-
-    // 1. Match international format with country code (e.g. +44 7911 123456, +49 151 23456789, +90 532 123 45 67)
-    const intlMatch = raw.match(/\+\d{1,4}(?:[\s.-]?\(?\d{1,4}\)?)*(?:[\s.-]?\d{1,4}){2,5}/);
-    if (intlMatch) {
-      const digits = intlMatch[0].replace(/\D/g, "");
-      if (digits.length >= 9 && digits.length <= 16) {
-        return intlMatch[0].trim();
-      }
-    }
-
-    // 2. Match standard local phone format with optional leading zero or parentheses
-    const localMatch = raw.match(/(?:\+?\d{1,3}[\s-]?)?\(?0?\d{2,4}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}/) ||
-      raw.match(/\b(?:\+\d{1,3}[\s-]?)?\d{9,14}\b/);
-
-    if (localMatch) {
-      const clean = localMatch[0].replace(/[\s\(\)\-]/g, "");
-      const digits = clean.replace(/\D/g, "");
-      if (digits.length >= 9 && digits.length <= 16) {
-        return localMatch[0].trim();
-      }
-    }
-
-    // 3. Fallback: check if the string itself is a clean phone number
-    const allDigits = raw.replace(/\D/g, "");
-    if (allDigits.length >= 9 && allDigits.length <= 16 && (raw.startsWith("+") || raw.startsWith("0") || raw.startsWith("5"))) {
-      return raw.trim();
-    }
-
-    // 4. Spoken Turkish mobile ("sıfır beş yüz otuz iki ..."): only a complete, valid TR mobile.
-    const spokenDigits = spokenTurkishPhoneDigits(raw);
-    if (spokenDigits) {
-      const spokenNorm = normalizeTurkishPhone(spokenDigits);
-      if (spokenNorm.valid) return spokenNorm.display;
-    }
-
-    return null;
+    const result = parsePhoneSlot(toSlotInput(raw));
+    return result.status === "filled" ? result.value : null;
   }
 
   /**
-   * Parse Name (e.g. "Adım Ahmet Yılmaz", "Ahmet Yılmaz", or when expectedSlot is fullName)
+   * Parse Name (e.g. "Adım Ahmet Yılmaz", "Ahmet Yılmaz", or when expectedSlot is fullName).
+   * Compatibility wrapper over `parseFullNameSlot`. An explicitly introduced name is always
+   * trusted; a bare phrase only when `allowBareName` is not false.
    */
   public static parseName(
     raw: string,
-    lower: string = raw.toLowerCase(),
-    existingSlots: Partial<ConversationSlots> = {},
-    expectedSlot?: string,
+    _lower: string = raw.toLowerCase(),
+    _existingSlots: Partial<ConversationSlots> = {},
+    _expectedSlot?: string,
     options: { allowBareName?: boolean } = {}
   ): { fullName: string; firstName: string; lastName: string } | null {
-    // An explicitly introduced name ("Adım ...") is always trusted. A bare
-    // phrase is only read as a name when the caller says the message is about
-    // the patient's identity.
-    const allowBareName = options.allowBareName !== false;
-    // Pattern 1: "Adım Ahmet Yılmaz", "İsmim Ahmet Yılmaz", "My name is John Doe"
-    const explicitNameMatch = raw.match(/(?:adım|adim|ismim|my name is|i am|i'm)\s+([A-Za-zÇĞİÖŞÜçğıöşü]{2,}\s+[A-Za-zÇĞİÖŞÜçğıöşü]{2,})/i);
-    if (explicitNameMatch) {
-      const full = explicitNameMatch[1].trim();
-      const parts = full.split(/\s+/);
-      return {
-        fullName: full,
-        firstName: parts[0],
-        lastName: parts.slice(1).join(" ")
-      };
-    }
-
-    if (!allowBareName) return null;
-
-    // Pattern 1b: Comma, hyphen or delimiter separated multi-field input like "Alper Özgül - 27 - Erkek" or "Alper Özgül, 27 yaşındayım, erkeğim."
-    const segments = raw.split(/[-–—,;\/\n]+/);
-    for (const seg of segments) {
-      const trimmedSeg = seg.trim();
-      if (!trimmedSeg) continue;
-      const segParts = trimmedSeg.split(/\s+/);
-      if (segParts.length >= 2 && segParts.length <= 4 && /^[A-Za-zÇĞİÖŞÜçğıöşü\s]+$/.test(trimmedSeg) && trimmedSeg.length <= 40) {
-        if (!looksLikeRequestPhrase(trimmedSeg)) {
-          return {
-            fullName: trimmedSeg,
-            firstName: segParts[0],
-            lastName: segParts.slice(1).join(" ")
-          };
-        }
-      }
-    }
-
-    // Pattern 2: When expectedSlot is fullName / name / patientName, or in APPOINTMENT_COLLECTION without a name
-    if (expectedSlot === "fullName" || expectedSlot === "name" || expectedSlot === "patientName") {
-      const clean = raw.trim();
-      const parts = clean.split(/\s+/);
-      if (parts.length >= 2 && parts.length <= 4 && /^[A-Za-zÇĞİÖŞÜçğıöşü\s]+$/.test(clean) && clean.length <= 40) {
-        if (!looksLikeRequestPhrase(clean)) {
-          return {
-            fullName: clean,
-            firstName: parts[0],
-            lastName: parts.slice(1).join(" ")
-          };
-        }
-      }
-    }
-
-    return null;
+    const result = parseFullNameSlot(toSlotInput(raw), { allowBare: options.allowBareName !== false });
+    return result.status === "filled" ? result.value : null;
   }
 
   /**

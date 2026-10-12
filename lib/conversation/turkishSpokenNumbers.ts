@@ -214,13 +214,21 @@ function tokenize(text: string): RawToken[] {
 }
 
 /**
+ * Decides an ambiguous grouping point: a unit right after tens/hundreds and
+ * right before "yüz" ("otuz iki yüz yirmi" → 32 | 120 or 30 | 220).
+ * Returning true joins the unit to the running number.
+ */
+type GroupingChoice = (pointIndex: number) => boolean;
+
+/**
  * Group consecutive number words into numbers ("beş yüz otuz bir" → 531).
  * A suffixed word or punctuation ends a number; a unit followed by "yüz" /
  * "bin" starts a new number once tens/hundreds are present
  * ("doksan beş yüz otuz iki" → 90 | 532).
  */
-function buildItems(text: string): Item[] {
+function buildItems(text: string, choose?: GroupingChoice, onPoint?: () => void): Item[] {
   const tokens = tokenize(text);
+  let pointIndex = 0;
   const items: Item[] = [];
   type Acc = { th: number | null; h: number | null; t: number | null; u: number | null; closed: boolean; raws: string[]; last: NumberToken; trailing: string };
   let acc: Acc | null = null;
@@ -252,7 +260,10 @@ function buildItems(text: string): Item[] {
           return false;
         case "unit":
           if (g.u !== null) return false;
-          if (nextKind === "hundred" && (g.t !== null || g.h !== null)) return false;
+          if (nextKind === "hundred" && (g.t !== null || g.h !== null)) {
+            onPoint?.();
+            return choose ? choose(pointIndex++) : false;
+          }
           if (nextKind === "thousand" && (g.t !== null || g.h !== null || g.th !== null)) return false;
           return true;
         case "ten":
@@ -548,6 +559,22 @@ export function normalizeTurkishSpokenTemporal(text: string): string {
       continue;
     }
 
+    // "ayın on ikisi" / "ayın on ikisinde" — day of the current month.
+    if (
+      item.folded === "ayin" &&
+      !item.trailing &&
+      next?.type === "group" &&
+      next.value >= 1 &&
+      next.value <= 31 &&
+      (next.last.suffixType === "possessive" || next.last.suffixType === "none")
+    ) {
+      out.push(`${item.raw} ${next.value}${next.trailing}`);
+      i += 2;
+      changed = true;
+      afterDate = true;
+      continue;
+    }
+
     // "ekim on iki" — same shape as typed "ekim 12".
     const head = monthHead(item.folded);
     if (
@@ -612,7 +639,32 @@ export function normalizeTurkishSpokenTemporal(text: string): string {
  * or null. Callers must validate the result; nothing is completed or guessed.
  */
 export function spokenTurkishPhoneDigits(text: string): string | null {
-  const items = buildItems(String(text ?? ""));
+  return longestSpokenDigitRun(buildItems(String(text ?? "")));
+}
+
+const MAX_GROUPING_POINTS = 4;
+
+/**
+ * Every distinct digit reading of a spoken phone number. Unpunctuated speech such as
+ * "beş yüz otuz iki yüz yirmi üç" has two valid groupings (532 | 123 or 530 | 223);
+ * both are returned so the caller can refuse to pick one. Bounded to 2^4 readings.
+ */
+export function spokenTurkishPhoneDigitCandidates(text: string): string[] {
+  const source = String(text ?? "");
+  let points = 0;
+  const first = longestSpokenDigitRun(buildItems(source, undefined, () => { points += 1; }));
+  if (!first) return [];
+  if (points === 0) return [first];
+  const bits = Math.min(points, MAX_GROUPING_POINTS);
+  const readings = new Set<string>([first]);
+  for (let mask = 1; mask < 1 << bits; mask++) {
+    const reading = longestSpokenDigitRun(buildItems(source, (idx) => idx < bits && Boolean(mask & (1 << idx))));
+    if (reading) readings.add(reading);
+  }
+  return Array.from(readings);
+}
+
+function longestSpokenDigitRun(items: Item[]): string | null {
   let best = "";
   let bestLen = 0;
   let i = 0;

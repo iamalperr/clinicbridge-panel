@@ -7,20 +7,27 @@ import { PendingActionManager, SlotExtractor } from "@/lib/conversation";
 import type { AgentChannel, AgentTurnResult, AppointmentData, AppointmentState } from "@/lib/agent/types";
 import { respondWithVisibleReply, saveAppointmentState } from "@/lib/agent/persistence";
 import {
+  APPOINTMENT_CANCELLATION_PURPOSE,
+  appointmentCancellationRequestNote,
   buildContactRequestIdempotencyKey,
   cancelUnresolvedContactRequest,
   createContactRequestAndNotify,
   detectContactHandoff,
   findUnresolvedContactRequest,
   formatAskForEmail,
+  formatAppointmentCancellationAddedToOpenRequest,
+  formatAppointmentCancellationForwarded,
+  formatAppointmentCancellationNotForwarded,
   formatAskForPhone,
   formatContactRequestAlreadyPending,
   formatContactRequestCancelled,
   formatContactRequestConfirmationPrompt,
   formatContactRequestFailure,
   formatContactRequestHandoffDisabled,
+  formatContactRequestNotForwarded,
   formatContactRequestSuccess,
   formatContactRequestUpdated,
+  formatLiveAgentHandoffConfirmationPrompt,
   isExplicitContactDetailCorrection,
   requiredContactDetail,
   updateContactRequestPreference,
@@ -170,7 +177,28 @@ export async function tryHandleContactHandoffTurn(
   const isCancel =
     detection.isCancel ||
     ((pendingContactConfirm || awaitingContactDetail) &&
+      !params.confirmationAffirmed &&
       PendingActionManager.isRejection(params.message));
+
+  const cancellationPurpose =
+    (pendingContactConfirm || awaitingContactDetail) &&
+    pending?.payload?.purpose === APPOINTMENT_CANCELLATION_PURPOSE;
+  const purposePayload = cancellationPurpose
+    ? { purpose: APPOINTMENT_CANCELLATION_PURPOSE, appointmentId: pending?.payload?.appointmentId ?? null }
+    : {};
+
+  // Declining a cancellation-request offer sends nothing and must not touch other open requests.
+  if (isCancel && cancellationPurpose) {
+    await persistPending(params, null);
+    return respondWithVisibleReply(
+      {
+        responseType: "CHAT_REPLY",
+        reply: formatAppointmentCancellationNotForwarded(params.locale),
+        pendingAppointmentData: params.appointmentDraft,
+      },
+      params.basePersist({ appointmentState: params.appointmentState })
+    );
+  }
 
   // ── Cancel ────────────────────────────────────────────────────────────
   if (
@@ -207,7 +235,10 @@ export async function tryHandleContactHandoffTurn(
     return respondWithVisibleReply(
       {
         responseType: "CHAT_REPLY",
-        reply: formatContactRequestCancelled(params.locale),
+        reply:
+          cancelResult.cancelled || cancelResult.contactRequestId
+            ? formatContactRequestCancelled(params.locale)
+            : formatContactRequestNotForwarded(params.locale),
         pendingAppointmentData: params.appointmentDraft,
         contactRequestCancelled: cancelResult.cancelled,
       },
@@ -407,7 +438,9 @@ export async function tryHandleContactHandoffTurn(
     return respondWithVisibleReply(
       {
         responseType: "CHAT_REPLY",
-        reply: formatContactRequestConfirmationPrompt(preferredMethod, params.locale),
+        reply: detection.asksForLiveAgent
+          ? formatLiveAgentHandoffConfirmationPrompt(params.locale)
+          : formatContactRequestConfirmationPrompt(preferredMethod, params.locale),
         pendingAppointmentData: params.appointmentDraft,
         pendingAction: action,
       },
@@ -442,7 +475,7 @@ export async function tryHandleContactHandoffTurn(
   if (needed === "phone" && !phone) {
     const action = PendingActionManager.createPendingAction(
       "collect_contact_phone",
-      { preferredContactMethod: preferredMethod, patientName, patientEmail: email },
+      { preferredContactMethod: preferredMethod, patientName, patientEmail: email, ...purposePayload },
       undefined,
       "Collect phone for contact request"
     );
@@ -461,7 +494,7 @@ export async function tryHandleContactHandoffTurn(
   if (needed === "email" && !email) {
     const action = PendingActionManager.createPendingAction(
       "collect_contact_email",
-      { preferredContactMethod: preferredMethod, patientName, patientPhone: phone },
+      { preferredContactMethod: preferredMethod, patientName, patientPhone: phone, ...purposePayload },
       undefined,
       "Collect email for contact request"
     );
@@ -516,7 +549,9 @@ export async function tryHandleContactHandoffTurn(
     patientPhone: phone,
     patientEmail: email,
     preferredContactMethod: preferredMethod,
-    patientNote: String(params.message || "").slice(0, 500),
+    patientNote: cancellationPurpose
+      ? appointmentCancellationRequestNote(pending?.payload?.appointmentId)
+      : String(params.message || "").slice(0, 500),
     language: params.locale,
     channel: mapChannel(params.channel),
     source: "AI Assistant",
@@ -550,8 +585,12 @@ export async function tryHandleContactHandoffTurn(
     );
   }
 
-  const finalReply =
-    result.isDuplicate && result.clinicNotificationStatus === "SKIPPED_DUPLICATE"
+  const alreadyPending = result.isDuplicate && result.clinicNotificationStatus === "SKIPPED_DUPLICATE";
+  const finalReply = cancellationPurpose
+    ? alreadyPending
+      ? formatAppointmentCancellationAddedToOpenRequest(params.locale)
+      : formatAppointmentCancellationForwarded(params.locale)
+    : alreadyPending
       ? formatContactRequestAlreadyPending({
           preferredMethod: result.record?.preferredContactMethod || preferredMethod,
           locale: params.locale,

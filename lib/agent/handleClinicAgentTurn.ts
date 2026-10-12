@@ -66,7 +66,39 @@ import { extractAppointmentFromHistory, parseTimeText } from "./appointmentParse
 import { saveAppointmentState, respondWithVisibleReply } from "./persistence";
 import { fetchClinicDoctorMatchInputs, getClientDb } from "./clinicRuntime";
 import { tryHandleContactHandoffTurn } from "@/lib/contact-request/handleContactHandoffTurn";
+import {
+  formatAppointmentCancellationInfo,
+  formatAppointmentCancellationNotForwarded,
+  formatAppointmentCancellationOffer,
+  formatAppointmentCancellationUnavailable,
+  formatAppointmentUnchanged,
+  formatContactRequestHandoffDisabled,
+} from "@/lib/contact-request/formatters";
+import {
+  classifyAppointmentCancellationTurn,
+  containsUnverifiedCancellationClaim,
+  createAppointmentCancellationOfferAction,
+  isAppointmentCancellationPending,
+  isCancellationOfferAcceptance,
+} from "./appointmentCancellation";
 import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
+import { slotNameForExpected, type SlotName } from "@/lib/conversation/slotParsing";
+import {
+  captureMixedTurnSlots,
+  collectingStateForSlot,
+  composeSlotCollectionReply,
+  createSlotRecoveryHandoffAction,
+  diffDraftSlots,
+  isBareSlotRecoveryDecline,
+  isSlotRecoveryOffer,
+  lastAssistantReply,
+  mergeSafeSlotEntities,
+  normalizeSlotAttempts,
+  slotAttemptsPatch,
+  type SlotAttempts,
+} from "./slotTurn";
+import { voiceSlotQuestion } from "@/lib/conversation/slotRecoveryPrompts";
+import { buildVoiceSlotTurnEvent } from "./voiceSlotTurnTelemetry";
 import type {
   AgentTurnInput,
   AgentTurnResult,
@@ -806,9 +838,44 @@ export async function handleClinicAgentTurn(
       }));
     }
 
+    // Clinic hours let the extractor read "saat iki" / "iki buçuk" as the in-hours clock
+    // (or ask), instead of persisting 02:00. Same deterministic policy on every channel.
+    const routerHours = ClinicWorkingHoursResolver.resolveClinicWorkingHours({
+      clinicId: actualClinicId || clinicId,
+      clinicData,
+      trainingDocs,
+    });
+    const expectedSlotName = slotNameForExpected(currentExpectedSlot);
+    const loadedSlotAttempts = normalizeSlotAttempts(loadedConversationLogData?.slotAttempts);
+
+    // Outside an active draft there is nothing to discard locally: cancelling a submitted
+    // appointment is forwarded to the clinic as a confirmed Contact Request instead.
+    const hasActiveDraftFlow = !["IDLE", "APPOINTMENT_SUBMITTED", "COMPLETED", "CREATED"].includes(String(appointmentState));
+    const submittedAppointmentOnRecord =
+      !hasActiveDraftFlow &&
+      (appointmentState === "APPOINTMENT_SUBMITTED" ||
+        loadedState === "CREATED" ||
+        loadedState === "APPOINTMENT_SUBMITTED" ||
+        loadedState === "COMPLETED" ||
+        loadedIsAppointmentCreated ||
+        Boolean(loadedAppointmentId));
+    const localDraftCancellable =
+      hasActiveDraftFlow || (Boolean(pendingAppointmentData) && !submittedAppointmentOnRecord);
+    const cancellationTurn = localDraftCancellable
+      ? { kind: "none" as const, knowledgeQuestion: null }
+      : classifyAppointmentCancellationTurn(message, { submittedOnRecord: submittedAppointmentOnRecord });
+    const cancellationPendingAtLoad = isAppointmentCancellationPending(loadedPendingAction);
+    const cancellationAccepted =
+      cancellationPendingAtLoad && isCancellationOfferAcceptance(message, cancellationTurn);
+    // A question asked next to a cancellation request is routed and answered on its own.
+    const knowledgeTurnMessage =
+      !cancellationAccepted && cancellationTurn.kind === "request" && cancellationTurn.knowledgeQuestion
+        ? cancellationTurn.knowledgeQuestion
+        : message;
+
     perf.start("intent_classify");
     const conversationIntent = IntentRouter.classifyConversationIntent({
-      message,
+      message: knowledgeTurnMessage,
       conversationHistory: history as any,
       currentState: appointmentState === "IDLE" ? "INITIAL" : (appointmentState === "AWAITING_CONFIRMATION" ? "APPOINTMENT_REVIEW" : (appointmentState === "APPOINTMENT_SUBMITTED" ? "APPOINTMENT_SUBMITTED" : "APPOINTMENT_COLLECTION")),
       expectedSlot: currentExpectedSlot,
@@ -835,8 +902,76 @@ export async function handleClinicAgentTurn(
         const tz = resolveClinicTimeZone(clinicData);
         return tz.confident ? tz.timeZone : "Europe/Istanbul";
       })(),
+      meridiem: {
+        workingHours: routerHours.schedule,
+        is24_7: routerHours.is24_7,
+        pendingCandidates:
+          currentExpectedSlot === "preferredTime" ? loadedSlotAttempts.preferredTime?.candidates ?? null : null,
+      },
+      surnameCorrection: true,
     });
     perf.end("intent_classify", { intent: conversationIntent.intent });
+
+    // Slot-recovery handoff offer from the previous turn: a valid slot answer or a bare
+    // "no" keeps collecting (never cancels the booking); "yes" goes to the contact handoff.
+    const slotRecoveryOfferPending = isSlotRecoveryOffer(loadedPendingAction);
+    const slotRecoveryDeclined = slotRecoveryOfferPending && isBareSlotRecoveryDecline(message);
+    const slotRecoveryAnswered =
+      slotRecoveryOfferPending &&
+      Boolean(expectedSlotName) &&
+      conversationIntent.slotOutcomes?.[expectedSlotName as SlotName]?.status === "filled";
+    const emitVoiceSlotTurn = (fields: {
+      resolvedSlotNames: readonly SlotName[];
+      correctedSlotNames: readonly SlotName[];
+      attempt: number;
+      handoffOffered: boolean;
+    }) => {
+      if (channel !== "voice") return;
+      // Structural fields only (punctuation flag, token bucket); no slot values or transcript.
+      const slotTurnEvent = buildVoiceSlotTurnEvent({
+        conversationId: convId,
+        messageId,
+        message,
+        expectedSlot: expectedSlotName ?? null,
+        expectedOutcome: expectedSlotName ? conversationIntent.slotOutcomes?.[expectedSlotName] : undefined,
+        ...fields,
+        startTime,
+      });
+      console.log(JSON.stringify(slotTurnEvent));
+    };
+
+    if (slotRecoveryDeclined && expectedSlotName && appointmentState !== "IDLE") {
+      const declined = composeSlotCollectionReply({
+        channel: String(channel || "web_widget"),
+        locale: conversationLocale,
+        expectedSlot: expectedSlotName,
+        nextSlot: expectedSlotName,
+        slotOutcomes: conversationIntent.slotOutcomes,
+        filled: [],
+        corrected: [],
+        attempts: loadedSlotAttempts,
+        draft: appointmentDraft,
+        webPrompt: ConversationStateEngine.generateNextSlotPrompt(
+          appointmentDraftSlots(appointmentDraft),
+          [expectedSlotName],
+          conversationLocale
+        ),
+        previousReply: lastAssistantReply(history),
+        handoffDeclined: true,
+      });
+      await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, appointmentState, appointmentDraft, {
+        processedMessageIds: [...processedMessageIds, messageId],
+        conversationLocale,
+        pendingAction: null,
+        slotAttempts: slotAttemptsPatch(declined.nextAttempts),
+      });
+      emitVoiceSlotTurn({ resolvedSlotNames: [], correctedSlotNames: [], attempt: 0, handoffOffered: false });
+      return respondWithVisibleReply({
+        responseType: "CHAT_REPLY",
+        reply: declined.reply,
+        pendingAppointmentData: appointmentDraft,
+      }, basePersist({ appointmentState }));
+    }
 
     // 1. Language Switch handling
     if (conversationIntent.intent === "language_switch" && conversationIntent.targetLocale) {
@@ -886,12 +1021,93 @@ export async function handleClinicAgentTurn(
       }));
     }
 
-    // 2. Cancellation Intent
+    // 2a. Cancellation of a submitted appointment (no active draft).
+    const contactPendingAtLoad =
+      loadedPendingAction?.status === "pending" &&
+      ["create_contact_request", "request_phone_contact", "collect_contact_phone", "collect_contact_email"].includes(
+        loadedPendingAction?.type
+      );
+    const persistCancellationTurn = (pendingAction: unknown) =>
+      saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, appointmentState, appointmentDraft, {
+        processedMessageIds: [...processedMessageIds, messageId],
+        conversationLocale,
+        pendingAction: pendingAction ?? null,
+      });
+
+    if (cancellationPendingAtLoad && !cancellationAccepted && PendingActionManager.isRejection(message)) {
+      await persistCancellationTurn(null);
+      return respondWithVisibleReply({
+        responseType: "CHAT_REPLY",
+        reply: formatAppointmentCancellationNotForwarded(conversationLocale),
+      }, basePersist({ appointmentState }));
+    }
+
+    let appointmentCancellationOffer: { action: unknown; reply: string } | null = null;
+    if (!cancellationAccepted && cancellationTurn.kind === "negation") {
+      await persistCancellationTurn(contactPendingAtLoad ? loadedPendingAction : null);
+      return respondWithVisibleReply({
+        responseType: "CHAT_REPLY",
+        reply: formatAppointmentUnchanged(conversationLocale),
+      }, basePersist({ appointmentState }));
+    }
+    if (!cancellationAccepted && (cancellationTurn.kind === "request" || cancellationTurn.kind === "question")) {
+      const handoffDisabled = clinicData?.enableHumanHandoff === false;
+      const action = handoffDisabled
+        ? null
+        : createAppointmentCancellationOfferAction({
+            appointmentId: loadedAppointmentId,
+            patientName: loadedConversationLogData?.patientName,
+            patientPhone: loadedConversationLogData?.patientPhone,
+            patientEmail: loadedConversationLogData?.patientEmail,
+            language: conversationLocale,
+            clinicId: actualClinicId,
+            conversationId: convId,
+          });
+      const offerReply = handoffDisabled
+        ? `${formatAppointmentCancellationUnavailable(conversationLocale)} ${formatContactRequestHandoffDisabled({
+            clinicPhone:
+              clinicData?.turkishContactNumber || clinicData?.internationalContactNumber || clinicData?.phone || "",
+            locale: conversationLocale,
+          })}`
+        : cancellationTurn.kind === "question"
+          ? formatAppointmentCancellationInfo(conversationLocale)
+          : formatAppointmentCancellationOffer(conversationLocale);
+      console.log(JSON.stringify({
+        checkpoint: "APPOINTMENT_CANCELLATION_REQUEST_OFFERED",
+        traceId: activeTraceId,
+        conversationId: convId,
+        clinicId: actualClinicId,
+        kind: cancellationTurn.kind,
+        submittedOnRecord: submittedAppointmentOnRecord,
+        handoffDisabled,
+        withQuestion: Boolean(cancellationTurn.knowledgeQuestion),
+      }));
+      if (cancellationTurn.knowledgeQuestion) {
+        appointmentCancellationOffer = { action, reply: offerReply };
+      } else {
+        await persistCancellationTurn(action);
+        return respondWithVisibleReply({
+          responseType: "CHAT_REPLY",
+          reply: offerReply,
+          ...(action ? { pendingAction: action } : {}),
+        }, basePersist({ appointmentState }));
+      }
+    }
+
+    // 2. Cancellation Intent (draft only — a submitted appointment is never reset here)
     const isCancel =
+      !cancellationAccepted &&
       conversationIntent.entities?.emailDeclined !== true &&
       (conversationIntent.intent === "cancel" ||
         /^(hayır|h|onaylamıyorum|onaylamiyorum|iptal|vazgeçtim|hayir|no|cancel|stornieren|annuler|nein|non|لا)$/i.test(controlPhraseKey(message)));
-    if (isCancel && (appointmentState !== "IDLE" || pendingAppointmentData)) {
+    if (isCancel && submittedAppointmentOnRecord && !contactPendingAtLoad && !appointmentCancellationOffer) {
+      await persistCancellationTurn(null);
+      return respondWithVisibleReply({
+        responseType: "CHAT_REPLY",
+        reply: formatAppointmentUnchanged(conversationLocale),
+      }, basePersist({ appointmentState }));
+    }
+    if (isCancel && localDraftCancellable) {
       appointmentDraft = createFreshAppointmentDraft(appointmentDraft);
       await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "IDLE", appointmentDraft, {
         processedMessageIds: [...processedMessageIds, messageId],
@@ -1038,7 +1254,7 @@ export async function handleClinicAgentTurn(
     }
 
     // 4. Contact Request / Human Handoff (deterministic — never falls through to RAG/groundedness)
-    {
+    if (!slotRecoveryAnswered) {
       const pendingType =
         loadedPendingAction?.status === "pending" ? loadedPendingAction?.type : null;
       const contactPending =
@@ -1065,9 +1281,10 @@ export async function handleClinicAgentTurn(
         adminDb,
         basePersist,
         confirmationAffirmed:
-          contactPending &&
-          (PendingActionManager.isConfirmation(message) ||
-            conversationIntent.intent === "contact_handoff_request"),
+          cancellationAccepted ||
+          (contactPending &&
+            (PendingActionManager.isConfirmation(message) ||
+              conversationIntent.intent === "contact_handoff_request")),
       });
 
       if (handoffResult) {
@@ -1109,13 +1326,15 @@ export async function handleClinicAgentTurn(
     }
 
     let isMidFlowInterruption = false;
+    let interruptionStatementCaptured = false;
+    let interruptionSchedulingNotice: string | null = null;
     const isAppointmentFlowActive = appointmentState !== "IDLE" && appointmentState !== "APPOINTMENT_SUBMITTED";
     // Authoritative gate: a treatment / doctor / specialty mention alone must never
     // open appointment collection. Only genuine booking intent (or volunteered
     // scheduling commitments) may start the flow.
     perf.start("appointment_gate");
     const appointmentGate = evaluateAppointmentCollectionGate({
-      message,
+      message: knowledgeTurnMessage,
       intent: conversationIntent.intent,
       isAppointmentFlowActive,
       entities: conversationIntent.entities
@@ -1166,6 +1385,63 @@ export async function handleClinicAgentTurn(
         );
       }
       console.log(`[INTENT_ROUTER] Mid-flow interruption detected: ${conversationIntent.intent}. Answering question while preserving appointment state: ${appointmentState}`);
+
+      // Mixed turn ("Yusuf Alper Özgül. Bu arada implant fiyatınız ne kadar?"): slots stated
+      // next to the question are validated and persisted BEFORE the knowledge answer, so a
+      // failed answer can never drop them and the resume prompt comes from the new draft.
+      if (appointmentState.startsWith("COLLECTING_")) {
+        const tzForMixed = resolveClinicTimeZone(clinicData);
+        const mixedTimeZone = tzForMixed.confident ? tzForMixed.timeZone : "Europe/Istanbul";
+        const mixed = captureMixedTurnSlots({
+          message,
+          draft: appointmentDraft,
+          collectedSlots: {
+            preferredDate: appointmentDraft.requestedDate || undefined,
+            preferredTime: appointmentDraft.requestedTime || undefined,
+            fullName: appointmentDraft.patientName || undefined,
+            phone: appointmentDraft.patientPhone || undefined,
+            email: appointmentDraft.patientEmail || undefined,
+            treatment: appointmentDraft.requestedService || activeTreatment || undefined,
+            pendingAppointmentDate: (appointmentDraft as any).pendingAppointmentDate || undefined,
+          },
+          expectedSlot: currentExpectedSlot,
+          locale: conversationLocale,
+          clinicTimeZone: mixedTimeZone,
+          now: new Date(),
+          workingHours: routerHours.schedule,
+          is24_7: routerHours.is24_7,
+          meridiem: {
+            workingHours: routerHours.schedule,
+            is24_7: routerHours.is24_7,
+            pendingCandidates:
+              currentExpectedSlot === "preferredTime" ? loadedSlotAttempts.preferredTime?.candidates ?? null : null,
+          },
+        });
+        if (mixed) {
+          interruptionStatementCaptured = true;
+          interruptionSchedulingNotice = mixed.schedulingNotice;
+        }
+        if (mixed && (mixed.filled.length > 0 || mixed.corrected.length > 0 || mixed.schedulingNotice)) {
+          appointmentDraft = mixed.draft;
+          const missingAfterMixed = ConversationStateEngine.getMissingSlots(appointmentDraftSlots(appointmentDraft));
+          appointmentState = missingAfterMixed.length === 0
+            ? "AWAITING_CONFIRMATION"
+            : collectingStateForSlot(missingAfterMixed[0]);
+          const mixedAttempts: SlotAttempts = { ...loadedSlotAttempts };
+          for (const slot of [...mixed.filled, ...mixed.corrected]) delete mixedAttempts[slot];
+          await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, appointmentState, appointmentDraft, {
+            conversationLocale,
+            slotAttempts: slotAttemptsPatch(mixedAttempts),
+            ...(slotRecoveryOfferPending ? { pendingAction: null } : {}),
+          });
+          emitVoiceSlotTurn({
+            resolvedSlotNames: mixed.filled,
+            correctedSlotNames: mixed.corrected,
+            attempt: 0,
+            handoffOffered: false,
+          });
+        }
+      }
     } else if (appointmentGate.allowed) {
       if (appointmentGate.mode === "start") {
         appointmentDraft = createFreshAppointmentDraft(appointmentDraft);
@@ -1194,6 +1470,22 @@ export async function handleClinicAgentTurn(
         trainingDocs,
       });
 
+      // Atomic turn: every safe slot from this message joins the draft before any
+      // gate or validation can return early, so no early return drops it.
+      const draftBeforeTurn: Partial<AppointmentData> = { ...appointmentDraft };
+      // Non-scheduling entities (contact, treatment, name)
+      if (conversationIntent.entities) {
+        mergeSafeSlotEntities(appointmentDraft, conversationIntent.entities, conversationLocale);
+        console.log(`[INTENT_ROUTER] Appointment slots updated:`, JSON.stringify({
+          entityKeys: Object.keys(conversationIntent.entities || {}),
+        }));
+      }
+
+      const slotTurnTelemetry = (attempt = 0, handoffOffered = false) => {
+        const { filled, corrected } = diffDraftSlots(draftBeforeTurn, appointmentDraft);
+        emitVoiceSlotTurn({ resolvedSlotNames: filled, correctedSlotNames: corrected, attempt, handoffOffered });
+      };
+
       const abbrevGateCollect = evaluateRawAppointmentTimeZoneAmbiguity(message, conversationLocale);
       if (abbrevGateCollect) {
         await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_DATE_CLARIFICATION", appointmentDraft, {
@@ -1217,6 +1509,12 @@ export async function handleClinicAgentTurn(
         workingHours: hoursForScheduling.schedule,
         is24_7: hoursForScheduling.is24_7,
         expectedSlot: currentExpectedSlot,
+        meridiem: {
+          workingHours: routerHours.schedule,
+          is24_7: routerHours.is24_7,
+          pendingCandidates:
+            currentExpectedSlot === "preferredTime" ? loadedSlotAttempts.preferredTime?.candidates ?? null : null,
+        },
       });
 
       console.log(JSON.stringify({
@@ -1234,6 +1532,7 @@ export async function handleClinicAgentTurn(
           processedMessageIds: [...processedMessageIds, messageId],
           conversationLocale,
         });
+        slotTurnTelemetry();
         return respondWithVisibleReply({
           responseType: "appointment_date_clarification_required",
           reply: schedulingAmendment.message || (conversationLocale.startsWith("en")
@@ -1250,6 +1549,7 @@ export async function handleClinicAgentTurn(
           processedMessageIds: [...processedMessageIds, messageId],
           conversationLocale,
         });
+        slotTurnTelemetry();
         return respondWithVisibleReply({
           responseType: "appointment_date_clarification_required",
           reply: schedulingAmendment.message || (conversationLocale.startsWith("en")
@@ -1261,43 +1561,6 @@ export async function handleClinicAgentTurn(
 
       if (schedulingAmendment.outcome === "applied") {
         Object.assign(appointmentDraft, schedulingAmendment.draft);
-      }
-
-      // Non-scheduling entities (contact, treatment, name)
-      if (conversationIntent.entities) {
-        if (conversationIntent.entities.fullName) {
-          appointmentDraft.patientName = conversationIntent.entities.fullName;
-        }
-        if (conversationIntent.entities.phone) {
-          appointmentDraft.patientPhone = conversationIntent.entities.phone;
-        }
-        if (conversationIntent.entities.email) {
-          appointmentDraft.patientEmail = conversationIntent.entities.email;
-          appointmentDraft.emailDisposition = "PROVIDED";
-        } else if (conversationIntent.entities.emailDeclined === true) {
-          // Persisted drafts merge, so an earlier address is blanked rather than omitted.
-          appointmentDraft.patientEmail = "";
-          appointmentDraft.emailDisposition = "DECLINED";
-        }
-        if (conversationIntent.entities.treatment) {
-          const treatmentIds = [
-            conversationIntent.entities.treatment,
-            ...(((conversationIntent.entities as any).additionalTreatments as string[]) || []),
-          ].filter(Boolean);
-          const primaryId = treatmentIds[0];
-          const label = SlotExtractor.formatMultiTreatmentLabel(treatmentIds, conversationLocale);
-          const primaryLabel = SlotExtractor.formatMultiTreatmentLabel([primaryId], conversationLocale);
-          appointmentDraft.requestedService = primaryLabel || primaryId;
-          if (treatmentIds.length > 1) {
-            const proceduresNote = conversationLocale.startsWith("en")
-              ? `Requested procedures: ${label}`
-              : `Talep edilen işlemler: ${label}`;
-            appointmentDraft.notes = [appointmentDraft.notes, proceduresNote].filter(Boolean).join("\n");
-          }
-        }
-        console.log(`[INTENT_ROUTER] Appointment slots updated:`, JSON.stringify({
-          entityKeys: Object.keys(conversationIntent.entities || {}),
-        }));
       }
 
       if (appointmentGate.allowed) {
@@ -1371,6 +1634,11 @@ export async function handleClinicAgentTurn(
             const clarificationFail = conversationLocale.startsWith("en")
               ? "The date could not be understood. Please specify again."
               : "Tarih anlaşılamadı. Lütfen tekrar belirtin.";
+            await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_DATE_CLARIFICATION", appointmentDraft, {
+              processedMessageIds: [...processedMessageIds, messageId],
+              conversationLocale,
+            });
+            slotTurnTelemetry();
             return respondWithVisibleReply({ 
               responseType: "CHAT_REPLY", 
               reply: validationResult.clarificationMessage || clarificationFail, 
@@ -1379,21 +1647,17 @@ export async function handleClinicAgentTurn(
           }
         }
       } else if (appointmentState === "COLLECTING_PHONE" && !appointmentDraft.patientPhone) {
-        const extractedPhone = SlotExtractor.parsePhone(message.trim());
+        // A failed phone answer falls through to the common path, which persists the
+        // merged draft and asks again via the bounded retry ladder.
+        const phoneAmbiguous = conversationIntent.slotOutcomes?.phone?.status === "ambiguous";
+        const extractedPhone = phoneAmbiguous ? null : SlotExtractor.parsePhone(message.trim());
         let finalPhone = extractedPhone;
-        if (!finalPhone) {
+        if (!finalPhone && !phoneAmbiguous) {
           const phoneResult = normalizeTurkishPhone(message.trim());
           if (phoneResult.valid) finalPhone = phoneResult.normalized;
         }
         if (finalPhone) {
           appointmentDraft.patientPhone = finalPhone;
-        } else {
-          const reply = ConversationStateEngine.generateNextSlotPrompt(appointmentDraft, ["phone"], conversationLocale);
-          return respondWithVisibleReply({
-            responseType: "CHAT_REPLY",
-            reply,
-            pendingAppointmentData: appointmentDraft
-          }, basePersist({ appointmentState: "COLLECTING_PHONE" }));
         }
       } else if (
         appointmentState === "COLLECTING_EMAIL" &&
@@ -1412,7 +1676,9 @@ export async function handleClinicAgentTurn(
           await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_EMAIL", appointmentDraft, {
             processedMessageIds: [...processedMessageIds, messageId],
             conversationLocale,
+            ...(slotRecoveryOfferPending ? { pendingAction: null } : {}),
           });
+          slotTurnTelemetry(fails);
           const reply = ConversationStateEngine.generateNextSlotPrompt(
             appointmentDraftSlots(appointmentDraft),
             ["email"],
@@ -1427,7 +1693,7 @@ export async function handleClinicAgentTurn(
           }, basePersist({ appointmentState: "COLLECTING_EMAIL" }));
         }
       } else if (appointmentState === "COLLECTING_NAME" && !appointmentDraft.patientName) {
-        const parsedName = SlotExtractor.parseName(message.trim());
+        const parsedName = SlotExtractor.parseName(message.trim(), undefined, undefined, "fullName", { allowBareName: true });
         if (parsedName) {
           appointmentDraft.patientName = parsedName.fullName;
         }
@@ -1474,8 +1740,11 @@ export async function handleClinicAgentTurn(
 
         await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, {
           processedMessageIds: [...processedMessageIds, messageId],
-          conversationLocale
+          conversationLocale,
+          slotAttempts: slotAttemptsPatch({}),
+          ...(slotRecoveryOfferPending ? { pendingAction: null } : {}),
         });
+        slotTurnTelemetry();
         const reviewMsg = buildAppointmentReviewMessage({
           locale: conversationLocale,
           appointmentData: appointmentDraft,
@@ -1489,20 +1758,12 @@ export async function handleClinicAgentTurn(
       }
 
       const earliestMissing = missingSlots[0];
-      let nextSubState: AppointmentState = "COLLECTING_INFO";
-      if (earliestMissing === "treatment") nextSubState = "COLLECTING_TREATMENT";
-      else if (earliestMissing === "preferredDate") nextSubState = "COLLECTING_DATE";
-      else if (earliestMissing === "preferredTime") nextSubState = "COLLECTING_TIME";
-      else if (earliestMissing === "fullName") nextSubState = "COLLECTING_NAME";
-      else if (earliestMissing === "phone") nextSubState = "COLLECTING_PHONE";
-      else if (earliestMissing === "email") nextSubState = "COLLECTING_EMAIL";
+      const nextSubState: AppointmentState = collectingStateForSlot(earliestMissing);
 
-      await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, nextSubState, appointmentDraft, {
-        processedMessageIds: [...processedMessageIds, messageId],
-        conversationLocale
-      });
-
-      const nextSlotPrompt = ConversationStateEngine.generateNextSlotPrompt(
+      // Next prompt from the NEW draft; a failed answer to the same slot climbs the
+      // bounded ladder (clarify → guide → contact handoff offer, draft preserved).
+      const { filled: slotsFilled, corrected: slotsCorrected } = diffDraftSlots(draftBeforeTurn, appointmentDraft);
+      const webSlotPrompt = ConversationStateEngine.generateNextSlotPrompt(
         appointmentDraftSlots(appointmentDraft),
         missingSlots,
         conversationLocale,
@@ -1510,6 +1771,32 @@ export async function handleClinicAgentTurn(
         conversationIntent.validationError,
         conversationIntent.allInfoProvidedIntent
       );
+      const slotReply = composeSlotCollectionReply({
+        channel: String(channel || "web_widget"),
+        locale: conversationLocale,
+        expectedSlot: expectedSlotName,
+        nextSlot: earliestMissing as SlotName,
+        slotOutcomes: conversationIntent.slotOutcomes,
+        filled: slotsFilled,
+        corrected: slotsCorrected,
+        attempts: loadedSlotAttempts,
+        draft: appointmentDraft,
+        webPrompt: webSlotPrompt,
+        previousReply: lastAssistantReply(history),
+      });
+      const slotRecoveryAction = slotReply.handoffOffered
+        ? createSlotRecoveryHandoffAction({ locale: conversationLocale, clinicId: actualClinicId, conversationId: convId })
+        : null;
+
+      await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, nextSubState, appointmentDraft, {
+        processedMessageIds: [...processedMessageIds, messageId],
+        conversationLocale,
+        slotAttempts: slotAttemptsPatch(slotReply.nextAttempts),
+        ...(slotRecoveryAction ? { pendingAction: slotRecoveryAction } : slotRecoveryOfferPending ? { pendingAction: null } : {}),
+      });
+      slotTurnTelemetry(slotReply.attempt, slotReply.handoffOffered);
+
+      const nextSlotPrompt = slotReply.reply;
 
       perf.log({
         path: "appointment_collection",
@@ -1521,7 +1808,8 @@ export async function handleClinicAgentTurn(
       return respondWithVisibleReply({
         responseType: "CHAT_REPLY",
         reply: nextSlotPrompt,
-        pendingAppointmentData: appointmentDraft
+        pendingAppointmentData: appointmentDraft,
+        ...(slotRecoveryAction ? { pendingAction: slotRecoveryAction } : {}),
       }, basePersist({ appointmentState: nextSubState }));
     }
 
@@ -1869,7 +2157,9 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
     }
 
     /* ── PRE-FLIGHT: Deterministic Appointment Working Hours + Past-Time Validation ── */
-    if (isAppointmentIntent && !isConfirmation(message)) {
+    // A mixed turn's stated date/time was already validated from its statement clauses;
+    // the question clause is never fed into the scheduling validators.
+    if (isAppointmentIntent && !isConfirmation(message) && !interruptionStatementCaptured && !appointmentCancellationOffer) {
       const clinicTzResolved = resolveClinicTimeZone(clinicData);
       const clinicTimeZone = clinicTzResolved.confident
         ? clinicTzResolved.timeZone
@@ -2012,7 +2302,7 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
     const { hybridSearch } = await import("@/lib/services/retrievalService");
     
     // YENİ: Override search query for specific price intents to guarantee deterministic RAG match
-    let searchMessage = message;
+    let searchMessage = knowledgeTurnMessage;
     if (activePriceIntent === "examination_fee") {
       searchMessage = "ilk muayene ücreti ücretsiz muayene fiyatı bedava muayene mi";
     } else if (activePriceIntent === "xray_fee") {
@@ -2075,7 +2365,7 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
       "talk to someone", "speak to someone", "connect me",
       "contact clinic", "reach clinic",
     ];
-    const msgLowerPre = message.toLowerCase();
+    const msgLowerPre = knowledgeTurnMessage.toLowerCase();
     const userWantsLive = LIVE_SUPPORT_KEYWORDS.some(k => msgLowerPre.includes(k));
 
     if (userWantsLive) {
@@ -2337,7 +2627,7 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
           role:    h.role as "user" | "assistant",
           content: h.content,
         })),
-        { role: "user", content: message },
+        { role: "user", content: knowledgeTurnMessage },
       ],
     });
     perf.end("llm_chat", {
@@ -2378,6 +2668,32 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
          reply = "Lütfen eksik randevu bilgilerinizi tamamlayınız.";
       } else {
          reply = "Randevu talebiniz şu anda oluşturulamadı. Lütfen kısa bir süre sonra yeniden deneyin veya klinikle doğrudan iletişime geçin.";
+      }
+    }
+
+    // No model reply may say something was cancelled: cancellations only happen through
+    // the deterministic draft reset or a confirmed Contact Request.
+    if (containsUnverifiedCancellationClaim(reply)) {
+      console.warn(JSON.stringify({
+        checkpoint: "CANCELLATION_CLAIM_INTERCEPTED",
+        traceId: activeTraceId,
+        conversationId: convId,
+        replyLength: reply.length,
+      }));
+      reply = formatAppointmentCancellationUnavailable(conversationLocale);
+      if (!hasActiveDraftFlow && !appointmentCancellationOffer && clinicData?.enableHumanHandoff !== false) {
+        appointmentCancellationOffer = {
+          action: createAppointmentCancellationOfferAction({
+            appointmentId: loadedAppointmentId,
+            patientName: loadedConversationLogData?.patientName,
+            patientPhone: loadedConversationLogData?.patientPhone,
+            patientEmail: loadedConversationLogData?.patientEmail,
+            language: conversationLocale,
+            clinicId: actualClinicId,
+            conversationId: convId,
+          }),
+          reply: formatAppointmentCancellationOffer(conversationLocale),
+        };
       }
     }
 
@@ -2483,11 +2799,20 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
 
     if (isMidFlowInterruption) {
       const missingSlots = ConversationStateEngine.getMissingSlots(appointmentDraftSlots(appointmentDraft));
-      const resumePrompt = ConversationStateEngine.generateNextSlotPrompt(
-        appointmentDraftSlots(appointmentDraft),
-        missingSlots,
-        conversationLocale
-      );
+      const voiceResume =
+        channel === "voice" && missingSlots.length > 0
+          ? voiceSlotQuestion(missingSlots[0] as SlotName, conversationLocale)
+          : null;
+      const resumePrompt =
+        interruptionSchedulingNotice ??
+        (missingSlots.length === 0 && appointmentState === "AWAITING_CONFIRMATION"
+          ? buildAppointmentReviewMessage({ locale: conversationLocale, appointmentData: appointmentDraft, clinicName })
+          : voiceResume ??
+            ConversationStateEngine.generateNextSlotPrompt(
+              appointmentDraftSlots(appointmentDraft),
+              missingSlots,
+              conversationLocale
+            ));
       const bridge = conversationLocale.startsWith("en")
         ? "Whenever you're ready, we can continue from where we left off."
         : "Hazır olduğunuzda kaldığımız yerden devam edebiliriz.";
@@ -2742,6 +3067,11 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       }));
     } else if (isAppointmentIntentDetected && !appointmentDataComplete && !appointmentAlreadyCreated) {
       responsePayload.responseType = "appointment_information_required";
+    }
+
+    if (appointmentCancellationOffer) {
+      responsePayload.reply = `${responsePayload.reply}\n\n${appointmentCancellationOffer.reply}`;
+      if (appointmentCancellationOffer.action) responsePayload.pendingAction = appointmentCancellationOffer.action;
     }
 
     // Detect and establish pendingAction for any assistant follow-up questions/offers

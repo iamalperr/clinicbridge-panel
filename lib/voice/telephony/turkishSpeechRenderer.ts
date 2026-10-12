@@ -6,7 +6,8 @@
  * punctuation become natural Turkish words:
  *   14:00 → "saat on dört", 14:30'da → "saat on dört otuzda", 12.10.2026 / 2026-10-12 /
  *   "12 Ekim 2026" → "on iki Ekim iki bin yirmi altı", "Ad Soyad:" → "Ad Soyad," (never "iki nokta"),
- *   0532 123 45 67 → grouped digits, a@b.com → "a et b nokta com".
+ *   0532 123 45 67 → grouped digits, a@b.com → "a et b nokta com",
+ *   "(Örn: implant, kanal tedavisi)" → "örneğin implant, kanal tedavisi", "Dr." → "doktor".
  * Recognizers are anchored on boundaries: URLs are left alone, decimals, versions, prices and
  * partial dates never become dates, and invalid clock times or calendar dates are left as written.
  */
@@ -24,6 +25,7 @@ export interface TurkishSpeechApplied {
   readonly phone: boolean;
   readonly email: boolean;
   readonly labelColon: boolean;
+  readonly abbreviation: boolean;
 }
 
 export interface TurkishSpeechRenderResult {
@@ -34,7 +36,7 @@ export interface TurkishSpeechRenderResult {
 type MutableApplied = { -readonly [K in keyof TurkishSpeechApplied]: boolean };
 
 function emptyApplied(): MutableApplied {
-  return { time: false, date: false, namedDate: false, phone: false, email: false, labelColon: false };
+  return { time: false, date: false, namedDate: false, phone: false, email: false, labelColon: false, abbreviation: false };
 }
 
 /** Turkish cardinal for 0..9999. */
@@ -104,6 +106,53 @@ const TR_PHONE = /(?<![\p{L}\p{N}+])(?:(\+90)[\s.-]?|(0)[\s.-]?)?\(?([2-58]\d{2}
 /** Chat/label colon after a letter (never a clock, ratio, or URL scheme). */
 const LABEL_COLON = /(?<=[\p{L}])\s*:(?!\/\/)(?=\s|$)/gu;
 
+/** "(Örn: a, b)" written-example parenthetical. */
+const EXAMPLE_PAREN = /\s*\((?:Örneğin|örneğin|Örn|örn|Ör|ör)\.?\s*:?\s*([^()]+?)\s*\)/gu;
+
+/**
+ * Written abbreviations TTS would spell out. Matched only as standalone tokens: never
+ * inside words, emails, domains ("dr.com"), decimals, clocks or single-letter initials.
+ */
+const ABBREVIATIONS: ReadonlyArray<{ pattern: RegExp; spoken: string; endsSentence?: boolean }> = [
+  { pattern: /(?<![\p{L}\p{N}.@\/])(?:Örn|örn)(?:\.:?|:)(?=\s)/gu, spoken: "örneğin" },
+  { pattern: /(?<![\p{L}\p{N}.@\/])vb\.(?=\s|$|[,;])/gu, spoken: "ve benzeri", endsSentence: true },
+  { pattern: /(?<![\p{L}\p{N}.@\/])vs\.(?=\s|$|[,;])/gu, spoken: "vesaire", endsSentence: true },
+  { pattern: /(?<![\p{L}\p{N}.@\/])(?:Bkz|bkz)\.(?=\s)/gu, spoken: "bakınız" },
+  { pattern: /(?<![\p{L}\p{N}.@\/])Prof\.(?=\s|Dr\.|Doç\.)/gu, spoken: "profesör" },
+  { pattern: /(?<![\p{L}\p{N}.@\/])Doç\.(?=\s|Dr\.)/gu, spoken: "doçent" },
+  { pattern: /(?<![\p{L}\p{N}.@\/])Uzm\.(?=\s|Dr\.|Dt\.)/gu, spoken: "uzman" },
+  { pattern: /(?<![\p{L}\p{N}.@\/])Op\.(?=\s|Dr\.)/gu, spoken: "operatör" },
+  { pattern: /(?<![\p{L}\p{N}.@\/])Dr\.(?=\s)/gu, spoken: "doktor" },
+  { pattern: /(?<![\p{L}\p{N}.@\/])Dt\.(?=\s)/gu, spoken: "diş hekimi" },
+];
+
+function atSentenceStart(source: string, offset: number): boolean {
+  return /(?:^|[.!?…]\s*)$/u.test(source.slice(Math.max(0, offset - 3), offset).trimEnd() || "");
+}
+
+function capitalizeTr(word: string): string {
+  return word.charAt(0).toLocaleUpperCase("tr-TR") + word.slice(1);
+}
+
+function renderAbbreviations(text: string): string {
+  let out = text.replace(EXAMPLE_PAREN, (_m, examples: string, offset: number, src: string) => {
+    const before = src.slice(0, offset).trimEnd();
+    if (!before || /[.!?…]$/u.test(before)) {
+      return `${before ? " " : ""}Örneğin ${examples.trim()}${/[.!?…]$/u.test(examples.trim()) ? "" : "."}`;
+    }
+    return `, örneğin ${examples.trim()}`;
+  });
+  for (const { pattern, spoken, endsSentence } of ABBREVIATIONS) {
+    out = out.replace(pattern, (_m, offset: number, src: string) => {
+      const word = atSentenceStart(src, offset) ? capitalizeTr(spoken) : spoken;
+      const rest = src.slice(offset + _m.length);
+      const closesSentence = endsSentence && (rest.length === 0 || /^\s+\p{Lu}/u.test(rest));
+      return closesSentence ? `${word}.` : word;
+    });
+  }
+  return out;
+}
+
 function renderEmail(address: string): string {
   return address
     .replace(/@/g, " et ")
@@ -137,6 +186,8 @@ function renderSegment(text: string, applied: MutableApplied): string {
     applied.email = true;
     return renderEmail(m);
   });
+
+  out = track("abbreviation", renderAbbreviations(out), out);
 
   out = track(
     "date",

@@ -128,7 +128,9 @@ describe("structured fact preservation", () => {
     {
       name: "price + percent + doctor",
       canonical: "İmplant fiyatı 500 EUR'dur (%20). Dr. Ahmet Yılmaz uygular.",
-      mustKeep: ["500 EUR", "%20", "Dr. Ahmet Yılmaz", "İmplant"],
+      // The doctor fact survives; only the written title is spoken ("Dr." → "Doktor").
+      mustKeep: ["500 EUR", "%20", "Doktor Ahmet Yılmaz", "İmplant"],
+      spokenMustNot: ["Dr."],
     },
     {
       name: "working hours as a range",
@@ -445,7 +447,8 @@ describe("Agent Core appointment flow → presentation → TTS copy", () => {
     expect(hybridSearch.mock.calls.length).toBe(searchesAfterTurn);
     expect(trackableAIRequest.mock.calls.length).toBe(llmAfterTurn);
     expect(again.spokenText).toContain("500 EUR");
-    expect(again.spokenText).toContain("Dr. Ahmet Yılmaz");
+    expect(again.spokenText).toContain("Doktor Ahmet Yılmaz");
+    expect(again.spokenText).not.toContain("Dr.");
     expect(again.spokenText).toMatch(/saat dokuz ile on sekiz/);
     expect(again.spokenText).not.toContain("09:00");
     expect(again.spokenText).not.toMatch(/\*\*|https?:/);

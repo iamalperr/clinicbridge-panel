@@ -6,6 +6,8 @@
  * Intent + Entity + InformationType + Multi-Turn Context
  */
 
+import type { SlotOutcomes } from "./slotParsing";
+
 export type ConversationIntent =
   | "greeting"
   | "casual_conversation"
@@ -208,6 +210,9 @@ export interface IntentClassificationResult {
   secondaryIntent?: ConversationIntent;
   secondaryQuery?: string;
   secondaryRequiresKnowledgeBase?: boolean;
+
+  /** Value-free per-slot parse outcomes from the deterministic extractor (status + reason code). */
+  slotOutcomes?: SlotOutcomes;
 }
 
 export interface ConversationContext {

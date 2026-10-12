@@ -25,6 +25,9 @@ export type ContactRequestChannel =
   | "api"
   | "other";
 
+/** Pending-action purpose for a forwarded post-submission appointment cancellation. */
+export const APPOINTMENT_CANCELLATION_PURPOSE = "appointment_cancellation";
+
 export const UNRESOLVED_CONTACT_REQUEST_STATUSES: ContactRequestStatus[] = [
   "pending",
   "acknowledged",

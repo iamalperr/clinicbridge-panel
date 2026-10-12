@@ -38,6 +38,7 @@ export interface VoiceSpeechTelemetry {
   readonly hasPhoneTransformation: boolean;
   readonly hasEmailTransformation: boolean;
   readonly hasLabelColonTransformation: boolean;
+  readonly hasAbbreviationTransformation: boolean;
   readonly rendererStatus: "OK" | "PASSTHROUGH";
 }
 
@@ -70,6 +71,7 @@ function telemetryFromApplied(
     hasPhoneTransformation: Boolean(applied?.phone),
     hasEmailTransformation: Boolean(applied?.email),
     hasLabelColonTransformation: Boolean(applied?.labelColon),
+    hasAbbreviationTransformation: Boolean(applied?.abbreviation),
     rendererStatus: passthrough ? "PASSTHROUGH" : "OK",
   };
 }
@@ -86,6 +88,7 @@ export function voiceSpeechPresentationLogFields(telemetry: VoiceSpeechTelemetry
     hasPhoneTransformation: telemetry.hasPhoneTransformation,
     hasEmailTransformation: telemetry.hasEmailTransformation,
     hasLabelColonTransformation: telemetry.hasLabelColonTransformation,
+    hasAbbreviationTransformation: telemetry.hasAbbreviationTransformation,
     rendererStatus: telemetry.rendererStatus,
   };
 }
