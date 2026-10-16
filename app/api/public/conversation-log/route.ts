@@ -128,18 +128,21 @@ export async function POST(req: Request) {
         }
 
         const after = await messagesCol.get();
+        const existingLog = logSnap.exists ? logSnap.data() : null;
         await logRef.set(
           {
             clinicId,
             updatedAt: nowIso,
-            ...(logSnap.exists
-              ? {}
-              : {
+            ...(!existingLog
+              ? {
                   createdAt: nowIso,
                   status: "open",
                   language: "tr",
                   convertedToAppointment: false,
-                }),
+                }
+              : !existingLog.createdAt
+                ? { createdAt: (typeof existingLog.updatedAt === "string" && existingLog.updatedAt) || nowIso }
+                : {}),
             totalMessages: after.size,
             lastMessagePreview: turns[turns.length - 1].content.slice(0, 100),
           },

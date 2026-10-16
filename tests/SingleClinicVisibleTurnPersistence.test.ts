@@ -98,6 +98,13 @@ function createMockFirestore() {
                     const l = getLog();
                     l.data = { ...l.data, ...data };
                   },
+                  create: async (data: Record<string, unknown>) => {
+                    const l = getLog();
+                    if (Object.keys(l.data).length > 0 || l.messages.size > 0) {
+                      throw Object.assign(new Error("ALREADY_EXISTS"), { code: 6 });
+                    }
+                    l.data = { ...data };
+                  },
                   collection: (messagesName: string) => {
                     if (messagesName !== "messages") throw new Error(messagesName);
                     return {

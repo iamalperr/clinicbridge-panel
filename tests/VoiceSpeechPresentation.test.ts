@@ -288,7 +288,12 @@ describe("Agent Core appointment flow → presentation → TTS copy", () => {
           saved = { ...saved, ...data, appointmentDraft: { ...(saved.appointmentDraft || {}), ...(data.appointmentDraft || {}) } };
         }
       },
-      create: async () => undefined,
+      create: async (data: Saved) => {
+        if (Object.keys(saved).length > 0) {
+          throw Object.assign(new Error("ALREADY_EXISTS"), { code: 6 });
+        }
+        saved = { ...saved, ...data, appointmentDraft: { ...(saved.appointmentDraft || {}), ...(data.appointmentDraft || {}) } };
+      },
       collection: () => ({ doc: () => ({ set: async () => undefined, get: async () => ({ exists: false }) }) }),
     };
     const adminDb = {

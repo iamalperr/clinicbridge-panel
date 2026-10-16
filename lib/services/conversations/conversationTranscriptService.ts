@@ -236,7 +236,10 @@ export async function commitConversationLogTurnInSingleBatch(
   const batch = adminDb.batch();
   const { writes, docIds } = stageConversationLogMessages(logRef, batch, existingSnap, {
     ...params,
-    baseIso: existing?.createdAt || params.nowIso,
+    baseIso:
+      (typeof existing?.createdAt === "string" && existing.createdAt) ||
+      (typeof existing?.updatedAt === "string" && existing.updatedAt) ||
+      params.nowIso,
   });
   if (writes + 1 > CONVERSATION_LOG_SINGLE_BATCH_MAX_WRITES) {
     return { committed: false, reason: "TOO_MANY_WRITES" };
@@ -426,11 +429,16 @@ export async function persistVisibleChatTurn(
   if (params.statusHint) patch.status = params.statusHint;
 
   const snap = await logRef.get();
+  const existing = snap.exists ? snap.data() : null;
   if (!snap.exists) {
     patch.createdAt = nowIso;
     patch.convertedToAppointment = false;
     patch.language = "tr";
     patch.status = params.statusHint || "open";
+  } else if (!existing?.createdAt) {
+    // Appointment-state shells historically omitted createdAt; backfill from updatedAt when present.
+    patch.createdAt =
+      (typeof existing?.updatedAt === "string" && existing.updatedAt) || nowIso;
   }
   await logRef.set(patch, { merge: true });
 

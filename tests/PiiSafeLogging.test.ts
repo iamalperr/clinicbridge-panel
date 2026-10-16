@@ -203,7 +203,9 @@ describe("Agent Core turns (web + voice) never log patient content", () => {
       set: async (data: Saved) => {
         saved = { ...saved, ...data };
       },
-      create: async () => undefined,
+      create: async (_data: Saved) => {
+        throw Object.assign(new Error("ALREADY_EXISTS"), { code: 6 });
+      },
       collection: () => ({ doc: () => ({ set: async () => undefined, get: async () => ({ exists: false }) }) }),
     };
     const adminDb = {

@@ -22,6 +22,7 @@ import {
   buildWeekRange,
   weeklyReportIdempotencyKey,
   WEEKLY_REPORT_TIMEZONE,
+  parseLogCreatedAt,
   type WeekRange,
 } from "./weekRange";
 
@@ -87,7 +88,7 @@ async function loadConversationLogsForRange(
       ...d.data(),
     }));
     return rows.filter((d) => {
-      const created = String(d.createdAt || "");
+      const created = parseLogCreatedAt(d.createdAt) || parseLogCreatedAt(d.updatedAt) || "";
       return created >= range.startUtcIso && created <= range.endUtcIso;
     });
   }

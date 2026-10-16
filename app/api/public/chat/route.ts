@@ -82,12 +82,14 @@ export async function POST(req: Request) {
             .doc(conversationId);
 
           if (_systemAction.type === "liveSupportHandoffDisplayed") {
+            const existingLog = (await logRef.get()).data();
             await logRef.set(
               {
                 status: "liveSupport",
                 updatedAt: now,
                 clinicId,
                 lastMessagePreview: message?.slice(0, 100) ?? "",
+                ...(!existingLog?.createdAt ? { createdAt: now } : {}),
               },
               { merge: true }
             );

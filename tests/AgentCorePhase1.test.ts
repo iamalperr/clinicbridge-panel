@@ -296,7 +296,7 @@ describe("Agent Core — handleClinicAgentTurn direct call (mocked I/O)", () => 
       patientPhone: "+905551112233",
       patientEmail: "ada@example.com",
       requestedService: "Cleaning",
-      requestedDate: "2026-10-15",
+      requestedDate: "2026-11-16",
       requestedTime: "11:00",
       originalText: "yes",
     };
@@ -319,6 +319,9 @@ describe("Agent Core — handleClinicAgentTurn direct call (mocked I/O)", () => 
       }),
       set: async (data: any) => {
         savedState = { ...savedState, ...data };
+      },
+      create: async (_data: any) => {
+        throw Object.assign(new Error("ALREADY_EXISTS"), { code: 6 });
       },
       collection: () => ({
         doc: () => ({ set: async () => undefined }),

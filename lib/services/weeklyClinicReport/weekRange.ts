@@ -9,6 +9,7 @@ import {
   clinicLocalDateTimeToUtcIso,
   getClinicLocalParts,
 } from "@/lib/appointment/appointmentDateTimePolicy";
+import { normalizeTimestampIso } from "@/lib/datetime/normalizeTimestamp";
 
 export const WEEKLY_REPORT_TIMEZONE = "Europe/Istanbul";
 
@@ -173,22 +174,7 @@ export function weeklyReportIdempotencyKey(clinicId: string, weekStartDate: stri
 }
 
 export function parseLogCreatedAt(value: unknown): string | null {
-  if (!value) return null;
-  if (typeof value === "string") {
-    const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? null : d.toISOString();
-  }
-  if (typeof value === "object" && value !== null && "toDate" in value && typeof (value as any).toDate === "function") {
-    try {
-      return (value as any).toDate().toISOString();
-    } catch {
-      return null;
-    }
-  }
-  if (typeof value === "object" && value !== null && "_seconds" in value) {
-    return new Date((value as any)._seconds * 1000).toISOString();
-  }
-  return null;
+  return normalizeTimestampIso(value);
 }
 
 export function isCreatedAtInRange(

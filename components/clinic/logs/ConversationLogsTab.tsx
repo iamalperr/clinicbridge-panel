@@ -21,6 +21,10 @@ import {
   exportConversationLogsToCSV,
 } from "@/lib/services/conversations/conversationStatusResolver";
 import { canEditConversationLabel } from "@/lib/services/conversations/customLabelClient";
+import {
+  formatConversationListDate,
+  resolveConversationTimestamp,
+} from "@/lib/datetime/normalizeTimestamp";
 
 interface Props {
   clinicId: string;
@@ -192,7 +196,8 @@ export default function ConversationLogsTab({ clinicId }: Props) {
       if (langFilter !== "all" && log.language !== langFilter) return false;
       
       if (dateFilter !== "all") {
-        const logDate = new Date(log.createdAt);
+        const logDate = resolveConversationTimestamp(log);
+        if (!logDate) return false;
         const now = new Date();
         const diffDays = (now.getTime() - logDate.getTime()) / (1000 * 3600 * 24);
         
@@ -489,7 +494,11 @@ export default function ConversationLogsTab({ clinicId }: Props) {
                     </td>
                     <td style={{ padding: "16px 20px" }}>
                       <div style={{ fontSize: 13.5, color: UI_COLORS.textSecondary }}>
-                        {new Date(log.createdAt).toLocaleDateString(language === "en" ? "en-US" : "tr-TR", { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        {formatConversationListDate(
+                          log,
+                          language === "en" ? "en-US" : "tr-TR",
+                          language === "en" ? "Date unavailable" : "Tarih yok"
+                        )}
                       </div>
                     </td>
                     <td style={{ padding: "16px 20px" }}>

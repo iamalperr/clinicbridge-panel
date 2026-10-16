@@ -616,7 +616,12 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
           saved = deepMerge(saved, data);
         }
       },
-      create: async () => undefined,
+      create: async (data: Saved) => {
+        if (Object.keys(saved).length > 0) {
+          throw Object.assign(new Error("ALREADY_EXISTS"), { code: 6 });
+        }
+        saved = deepMerge(saved, data);
+      },
       collection: () => ({ doc: () => ({ set: async () => undefined, get: async () => ({ exists: false }) }) }),
     };
     const adminDb = {

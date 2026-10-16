@@ -12,6 +12,7 @@ import {
   getConversationStatusVariant,
   isConversationManuallyConverted,
 } from "@/lib/services/conversations/conversationStatusResolver";
+import { normalizeTimestamp } from "@/lib/datetime/normalizeTimestamp";
 
 interface Props {
   isOpen: boolean;
@@ -19,13 +20,10 @@ interface Props {
   log: ConversationLog | null;
 }
 
-function formatTime(isoStr: string) {
-  try {
-    const d = new Date(isoStr);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return "";
-  }
+function formatTime(isoStr: unknown) {
+  const d = normalizeTimestamp(isoStr);
+  if (!d) return "";
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 export default function ConversationLogDetailModal({ isOpen, onClose, log }: Props) {
@@ -306,7 +304,9 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
                 )}
                 {log.updatedAt && (
                   <p style={{ fontSize: 11.5, color: UI_COLORS.textMuted, marginTop: 4 }}>
-                    {language === "en" ? "Updated" : "Güncellendi"}: {new Date(log.updatedAt).toLocaleString(language === "en" ? "en-US" : "tr-TR")}
+                    {language === "en" ? "Updated" : "Güncellendi"}:{" "}
+                    {normalizeTimestamp(log.updatedAt)?.toLocaleString(language === "en" ? "en-US" : "tr-TR") ||
+                      (language === "en" ? "Date unavailable" : "Tarih yok")}
                   </p>
                 )}
               </div>

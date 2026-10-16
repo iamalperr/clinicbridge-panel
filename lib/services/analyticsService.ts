@@ -148,23 +148,17 @@ export function getDateRangeStart(range: DateRange): Date | null {
   }
 }
 
-export function isInDateRange(dateStr: string, rangeStart: Date | null): boolean {
+export function isInDateRange(dateStr: string | unknown, rangeStart: Date | null): boolean {
   if (!rangeStart) return true;
-  try {
-    const d = new Date(dateStr);
-    return d >= rangeStart;
-  } catch {
-    return true;
-  }
+  const ms = normalizeTimestampMs(dateStr);
+  if (ms == null) return false;
+  return ms >= rangeStart.getTime();
 }
 
-export function formatDayKey(dateStr: string): string {
-  try {
-    const d = new Date(dateStr);
-    return d.toISOString().slice(0, 10); // "2026-07-01"
-  } catch {
-    return dateStr;
-  }
+export function formatDayKey(dateStr: string | unknown): string {
+  const ms = normalizeTimestampMs(dateStr);
+  if (ms == null) return "unknown";
+  return new Date(ms).toISOString().slice(0, 10); // "2026-07-01"
 }
 
 /** Son N gün için tarih anahtarları üretir */
@@ -204,7 +198,12 @@ export function calculateClinicMetrics(
   logs: ConversationLogDoc[],
   rangeStart: Date | null
 ): ClinicAnalytics {
-  const filtered = logs.filter((l) => isInDateRange(l.createdAt, rangeStart));
+  const filtered = logs.filter((l) => {
+    const instant = conversationInstant(l);
+    if (!rangeStart) return true;
+    if (!instant) return false;
+    return instant.getTime() >= rangeStart.getTime();
+  });
 
   const totalConversations = filtered.length;
   const totalMessages = filtered.reduce(
@@ -225,7 +224,7 @@ export function calculateClinicMetrics(
   const dailyConversations: Record<string, number> = {};
   const dailyMessages: Record<string, number> = {};
   filtered.forEach((l) => {
-    const key = formatDayKey(l.createdAt);
+    const key = formatDayKey(conversationInstant(l) ?? l.createdAt);
     dailyConversations[key] = (dailyConversations[key] ?? 0) + 1;
     dailyMessages[key] = (dailyMessages[key] ?? 0) + (l.totalMessages ?? 0);
   });
@@ -239,7 +238,7 @@ export function calculateClinicMetrics(
 
   // Last activity
   const sortedDates = filtered
-    .map((l) => l.updatedAt || l.createdAt)
+    .map((l) => conversationInstant(l)?.toISOString() ?? null)
     .filter(Boolean)
     .sort()
     .reverse();
@@ -420,49 +419,15 @@ export function getUsageWarnings(usagePercentage: number): {
 // ─── Usage Analytics (User Sessions & Activity) ──────────────────────────────
 
 /**
- * Universal timestamp parser that reliably converts:
- * - Firestore Timestamp (with .toMillis() or .toDate())
- * - Firestore raw object { _seconds, _nanoseconds }
- * - Javascript Date instance
- * - Millisecond timestamp number
- * - ISO date string
- * to epoch milliseconds, or null if invalid/missing.
+ * Universal timestamp parser — delegates to the product-global normalizer
+ * (`lib/datetime/normalizeTimestamp.ts`), including Firestore Timestamp and
+ * both `{ seconds, nanoseconds }` / `{ _seconds, _nanoseconds }` shapes.
  */
-export function parseMillis(val: any): number | null {
-  if (val === null || val === undefined) return null;
+export { normalizeTimestampMs as parseMillis } from "@/lib/datetime/normalizeTimestamp";
+import { normalizeTimestampMs, resolveConversationTimestamp } from "@/lib/datetime/normalizeTimestamp";
 
-  if (typeof val === "number") {
-    if (isNaN(val) || val <= 0) return null;
-    if (val < 10000000000) {
-      return val * 1000;
-    }
-    return val;
-  }
-
-  if (val instanceof Date) {
-    const time = val.getTime();
-    return isNaN(time) ? null : time;
-  }
-
-  if (typeof val.toMillis === "function") {
-    return val.toMillis();
-  }
-
-  if (typeof val.toDate === "function") {
-    return val.toDate().getTime();
-  }
-
-  if (typeof val._seconds === "number") {
-    const ms = val._seconds * 1000 + Math.round((val._nanoseconds || 0) / 1000000);
-    return ms;
-  }
-
-  if (typeof val === "string") {
-    const parsed = Date.parse(val);
-    return isNaN(parsed) ? null : parsed;
-  }
-
-  return null;
+function conversationInstant(log: { createdAt?: unknown; updatedAt?: unknown }): Date | null {
+  return resolveConversationTimestamp(log);
 }
 
 /**

@@ -4,8 +4,14 @@
  */
 import { getAdminDb } from "@/lib/firebase-admin";
 import { stripUndefinedDeep } from "@/lib/firestore/stripUndefined";
+import { normalizeTimestampIso } from "@/lib/datetime/normalizeTimestamp";
 import type { AgentTurnResult, AppointmentData, AppointmentState } from "./types";
 import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
+
+function isFirestoreAlreadyExistsError(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return code === 6 || code === "already-exists" || code === "ALREADY_EXISTS";
+}
 
 export async function saveAppointmentState(
   adminDb: any, 
@@ -22,14 +28,27 @@ export async function saveAppointmentState(
     // Firestore rejects `undefined` nested fields; a failed write here previously
     // left conversations stuck in COLLECTING_* without appointmentDraft while the
     // patient still saw the in-memory confirmation summary.
+    const nowIso = new Date().toISOString();
     const payload = stripUndefinedDeep({
       appointmentState: newState,
       appointmentDraft: newDraft || {},
       ...extras,
+      updatedAt: extras.updatedAt ?? nowIso,
     });
-    // merge:true deep-merges appointmentDraft, so keys the new draft omits would survive.
-    // mergeFields replaces exactly the written top-level fields and leaves the rest of the log.
-    await logRef.set(payload, options.replaceDraft ? { mergeFields: Object.keys(payload) } : { merge: true });
+    // First write must stamp createdAt. A plain merge on a new doc previously created
+    // appointment shells without createdAt → UI "Invalid Date" (new Date(undefined)).
+    try {
+      await logRef.create(stripUndefinedDeep({ ...payload, createdAt: nowIso, clinicId }));
+    } catch (createErr) {
+      if (!isFirestoreAlreadyExistsError(createErr)) throw createErr;
+      // merge:true deep-merges appointmentDraft, so keys the new draft omits would survive.
+      // mergeFields replaces exactly the written top-level fields and leaves the rest of the log.
+      const mergePayload = stripUndefinedDeep({ ...payload });
+      await logRef.set(
+        mergePayload,
+        options.replaceDraft ? { mergeFields: Object.keys(mergePayload) } : { merge: true }
+      );
+    }
     console.log(JSON.stringify({
       checkpoint: "APPT_STATE_SAVED",
       conversationId: convId,
@@ -120,7 +139,7 @@ export async function logConversation(params: {
         history: params.history,
         userMessage: params.userMessage,
         aiReply: params.aiReply,
-        baseIso: existing?.createdAt || nowStr,
+        baseIso: normalizeTimestampIso(existing?.createdAt) || normalizeTimestampIso(existing?.updatedAt) || nowStr,
         includeLiveSupportSystem: Boolean(params.isLiveSupport),
       });
 
@@ -224,8 +243,13 @@ function buildConversationLogData(
       logData.appointmentDraft = stripUndefinedDeep(params.apptData);
     }
 
+    // Stamp createdAt on first create OR when an appointment-state shell was written
+    // earlier without createdAt (saveAppointmentState historically omitted it).
+    if (!normalizeTimestampIso(existing?.createdAt)) {
+      logData.createdAt =
+        normalizeTimestampIso(existing?.updatedAt) || nowStr;
+    }
     if (!existing) {
-      logData.createdAt = nowStr;
       logData.convertedToAppointment = false;
       logData.tenantId = params.tenantId || "";
       logData.widgetId = params.widgetId || "";

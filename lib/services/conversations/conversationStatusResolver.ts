@@ -6,6 +6,8 @@
  * localization mappings, badge variants, and CSV export formatting.
  */
 
+import { resolveConversationTimestamp } from "@/lib/datetime/normalizeTimestamp";
+
 export type CanonicalConversationStatus =
   | "successfully_answered"
   | "collecting_appointment_information"
@@ -355,7 +357,8 @@ export interface CSVLogRecord {
   manualConversionStatus?: string | null;
   customLabel?: string | null;
   totalMessages?: number;
-  createdAt?: string | Date;
+  createdAt?: string | Date | unknown;
+  updatedAt?: string | Date | unknown;
   lastMessagePreview?: string;
 }
 
@@ -409,13 +412,9 @@ export function exportConversationLogsToCSV(
     const appointmentId = log.appointmentId || "-";
 
     let dateFormatted = "-";
-    if (log.createdAt) {
-      try {
-        const d = typeof log.createdAt === "string" ? new Date(log.createdAt) : log.createdAt;
-        dateFormatted = d.toLocaleString(isEn ? "en-US" : "tr-TR");
-      } catch {
-        dateFormatted = String(log.createdAt);
-      }
+    const d = resolveConversationTimestamp(log);
+    if (d) {
+      dateFormatted = d.toLocaleString(isEn ? "en-US" : "tr-TR");
     }
 
     return [
