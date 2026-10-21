@@ -64,6 +64,10 @@ import { normalizeSpokenEmail } from "@/lib/conversation/emailCollection";
 import { controlPhraseKey } from "@/lib/conversation/controlPhrase";
 import { extractAppointmentFromHistory, parseTimeText } from "./appointmentParse";
 import { saveAppointmentState, respondWithVisibleReply } from "./persistence";
+import {
+  collectClinicCatalogSnippets,
+  resolveTreatmentAvailability,
+} from "./treatmentAvailability";
 import { fetchClinicDoctorMatchInputs, getClientDb } from "./clinicRuntime";
 import { tryHandleContactHandoffTurn } from "@/lib/contact-request/handleContactHandoffTurn";
 import {
@@ -2295,6 +2299,54 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
       }
     }
 
+    // Specific "is this treatment offered?" questions are answered from the full
+    // clinic record. Top-k RAG plus the groundedness override was replacing a
+    // recorded service (e.g. teeth whitening) with an unverified fallback, and
+    // that fallback was then stored as live support.
+    const availabilityDecision =
+      !isMidFlowInterruption &&
+      (appointmentState === "IDLE" || appointmentState === "APPOINTMENT_SUBMITTED") &&
+      !activePriceIntent &&
+      !isDoctorIntent
+        ? resolveTreatmentAvailability({
+            message,
+            locale: conversationLocale,
+            documents: [
+              ...trainingDocs.map((doc) => ({ title: doc.title, content: doc.content })),
+              ...collectClinicCatalogSnippets(clinicData),
+            ],
+          })
+        : null;
+
+    if (availabilityDecision) {
+      debugLog.push(`treatment_availability=${availabilityDecision.status}:${availabilityDecision.treatmentCode}`);
+      console.log(JSON.stringify({
+        checkpoint: "TREATMENT_AVAILABILITY",
+        traceId: activeTraceId,
+        conversationId: convId,
+        clinicId: actualClinicId,
+        treatmentCode: availabilityDecision.treatmentCode,
+        status: availabilityDecision.status,
+        laser: availabilityDecision.laser,
+        trainingDocCount: trainingDocs.length,
+      }));
+      return respondWithVisibleReply(
+        {
+          responseType: "CHAT_REPLY",
+          reply: availabilityDecision.reply,
+          conversationId: convId,
+        },
+        basePersist({
+          appointmentState,
+          retrievedDocumentCount: trainingDocs.length,
+          fallbackReason:
+            availabilityDecision.status === "unknown"
+              ? "treatment_not_in_clinic_records"
+              : undefined,
+        })
+      );
+    }
+
     // HYBRID SEARCH & QUERY REWRITING
     const sliceLimit = isDoctorIntent ? 15 : 10;
     
@@ -2788,7 +2840,7 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
            replyLength: reply.length,
          }));
          if (activeLang === "tr") {
-            reply = "Bu bilgiyi şu online güvenilir şekilde doğrulayamıyorum. Yanlış yönlendirmemek için klinik ekibimizden teyit edilmesi gerekir.";
+            reply = "Bu bilgiyi mevcut kayıtlarımızdan güvenilir şekilde doğrulayamıyorum. Yanlış yönlendirmemek için klinik ekibimizden teyit edilmesi gerekir.";
          } else if (activeLang === "de") {
             reply = "Ich kann diese Informationen im Moment nicht zuverlässig überprüfen. Dies muss von unserem Klinikteam bestätigt werden, um Sie nicht falsch zu informieren.";
          } else {
