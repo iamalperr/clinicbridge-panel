@@ -5,6 +5,7 @@
 import { getAdminDb } from "@/lib/firebase-admin";
 import { stripUndefinedDeep } from "@/lib/firestore/stripUndefined";
 import { normalizeTimestampIso } from "@/lib/datetime/normalizeTimestamp";
+import { classifyIdleAssistantStatus } from "./replyDisposition";
 import type { AgentTurnResult, AppointmentData, AppointmentState } from "./types";
 import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
 
@@ -206,14 +207,13 @@ function buildConversationLogData(
       status = "liveSupport";
     } else if (params.appointmentState && params.appointmentState !== "IDLE") {
       status = "collecting";
-    } else if (replyLower.includes("üzgünüm") && (replyLower.includes("yardımcı olamıyorum") || replyLower.includes("anlayamadım") || replyLower.includes("yanıt üretemiyorum") || replyLower.includes("bilgi havuzumda"))) {
-      status = "unanswered";
-      needsTraining = true;
-      if (!trainingTopic) trainingTopic = params.userMessage.slice(0, 60);
-    } else if (replyLower.includes("canlı destek") || replyLower.includes("temsilci") || replyLower.includes("klinik ekibi") || replyLower.includes("iletişime geç") || replyLower.includes("doğrudan arayın") || replyLower.includes("whatsapp")) {
-      status = "liveSupport";
     } else {
-      status = "answered";
+      const idle = classifyIdleAssistantStatus(params.aiReply, params.userMessage, params.isLiveSupport);
+      status = idle.status;
+      if (idle.needsTraining) {
+        needsTraining = true;
+        if (!trainingTopic) trainingTopic = idle.trainingTopic;
+      }
     }
 
     if (params.isLiveSupport || /\bwhatsapp\b/i.test(params.userMessage) || /\bwhatsapp\b/i.test(params.aiReply)) {
