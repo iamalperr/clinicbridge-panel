@@ -1,33 +1,33 @@
-"use client";
+import type { Metadata } from "next";
+import LandingHomePage from "@/components/landing/LandingHomePage";
 
-import "@/app/(landing)/landing.css";
-import { LandingLangProvider } from "@/lib/landing-translations";
-import LandingHeader from "@/components/landing/LandingHeader";
-import HeroSection from "@/components/landing/HeroSection";
-import ProblemSection from "@/components/landing/ProblemSection";
-import SolutionSection from "@/components/landing/SolutionSection";
-import PatientJourneySection from "@/components/landing/PatientJourneySection";
-import UseCasesSection from "@/components/landing/UseCasesSection";
-import ClinicTypesSection from "@/components/landing/ClinicTypesSection";
-import BenefitsSection from "@/components/landing/BenefitsSection";
-import DemoCTASection from "@/components/landing/DemoCTASection";
-import LandingFooter from "@/components/landing/LandingFooter";
+export const metadata: Metadata = {
+  title: "ClinicBridge AI — Yapay Zekâ Destekli Hasta İletişim Platformu",
+  description:
+    "ClinicBridge AI, web sitesi ve telefon asistanlarıyla hasta sorularını yanıtlar, randevu taleplerini toplar ve kliniğinizin iletişim süreçlerini 7/24 destekler.",
+  keywords: [
+    "klinik asistan",
+    "yapay zeka",
+    "telefon asistanı",
+    "web sitesi asistanı",
+    "diş kliniği",
+    "randevu",
+    "chatbot",
+    "sağlık turizmi",
+    "clinic AI",
+    "patient assistant",
+    "AI phone assistant",
+  ],
+  openGraph: {
+    title: "ClinicBridge AI — AI Patient Communication Platform",
+    description:
+      "Website and phone AI assistants that answer patient questions, collect appointment requests, and support your clinic’s communication around the clock.",
+    url: "https://clinicbridge-ai.com",
+    siteName: "ClinicBridge AI",
+    type: "website",
+  },
+};
 
 export default function Home() {
-  return (
-    <LandingLangProvider>
-      <div className="lp-page">
-        <LandingHeader />
-        <HeroSection />
-        <ProblemSection />
-        <SolutionSection />
-        <PatientJourneySection />
-        <UseCasesSection />
-        <ClinicTypesSection />
-        <BenefitsSection />
-        <DemoCTASection />
-        <LandingFooter />
-      </div>
-    </LandingLangProvider>
-  );
+  return <LandingHomePage />;
 }

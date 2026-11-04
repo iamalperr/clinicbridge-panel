@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useLandingLang } from "@/lib/landing-translations";
-import { ArrowRight, ChevronDown, Bot } from "lucide-react";
+import { ArrowRight, ChevronDown, Bot, Globe, Phone } from "lucide-react";
 
 export default function HeroSection() {
   const { t } = useLandingLang();
@@ -20,34 +20,81 @@ export default function HeroSection() {
           <div>
             <div className="lp-hero-badge">
               <Bot size={14} />
-              AI-Powered Clinic Assistant
+              {t.hero.badge}
             </div>
             <h1>{t.hero.title}</h1>
             <p className="lp-hero-subtitle">{t.hero.subtitle}</p>
+            <div className="lp-hero-channels" aria-label="ClinicBridge AI solutions">
+              <span className="lp-hero-channel">
+                <Globe size={14} />
+                {t.hero.channelWeb}
+              </span>
+              <span className="lp-hero-channel">
+                <Phone size={14} />
+                {t.hero.channelPhone}
+              </span>
+            </div>
             <div className="lp-hero-ctas">
-              <button className="lp-btn lp-btn-primary" onClick={() => document.getElementById("contact")?.scrollIntoView({ behavior: "smooth" })}>
+              <button
+                type="button"
+                className="lp-btn lp-btn-primary"
+                onClick={() => document.getElementById("contact")?.scrollIntoView({ behavior: "smooth" })}
+              >
                 {t.hero.ctaPrimary} <ArrowRight size={18} />
               </button>
-              <button className="lp-btn lp-btn-secondary" onClick={() => document.getElementById("how-it-works")?.scrollIntoView({ behavior: "smooth" })}>
+              <button
+                type="button"
+                className="lp-btn lp-btn-secondary"
+                onClick={() => document.getElementById("products")?.scrollIntoView({ behavior: "smooth" })}
+              >
                 {t.hero.ctaSecondary} <ChevronDown size={18} />
               </button>
             </div>
           </div>
 
-          <div className="lp-chat-mockup">
-            <div className="lp-chat-header">
-              <div className="lp-chat-avatar"><Bot size={18} /></div>
-              <div className="lp-chat-info">
-                <h4>ClinicBridge AI</h4>
-                <span>Online</span>
+          <div className="lp-hero-previews">
+            <div className="lp-chat-mockup">
+              <div className="lp-chat-header">
+                <div className="lp-chat-avatar">
+                  <Globe size={18} />
+                </div>
+                <div className="lp-chat-info">
+                  <h4>{t.hero.channelWeb}</h4>
+                  <span>Online</span>
+                </div>
+              </div>
+              <div className="lp-chat-body" key={`web-${msgIdx}`}>
+                <div className="lp-chat-msg user" style={{ animationDelay: "0.1s" }}>
+                  {t.hero.chatMessages[msgIdx]}
+                </div>
+                <div className="lp-chat-msg bot" style={{ animationDelay: "0.6s" }}>
+                  {t.hero.chatResponses[msgIdx]}
+                </div>
               </div>
             </div>
-            <div className="lp-chat-body" key={msgIdx}>
-              <div className="lp-chat-msg user" style={{ animationDelay: "0.1s" }}>
-                {t.hero.chatMessages[msgIdx]}
+
+            <div className="lp-phone-mockup">
+              <div className="lp-chat-header">
+                <div className="lp-chat-avatar">
+                  <Phone size={18} />
+                </div>
+                <div className="lp-chat-info">
+                  <h4>{t.hero.channelPhone}</h4>
+                  <span>{t.hero.phoneStatus}</span>
+                </div>
               </div>
-              <div className="lp-chat-msg bot" style={{ animationDelay: "0.6s" }}>
-                {t.hero.chatResponses[msgIdx]}
+              <div className="lp-phone-body" key={`phone-${msgIdx}`}>
+                <p className="lp-phone-caller">{t.hero.phoneCaller}</p>
+                <p className="lp-phone-line" style={{ animationDelay: "0.2s" }}>
+                  {t.hero.phoneLines[msgIdx]}
+                </p>
+                <div className="lp-phone-wave" aria-hidden>
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </div>
               </div>
             </div>
           </div>

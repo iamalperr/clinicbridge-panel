@@ -1,11 +1,11 @@
 "use client";
 
 import { useLandingLang } from "@/lib/landing-translations";
-import { Repeat, CalendarX, Clock, TrendingDown } from "lucide-react";
+import { Repeat, PhoneMissed, Clock, TrendingDown } from "lucide-react";
 
 const iconMap = {
   repeat: Repeat,
-  "calendar-x": CalendarX,
+  "phone-missed": PhoneMissed,
   clock: Clock,
   "trending-down": TrendingDown,
 };
