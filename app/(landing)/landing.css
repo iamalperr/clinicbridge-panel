@@ -399,7 +399,183 @@
 }
 
 .lp-preview-page {
-  padding: calc(72px + 32px) 0 64px;
+  padding: calc(72px + 20px) 0 64px;
+}
+
+.lp-preview-banner {
+  position: sticky;
+  top: 72px;
+  z-index: 5;
+  margin: 0 0 16px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid var(--lp-border);
+  color: var(--lp-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  width: fit-content;
+}
+
+.lp-stage-tabs {
+  display: none;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.lp-stage-tabs button {
+  flex: 1;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--lp-border);
+  background: #fff;
+  font-weight: 600;
+}
+
+.lp-stage-tabs button.is-active {
+  background: var(--lp-text);
+  color: #fff;
+}
+
+.lp-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.lp-patient-frame {
+  position: relative;
+  min-height: 720px;
+  border: 1px solid var(--lp-border);
+  border-radius: 16px;
+  overflow: hidden;
+  background: #f8fafc;
+}
+
+.lp-mock {
+  padding: 28px 24px 120px;
+}
+
+.lp-mock-hero {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 28px;
+  border-radius: 18px;
+  background: var(--lp-clinic, #0f766e);
+  color: #fff;
+}
+
+.lp-mock-hero h2 {
+  margin: 0;
+  font-size: 32px;
+}
+
+.lp-mock-hero p,
+.lp-mock-hero img {
+  margin: 0 0 6px;
+}
+
+.lp-mock-hero img,
+.lp-mock-mark {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  object-fit: contain;
+}
+
+.lp-mock-cards,
+.lp-mock-doctors {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.lp-mock-cards div,
+.lp-mock-doctors div {
+  padding: 14px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid var(--lp-border);
+  display: grid;
+  gap: 4px;
+}
+
+.lp-mock-cards span,
+.lp-mock-doctors span {
+  color: var(--lp-text-secondary);
+  font-size: 13px;
+}
+
+.lp-mock-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #e2e8f0;
+}
+
+.lp-mock-contact {
+  margin: 14px 0 0;
+  color: var(--lp-text-secondary);
+}
+
+.lp-inbox {
+  padding: 20px;
+  border: 1px solid var(--lp-border);
+  border-radius: 16px;
+  background: #fff;
+  min-height: 720px;
+}
+
+.lp-inbox h2 {
+  margin: 0 0 12px;
+  font-size: 20px;
+}
+
+.lp-lead {
+  display: grid;
+  gap: 6px;
+  padding: 14px 0;
+  border-top: 1px solid var(--lp-border);
+}
+
+.lp-lead header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lp-lead p {
+  margin: 0;
+}
+
+.lp-lead-after {
+  width: fit-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.lp-preview-actions {
+  display: grid;
+  gap: 10px;
+}
+
+@media (max-width: 900px) {
+  .lp-stage-tabs { display: flex; }
+  .lp-stage { grid-template-columns: 1fr; }
+  .lp-stage-panel { display: none; }
+  .lp-stage-panel.is-active { display: block; }
+  .lp-mock-cards,
+  .lp-mock-doctors { grid-template-columns: 1fr; }
+  .lp-patient-frame,
+  .lp-inbox { min-height: 560px; }
 }
 
 .lp-preview-summary {

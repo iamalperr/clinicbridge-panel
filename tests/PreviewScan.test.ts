@@ -6,7 +6,8 @@ import { buildKnowledgeItems } from "../lib/preview/knowledge";
 import { canAcceptPreviewMessage, buildPreviewChatMessages } from "../lib/preview/chat";
 import { crawlSite, frameAllowed, readPage } from "../lib/preview/crawl";
 import { PREVIEW_MAX_MESSAGES } from "../lib/preview/types";
-import { demoKnowledgeItems, demoPreviewView } from "../lib/preview/demoClinic";
+import { demoPreviewView } from "../lib/preview/demoClinic";
+import { novaKnowledgeItems } from "../lib/demo/novaDental";
 
 describe("preview scan guards", () => {
   it("blocks local and private targets", () => {
@@ -111,10 +112,11 @@ describe("preview scan guards", () => {
     expect(view.previewId).toBe("demo");
     expect(view.clinicName).toBe("Nova Dental");
     expect(view.embeddable).toBe(false);
-    expect(view.treatmentCount).toBe(5);
-    expect(view.languageCount).toBe(4);
-    expect(view.questionCount).toBe(4);
-    expect(demoKnowledgeItems().some((item) => item.category === "Tedaviler" && item.content.includes("18.000–35.000 TL"))).toBe(true);
+    expect(view.treatmentCount).toBe(6);
+    expect(view.languageCount).toBe(5);
+    expect(view.questionCount).toBeGreaterThanOrEqual(15);
+    expect(novaKnowledgeItems().some((item) => item.category === "Tedaviler" && item.content.includes("450–750 €"))).toBe(true);
+    expect(novaKnowledgeItems().some((item) => /gerçek klinik değildir|not a real clinic/i.test(item.content))).toBe(false);
   });
 
   it("reads a page and detects frame blocking", () => {

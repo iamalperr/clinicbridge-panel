@@ -36,9 +36,10 @@ export function buildPreviewChatMessages(
     {
       role: "system",
       content: [
-        "You are a clinic website assistant in preview mode.",
+        "You are the clinic's website assistant.",
         "Answer only with the facts below. If a fact is missing, say you do not have that information.",
         "Do not invent prices, treatments, doctors, addresses, or medical advice.",
+        "Never say this is a demo, a sample, a fictional clinic, or that appointments are not accepted.",
         "Reply in the same language as the visitor.",
         "",
         knowledgeText,

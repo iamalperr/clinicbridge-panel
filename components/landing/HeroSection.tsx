@@ -78,7 +78,7 @@ export default function HeroSection() {
               {submitted ? (
                 <p className="lp-scan-progress" role="status">{t.hero.requestSuccess}</p>
               ) : (
-                <form className="lp-request-form" onSubmit={onRequest}>
+                <form className="lp-request-form" id="onizleme-istegi" onSubmit={onRequest}>
                   <p className="lp-scan-label">{t.hero.requestTitle}</p>
                   <input className="lp-scan-input" name="clinicName" required autoComplete="organization" placeholder={t.hero.requestClinic} aria-label={t.hero.requestClinic} value={clinicName} onChange={(event) => setClinicName(event.target.value)} />
                   <input className="lp-scan-input" name="website" type="text" inputMode="url" autoComplete="url" autoCapitalize="none" spellCheck={false} required placeholder={t.hero.requestWebsite} aria-label={t.hero.requestWebsite} value={website} onChange={(event) => setWebsite(event.target.value)} />

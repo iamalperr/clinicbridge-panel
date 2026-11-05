@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { trackableAIRequest } from "@/lib/services/aiGateway";
 import { buildPreviewChatMessages, previewLimitReply, type PreviewChatTurn } from "@/lib/preview/chat";
-import { demoKnowledgeItems, DEMO_PREVIEW_ID } from "@/lib/preview/demoClinic";
+import { parseClinicHours } from "@/lib/preview/clinicHours";
+import { DEMO_PREVIEW_ID } from "@/lib/preview/demoClinic";
+import { NOVA_TREATMENTS, NOVA_WEEK, novaAnswer, novaKnowledgeItems } from "@/lib/demo/novaDental";
+import { advancePreviewIntake } from "@/lib/preview/previewIntake";
+import { detectPreviewLanguage } from "@/lib/preview/previewLanguage";
 import { consumeDemoChatRateLimit, consumePreviewMessage, hashDemoIp } from "@/lib/preview/rateLimit";
 import { extractClientIp } from "@/lib/auth/passwordResetRateLimit";
 import type { PreviewKnowledgeItem } from "@/lib/preview/types";
@@ -47,16 +51,26 @@ export async function POST(req: Request) {
   if (!previewId || !message) {
     return NextResponse.json({ error: "invalid" }, { status: 400, headers: CORS });
   }
+  const uiLanguage = detectPreviewLanguage(message, language);
+  const history = asHistory(body.history);
 
   const db = getAdminDb();
   if (previewId === DEMO_PREVIEW_ID) {
     if (db) {
       const allowed = await consumeDemoChatRateLimit(db, hashDemoIp(extractClientIp(req)));
       if (!allowed) {
-        return NextResponse.json({ reply: previewLimitReply(language) }, { headers: CORS });
+        return NextResponse.json({ reply: previewLimitReply(uiLanguage), uiLanguage }, { headers: CORS });
       }
     }
-    return replyFromKnowledge(demoKnowledgeItems(), asHistory(body.history), message, language);
+    return answerPreview({
+      knowledge: novaKnowledgeItems(),
+      history,
+      message,
+      uiLanguage,
+      treatments: NOVA_TREATMENTS.map((item) => item.name.tr),
+      hours: NOVA_WEEK,
+      demo: true,
+    });
   }
 
   if (!db) return NextResponse.json({ error: "unavailable" }, { status: 503, headers: CORS });
@@ -75,16 +89,50 @@ export async function POST(req: Request) {
   }
 
   const knowledge = Array.isArray(data.knowledgeItems) ? (data.knowledgeItems as PreviewKnowledgeItem[]) : [];
-  return replyFromKnowledge(knowledge, asHistory(body.history), message, language);
+  const treatments = Array.isArray(data.treatments)
+    ? data.treatments.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const name = (item as { name?: unknown }).name;
+        return typeof name === "string" && name.trim() ? [name.trim()] : [];
+      })
+    : [];
+  return answerPreview({
+    knowledge,
+    history,
+    message,
+    uiLanguage,
+    treatments,
+    hours: parseClinicHours(typeof data.hours === "string" ? data.hours : null),
+    demo: false,
+  });
 }
 
-async function replyFromKnowledge(
-  knowledge: PreviewKnowledgeItem[],
-  history: PreviewChatTurn[],
-  message: string,
-  language: string | null
-) {
-  const messages = buildPreviewChatMessages(knowledge, history, message);
+async function answerPreview(input: {
+  knowledge: PreviewKnowledgeItem[];
+  history: PreviewChatTurn[];
+  message: string;
+  uiLanguage: ReturnType<typeof detectPreviewLanguage>;
+  treatments: string[];
+  hours: ReturnType<typeof parseClinicHours>;
+  demo: boolean;
+}) {
+  const intake = advancePreviewIntake({
+    history: input.history,
+    message: input.message,
+    language: input.uiLanguage,
+    treatments: input.treatments,
+    hours: input.hours,
+  });
+  if (intake.handled && intake.reply) {
+    return NextResponse.json({ reply: intake.reply, uiLanguage: input.uiLanguage, lead: intake.lead }, { headers: CORS });
+  }
+
+  const known = input.demo ? novaAnswer(input.message, input.uiLanguage) : null;
+  if (known) {
+    const reply = intake.followUp ? `${known}\n\n${intake.followUp}` : known;
+    return NextResponse.json({ reply, uiLanguage: input.uiLanguage }, { headers: CORS });
+  }
+
   try {
     const response = await trackableAIRequest({
       channel: "system",
@@ -92,16 +140,30 @@ async function replyFromKnowledge(
       model: "gpt-4o-mini",
       temperature: 0.2,
       maxTokens: 400,
-      messages,
+      messages: buildPreviewChatMessages(input.knowledge, input.history, input.message),
     });
     const reply = response.content?.trim();
-    if (reply) return NextResponse.json({ reply }, { headers: CORS });
+    if (reply) {
+      return NextResponse.json({
+        reply: intake.followUp ? `${reply}\n\n${intake.followUp}` : reply,
+        uiLanguage: input.uiLanguage,
+      }, { headers: CORS });
+    }
   } catch {
     /* model failure still must not persist the visitor message */
   }
 
-  const fallback = (language || "").toLowerCase().startsWith("tr")
-    ? "Şu an yanıt üretemiyorum. Lütfen kliniğin sitesindeki iletişim bilgisini kullanın."
-    : "I can't answer right now. Please use the contact details on the clinic website.";
-  return NextResponse.json({ reply: fallback }, { headers: CORS });
+  const fallback = input.uiLanguage === "tr"
+    ? "Şu an yanıt üretemiyorum. Tedaviler, hekimler ve randevu talebi için sorunuzu kısaca yineler misiniz?"
+    : input.uiLanguage === "de"
+      ? "Ich kann das gerade nicht beantworten. Fragen Sie bitte kurz nach Behandlung, Ärztin oder Termin."
+      : input.uiLanguage === "ar"
+        ? "لا أستطيع الإجابة الآن. أعيدوا السؤال باختصار عن العلاج أو الطبيب أو الموعد."
+        : input.uiLanguage === "ru"
+          ? "Сейчас не могу ответить. Повторите, пожалуйста, вопрос о лечении, враче или записи."
+          : "I can't answer that right now. Please ask again about a treatment, a dentist, or an appointment.";
+  return NextResponse.json({
+    reply: intake.followUp ? `${fallback}\n\n${intake.followUp}` : fallback,
+    uiLanguage: input.uiLanguage,
+  }, { headers: CORS });
 }

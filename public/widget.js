@@ -75,6 +75,7 @@
     if (!raw || typeof raw !== 'string') return null;
     var primary = raw.trim().toLowerCase().replace(/_/g, '-').split('-')[0];
     if (primary === 'tr' || primary === 'en') return primary;
+    if (previewId && (primary === 'de' || primary === 'ar' || primary === 'ru')) return primary;
     return null;
   }
 
@@ -170,7 +171,42 @@
       consentAccept: 'Accept and Continue',
       consentDecline: 'Decline',
     },
+    de: {
+      online: 'Online', justNow: 'Gerade eben', send: 'Senden',
+      powered: 'Unterstützt von ClinicBridge AI',
+      noReply: 'Ich kann gerade nicht antworten. Bitte rufen Sie die Klinik an.',
+      connErr: 'Verbindungsfehler. Bitte rufen Sie die Klinik direkt an.',
+      closeAria: 'Schließen', openAria: 'Assistent öffnen',
+      consentTitle: 'Datenschutz', consentText: 'Bitte lesen Sie den {LINK}.',
+      consentLinkText: 'Hinweis', consentAccept: 'Akzeptieren', consentDecline: 'Ablehnen',
+    },
+    ar: {
+      online: 'متصل', justNow: 'الآن', send: 'إرسال',
+      powered: 'بدعم من ClinicBridge AI',
+      noReply: 'لا أستطيع الرد الآن. يرجى الاتصال بالعيادة.',
+      connErr: 'خطأ في الاتصال. يرجى الاتصال بالعيادة مباشرة.',
+      closeAria: 'إغلاق', openAria: 'فتح المساعد',
+      consentTitle: 'الخصوصية', consentText: 'يرجى قراءة {LINK}.',
+      consentLinkText: 'الإشعار', consentAccept: 'موافق', consentDecline: 'رفض',
+    },
+    ru: {
+      online: 'Онлайн', justNow: 'Только что', send: 'Отправить',
+      powered: 'На базе ClinicBridge AI',
+      noReply: 'Сейчас не могу ответить. Позвоните в клинику.',
+      connErr: 'Ошибка соединения. Позвоните в клинику напрямую.',
+      closeAria: 'Закрыть', openAria: 'Открыть ассистента',
+      consentTitle: 'Конфиденциальность', consentText: 'Прочитайте {LINK}.',
+      consentLinkText: 'уведомление', consentAccept: 'Принять', consentDecline: 'Отклонить',
+    },
   };
+
+  var PREVIEW_CHIPS = [
+    "I'm in London, how much are zirconia crowns?",
+    'Wie lange muss ich für Implantate in Istanbul bleiben?',
+    'كم سعر ابتسامة هوليود؟',
+    'Doktorlarınız kim?',
+    'Randevu almak istiyorum',
+  ];
 
   /* ── Default per-language messages ── */
   var DEF_MSG = {
@@ -185,6 +221,24 @@
       inputPlaceholder: 'Type your message...',
       tooltipMessage:   'Hello, how can we help you?',
       quickActions:     ['Book an appointment', 'What services do you offer?', 'Where is your clinic?'],
+    },
+    de: {
+      greetingMessage: 'Guten Tag! Wie können wir helfen?',
+      inputPlaceholder: 'Schreiben Sie eine Nachricht...',
+      tooltipMessage: 'Guten Tag, wie können wir helfen?',
+      quickActions: ['Ich möchte einen Termin', 'Welche Behandlungen gibt es?', 'Wo ist die Klinik?'],
+    },
+    ar: {
+      greetingMessage: 'مرحباً! كيف يمكننا مساعدتكم؟',
+      inputPlaceholder: 'اكتبوا رسالتكم...',
+      tooltipMessage: 'مرحباً، كيف يمكننا المساعدة؟',
+      quickActions: ['أريد موعداً', 'ما العلاجات المتوفرة؟', 'أين تقع العيادة؟'],
+    },
+    ru: {
+      greetingMessage: 'Здравствуйте! Чем мы можем помочь?',
+      inputPlaceholder: 'Напишите сообщение...',
+      tooltipMessage: 'Здравствуйте, чем мы можем помочь?',
+      quickActions: ['Хочу записаться', 'Какие есть услуги?', 'Где находится клиника?'],
     },
   };
 
@@ -331,9 +385,11 @@
     var c = s.primaryColor;
     
     // Position
-    var posCSS = 'position:fixed;' +
-      (isMiddle ? 'top:50%;transform:translateY(-50%);' : 'bottom:28px;') +
-      (isLeft ? 'left:28px;right:auto;' : 'right:28px;left:auto;');
+    var posCSS = previewId
+      ? 'position:absolute;bottom:16px;right:16px;left:auto;top:auto;'
+      : ('position:fixed;' +
+        (isMiddle ? 'top:50%;transform:translateY(-50%);' : 'bottom:28px;') +
+        (isLeft ? 'left:28px;right:auto;' : 'right:28px;left:auto;'));
 
     // Shape/Size
     var scale = s.launcher.size === 'small' ? 0.85 : (s.launcher.size === 'large' ? 1.15 : 1);
@@ -438,7 +494,7 @@
         'background:#fff!important}',
       '.cbw-msg{display:flex!important;flex-direction:column!important;gap:3px!important}',
       '.cbw-bubble-msg{padding:11px 15px!important;font-size:14px!important;',
-        'line-height:1.65!important;max-width:86%!important;color:#1e293b!important;',
+        'line-height:1.65!important;max-width:86%!important;color:#1e293b!important;white-space:pre-wrap!important;',
         'font-family:inherit!important;word-break:break-word!important}',
       '.cbw-bot .cbw-bubble-msg{background:#F1F5F9!important;border-radius:4px 16px 16px 16px!important}',
       '.cbw-user{align-items:flex-end!important}',
@@ -633,14 +689,17 @@
     var inp = shadow.getElementById('cbw-input');
     if (inp) inp.placeholder = locale.inputPlaceholder;
 
+    var panelDir = shadow.getElementById('cbw-panel');
+    if (panelDir) panelDir.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
+
     /* Quick actions (first load only) */
     if (firstTime) {
       var quickEl = shadow.getElementById('cbw-quick');
       var hasInteracted = w.sessionStorage.getItem('cbw_hasUserInteracted_' + clinicId) === 'true';
       if (quickEl) {
-        if (!hasInteracted && locale.quickActions && locale.quickActions.length > 0) {
-          // Take up to 4 quick actions
-          var initialActions = locale.quickActions.slice(0, 4);
+        var chipSource = previewId ? PREVIEW_CHIPS : locale.quickActions;
+        if (!hasInteracted && chipSource && chipSource.length > 0) {
+          var initialActions = chipSource.slice(0, previewId ? chipSource.length : 4);
           quickEl.innerHTML = initialActions.map(function (qa) {
             return '<button class="cbw-qbtn">' + qa + '</button>';
           }).join('');
@@ -752,8 +811,9 @@
       if (!hasInteracted) {
         var locale = getLocale(latestSettings, resolvedLang);
         var quickEl = shadow.getElementById('cbw-quick');
-        if (quickEl && locale.quickActions && locale.quickActions.length > 0) {
-          var initialActions = locale.quickActions.slice(0, 4);
+        var chipSource = previewId ? PREVIEW_CHIPS : locale.quickActions;
+        if (quickEl && chipSource && chipSource.length > 0) {
+          var initialActions = chipSource.slice(0, previewId ? chipSource.length : 4);
           quickEl.innerHTML = initialActions.map(function (qa) {
             return '<button class="cbw-qbtn">' + qa + '</button>';
           }).join('');
@@ -819,6 +879,7 @@
       }
       if (lockUserSelection) userSelectedLang = normalized;
       resolvedLang = normalized;
+      if (hostEl) hostEl.setAttribute('dir', resolvedLang === 'ar' ? 'rtl' : 'ltr');
       dbg('Locale applied:', resolvedLang, '| source:', source, '| locked:', !!userSelectedLang);
       refreshLocaleDependentCopy();
       return true;
@@ -855,6 +916,7 @@
       latestSettings = s;
       var localeMeta = resolveLang(raw);
       resolvedLang = localeMeta.lang;
+      if (hostEl) hostEl.setAttribute('dir', resolvedLang === 'ar' ? 'rtl' : 'ltr');
       dbg('Language resolved:', resolvedLang, '| source:', localeMeta.source);
       var sys = SYS[resolvedLang] || SYS.en;
 
@@ -1086,6 +1148,12 @@
 
         chatHistory.push({ role: 'assistant', content: reply });
         appendMsg(shadowRoot, reply, false, '', false);
+        if (previewId && data && typeof data.uiLanguage === 'string') {
+          applyResolvedLocale(data.uiLanguage, 'preview-conversation', true);
+        }
+        if (previewId && data && data.lead) {
+          w.dispatchEvent(new CustomEvent('cbw-preview-lead', { detail: data.lead }));
+        }
 
         // Backup dual-write (idempotent with content-stable ids on conversationLogs).
         if (reply && !previewId) logMessage(text, reply);
@@ -1119,7 +1187,7 @@
       var consentEl = shadow.getElementById('cbw-consent');
       var chatEl = shadow.getElementById('cbw-chat');
       
-      if (!hasConsent) {
+      if (!previewId && !hasConsent) {
         if (consentEl) consentEl.style.display = 'flex';
         if (chatEl) chatEl.style.display = 'none';
       } else {
