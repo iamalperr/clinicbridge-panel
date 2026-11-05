@@ -16,6 +16,16 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Yerel önizleme taraması
+
+Sunucudan açılamayan bir klinik sitesini bu makineden tarar. Sunucudaki crawl ve çıkarım kodunu kullanır. CAPTCHA çözmez ve bot korumasını aşmaz.
+
+```bash
+npx tsx scripts/preview-scan.ts <url> [--request <id>]
+```
+
+`--request` başarılı taramada ilgili `previews` kaydını yazar. Talep `ready_for_review` olur. Daha önce linki gönderilmiş bir talep `sent` kalır.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
