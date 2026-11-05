@@ -11,6 +11,7 @@ import PatientJourneySection from "@/components/landing/PatientJourneySection";
 import UseCasesSection from "@/components/landing/UseCasesSection";
 import ClinicTypesSection from "@/components/landing/ClinicTypesSection";
 import BenefitsSection from "@/components/landing/BenefitsSection";
+import PricingSection from "@/components/landing/PricingSection";
 import DemoCTASection from "@/components/landing/DemoCTASection";
 import LandingFooter from "@/components/landing/LandingFooter";
 
@@ -27,6 +28,7 @@ export default function LandingHomePage() {
         <UseCasesSection />
         <ClinicTypesSection />
         <BenefitsSection />
+        <PricingSection />
         <DemoCTASection />
         <LandingFooter />
       </div>

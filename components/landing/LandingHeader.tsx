@@ -1,18 +1,26 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { useLandingLang, LandingLanguage } from "@/lib/landing-translations";
 import { Menu, X } from "lucide-react";
-
 import Image from "next/image";
 
 export default function LandingHeader() {
   const { lang, setLang, t } = useLandingLang();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = usePathname();
+  const router = useRouter();
 
   const scrollTo = (id: string) => {
     setMobileOpen(false);
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+    const target = document.getElementById(id);
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
+    router.push(`/#${id}`);
   };
 
   const langs: LandingLanguage[] = ["tr", "en"];
@@ -21,12 +29,15 @@ export default function LandingHeader() {
     <>
       <header className="lp-header" id="lp-header">
         <div className="lp-header-inner">
-          <a
-            href="#"
+          <Link
+            href="/"
             className="lp-logo"
             onClick={(e) => {
-              e.preventDefault();
-              window.scrollTo({ top: 0, behavior: "smooth" });
+              setMobileOpen(false);
+              if (pathname === "/") {
+                e.preventDefault();
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }
             }}
           >
             <Image src="/icon.svg" alt="ClinicBridge" width={36} height={36} className="lp-logo-icon-img" priority />
@@ -35,66 +46,26 @@ export default function LandingHeader() {
               <span className="lp-logo-bridge">Bridge</span>
               <span className="lp-logo-ai">AI</span>
             </span>
-          </a>
+          </Link>
 
           <nav className="lp-nav">
-            <a
-              href="#products"
-              onClick={(e) => {
-                e.preventDefault();
-                scrollTo("products");
-              }}
-            >
-              {t.nav.solutions}
-            </a>
-            <a
-              href="#how-it-works"
-              onClick={(e) => {
-                e.preventDefault();
-                scrollTo("how-it-works");
-              }}
-            >
-              {t.nav.howItWorks}
-            </a>
-            <a
-              href="#benefits"
-              onClick={(e) => {
-                e.preventDefault();
-                scrollTo("benefits");
-              }}
-            >
-              {t.nav.benefits}
-            </a>
-            <a
-              href="#contact"
-              onClick={(e) => {
-                e.preventDefault();
-                scrollTo("contact");
-              }}
-            >
-              {t.nav.contact}
-            </a>
+            <a href="#products" onClick={(e) => { e.preventDefault(); scrollTo("products"); }}>{t.nav.solutions}</a>
+            <Link href="/#pricing" onClick={() => setMobileOpen(false)}>{t.nav.pricing}</Link>
+            <Link href="/hakkimizda" onClick={() => setMobileOpen(false)}>{t.nav.about}</Link>
+            <a href="#how-it-works" onClick={(e) => { e.preventDefault(); scrollTo("how-it-works"); }}>{t.nav.howItWorks}</a>
+            <a href="#benefits" onClick={(e) => { e.preventDefault(); scrollTo("benefits"); }}>{t.nav.benefits}</a>
+            <a href="#contact" onClick={(e) => { e.preventDefault(); scrollTo("contact"); }}>{t.nav.contact}</a>
           </nav>
 
           <div className="lp-header-actions">
             <div className="lp-lang-switch">
               {langs.map((l) => (
-                <button
-                  key={l}
-                  type="button"
-                  className={`lp-lang-btn${lang === l ? " active" : ""}`}
-                  onClick={() => setLang(l)}
-                >
+                <button key={l} type="button" className={`lp-lang-btn${lang === l ? " active" : ""}`} onClick={() => setLang(l)}>
                   {l.toUpperCase()}
                 </button>
               ))}
             </div>
-            <button
-              type="button"
-              className="lp-btn lp-btn-primary"
-              style={{ padding: "10px 24px", fontSize: 14 }}
-              onClick={() => scrollTo("contact")}
-            >
+            <button type="button" className="lp-btn lp-btn-primary" style={{ padding: "10px 24px", fontSize: 14 }} onClick={() => scrollTo("contact")}>
               {t.nav.requestDemo}
             </button>
             <button type="button" className="lp-mobile-toggle" onClick={() => setMobileOpen(!mobileOpen)} aria-label="Toggle menu">
@@ -105,45 +76,13 @@ export default function LandingHeader() {
       </header>
 
       <div className={`lp-mobile-menu${mobileOpen ? " open" : ""}`}>
-        <a
-          href="#products"
-          onClick={(e) => {
-            e.preventDefault();
-            scrollTo("products");
-          }}
-        >
-          {t.nav.solutions}
-        </a>
-        <a
-          href="#how-it-works"
-          onClick={(e) => {
-            e.preventDefault();
-            scrollTo("how-it-works");
-          }}
-        >
-          {t.nav.howItWorks}
-        </a>
-        <a
-          href="#benefits"
-          onClick={(e) => {
-            e.preventDefault();
-            scrollTo("benefits");
-          }}
-        >
-          {t.nav.benefits}
-        </a>
-        <a
-          href="#contact"
-          onClick={(e) => {
-            e.preventDefault();
-            scrollTo("contact");
-          }}
-        >
-          {t.nav.contact}
-        </a>
-        <button type="button" className="lp-btn lp-btn-primary" onClick={() => scrollTo("contact")}>
-          {t.nav.requestDemo}
-        </button>
+        <a href="#products" onClick={(e) => { e.preventDefault(); scrollTo("products"); }}>{t.nav.solutions}</a>
+        <Link href="/#pricing" onClick={() => setMobileOpen(false)}>{t.nav.pricing}</Link>
+        <Link href="/hakkimizda" onClick={() => setMobileOpen(false)}>{t.nav.about}</Link>
+        <a href="#how-it-works" onClick={(e) => { e.preventDefault(); scrollTo("how-it-works"); }}>{t.nav.howItWorks}</a>
+        <a href="#benefits" onClick={(e) => { e.preventDefault(); scrollTo("benefits"); }}>{t.nav.benefits}</a>
+        <a href="#contact" onClick={(e) => { e.preventDefault(); scrollTo("contact"); }}>{t.nav.contact}</a>
+        <button type="button" className="lp-btn lp-btn-primary" onClick={() => scrollTo("contact")}>{t.nav.requestDemo}</button>
       </div>
     </>
   );

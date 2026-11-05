@@ -6,6 +6,7 @@ export const SELLER = {
   name: "Yusuf Alper Özgül (ClinicBridge AI)",
   address: "Karacaömer Mah. Değirmenbaşı Memur TOKİ Küme Evler No: 11 D: 20 Altınordu/Ordu",
   email: "info@clinicbridge-ai.com",
+  phone: "+90 531 462 99 21",
   web: "https://clinicbridge-ai.com",
 };
 

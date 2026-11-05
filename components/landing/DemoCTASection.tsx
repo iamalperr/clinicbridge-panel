@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useEffect, useState, FormEvent } from "react";
 import { useLandingLang } from "@/lib/landing-translations";
 import { CheckCircle, ArrowRight, Loader2, AlertCircle } from "lucide-react";
 import { submitDemoRequest } from "@/lib/services/demoRequestService";
 import { getAttributionForSubmit } from "@/lib/attribution";
 import { useRouter } from "next/navigation";
+import { PLAN_INTEREST_STORAGE_KEY } from "@/lib/pricing";
 
 const EMPTY_FORM = {
   fullName: "",
@@ -46,6 +47,26 @@ export default function DemoCTASection() {
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
   const [validationError, setValidationError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const apply = (message: string) => {
+      setForm((prev) => ({ ...prev, message }));
+    };
+    const stored = sessionStorage.getItem(PLAN_INTEREST_STORAGE_KEY);
+    if (stored) {
+      apply(stored);
+      sessionStorage.removeItem(PLAN_INTEREST_STORAGE_KEY);
+    }
+    if (window.location.hash === "#contact") {
+      document.getElementById("contact")?.scrollIntoView({ behavior: "smooth" });
+    }
+    const onInterest = (event: Event) => {
+      const message = (event as CustomEvent<string>).detail;
+      if (message) apply(message);
+    };
+    window.addEventListener("lp-plan-interest", onInterest);
+    return () => window.removeEventListener("lp-plan-interest", onInterest);
+  }, []);
 
   const handleChange = (field: keyof FormState, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));

@@ -13,7 +13,7 @@ export default function DeliveryRefundPage() {
         <p>AI telefon asistanı içeren paketlerde numara yönlendirme ve kurulum, klinikle birlikte planlanır ve genellikle 3 iş günü içinde tamamlanır.</p>
       </LegalSection>
       <LegalSection title="3. Abonelik ve iptal">
-        <p>Abonelikler aylık olarak yenilenir. Aboneliğinizi dilediğiniz zaman klinik panelinden veya {SELLER.email} adresine yazarak iptal edebilirsiniz. İptal, içinde bulunulan ödeme döneminin sonunda geçerli olur ve dönem sonuna kadar hizmet kullanılmaya devam edilir.</p>
+        <p>Paket bedelleri <a href="/fiyatlandirma">Fiyatlandırma</a> sayfasında yer alır. Abonelikler aylık olarak yenilenir. Aboneliğinizi dilediğiniz zaman klinik panelinden veya {SELLER.email} adresine yazarak iptal edebilirsiniz. İptal, içinde bulunulan ödeme döneminin sonunda geçerli olur ve dönem sonuna kadar hizmet kullanılmaya devam edilir.</p>
       </LegalSection>
       <LegalSection title="4. İade">
         <p>Hizmet, ödeme onayıyla birlikte elektronik ortamda anında sunulmaya başladığından, kullanılmış veya başlamış dönemler için ücret iadesi yapılmaz.</p>
