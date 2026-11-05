@@ -89,7 +89,8 @@ export function middleware(req: NextRequest) {
     if (pathname === "/api/demo-request") return NextResponse.next();
 
     // Allow legal pages accessible from landing footer
-    if (pathname.startsWith("/(legal)") || pathname === "/privacy" || pathname === "/terms") {
+    const LEGAL_PATHS = ["/privacy", "/terms", "/kvkk", "/hakkimizda", "/fiyatlandirma", "/teslimat-ve-iade", "/mesafeli-satis-sozlesmesi"];
+    if (pathname.startsWith("/(legal)") || LEGAL_PATHS.includes(pathname)) {
       return NextResponse.next();
     }
 
