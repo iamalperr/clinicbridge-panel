@@ -177,7 +177,8 @@ export default function DemoCTASection() {
                 <div className="lp-form-group lp-form-full">
                   <label>{f.website}</label>
                   <input
-                    type="url"
+                    type="text"
+                    inputMode="url"
                     placeholder={f.websitePlaceholder}
                     value={form.website}
                     onChange={(e) => handleChange("website", e.target.value)}

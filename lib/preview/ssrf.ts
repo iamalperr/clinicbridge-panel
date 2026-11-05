@@ -49,8 +49,11 @@ export function isPrivateIp(ip: string): boolean {
 
 export function parsePublicHttpUrl(raw: string): URL {
   let url: URL;
+  let value = raw.trim();
+  // Accept "www.klinik.com" or "klinik.com" without a scheme.
+  if (value && !/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) value = `https://${value}`;
   try {
-    url = new URL(raw.trim());
+    url = new URL(value);
   } catch {
     throw new PreviewUrlError("invalid");
   }

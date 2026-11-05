@@ -107,8 +107,11 @@ export default function HeroSection() {
                   <input
                     id="clinic-site-url"
                     className="lp-scan-input"
-                    type="url"
+                    type="text"
                     inputMode="url"
+                    autoComplete="url"
+                    autoCapitalize="none"
+                    spellCheck={false}
                     required
                     placeholder={t.hero.scanPlaceholder}
                     value={url}
