@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth-context";
 import UnauthorizedScreen from "./UnauthorizedScreen";
 import { isSuperAdmin, DEFAULT_PERMISSIONS } from "@/lib/types";
 import type { PermissionTab } from "@/lib/types";
+import { isPublicRoute } from "@/lib/auth/publicRoutes";
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
@@ -38,10 +39,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!loading) {
-      const PUBLIC_ROUTES = ["/", "/login", "/privacy", "/terms", "/kvkk", "/landing", "/reset-password", "/showcase-demo", "/showcase-patient-questions", "/linkedin-assets", "/social-posts", "/widget-guide", "/agency-demo"];
-      const isPublicRoute = PUBLIC_ROUTES.includes(pathname) || pathname.startsWith("/demo/") || pathname.startsWith("/agency-demo");
-      
-      if (!user && !isPublicRoute) {
+      if (!user && !isPublicRoute(pathname)) {
         router.replace("/login");
       } else if (user && profile && (pathname === "/login" || pathname === "/")) {
         const isAgencyRole = profile.role === "agencyAdmin" || profile.role === "agencyUser";
@@ -91,10 +89,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   // Prevent flashing of protected content if redirecting to login
-  const PUBLIC_ROUTES = ["/", "/login", "/privacy", "/terms", "/kvkk", "/landing", "/reset-password", "/showcase-demo", "/showcase-patient-questions", "/linkedin-assets", "/social-posts", "/widget-guide", "/agency-demo"];
-  const isPublicRoute = PUBLIC_ROUTES.includes(pathname) || pathname.startsWith("/demo/") || pathname.startsWith("/agency-demo");
-
-  if (!user && !isPublicRoute) {
+  if (!user && !isPublicRoute(pathname)) {
     return null;
   }
 
@@ -106,7 +101,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   const isAuthorized = profile && (isAdmin || profile.status === "active");
 
-  if (user && !isAuthorized && !isPublicRoute) {
+  if (user && !isAuthorized && !isPublicRoute(pathname)) {
     console.warn("[AuthGuard] Blocking access. State:", {
       uid: user.uid,
       hasProfile: !!profile,
@@ -125,7 +120,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   };
 
   // Global Route Checks
-  if (user && profile && !isPublicRoute) {
+  if (user && profile && !isPublicRoute(pathname)) {
     if (pathname.startsWith("/users") && !hasPermission("users")) {
       return <UnauthorizedScreen />;
     }
@@ -147,7 +142,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   // Clinic Level Route Guards
-  if (user && profile && !isPublicRoute && (isClinicUser || roleStr === "viewer" || roleStr === "clinicAdmin" || isAgencyUser)) {
+  if (user && profile && !isPublicRoute(pathname) && (isClinicUser || roleStr === "viewer" || roleStr === "clinicAdmin" || isAgencyUser)) {
     const clinicMatch = pathname.match(/^\/clinics\/([^/]+)(\/.*)?$/);
     if (clinicMatch) {
       const accessedClinicId = clinicMatch[1];
@@ -210,7 +205,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   // Route-Level Role Guards for Agency Users
-  if (user && profile && !isPublicRoute && isAgencyUser) {
+  if (user && profile && !isPublicRoute(pathname) && isAgencyUser) {
     // Agency users can access /agency/* and /clinics/* (tenant isolation handled above)
     if (!pathname.startsWith("/agency") && !pathname.startsWith("/clinics/")) {
       return <UnauthorizedScreen />;
@@ -260,7 +255,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   // Block clinic/admin users from accessing /agency/* routes
-  if (user && profile && !isPublicRoute && !isAdmin && !isAgencyUser && pathname.startsWith("/agency")) {
+  if (user && profile && !isPublicRoute(pathname) && !isAdmin && !isAgencyUser && pathname.startsWith("/agency")) {
     return <UnauthorizedScreen />;
   }
 
