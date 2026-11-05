@@ -98,7 +98,7 @@ function SignupForm() {
           {clinicId ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <p style={{ color: UI_COLORS.textPrimary, fontWeight: 600 }}>{emailSent ? t("signup.success") : t("signup.successNoEmail")}</p>
-              <Button type="button" fullWidth onClick={() => router.replace(`/clinics/${clinicId}`)}>{t("signup.continue")}</Button>
+              <Button type="button" fullWidth onClick={() => router.replace("/kurulum")}>{t("signup.continue")}</Button>
             </div>
           ) : (
             <form onSubmit={onSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>

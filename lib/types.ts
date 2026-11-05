@@ -120,6 +120,10 @@ export interface Clinic {
   chatLimit?: number;
   workingHours?: string;
   setupCompleted?: boolean;
+  widgetInstalledAt?: string | number | { seconds: number; nanoseconds: number } | object;
+  installedDomain?: string;
+  widgetLiveEmailSent?: boolean;
+  appointmentEmail?: string;
   modules?: {
     ai: boolean;
     widget: boolean;

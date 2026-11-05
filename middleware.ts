@@ -89,8 +89,8 @@ export function middleware(req: NextRequest) {
     if (pathname === "/api/demo-request") return NextResponse.next();
     if (pathname.startsWith("/api/public/preview/")) return NextResponse.next();
     if (pathname.startsWith("/onizleme/")) return NextResponse.next();
-    if (pathname === "/kayit") {
-      const target = new URL("https://app.clinicbridge-ai.com/kayit");
+    if (pathname === "/kayit" || pathname === "/kurulum") {
+      const target = new URL(`https://app.clinicbridge-ai.com${pathname}`);
       target.search = req.nextUrl.search;
       return NextResponse.redirect(target);
     }

@@ -724,6 +724,16 @@
 
     dbg('Boot | clinicId:', clinicId, '| embedLang:', embedLang, '| embedTestMode:', embedTestMode, '| debug:', debugMode, '| version:', VERSION);
 
+    if (!previewId && clinicId && clinicId !== 'demo') {
+      try {
+        fetch(API_BASE + '/api/public/widget-ping', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clinicId: clinicId, domain: location.hostname })
+        }).catch(function () {});
+      } catch (e) {}
+    }
+
     function currentSys() {
       return SYS[resolvedLang] || SYS.en;
     }

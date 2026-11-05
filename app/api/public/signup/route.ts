@@ -116,6 +116,7 @@ export async function POST(req: Request) {
           language: item.language,
           type: "note",
           status: "learned",
+          source: "setup",
           clinicId,
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),

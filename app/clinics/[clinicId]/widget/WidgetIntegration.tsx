@@ -5,6 +5,7 @@ import { UI_COLORS } from "@/components/ui/ui-shared";
 import { Copy, Check, Code2, Link as LinkIcon, Globe } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
 import type { WidgetLanguage } from "@/lib/types";
+import { buildWidgetEmbedCode } from "@/lib/widget/embedCode";
 
 interface WidgetIntegrationProps {
   clinicId: string;
@@ -17,21 +18,7 @@ export default function WidgetIntegration({ clinicId, defaultLanguage = "auto", 
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  // Widget script URL — managed centrally via NEXT_PUBLIC_WIDGET_SCRIPT_URL
-  const WIDGET_SCRIPT_URL =
-    process.env.NEXT_PUBLIC_WIDGET_SCRIPT_URL ||
-    "https://widget.clinicbridge-ai.com/widget.js";
-
-  const getEmbedCode = () => {
-    const langAttr = defaultLanguage === "tr"
-      ? ` data-language="tr"`
-      : defaultLanguage === "en"
-      ? ` data-language="en"`
-      : "";
-    return `<script\n  src="${WIDGET_SCRIPT_URL}"\n  data-clinic-id="${clinicId}"${langAttr}\n  async>\n</script>`;
-  };
-
-  const embedCode = getEmbedCode();
+  const embedCode = buildWidgetEmbedCode(clinicId, defaultLanguage);
   const shareableLink = `https://app.clinicbridge-ai.com/widget/${clinicId}`;
 
   const handleCopyCode = async () => {
