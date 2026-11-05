@@ -1,5 +1,5 @@
 export class PreviewUrlError extends Error {
-  constructor(readonly code: "invalid" | "protocol" | "credentials" | "port" | "host" | "private" | "dns" | "empty") {
+  constructor(readonly code: "invalid" | "protocol" | "credentials" | "port" | "host" | "private" | "dns" | "empty" | "timeout") {
     super(code);
     this.name = "PreviewUrlError";
   }
@@ -47,13 +47,17 @@ export function isPrivateIp(ip: string): boolean {
   return false;
 }
 
+/** Add https:// when the visitor typed a bare host such as www.klinik.com. */
+export function withHttpScheme(raw: string): string {
+  const value = raw.trim();
+  if (value && !/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return `https://${value}`;
+  return value;
+}
+
 export function parsePublicHttpUrl(raw: string): URL {
   let url: URL;
-  let value = raw.trim();
-  // Accept "www.klinik.com" or "klinik.com" without a scheme.
-  if (value && !/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) value = `https://${value}`;
   try {
-    url = new URL(value);
+    url = new URL(withHttpScheme(raw));
   } catch {
     throw new PreviewUrlError("invalid");
   }
@@ -74,6 +78,9 @@ export function parsePublicHttpUrl(raw: string): URL {
     host.endsWith(".internal")
   ) {
     throw new PreviewUrlError("host");
+  }
+  if (!host.includes(".") && !isIpLiteral(host)) {
+    throw new PreviewUrlError("invalid");
   }
   if (isIpLiteral(host) && isPrivateIp(host)) {
     throw new PreviewUrlError("private");

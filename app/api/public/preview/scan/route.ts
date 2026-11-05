@@ -87,13 +87,18 @@ export async function POST(req: Request) {
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
         const code = error instanceof PreviewUrlError ? error.code : "";
+        const timedOut = code === "timeout" || /timeout/i.test(message) || (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError"));
         const errorCode = message.includes("OPENAI")
           ? "unavailable"
           : code === "empty"
             ? "empty"
-            : code === "private" || code === "host"
-              ? "invalid_url"
-              : "unreachable";
+            : timedOut
+              ? "timeout"
+              : code === "dns"
+                ? "unreachable"
+                : code === "private" || code === "host" || code === "invalid" || code === "protocol" || code === "credentials" || code === "port"
+                  ? "invalid_url"
+                  : "unreachable";
         send({ stage: "error", error: errorCode });
       } finally {
         controller.close();

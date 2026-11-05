@@ -18,6 +18,12 @@ describe("preview scan guards", () => {
       expect(() => parsePublicHttpUrl(raw)).toThrow(PreviewUrlError);
     }
     expect(parsePublicHttpUrl("https://example.com/klinik").hostname).toBe("example.com");
+    expect(parsePublicHttpUrl("www.hospitadent.com").protocol).toBe("https:");
+    expect(parsePublicHttpUrl("www.hospitadent.com").hostname).toBe("www.hospitadent.com");
+    expect(parsePublicHttpUrl("hospitadent.com").href).toBe("https://hospitadent.com/");
+    expect(parsePublicHttpUrl("https://www.hospitadent.com").href).toBe("https://www.hospitadent.com/");
+    expect(() => parsePublicHttpUrl("abc")).toThrow(PreviewUrlError);
+    expect(() => parsePublicHttpUrl("localhost")).toThrow(PreviewUrlError);
   });
 
   it("honors robots.txt disallow rules", () => {

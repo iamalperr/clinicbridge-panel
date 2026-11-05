@@ -5,6 +5,14 @@ import { useRouter } from "next/navigation";
 import { useLandingLang } from "@/lib/landing-translations";
 import { ArrowRight, ChevronDown, Bot, Globe, Phone } from "lucide-react";
 
+function scanErrorMessage(code: string | undefined, hero: { scanInvalid: string; scanEmpty: string; scanUnavailable: string; scanUnreachable: string; scanTimeout: string }): string {
+  if (code === "empty") return hero.scanEmpty;
+  if (code === "unavailable") return hero.scanUnavailable;
+  if (code === "unreachable") return hero.scanUnreachable;
+  if (code === "timeout") return hero.scanTimeout;
+  return hero.scanInvalid;
+}
+
 export default function HeroSection() {
   const { t } = useLandingLang();
   const router = useRouter();
@@ -32,7 +40,7 @@ export default function HeroSection() {
       if (!contentType.includes("ndjson")) {
         const payload = await response.json().catch(() => ({}));
         setStage("idle");
-        setError(payload.error === "rate_limited" ? t.hero.scanLimited : t.hero.scanInvalid);
+        setError(payload.error === "rate_limited" ? t.hero.scanLimited : scanErrorMessage(payload.error, t.hero));
         return;
       }
       const reader = response.body?.getReader();
@@ -60,13 +68,7 @@ export default function HeroSection() {
           }
           if (scanEvent.stage === "error") {
             setStage("idle");
-            setError(
-              scanEvent.error === "empty"
-                ? t.hero.scanEmpty
-                : scanEvent.error === "unavailable"
-                  ? t.hero.scanUnavailable
-                  : t.hero.scanInvalid
-            );
+            setError(scanErrorMessage(scanEvent.error, t.hero));
             return;
           }
         }
@@ -75,7 +77,7 @@ export default function HeroSection() {
       setError(t.hero.scanInvalid);
     } catch {
       setStage("idle");
-      setError(t.hero.scanInvalid);
+      setError(t.hero.scanUnavailable);
     }
   }
 

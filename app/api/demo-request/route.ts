@@ -8,6 +8,7 @@ import {
   sanitizeAttributionPayload,
 } from "@/lib/attribution";
 import { stripUndefinedDeep } from "@/lib/firestore/stripUndefined";
+import { withHttpScheme } from "@/lib/preview/ssrf";
 
 const resend = new Resend(process.env.RESEND_API_KEY || "dummy-resend-key");
 
@@ -103,7 +104,7 @@ export async function POST(req: Request) {
       clinicName: clinicName.trim(),
       phone: phone?.trim() || "",
       email: email?.trim() || "",
-      website: website?.trim() || "",
+      website: withHttpScheme(typeof website === "string" ? website : ""),
       message: message?.trim() || "",
       source: "landing" as const,
       status: "new" as const,

@@ -190,6 +190,13 @@ function sitemapLocs(xml: string): string[] {
   return [...xml.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/gi)].map((match) => match[1].trim());
 }
 
+function isTimeoutError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const name = "name" in error ? String(error.name) : "";
+  const message = error instanceof Error ? error.message : "";
+  return name === "TimeoutError" || name === "AbortError" || /timeout/i.test(message);
+}
+
 export async function crawlSite(rawUrl: string, deps: CrawlDeps = {}): Promise<CrawlResult> {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const now = deps.now ?? Date.now;
@@ -197,6 +204,10 @@ export async function crawlSite(rawUrl: string, deps: CrawlDeps = {}): Promise<C
   const start = parsePublicHttpUrl(rawUrl);
   const deadline = now() + TOTAL_BUDGET_MS;
   const origin = new URL(start.toString());
+  let sawTimeout = false;
+  const noteFailure = (error: unknown) => {
+    if (isTimeoutError(error)) sawTimeout = true;
+  };
 
   let robots = "";
   const robotsUrl = new URL("/robots.txt", origin);
@@ -207,6 +218,7 @@ export async function crawlSite(rawUrl: string, deps: CrawlDeps = {}): Promise<C
     }
   } catch (error) {
     if (error instanceof PreviewUrlError) throw error;
+    noteFailure(error);
   }
 
   const queue: URL[] = [];
@@ -240,6 +252,7 @@ export async function crawlSite(rawUrl: string, deps: CrawlDeps = {}): Promise<C
       for (const loc of sitemapLocs(sitemapResponse.body)) enqueue(loc);
     } catch (error) {
       if (error instanceof PreviewUrlError && error.code === "private") throw error;
+      noteFailure(error);
     }
   }
 
@@ -258,6 +271,7 @@ export async function crawlSite(rawUrl: string, deps: CrawlDeps = {}): Promise<C
       response = await fetchPublic(pageUrl, fetchImpl, deadline, now, assertResolution);
     } catch (error) {
       if (error instanceof PreviewUrlError && (error.code === "private" || error.code === "host")) throw error;
+      noteFailure(error);
       continue;
     }
     if (!response || response.status < 200 || response.status >= 300) continue;
@@ -278,7 +292,7 @@ export async function crawlSite(rawUrl: string, deps: CrawlDeps = {}): Promise<C
   }
 
   if (!pages.length) {
-    throw new PreviewUrlError("empty");
+    throw new PreviewUrlError(sawTimeout ? "timeout" : "empty");
   }
 
   const corpus = pages.map((page) => page.text).join("\n").slice(0, 24_000);
