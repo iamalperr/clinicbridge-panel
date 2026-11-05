@@ -13,6 +13,7 @@ describe("isPublicRoute", () => {
     expect(isPublicRoute("/")).toBe(true);
     expect(isPublicRoute("/privacy")).toBe(true);
     expect(isPublicRoute("/onizleme/abc")).toBe(true);
+    expect(isPublicRoute("/kayit")).toBe(true);
     expect(isPublicRoute("/clinics")).toBe(false);
     expect(isPublicRoute("/settings")).toBe(false);
   });

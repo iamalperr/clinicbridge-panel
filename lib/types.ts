@@ -1,4 +1,4 @@
-export type Plan = "trial" | "pro" | "enterprise";
+export type Plan = "trial" | "pro" | "enterprise" | "baslangic" | "klinik" | "klinik_telefon";
 export type ClinicStatus = "active" | "inactive" | "trial";
 
 export type UserRole = "superAdmin" | "admin" | "agencyAdmin" | "agencyUser" | "clinicAdmin" | "clinicUser" | "viewer";
@@ -115,6 +115,11 @@ export interface Clinic {
   welcomeMessage?: string;
   createdAt?: string | number | { seconds: number; nanoseconds: number } | object;
   lastActive?: string;
+  acquisition?: "direct";
+  trialEndsAt?: string | number | { seconds: number; nanoseconds: number } | object;
+  chatLimit?: number;
+  workingHours?: string;
+  setupCompleted?: boolean;
   modules?: {
     ai: boolean;
     widget: boolean;

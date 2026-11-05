@@ -89,6 +89,11 @@ export function middleware(req: NextRequest) {
     if (pathname === "/api/demo-request") return NextResponse.next();
     if (pathname.startsWith("/api/public/preview/")) return NextResponse.next();
     if (pathname.startsWith("/onizleme/")) return NextResponse.next();
+    if (pathname === "/kayit") {
+      const target = new URL("https://app.clinicbridge-ai.com/kayit");
+      target.search = req.nextUrl.search;
+      return NextResponse.redirect(target);
+    }
 
     // Allow legal pages accessible from landing footer
     const LEGAL_PATHS = ["/privacy", "/terms", "/kvkk", "/hakkimizda", "/fiyatlandirma", "/teslimat-ve-iade", "/mesafeli-satis-sozlesmesi"];

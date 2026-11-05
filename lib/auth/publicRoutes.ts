@@ -16,6 +16,7 @@ const PUBLIC_ROUTES = [
   "/social-posts",
   "/widget-guide",
   "/agency-demo",
+  "/kayit",
 ];
 
 export function isPublicRoute(pathname: string): boolean {

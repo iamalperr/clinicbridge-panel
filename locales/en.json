@@ -1029,5 +1029,28 @@
         "description": "Answers questions about clinic working hours, cancellation policy, pricing policy and appointment rules."
       }
     }
+  },
+  "signup": {
+    "title": "Register your clinic",
+    "subtitle": "A 14-day trial starts now. No payment is taken yet.",
+    "name": "Full name",
+    "clinicName": "Clinic name",
+    "email": "Email",
+    "password": "Password",
+    "phone": "Phone",
+    "terms": "I have read and accept the Terms of Use.",
+    "distance": "I have read and accept the Distance Sales Agreement.",
+    "kvkk": "I have read and accept the KVKK notice.",
+    "submit": "Create account",
+    "submitting": "Creating your account…",
+    "haveAccount": "Already have an account?",
+    "signIn": "Sign in",
+    "success": "Your account is ready. We sent a verification and welcome email.",
+    "successNoEmail": "Your account is ready. The email could not be sent just now; you can sign in and continue.",
+    "continue": "Go to the panel",
+    "emailTaken": "An account with this email already exists. Sign in.",
+    "invalid": "Check the form. The password must be at least 8 characters and all three consents are required.",
+    "limited": "Too many attempts. Try again in an hour.",
+    "failed": "Registration could not be completed. Try again shortly."
   }
 }
