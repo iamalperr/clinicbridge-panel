@@ -6,6 +6,7 @@ import { buildKnowledgeItems } from "../lib/preview/knowledge";
 import { canAcceptPreviewMessage, buildPreviewChatMessages } from "../lib/preview/chat";
 import { crawlSite, frameAllowed, readPage } from "../lib/preview/crawl";
 import { PREVIEW_MAX_MESSAGES } from "../lib/preview/types";
+import { demoKnowledgeItems, demoPreviewView } from "../lib/preview/demoClinic";
 
 describe("preview scan guards", () => {
   it("blocks local and private targets", () => {
@@ -103,6 +104,17 @@ describe("preview scan guards", () => {
     expect(result.languages).toContain("tr");
     expect(result.primaryColor).toBe("#112233");
     expect(result.logoUrl).toBe("https://example.com/logo.png");
+  });
+
+  it("keeps a ready sample clinic outside the crawl", () => {
+    const view = demoPreviewView();
+    expect(view.previewId).toBe("demo");
+    expect(view.clinicName).toBe("Nova Dental");
+    expect(view.embeddable).toBe(false);
+    expect(view.treatmentCount).toBe(5);
+    expect(view.languageCount).toBe(4);
+    expect(view.questionCount).toBe(4);
+    expect(demoKnowledgeItems().some((item) => item.category === "Tedaviler" && item.content.includes("18.000–35.000 TL"))).toBe(true);
   });
 
   it("reads a page and detects frame blocking", () => {

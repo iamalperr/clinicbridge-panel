@@ -1,24 +1,19 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useLandingLang } from "@/lib/landing-translations";
 import { ArrowRight, ChevronDown, Bot, Globe, Phone } from "lucide-react";
 
-function scanErrorMessage(code: string | undefined, hero: { scanInvalid: string; scanEmpty: string; scanUnavailable: string; scanUnreachable: string; scanTimeout: string }): string {
-  if (code === "empty") return hero.scanEmpty;
-  if (code === "unavailable") return hero.scanUnavailable;
-  if (code === "unreachable") return hero.scanUnreachable;
-  if (code === "timeout") return hero.scanTimeout;
-  return hero.scanInvalid;
-}
-
 export default function HeroSection() {
   const { t } = useLandingLang();
-  const router = useRouter();
   const [msgIdx, setMsgIdx] = useState(0);
-  const [url, setUrl] = useState("");
-  const [stage, setStage] = useState<"idle" | "reading" | "extracting">("idle");
+  const [clinicName, setClinicName] = useState("");
+  const [website, setWebsite] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [consent, setConsent] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -26,59 +21,16 @@ export default function HeroSection() {
     return () => clearInterval(timer);
   }, []);
 
-  async function onScan(event: FormEvent) {
+  function onRequest(event: FormEvent) {
     event.preventDefault();
-    setError("");
-    setStage("reading");
-    try {
-      const response = await fetch("/api/public/preview/scan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-      const contentType = response.headers.get("content-type") || "";
-      if (!contentType.includes("ndjson")) {
-        const payload = await response.json().catch(() => ({}));
-        setStage("idle");
-        setError(payload.error === "rate_limited" ? t.hero.scanLimited : scanErrorMessage(payload.error, t.hero));
-        return;
-      }
-      const reader = response.body?.getReader();
-      if (!reader) {
-        setStage("idle");
-        setError(t.hero.scanInvalid);
-        return;
-      }
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const scanEvent = JSON.parse(line) as { stage?: string; previewId?: string; error?: string };
-          if (scanEvent.stage === "reading") setStage("reading");
-          if (scanEvent.stage === "extracting") setStage("extracting");
-          if (scanEvent.stage === "done" && scanEvent.previewId) {
-            router.push(`/onizleme/${scanEvent.previewId}`);
-            return;
-          }
-          if (scanEvent.stage === "error") {
-            setStage("idle");
-            setError(scanErrorMessage(scanEvent.error, t.hero));
-            return;
-          }
-        }
-      }
-      setStage("idle");
-      setError(t.hero.scanInvalid);
-    } catch {
-      setStage("idle");
-      setError(t.hero.scanUnavailable);
+    const websiteOk = website.trim().length > 2;
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+    if (!clinicName.trim() || !websiteOk || !emailOk || !consent) {
+      setError(t.hero.requestInvalid);
+      return;
     }
+    setError("");
+    setSubmitted(true);
   }
 
   return (
@@ -102,34 +54,28 @@ export default function HeroSection() {
                 {t.hero.channelPhone}
               </span>
             </div>
-            <form className="lp-scan-form" onSubmit={onScan}>
-              <label className="lp-scan-label" htmlFor="clinic-site-url">{t.hero.scanLabel}</label>
-              {stage === "idle" ? (
-                <div className="lp-scan-row">
-                  <input
-                    id="clinic-site-url"
-                    className="lp-scan-input"
-                    type="text"
-                    inputMode="url"
-                    autoComplete="url"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                    required
-                    placeholder={t.hero.scanPlaceholder}
-                    value={url}
-                    onChange={(event) => setUrl(event.target.value)}
-                  />
-                  <button type="submit" className="lp-btn lp-btn-primary">
-                    {t.hero.scanSubmit} <ArrowRight size={18} />
-                  </button>
-                </div>
+            <div className="lp-hero-actions">
+              <Link className="lp-btn lp-btn-primary" href="/onizleme/demo">
+                {t.hero.sampleCta} <ArrowRight size={18} />
+              </Link>
+              {submitted ? (
+                <p className="lp-scan-progress" role="status">{t.hero.requestSuccess}</p>
               ) : (
-                <p className="lp-scan-progress" role="status">
-                  {stage === "extracting" ? t.hero.scanExtracting : t.hero.scanReading}
-                </p>
+                <form className="lp-request-form" onSubmit={onRequest}>
+                  <p className="lp-scan-label">{t.hero.requestTitle}</p>
+                  <input className="lp-scan-input" name="clinicName" required autoComplete="organization" placeholder={t.hero.requestClinic} aria-label={t.hero.requestClinic} value={clinicName} onChange={(event) => setClinicName(event.target.value)} />
+                  <input className="lp-scan-input" name="website" type="text" inputMode="url" autoComplete="url" autoCapitalize="none" spellCheck={false} required placeholder={t.hero.requestWebsite} aria-label={t.hero.requestWebsite} value={website} onChange={(event) => setWebsite(event.target.value)} />
+                  <input className="lp-scan-input" name="email" type="email" autoComplete="email" required placeholder={t.hero.requestEmail} aria-label={t.hero.requestEmail} value={email} onChange={(event) => setEmail(event.target.value)} />
+                  <input className="lp-scan-input" name="phone" type="tel" autoComplete="tel" placeholder={t.hero.requestPhone} aria-label={t.hero.requestPhone} value={phone} onChange={(event) => setPhone(event.target.value)} />
+                  <label className="lp-request-consent">
+                    <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
+                    <span>{t.hero.requestConsent}</span>
+                  </label>
+                  {error ? <p className="lp-scan-error">{error}</p> : null}
+                  <button type="submit" className="lp-btn lp-btn-secondary">{t.hero.requestSubmit}</button>
+                </form>
               )}
-              {error ? <p className="lp-scan-error">{error}</p> : null}
-            </form>
+            </div>
             <div className="lp-hero-ctas">
               <button
                 type="button"

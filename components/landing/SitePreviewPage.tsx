@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useLandingLang } from "@/lib/landing-translations";
+import { DEMO_PREVIEW_ID } from "@/lib/preview/demoClinic";
 import LandingHeader from "@/components/landing/LandingHeader";
 import LandingFooter from "@/components/landing/LandingFooter";
 import "@/app/(landing)/landing.css";
@@ -60,11 +62,16 @@ export default function SitePreviewPage({ previewId }: { previewId: string }) {
     };
   }, [preview]);
 
-  const summary = t.preview.summary
-    .replace("{treatments}", String(preview?.treatmentCount ?? 0))
-    .replace("{languages}", String(preview?.languageCount ?? 0))
-    .replace("{questions}", String(preview?.questionCount ?? 0));
-  const signupHref = `https://app.clinicbridge-ai.com/kayit?preview=${encodeURIComponent(previewId)}`;
+  const isDemo = previewId === DEMO_PREVIEW_ID;
+  const summary = isDemo
+    ? t.preview.demoIntro
+    : t.preview.summary
+      .replace("{treatments}", String(preview?.treatmentCount ?? 0))
+      .replace("{languages}", String(preview?.languageCount ?? 0))
+      .replace("{questions}", String(preview?.questionCount ?? 0));
+  const signupHref = isDemo
+    ? "/kayit"
+    : `https://app.clinicbridge-ai.com/kayit?preview=${encodeURIComponent(previewId)}`;
   let hostname = preview?.sourceUrl || "";
   try {
     hostname = preview?.sourceUrl ? new URL(preview.sourceUrl).hostname : "";
@@ -111,9 +118,15 @@ export default function SitePreviewPage({ previewId }: { previewId: string }) {
               </div>
               <aside className="lp-preview-pilot">
                 <p>{t.preview.pilot}</p>
-                <a className="lp-btn lp-btn-primary lp-preview-cta" href={signupHref}>
-                  {t.preview.cta}
-                </a>
+                {isDemo ? (
+                  <Link className="lp-btn lp-btn-primary lp-preview-cta" href="/kayit">
+                    {t.preview.cta}
+                  </Link>
+                ) : (
+                  <a className="lp-btn lp-btn-primary lp-preview-cta" href={signupHref}>
+                    {t.preview.cta}
+                  </a>
+                )}
               </aside>
             </>
           ) : null}

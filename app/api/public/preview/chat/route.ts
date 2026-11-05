@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { trackableAIRequest } from "@/lib/services/aiGateway";
 import { buildPreviewChatMessages, previewLimitReply, type PreviewChatTurn } from "@/lib/preview/chat";
-import { consumePreviewMessage } from "@/lib/preview/rateLimit";
+import { demoKnowledgeItems, DEMO_PREVIEW_ID } from "@/lib/preview/demoClinic";
+import { consumeDemoChatRateLimit, consumePreviewMessage, hashDemoIp } from "@/lib/preview/rateLimit";
+import { extractClientIp } from "@/lib/auth/passwordResetRateLimit";
 import type { PreviewKnowledgeItem } from "@/lib/preview/types";
 
 export const runtime = "nodejs";
@@ -47,6 +49,16 @@ export async function POST(req: Request) {
   }
 
   const db = getAdminDb();
+  if (previewId === DEMO_PREVIEW_ID) {
+    if (db) {
+      const allowed = await consumeDemoChatRateLimit(db, hashDemoIp(extractClientIp(req)));
+      if (!allowed) {
+        return NextResponse.json({ reply: previewLimitReply(language) }, { headers: CORS });
+      }
+    }
+    return replyFromKnowledge(demoKnowledgeItems(), asHistory(body.history), message, language);
+  }
+
   if (!db) return NextResponse.json({ error: "unavailable" }, { status: 503, headers: CORS });
 
   const snap = await db.collection("previews").doc(previewId).get();
@@ -63,7 +75,16 @@ export async function POST(req: Request) {
   }
 
   const knowledge = Array.isArray(data.knowledgeItems) ? (data.knowledgeItems as PreviewKnowledgeItem[]) : [];
-  const messages = buildPreviewChatMessages(knowledge, asHistory(body.history), message);
+  return replyFromKnowledge(knowledge, asHistory(body.history), message, language);
+}
+
+async function replyFromKnowledge(
+  knowledge: PreviewKnowledgeItem[],
+  history: PreviewChatTurn[],
+  message: string,
+  language: string | null
+) {
+  const messages = buildPreviewChatMessages(knowledge, history, message);
   try {
     const response = await trackableAIRequest({
       channel: "system",

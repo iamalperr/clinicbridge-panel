@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
+import { DEMO_PREVIEW_ID, demoPreviewView } from "@/lib/preview/demoClinic";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,10 @@ export async function OPTIONS() {
 
 export async function GET(_req: Request, { params }: RouteParams) {
   const { previewId } = await params;
+  if (previewId === DEMO_PREVIEW_ID) {
+    return NextResponse.json(demoPreviewView(), { headers: { ...CORS, "Cache-Control": "no-store" } });
+  }
+
   const db = getAdminDb();
   if (!db) return NextResponse.json({ error: "unavailable" }, { status: 503, headers: CORS });
 
