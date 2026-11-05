@@ -9,9 +9,10 @@ describe("isPublicRoute", () => {
     expect(isPublicRoute("/mesafeli-satis-sozlesmesi")).toBe(true);
   });
 
-  it("keeps existing public pages open and panel routes closed", () => {
+  it("keeps the site preview public and panel routes closed", () => {
     expect(isPublicRoute("/")).toBe(true);
     expect(isPublicRoute("/privacy")).toBe(true);
+    expect(isPublicRoute("/onizleme/abc")).toBe(true);
     expect(isPublicRoute("/clinics")).toBe(false);
     expect(isPublicRoute("/settings")).toBe(false);
   });

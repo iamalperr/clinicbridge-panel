@@ -1,17 +1,83 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { useLandingLang } from "@/lib/landing-translations";
 import { ArrowRight, ChevronDown, Bot, Globe, Phone } from "lucide-react";
 
 export default function HeroSection() {
   const { t } = useLandingLang();
+  const router = useRouter();
   const [msgIdx, setMsgIdx] = useState(0);
+  const [url, setUrl] = useState("");
+  const [stage, setStage] = useState<"idle" | "reading" | "extracting">("idle");
+  const [error, setError] = useState("");
 
   useEffect(() => {
     const timer = setInterval(() => setMsgIdx((i) => (i + 1) % 3), 5000);
     return () => clearInterval(timer);
   }, []);
+
+  async function onScan(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    setStage("reading");
+    try {
+      const response = await fetch("/api/public/preview/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("ndjson")) {
+        const payload = await response.json().catch(() => ({}));
+        setStage("idle");
+        setError(payload.error === "rate_limited" ? t.hero.scanLimited : t.hero.scanInvalid);
+        return;
+      }
+      const reader = response.body?.getReader();
+      if (!reader) {
+        setStage("idle");
+        setError(t.hero.scanInvalid);
+        return;
+      }
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const scanEvent = JSON.parse(line) as { stage?: string; previewId?: string; error?: string };
+          if (scanEvent.stage === "reading") setStage("reading");
+          if (scanEvent.stage === "extracting") setStage("extracting");
+          if (scanEvent.stage === "done" && scanEvent.previewId) {
+            router.push(`/onizleme/${scanEvent.previewId}`);
+            return;
+          }
+          if (scanEvent.stage === "error") {
+            setStage("idle");
+            setError(
+              scanEvent.error === "empty"
+                ? t.hero.scanEmpty
+                : scanEvent.error === "unavailable"
+                  ? t.hero.scanUnavailable
+                  : t.hero.scanInvalid
+            );
+            return;
+          }
+        }
+      }
+      setStage("idle");
+      setError(t.hero.scanInvalid);
+    } catch {
+      setStage("idle");
+      setError(t.hero.scanInvalid);
+    }
+  }
 
   return (
     <section className="lp-hero" id="hero">
@@ -34,13 +100,38 @@ export default function HeroSection() {
                 {t.hero.channelPhone}
               </span>
             </div>
+            <form className="lp-scan-form" onSubmit={onScan}>
+              <label className="lp-scan-label" htmlFor="clinic-site-url">{t.hero.scanLabel}</label>
+              {stage === "idle" ? (
+                <div className="lp-scan-row">
+                  <input
+                    id="clinic-site-url"
+                    className="lp-scan-input"
+                    type="url"
+                    inputMode="url"
+                    required
+                    placeholder={t.hero.scanPlaceholder}
+                    value={url}
+                    onChange={(event) => setUrl(event.target.value)}
+                  />
+                  <button type="submit" className="lp-btn lp-btn-primary">
+                    {t.hero.scanSubmit} <ArrowRight size={18} />
+                  </button>
+                </div>
+              ) : (
+                <p className="lp-scan-progress" role="status">
+                  {stage === "extracting" ? t.hero.scanExtracting : t.hero.scanReading}
+                </p>
+              )}
+              {error ? <p className="lp-scan-error">{error}</p> : null}
+            </form>
             <div className="lp-hero-ctas">
               <button
                 type="button"
-                className="lp-btn lp-btn-primary"
+                className="lp-btn lp-btn-secondary"
                 onClick={() => document.getElementById("contact")?.scrollIntoView({ behavior: "smooth" })}
               >
-                {t.hero.ctaPrimary} <ArrowRight size={18} />
+                {t.hero.ctaPrimary}
               </button>
               <button
                 type="button"

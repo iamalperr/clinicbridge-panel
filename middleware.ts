@@ -87,6 +87,8 @@ export function middleware(req: NextRequest) {
 
     // Allow demo-request API (called from the landing page form)
     if (pathname === "/api/demo-request") return NextResponse.next();
+    if (pathname.startsWith("/api/public/preview/")) return NextResponse.next();
+    if (pathname.startsWith("/onizleme/")) return NextResponse.next();
 
     // Allow legal pages accessible from landing footer
     const LEGAL_PATHS = ["/privacy", "/terms", "/kvkk", "/hakkimizda", "/fiyatlandirma", "/teslimat-ve-iade", "/mesafeli-satis-sozlesmesi"];

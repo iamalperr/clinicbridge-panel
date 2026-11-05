@@ -19,5 +19,5 @@ const PUBLIC_ROUTES = [
 ];
 
 export function isPublicRoute(pathname: string): boolean {
-  return PUBLIC_ROUTES.includes(pathname) || pathname.startsWith("/demo/") || pathname.startsWith("/agency-demo");
+  return PUBLIC_ROUTES.includes(pathname) || pathname.startsWith("/demo/") || pathname.startsWith("/agency-demo") || pathname.startsWith("/onizleme/");
 }

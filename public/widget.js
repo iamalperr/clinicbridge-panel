@@ -18,20 +18,25 @@
   'use strict';
   if (w.__cbwLoaded) return;
 
+  var scriptEl = d.currentScript || d.querySelector('script[data-preview-id], script[data-clinic-id]');
+  var previewId = (scriptEl && scriptEl.dataset.previewId) || '';
+
   // ── Domain guard ─────────────────────────────────────────────────────────────
+  // Preview mode is allowed on the marketing site. Live clinic embeds stay blocked there.
   var _host = w.location.hostname;
   var _blocked = [
     'clinicbridge-ai.com', 'www.clinicbridge-ai.com',
     'app.clinicbridge-ai.com', 'widget.clinicbridge-ai.com',
     'localhost', '127.0.0.1',
   ];
-  if (_blocked.indexOf(_host) !== -1) return;
+  if (!previewId && _blocked.indexOf(_host) !== -1) return;
   // ─────────────────────────────────────────────────────────────────────────────
 
   w.__cbwLoaded = true;
 
-  var scriptEl  = d.currentScript || d.querySelector('script[data-clinic-id]');
-  var clinicId  = (scriptEl && scriptEl.dataset.clinicId) || 'demo';
+  var clinicId  = previewId ? ('preview_' + previewId) : ((scriptEl && scriptEl.dataset.clinicId) || 'demo');
+  var previewTitle = (scriptEl && scriptEl.dataset.previewTitle) || '';
+  var previewColor = (scriptEl && scriptEl.dataset.previewColor) || '';
   // Explicit embed locale: data-language or data-locale ("tr" | "en")
   var embedLang = (scriptEl && (scriptEl.dataset.language || scriptEl.dataset.locale)) || null;
   var embedTestMode = (scriptEl && scriptEl.dataset.testMode) === 'true';
@@ -227,6 +232,16 @@
 
   /* ─── Fetch config (no-cache) ─── */
   function fetchCfg(cb) {
+    if (previewId) {
+      cb({
+        title: previewTitle || 'ClinicBridge AI',
+        primaryColor: previewColor || '#0EA5E9',
+        defaultLanguage: 'auto',
+        testMode: false,
+        showBubbles: { enabled: false, displayMode: 'disabled' },
+      });
+      return;
+    }
     fetch(API_BASE + '/api/public/widget-settings/' + clinicId, {
       cache:   'no-store',
       headers: { Accept: 'application/json' },
@@ -856,6 +871,10 @@
       lastHash = JSON.stringify(raw);
 
       wireEvents(shadow);
+      if (previewId) {
+        openPanel(shadow);
+        return;
+      }
       startBubbles(shadow);
       startPolling(shadow);
       watchHostLocale(raw);
@@ -969,9 +988,28 @@
          });
       }
 
-      console.log('[WIDGET_CHAT_ENDPOINT]', API_BASE + '/api/public/chat');
+      console.log('[WIDGET_CHAT_ENDPOINT]', previewId ? '/api/public/preview/chat' : API_BASE + '/api/public/chat');
+      var chatEndpoint = previewId ? '/api/public/preview/chat' : (API_BASE + '/api/public/chat');
+      var chatBody = previewId
+        ? {
+            previewId: previewId,
+            message: text,
+            history: chatHistory.slice(-12),
+            language: lang
+          }
+        : {
+            clinicId:              clinicId,
+            message:               text,
+            history:               chatHistory.slice(-40),
+            conversationId:        sessionId,
+            language:              lang,
+            pendingAppointmentData: pendingApptData || undefined,
+            pendingAction:         currentPendingAction || undefined,
+            traceId:               traceId,
+            clientMessageId:       clientMessageId
+          };
       console.log('[WIDGET_REQUEST_STARTED]', {
-        endpoint: API_BASE + '/api/public/chat',
+        endpoint: chatEndpoint,
         method: 'POST',
         conversationId: sessionId,
         clinicId: clinicId,
@@ -980,20 +1018,10 @@
         host: w.location.hostname
       });
 
-      fetch(API_BASE + '/api/public/chat', {
+      fetch(chatEndpoint, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          clinicId:              clinicId,
-          message:               text,
-          history:               chatHistory.slice(-40),
-          conversationId:        sessionId,
-          language:              lang,
-          pendingAppointmentData: pendingApptData || undefined,
-          pendingAction:         currentPendingAction || undefined,
-          traceId:               traceId,
-          clientMessageId:       clientMessageId
-        }),
+        body:    JSON.stringify(chatBody),
       })
       .then(function (r) { 
         console.log('[WIDGET_RESPONSE_STATUS]', r.status);
@@ -1050,7 +1078,7 @@
         appendMsg(shadowRoot, reply, false, '', false);
 
         // Backup dual-write (idempotent with content-stable ids on conversationLogs).
-        if (reply) logMessage(text, reply);
+        if (reply && !previewId) logMessage(text, reply);
 
         /* Show contextual actions if any */
         var q = shadowRoot.getElementById('cbw-quick');
