@@ -139,6 +139,9 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     if (pathname.startsWith("/demo-requests") && !hasPermission("demo_requests")) {
       return <UnauthorizedScreen />;
     }
+    if (pathname.startsWith("/admin/previews") && !isSuperAdmin(roleStr)) {
+      return <UnauthorizedScreen />;
+    }
   }
 
   // Clinic Level Route Guards

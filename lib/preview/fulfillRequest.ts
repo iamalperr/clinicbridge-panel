@@ -34,7 +34,12 @@ function escapeHtml(value: string): string {
 }
 
 /** Saves a preview when the crawl yields facts. The clinic email never includes the preview link. */
-export async function fulfillPreviewRequest(requestId: string): Promise<void> {
+export async function fulfillPreviewRequest(
+  requestId: string,
+  options: { notifyClinic?: boolean; notifyAdmin?: boolean } = {}
+): Promise<void> {
+  const notifyClinic = options.notifyClinic !== false;
+  const notifyAdmin = options.notifyAdmin !== false;
   const db = getAdminDb();
   if (!db) return;
   const ref = db.collection("previewRequests").doc(requestId);
@@ -48,7 +53,7 @@ export async function fulfillPreviewRequest(requestId: string): Promise<void> {
   const email = typeof data.email === "string" ? data.email : "";
   const phone = typeof data.phone === "string" ? data.phone : "";
 
-  if (data.clinicEmailSent !== true) {
+  if (notifyClinic && data.clinicEmailSent !== true) {
     const clinicEmailSent = await sendClinicEmail({
       to: email,
       subject: "Önizleme talebinizi aldık",
@@ -97,7 +102,7 @@ export async function fulfillPreviewRequest(requestId: string): Promise<void> {
     }
   }
 
-  if (data.adminEmailSent === true) return;
+  if (!notifyAdmin || data.adminEmailSent === true) return;
   const detail = crawlStatus ? `${status} (${crawlStatus})` : status;
   const adminEmailSent = await sendClinicEmail({
     to: PREVIEW_REQUEST_NOTIFY,

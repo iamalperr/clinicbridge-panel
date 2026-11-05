@@ -6,7 +6,7 @@ import ThemeToggle from "@/components/ui/ThemeToggle";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
-import { Grid, BarChart3, Settings, Users, LogOut, ClipboardList, Globe, Zap } from "lucide-react";
+import { Grid, BarChart3, Settings, Users, LogOut, ClipboardList, Globe, Zap, Eye } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { isSuperAdmin, getRoleDisplayName, DEFAULT_PERMISSIONS } from "@/lib/types";
 import type { PermissionTab } from "@/lib/types";
@@ -122,6 +122,9 @@ export default function Sidebar() {
         
         {hasPermission("demo_requests") && (
           <NavItem href="/demo-requests" label="Demo Talepleri" icon={<ClipboardList size={18} />} />
+        )}
+        {isSuperAdmin(profile?.role) && (
+          <NavItem href="/admin/previews" label="Önizlemeler" icon={<Eye size={18} />} />
         )}
         {hasPermission("ai_usage") && (
           <NavItem href="/analytics/ai-usage" label="AI Kullanımı" icon={<Zap size={18} />} />
