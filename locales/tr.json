@@ -1130,5 +1130,9 @@
     "remove": "Sil",
     "banner": "Kurulumu tamamla",
     "bannerAction": "Kuruluma dön"
+  },
+  "usage": {
+    "warn80": "Aylık sohbet hakkınızın %80'ini kullandınız. Paket seçmek için bizimle iletişime geçin. Asistan hastalar için açık kalır.",
+    "warn100": "Aylık sohbet hakkınız doldu. Paketinizi yükseltmek için bizimle iletişime geçin. Asistan hastalar için açık kalır."
   }
 }

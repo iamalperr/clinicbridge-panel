@@ -11,6 +11,10 @@ import {
   type AppointmentData,
   type AppointmentState,
 } from "@/lib/agent";
+import { directClinicChatGate } from "@/lib/trial/policy";
+import { clearUsageWarning, recordMonthlyConversation } from "@/lib/trial/recordUsage";
+import { buildUsageWarningEmail } from "@/lib/trial/emails";
+import { sendClinicEmail } from "@/lib/trial/sendClinicEmail";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -183,6 +187,44 @@ export async function POST(req: Request) {
         }
       }
       return NextResponse.json({ ok: true }, { headers: CORS });
+    }
+
+    const gateDb = getAdminDb();
+    if (gateDb) {
+      try {
+        const clinicSnap = await gateDb.collection("clinics").doc(String(clinicId)).get();
+        const gate = directClinicChatGate(clinicSnap.exists ? clinicSnap.data() : null, new Date(), language);
+        if (gate.kind === "closed") {
+          const closed = await respondWithVisibleReply(
+            { reply: gate.reply },
+            {
+              clinicId,
+              convId,
+              userMessage: message,
+              history,
+              detectedLanguage: gate.language,
+              fallbackReason: "trial_closed",
+            }
+          );
+          return agentTurnResultToResponse(closed);
+        }
+        if (gate.kind === "track") {
+          const tick = await recordMonthlyConversation(gateDb, String(clinicId), convId, new Date());
+          if (tick?.notify) {
+            const notice = buildUsageWarningEmail({
+              language: tick.language,
+              clinicName: tick.clinicName,
+              notice: tick.notify,
+              count: tick.count,
+              limit: tick.limit,
+            });
+            const sent = await sendClinicEmail({ to: tick.email, subject: notice.subject, html: notice.html });
+            if (!sent) await clearUsageWarning(gateDb, String(clinicId), tick.month, tick.notify);
+          }
+        }
+      } catch (gateError: unknown) {
+        console.warn("[trial-gate]", JSON.stringify(safeErrorMeta(gateError)));
+      }
     }
 
     if (!process.env.OPENAI_API_KEY) {

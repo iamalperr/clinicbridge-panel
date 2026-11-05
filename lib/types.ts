@@ -118,6 +118,12 @@ export interface Clinic {
   acquisition?: "direct";
   trialEndsAt?: string | number | { seconds: number; nanoseconds: number } | object;
   chatLimit?: number;
+  chatUsageMonth?: string;
+  chatUsageCount?: number;
+  chatWarn80Sent?: boolean;
+  chatWarn100Sent?: boolean;
+  trialReminder3Sent?: boolean;
+  trialReminder1Sent?: boolean;
   workingHours?: string;
   setupCompleted?: boolean;
   widgetInstalledAt?: string | number | { seconds: number; nanoseconds: number } | object;

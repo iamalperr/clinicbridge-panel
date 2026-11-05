@@ -14,6 +14,7 @@ import { Loader2 } from "lucide-react";
 import Link from "next/link";
 import type { WidgetSettings, Plan } from "@/lib/types";
 import { shouldShowSetupBanner } from "@/lib/setup/materials";
+import { usageWarningLevel } from "@/lib/trial/policy";
 import {
   subscribeToClinicMetrics,
   type ClinicMetrics,
@@ -29,6 +30,9 @@ interface ClinicMeta {
   plan?: Plan | "starter"; // "starter" legacy fallback
   acquisition?: "direct";
   setupCompleted?: boolean;
+  chatLimit?: number;
+  chatUsageCount?: number;
+  chatUsageMonth?: string;
   modules?: {
     ai: boolean;
     widget: boolean;
@@ -112,9 +116,15 @@ export default function ClinicOverviewPage() {
   }
 
   const noData = metrics.totalConversations === 0;
+  const usageWarning = usageWarningLevel(clinicMeta);
 
   return (
     <>
+      {usageWarning ? (
+        <div style={{ marginBottom: 18, padding: "14px 16px", borderRadius: 14, background: UI_COLORS.bgCard, border: `1px solid ${UI_COLORS.border}`, color: UI_COLORS.textPrimary, fontWeight: 700 }}>
+          {t(usageWarning === "100" ? "usage.warn100" : "usage.warn80")}
+        </div>
+      ) : null}
       {shouldShowSetupBanner(clinicMeta) ? (
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, marginBottom: 18, padding: "14px 16px", borderRadius: 14, background: UI_COLORS.bgCard, border: `1px solid ${UI_COLORS.border}` }}>
           <strong style={{ color: UI_COLORS.textPrimary }}>{t("setup.banner")}</strong>

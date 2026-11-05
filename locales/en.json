@@ -1093,5 +1093,9 @@
     "remove": "Remove",
     "banner": "Finish setup",
     "bannerAction": "Return to setup"
+  },
+  "usage": {
+    "warn80": "You have used 80% of this month's conversations. Contact us to choose a package. The assistant stays open for patients.",
+    "warn100": "This month's conversation allowance is full. Contact us to upgrade your plan. The assistant stays open for patients."
   }
 }
