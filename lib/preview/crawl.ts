@@ -205,8 +205,11 @@ export async function crawlSite(rawUrl: string, deps: CrawlDeps = {}): Promise<C
   const deadline = now() + TOTAL_BUDGET_MS;
   const origin = new URL(start.toString());
   let sawTimeout = false;
+  let sawBlocked = false;
+  let sawMissing = false;
   const noteFailure = (error: unknown) => {
     if (isTimeoutError(error)) sawTimeout = true;
+    else sawBlocked = true;
   };
 
   let robots = "";
@@ -270,11 +273,23 @@ export async function crawlSite(rawUrl: string, deps: CrawlDeps = {}): Promise<C
     try {
       response = await fetchPublic(pageUrl, fetchImpl, deadline, now, assertResolution);
     } catch (error) {
-      if (error instanceof PreviewUrlError && (error.code === "private" || error.code === "host")) throw error;
+      if (error instanceof PreviewUrlError && (error.code === "private" || error.code === "host" || error.code === "dns")) throw error;
       noteFailure(error);
       continue;
     }
-    if (!response || response.status < 200 || response.status >= 300) continue;
+    if (!response) {
+      sawTimeout = true;
+      continue;
+    }
+    if (response.status === 401 || response.status === 403 || response.status === 429 || response.status === 451) {
+      sawBlocked = true;
+      continue;
+    }
+    if (response.status === 404 || response.status === 410) {
+      sawMissing = true;
+      continue;
+    }
+    if (response.status < 200 || response.status >= 300) continue;
     const type = (response.headers.get("content-type") || "").toLowerCase();
     if (type && !type.includes("html") && !type.includes("xml") && !type.includes("text/")) continue;
     const parsed = readPage(response.body, response.finalUrl.toString());
@@ -292,7 +307,10 @@ export async function crawlSite(rawUrl: string, deps: CrawlDeps = {}): Promise<C
   }
 
   if (!pages.length) {
-    throw new PreviewUrlError(sawTimeout ? "timeout" : "empty");
+    if (sawBlocked) throw new PreviewUrlError("blocked");
+    if (sawTimeout) throw new PreviewUrlError("timeout");
+    if (sawMissing) throw new PreviewUrlError("not_found");
+    throw new PreviewUrlError("empty");
   }
 
   const corpus = pages.map((page) => page.text).join("\n").slice(0, 24_000);

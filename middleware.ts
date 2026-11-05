@@ -88,6 +88,7 @@ export function middleware(req: NextRequest) {
     // Allow demo-request API (called from the landing page form)
     if (pathname === "/api/demo-request") return NextResponse.next();
     if (pathname.startsWith("/api/public/preview/")) return NextResponse.next();
+    if (pathname === "/api/public/preview-request") return NextResponse.next();
     if (pathname.startsWith("/onizleme/")) return NextResponse.next();
     if (pathname === "/kayit" || pathname === "/kurulum") {
       const target = new URL(`https://app.clinicbridge-ai.com${pathname}`);

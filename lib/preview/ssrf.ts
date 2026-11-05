@@ -1,5 +1,5 @@
 export class PreviewUrlError extends Error {
-  constructor(readonly code: "invalid" | "protocol" | "credentials" | "port" | "host" | "private" | "dns" | "empty" | "timeout") {
+  constructor(readonly code: "invalid" | "protocol" | "credentials" | "port" | "host" | "private" | "dns" | "empty" | "timeout" | "blocked" | "not_found") {
     super(code);
     this.name = "PreviewUrlError";
   }

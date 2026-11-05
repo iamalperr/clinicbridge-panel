@@ -30,6 +30,30 @@ export async function consumeScanRateLimit(db: Firestore, ipHash: string, now = 
   });
 }
 
+const REQUEST_LIMIT_PER_HOUR = 5;
+
+export function hashPreviewRequestIp(ip: string): string {
+  return createHash("sha256").update(`preview-request:${ip}`).digest("hex");
+}
+
+/** Caps how many preview requests one network can submit. Invalid addresses are not counted. */
+export async function consumePreviewRequestRateLimit(db: Firestore, ipHash: string, now = Date.now()): Promise<boolean> {
+  const ref = db.collection("previewRequestRateLimits").doc(ipHash);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const data = snap.exists ? snap.data() : null;
+    const windowStart = typeof data?.windowStart === "number" ? data.windowStart : 0;
+    const count = typeof data?.count === "number" ? data.count : 0;
+    if (!data || now - windowStart >= HOUR_MS) {
+      tx.set(ref, { windowStart: now, count: 1 });
+      return true;
+    }
+    if (count >= REQUEST_LIMIT_PER_HOUR) return false;
+    tx.update(ref, { count: count + 1 });
+    return true;
+  });
+}
+
 /** Per-visitor cap for the shared sample clinic. One visitor cannot close the demo for everyone. */
 export async function consumeDemoChatRateLimit(db: Firestore, ipHash: string, now = Date.now()): Promise<boolean> {
   const ref = db.collection("demoPreviewRateLimits").doc(ipHash);

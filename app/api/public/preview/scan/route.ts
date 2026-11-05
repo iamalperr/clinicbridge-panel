@@ -94,7 +94,7 @@ export async function POST(req: Request) {
             ? "empty"
             : timedOut
               ? "timeout"
-              : code === "dns"
+              : code === "dns" || code === "blocked" || code === "not_found"
                 ? "unreachable"
                 : code === "private" || code === "host" || code === "invalid" || code === "protocol" || code === "credentials" || code === "port"
                   ? "invalid_url"

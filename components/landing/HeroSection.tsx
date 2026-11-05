@@ -21,7 +21,7 @@ export default function HeroSection() {
     return () => clearInterval(timer);
   }, []);
 
-  function onRequest(event: FormEvent) {
+  async function onRequest(event: FormEvent) {
     event.preventDefault();
     const websiteOk = website.trim().length > 2;
     const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -30,7 +30,24 @@ export default function HeroSection() {
       return;
     }
     setError("");
-    setSubmitted(true);
+    try {
+      const response = await fetch("/api/public/preview-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clinicName, website, email, phone, consent }),
+      });
+      if (response.status === 429) {
+        setError(t.hero.requestLimited);
+        return;
+      }
+      if (!response.ok) {
+        setError(response.status >= 500 ? t.hero.requestUnavailable : t.hero.requestInvalid);
+        return;
+      }
+      setSubmitted(true);
+    } catch {
+      setError(t.hero.requestUnavailable);
+    }
   }
 
   return (
