@@ -1,6 +1,6 @@
 "use client";
 
-import { LegalPage, LegalSection, SellerInfo } from "@/components/legal/LegalPage";
+import { LegalPage, LegalSection, SELLER } from "@/components/legal/LegalPage";
 
 export default function AboutPage() {
   return (
@@ -12,8 +12,10 @@ export default function AboutPage() {
       <LegalSection title="Neden kurduk?">
         <p>Yurt dışından gelen hastaların önemli bir kısmı, Türkiye saatiyle akşam ve gece yazıyor. Bu saatlerde cevap alamayan hasta çoğu zaman başka bir kliniğe yöneliyor. ClinicBridge AI, kliniklerin ekip büyütmeden bu saatleri karşılamasını sağlamak için kuruldu.</p>
       </LegalSection>
-      <LegalSection title="Firma bilgileri">
-        <SellerInfo />
+      <LegalSection title="İletişim">
+        <p>E-posta: <a href={`mailto:${SELLER.email}`}>{SELLER.email}</a></p>
+        <p>Telefon: {SELLER.phone}</p>
+        <p>Satıcı bilgileri <a href="/mesafeli-satis-sozlesmesi">Mesafeli Satış Sözleşmesi</a>&apos;nde yer almaktadır.</p>
       </LegalSection>
     </LegalPage>
   );
