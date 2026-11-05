@@ -14,7 +14,6 @@ export default function AboutPage() {
       </LegalSection>
       <LegalSection title="İletişim">
         <p>E-posta: <a href={`mailto:${SELLER.email}`}>{SELLER.email}</a></p>
-        <p>Telefon: {SELLER.phone}</p>
         <p>Satıcı bilgileri <a href="/mesafeli-satis-sozlesmesi">Mesafeli Satış Sözleşmesi</a>&apos;nde yer almaktadır.</p>
       </LegalSection>
     </LegalPage>

@@ -21,7 +21,7 @@ export default function DeliveryRefundPage() {
         <p>Hizmetin bizden kaynaklanan bir nedenle hiç sunulamaması halinde ödenen tutarın tamamı iade edilir.</p>
       </LegalSection>
       <LegalSection title="5. İletişim">
-        <p>Teslimat, iptal ve iade talepleriniz için: <a href={`mailto:${SELLER.email}`}>{SELLER.email}</a> · {SELLER.phone}</p>
+        <p>Teslimat, iptal ve iade talepleriniz için: <a href={`mailto:${SELLER.email}`}>{SELLER.email}</a></p>
       </LegalSection>
     </LegalPage>
   );
