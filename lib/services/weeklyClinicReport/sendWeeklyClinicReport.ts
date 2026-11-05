@@ -16,6 +16,7 @@ import {
   type WeeklyClinicMetricsWithDelta,
 } from "./computeWeeklyClinicMetrics";
 import { buildWeeklyReportHtml } from "./buildWeeklyReportEmail";
+import type { DirectWeeklyStats } from "./directClinicWeekly";
 import {
   resolveCompletedWeekRange,
   resolveComparisonWeekRange,
@@ -44,13 +45,14 @@ export type WeeklyReportRunResult = {
   providerMessageIds?: string[];
   error?: string;
   idempotencyKey: string;
+  directStats?: DirectWeeklyStats;
 };
 
 function reportDocId(clinicId: string, weekStartDate: string): string {
   return `${clinicId}_${weekStartDate}`;
 }
 
-async function loadConversationLogsForRange(
+export async function loadConversationLogsForRange(
   clinicId: string,
   range: WeekRange
 ): Promise<Array<Record<string, any>>> {
@@ -94,7 +96,7 @@ async function loadConversationLogsForRange(
   }
 }
 
-async function wasAlreadySent(clinicId: string, weekStartDate: string): Promise<boolean> {
+export async function wasAlreadySent(clinicId: string, weekStartDate: string): Promise<boolean> {
   const adminDb = getAdminDb();
   if (!adminDb) return false;
   const doc = await adminDb
@@ -106,7 +108,7 @@ async function wasAlreadySent(clinicId: string, weekStartDate: string): Promise<
   return data.deliveryStatus === "sent";
 }
 
-async function markReportStatus(params: {
+export async function markReportStatus(params: {
   clinicId: string;
   clinicName: string;
   period: WeekRange;
@@ -116,6 +118,7 @@ async function markReportStatus(params: {
   error?: string;
   providerMessageIds?: string[];
   idempotencyKey: string;
+  directStats?: DirectWeeklyStats;
 }): Promise<void> {
   const adminDb = getAdminDb();
   if (!adminDb) return;
@@ -148,6 +151,7 @@ async function markReportStatus(params: {
     updatedAt: now,
     timezone: WEEKLY_REPORT_TIMEZONE,
   };
+  if (params.directStats) payload.directStats = params.directStats;
   if (!existing.exists) {
     payload.generatedAt = now;
   }
@@ -441,6 +445,17 @@ export async function runWeeklyClinicReportsForAllEnabled(params?: {
         ),
       });
     }
+  }
+  try {
+    const { runDirectClinicWeeklyReports } = await import("./directClinicWeekly");
+    const direct = await runDirectClinicWeeklyReports(params);
+    results.push(...direct);
+  } catch (err: unknown) {
+    console.error(JSON.stringify({
+      event: "weekly-clinic-report",
+      checkpoint: "direct_failed",
+      error: err instanceof Error ? err.message : String(err),
+    }));
   }
   return { results };
 }

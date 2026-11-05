@@ -17,8 +17,8 @@ import type { WeeklyReportRunMode } from "@/lib/services/weeklyClinicReport/send
  *   weekEndDate?: "YYYY-MM-DD"     // Sunday, Europe/Istanbul
  * }
  *
- * Phase 1 recipients are ALWAYS @clinicbridge-ai.com internal inboxes.
- * Never sends to clinic patient/clinic addresses.
+ * Phase 1 İstanbul Diş Akademisi recipients are ALWAYS @clinicbridge-ai.com.
+ * Direct clinics are reported separately, and only to that clinic's verified email.
  */
 function authorize(req: Request): boolean {
   const secret = process.env.CRON_SECRET || process.env.INTERNAL_API_SECRET;
@@ -78,6 +78,7 @@ export async function POST(req: Request) {
         skippedDuplicate: r.skippedDuplicate,
         emailSent: r.emailSent,
         error: r.error || null,
+        directStats: r.directStats,
         // Preview HTML only when explicitly requested — never in cron send mode response size bloat
         html: mode === "preview" ? r.html : undefined,
       })),
@@ -140,6 +141,7 @@ export async function GET(req: Request) {
       skippedDuplicate: r.skippedDuplicate,
       emailSent: r.emailSent,
       error: r.error || null,
+      directStats: r.directStats,
       html: mode === "preview" ? r.html : undefined,
     })),
   });
