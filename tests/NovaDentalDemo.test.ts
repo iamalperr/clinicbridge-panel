@@ -31,28 +31,22 @@ describe("Nova Dental demo", () => {
     expect(detectPreviewLanguage("I'm in London, how much are zirconia crowns?")).toBe("en");
   });
 
-  it("collects an appointment and keeps it out of storage until every field exists", () => {
+  it("collects an appointment from explicit state until every field exists", () => {
     const now = new Date("2026-11-04T09:00:00.000Z");
     const treatments = NOVA_TREATMENTS.map((item) => item.name.tr);
-    const first = advancePreviewIntake({ history: [], message: "Randevu almak istiyorum", treatments, hours: NOVA_WEEK, now });
+    const first = advancePreviewIntake({ message: "Randevu almak istiyorum", treatments, hours: NOVA_WEEK, now });
     expect(first.lead).toBeNull();
     expect(first.reply).toMatch(/adınızı/);
-    const history = [
-      { role: "user" as const, content: "Randevu almak istiyorum" },
-      { role: "assistant" as const, content: first.reply || "" },
-    ];
-    const named = advancePreviewIntake({ history, message: "Ayşe Yılmaz", treatments, hours: NOVA_WEEK, now });
-    expect(named.lead).toBeNull();
-    history.push({ role: "user", content: "Ayşe Yılmaz" }, { role: "assistant", content: named.reply || "" });
-    const treated = advancePreviewIntake({ history, message: "İmplant", treatments, hours: NOVA_WEEK, now });
-    history.push({ role: "user", content: "İmplant" }, { role: "assistant", content: treated.reply || "" });
-    const dated = advancePreviewIntake({ history, message: "Haziranın ikinci haftası", treatments, hours: NOVA_WEEK, now });
-    history.push({ role: "user", content: "Haziranın ikinci haftası" }, { role: "assistant", content: dated.reply || "" });
-    const done = advancePreviewIntake({ history, message: "+90 532 111 22 33", treatments, hours: NOVA_WEEK, now });
-    expect(done.reply).toBe("Talebiniz klinik ekibine iletildi, en kısa sürede dönüş yapılacak");
+    expect(first.reply).not.toMatch(/bilgiye sahip değilim/);
+    const named = advancePreviewIntake({ message: "Ayşe Yılmaz", state: first.intakeState, treatments, hours: NOVA_WEEK, now });
+    const treated = advancePreviewIntake({ message: "İmplant", state: named.intakeState, treatments, hours: NOVA_WEEK, now });
+    const dated = advancePreviewIntake({ message: "Haziranın ikinci haftası", state: treated.intakeState, treatments, hours: NOVA_WEEK, now });
+    const done = advancePreviewIntake({ message: "+90 532 111 22 33", state: dated.intakeState, treatments, hours: NOVA_WEEK, now });
+    expect(done.reply).toContain("Talebiniz klinik ekibine iletildi");
     expect(done.lead?.name).toBe("Ayşe Yılmaz");
     expect(done.lead?.treatment).toBe("İmplant");
     expect(done.lead?.outsideHours).toBe(false);
+    expect(done.intakeState.active).toBe(false);
   });
 
   it("marks Sunday closed and a Wednesday afternoon open", () => {

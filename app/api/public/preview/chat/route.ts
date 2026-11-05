@@ -5,7 +5,8 @@ import { buildPreviewChatMessages, previewLimitReply, type PreviewChatTurn } fro
 import { parseClinicHours } from "@/lib/preview/clinicHours";
 import { DEMO_PREVIEW_ID } from "@/lib/preview/demoClinic";
 import { NOVA_TREATMENTS, NOVA_WEEK, novaAnswer, novaKnowledgeItems } from "@/lib/demo/novaDental";
-import { advancePreviewIntake } from "@/lib/preview/previewIntake";
+import { advancePreviewIntake, composePreviewIntakeReply, readIntakeState } from "@/lib/preview/previewIntake";
+import { classifyPreviewBooking } from "@/lib/preview/previewIntakeClassify";
 import { detectPreviewLanguage } from "@/lib/preview/previewLanguage";
 import { consumeDemoChatRateLimit, consumePreviewMessage, hashDemoIp } from "@/lib/preview/rateLimit";
 import { extractClientIp } from "@/lib/auth/passwordResetRateLimit";
@@ -38,7 +39,7 @@ function asHistory(value: unknown): PreviewChatTurn[] {
 }
 
 export async function POST(req: Request) {
-  let body: { previewId?: unknown; message?: unknown; history?: unknown; language?: unknown };
+  let body: { previewId?: unknown; message?: unknown; history?: unknown; language?: unknown; intakeState?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -70,6 +71,7 @@ export async function POST(req: Request) {
       treatments: NOVA_TREATMENTS.map((item) => item.name.tr),
       hours: NOVA_WEEK,
       demo: true,
+      intakeState: body.intakeState,
     });
   }
 
@@ -104,6 +106,7 @@ export async function POST(req: Request) {
     treatments,
     hours: parseClinicHours(typeof data.hours === "string" ? data.hours : null),
     demo: false,
+    intakeState: body.intakeState,
   });
 }
 
@@ -115,22 +118,54 @@ async function answerPreview(input: {
   treatments: string[];
   hours: ReturnType<typeof parseClinicHours>;
   demo: boolean;
+  intakeState: unknown;
 }) {
+  const classified = await classifyPreviewBooking(input.message);
   const intake = advancePreviewIntake({
-    history: input.history,
     message: input.message,
+    state: readIntakeState(input.intakeState, input.uiLanguage),
     language: input.uiLanguage,
     treatments: input.treatments,
     hours: input.hours,
+    classified,
   });
+  if (intake.handled && intake.answerQuestion) {
+    const known = input.demo ? novaAnswer(input.message, input.uiLanguage) : null;
+    let knowledge = known;
+    if (!knowledge) {
+      try {
+        const response = await trackableAIRequest({
+          channel: "system",
+          requestType: "system",
+          model: "gpt-4o-mini",
+          temperature: 0.2,
+          maxTokens: 400,
+          messages: buildPreviewChatMessages(input.knowledge, input.history, input.message),
+        });
+        knowledge = response.content?.trim() || null;
+      } catch {
+        knowledge = null;
+      }
+    }
+    return NextResponse.json({
+      reply: composePreviewIntakeReply(intake, knowledge),
+      uiLanguage: input.uiLanguage,
+      intakeState: intake.intakeState,
+      lead: null,
+    }, { headers: CORS });
+  }
   if (intake.handled && intake.reply) {
-    return NextResponse.json({ reply: intake.reply, uiLanguage: input.uiLanguage, lead: intake.lead }, { headers: CORS });
+    return NextResponse.json({
+      reply: intake.reply,
+      uiLanguage: input.uiLanguage,
+      lead: intake.lead,
+      intakeState: intake.intakeState,
+    }, { headers: CORS });
   }
 
   const known = input.demo ? novaAnswer(input.message, input.uiLanguage) : null;
   if (known) {
-    const reply = intake.followUp ? `${known}\n\n${intake.followUp}` : known;
-    return NextResponse.json({ reply, uiLanguage: input.uiLanguage }, { headers: CORS });
+    return NextResponse.json({ reply: known, uiLanguage: input.uiLanguage, intakeState: intake.intakeState }, { headers: CORS });
   }
 
   try {
@@ -144,10 +179,7 @@ async function answerPreview(input: {
     });
     const reply = response.content?.trim();
     if (reply) {
-      return NextResponse.json({
-        reply: intake.followUp ? `${reply}\n\n${intake.followUp}` : reply,
-        uiLanguage: input.uiLanguage,
-      }, { headers: CORS });
+      return NextResponse.json({ reply, uiLanguage: input.uiLanguage, intakeState: intake.intakeState }, { headers: CORS });
     }
   } catch {
     /* model failure still must not persist the visitor message */
@@ -162,8 +194,5 @@ async function answerPreview(input: {
         : input.uiLanguage === "ru"
           ? "Сейчас не могу ответить. Повторите, пожалуйста, вопрос о лечении, враче или записи."
           : "I can't answer that right now. Please ask again about a treatment, a dentist, or an appointment.";
-  return NextResponse.json({
-    reply: intake.followUp ? `${fallback}\n\n${intake.followUp}` : fallback,
-    uiLanguage: input.uiLanguage,
-  }, { headers: CORS });
+  return NextResponse.json({ reply: fallback, uiLanguage: input.uiLanguage, intakeState: intake.intakeState }, { headers: CORS });
 }

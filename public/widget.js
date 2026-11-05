@@ -771,6 +771,7 @@
     var lastHash     = '';
     var chatHistory  = [];
     var pendingApptData = null;
+    var previewIntakeState = null;
     var currentPendingAction = null;
     var latestSettings = null;
     var latestRawCfg = null;
@@ -1067,7 +1068,8 @@
             previewId: previewId,
             message: text,
             history: chatHistory.slice(-12),
-            language: lang
+            language: lang,
+            intakeState: previewIntakeState || undefined
           }
         : {
             clinicId:              clinicId,
@@ -1151,6 +1153,7 @@
         if (previewId && data && typeof data.uiLanguage === 'string') {
           applyResolvedLocale(data.uiLanguage, 'preview-conversation', true);
         }
+        if (previewId && data && data.intakeState) previewIntakeState = data.intakeState;
         if (previewId && data && data.lead) {
           w.dispatchEvent(new CustomEvent('cbw-preview-lead', { detail: data.lead }));
         }

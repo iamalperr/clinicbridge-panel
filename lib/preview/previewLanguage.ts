@@ -16,7 +16,7 @@ export function previewLanguageSignal(text: string): PreviewUiLanguage | null {
   if (ARABIC.test(value)) return "ar";
   if (CYRILLIC.test(value)) return "ru";
   if (TURKISH_LETTERS.test(value) || hasWord(value, ["randevu", "doktor", "fiyat", "merhaba", "nedir", "misiniz"])) return "tr";
-  if (GERMAN_MARK.test(value) || hasWord(value, ["wie ", "für", "ich ", "und ", "preis", "öffnungs", "zähne", "muss ich", "kosten"])) return "de";
+  if (GERMAN_MARK.test(value) || hasWord(value, ["wie ", "für", "ich ", "und ", "preis", "öffnungs", "zähne", "muss ich", "kosten", "termin", "möglich"])) return "de";
   if (hasWord(value, ["how ", "what ", "price", "appointment", "doctor", "please", "crown"])) return "en";
   return null;
 }
