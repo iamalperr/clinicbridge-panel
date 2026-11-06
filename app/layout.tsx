@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import Script from "next/script";
+import { headers } from "next/headers";
 import "./globals.css";
+import MarketingGoogleTag from "@/components/analytics/MarketingGoogleTag";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/lib/auth-context";
 import { I18nProvider } from "@/lib/i18n-context";
@@ -17,10 +19,12 @@ export const metadata: Metadata = {
   description: "Multi-tenant AI assistant management platform for clinics.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const host = (await headers()).get("host");
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <MarketingGoogleTag host={host} />
         <Script id="google-tag-manager" strategy="afterInteractive">
           {`
             (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
@@ -28,15 +32,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
             'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
             })(window,document,'script','dataLayer','${process.env.NEXT_PUBLIC_GTM_ID || "GTM-M8KJQNP8"}');
-          `}
-        </Script>
-        <Script src="https://www.googletagmanager.com/gtag/js?id=G-DP3FV4PQWD" strategy="afterInteractive" />
-        <Script id="google-analytics" strategy="afterInteractive">
-          {`
-            window.dataLayer = window.dataLayer || [];
-            function gtag(){dataLayer.push(arguments);}
-            gtag('js', new Date());
-            gtag('config', 'G-DP3FV4PQWD');
           `}
         </Script>
       </head>
