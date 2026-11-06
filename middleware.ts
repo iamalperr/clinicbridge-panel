@@ -67,6 +67,9 @@ export function middleware(req: NextRequest) {
 
   // ── clinicbridge-ai.com (landing domain) ──────────────────────────────────
   if (context === "landing") {
+    // Serve these before the homepage redirect. Otherwise both return the landing HTML.
+    if (pathname === "/sitemap.xml" || pathname === "/robots.txt") return NextResponse.next();
+
     // Allow "/" (landing page itself)
     if (pathname === "/") return NextResponse.next();
 
