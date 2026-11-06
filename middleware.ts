@@ -100,7 +100,7 @@ export function middleware(req: NextRequest) {
     }
 
     // Allow legal pages accessible from landing footer
-    const LEGAL_PATHS = ["/privacy", "/terms", "/kvkk", "/hakkimizda", "/fiyatlandirma", "/teslimat-ve-iade", "/mesafeli-satis-sozlesmesi"];
+    const LEGAL_PATHS = ["/privacy", "/terms", "/kvkk", "/hakkimizda", "/fiyatlandirma", "/teslimat-ve-iade", "/mesafeli-satis-sozlesmesi", "/klinikler-icin-yapay-zeka-asistani"];
     if (pathname.startsWith("/(legal)") || LEGAL_PATHS.includes(pathname)) {
       return NextResponse.next();
     }

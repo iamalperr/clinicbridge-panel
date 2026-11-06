@@ -5,6 +5,7 @@ const PUBLIC_ROUTES = [
   "/terms",
   "/kvkk",
   "/hakkimizda",
+  "/klinikler-icin-yapay-zeka-asistani",
   "/fiyatlandirma",
   "/teslimat-ve-iade",
   "/mesafeli-satis-sozlesmesi",

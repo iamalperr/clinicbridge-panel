@@ -30,6 +30,7 @@ export default function LandingFooter() {
             <div className="lp-footer-links">
               <Link href="/#pricing">{t.footer.pricing}</Link>
               <Link href="/hakkimizda">{t.footer.about}</Link>
+              <Link href="/klinikler-icin-yapay-zeka-asistani">{t.footer.assistant}</Link>
               <a href="#contact" onClick={(e) => { e.preventDefault(); goTo("contact"); }}>{t.footer.requestDemo}</a>
               <a href="#contact" onClick={(e) => { e.preventDefault(); goTo("contact"); }}>{t.footer.contact}</a>
             </div>
