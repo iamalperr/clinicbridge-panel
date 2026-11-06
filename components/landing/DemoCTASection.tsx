@@ -3,6 +3,7 @@
 import { useEffect, useState, FormEvent } from "react";
 import { useLandingLang } from "@/lib/landing-translations";
 import { CheckCircle, ArrowRight, Loader2, AlertCircle } from "lucide-react";
+import { trackGenerateLead } from "@/lib/analytics/generateLead";
 import { submitDemoRequest } from "@/lib/services/demoRequestService";
 import { getAttributionForSubmit } from "@/lib/attribution";
 import { useRouter } from "next/navigation";
@@ -98,6 +99,7 @@ export default function DemoCTASection() {
         ...form,
         ...(attribution ? { attribution } : {}),
       });
+      trackGenerateLead();
       setSubmitState("success");
       setForm(EMPTY_FORM);
       router.push("/thank-you");
