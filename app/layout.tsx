@@ -17,6 +17,9 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "ClinicBridge — AI Clinic Management Platform",
   description: "Multi-tenant AI assistant management platform for clinics.",
+  icons: {
+    icon: [{ url: "/favicon.png", type: "image/png", sizes: "96x96" }],
+  },
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

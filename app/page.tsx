@@ -5,6 +5,9 @@ export const metadata: Metadata = {
   title: "ClinicBridge AI — Yapay Zekâ Destekli Hasta İletişim Platformu",
   description:
     "ClinicBridge AI, web sitesi ve telefon asistanlarıyla hasta sorularını yanıtlar, randevu taleplerini toplar ve kliniğinizin iletişim süreçlerini 7/24 destekler.",
+  icons: {
+    icon: [{ url: "/favicon.png", type: "image/png", sizes: "96x96" }],
+  },
   keywords: [
     "klinik asistan",
     "yapay zeka",
