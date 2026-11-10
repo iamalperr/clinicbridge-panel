@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import LandingHomePage from "@/components/landing/LandingHomePage";
 
 export const metadata: Metadata = {
@@ -32,5 +33,11 @@ export const metadata: Metadata = {
 };
 
 export default function Home() {
-  return <LandingHomePage />;
+  return (
+    <LandingHomePage
+      assistantLink={
+        <Link href="/klinikler-icin-yapay-zeka-asistani">Klinikler için yapay zekâ asistanı</Link>
+      }
+    />
+  );
 }

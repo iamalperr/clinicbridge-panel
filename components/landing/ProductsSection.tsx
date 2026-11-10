@@ -3,7 +3,11 @@
 import { useLandingLang } from "@/lib/landing-translations";
 import { Globe, Phone, ArrowRight } from "lucide-react";
 
-export default function ProductsSection() {
+export default function ProductsSection({
+  assistantLink,
+}: {
+  assistantLink?: React.ReactNode;
+}) {
   const { t } = useLandingLang();
   const { website, phone } = t.products;
 
@@ -50,6 +54,12 @@ export default function ProductsSection() {
             </button>
           </article>
         </div>
+
+        <p className="lp-section-subtitle">
+          {assistantLink ?? (
+            <a href="/klinikler-icin-yapay-zeka-asistani">{t.products.assistantLink}</a>
+          )}
+        </p>
       </div>
     </section>
   );

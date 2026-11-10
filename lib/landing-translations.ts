@@ -77,6 +77,7 @@ const tr = {
       desc: "Kliniğinize gelen telefon aramalarını doğal sesli görüşmelerle karşılayan, hastalarınızın sorularını yanıtlayan ve randevu taleplerini toplayan yapay zekâ destekli telefon asistanı.",
       cta: "Telefon Asistanını Keşfet",
     },
+    assistantLink: "Klinikler için yapay zekâ asistanı",
   },
   solution: {
     title: "Tek Platformda Ortak Yetenekler",
@@ -327,6 +328,7 @@ const en = {
       desc: "An AI-powered phone assistant that answers clinic calls with natural voice conversations, responds to patient questions, and collects appointment requests.",
       cta: "Explore Phone Assistant",
     },
+    assistantLink: "Klinikler için yapay zekâ asistanı",
   },
   solution: {
     title: "Shared Capabilities on One Platform",

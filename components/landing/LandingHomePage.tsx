@@ -15,14 +15,18 @@ import PricingSection from "@/components/landing/PricingSection";
 import DemoCTASection from "@/components/landing/DemoCTASection";
 import LandingFooter from "@/components/landing/LandingFooter";
 
-export default function LandingHomePage() {
+export default function LandingHomePage({
+  assistantLink,
+}: {
+  assistantLink?: React.ReactNode;
+}) {
   return (
     <LandingLangProvider>
       <div className="lp-page">
         <LandingHeader />
         <HeroSection />
         <ProblemSection />
-        <ProductsSection />
+        <ProductsSection assistantLink={assistantLink} />
         <SolutionSection />
         <PatientJourneySection />
         <UseCasesSection />

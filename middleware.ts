@@ -43,6 +43,14 @@ function getDomainContext(req: NextRequest): "landing" | "app" | "widget" | "dev
   return "dev"; // localhost without override → allow everything (normal dev)
 }
 
+function nextWithPath(req: NextRequest) {
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-pathname", req.nextUrl.pathname);
+  return NextResponse.next({
+    request: { headers: requestHeaders },
+  });
+}
+
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const context = getDomainContext(req);
@@ -50,13 +58,13 @@ export function middleware(req: NextRequest) {
   // ── widget.clinicbridge-ai.com → serve only /widget.js ───────────────────
   if (context === "widget") {
     // Allow /widget.js (the main widget script — served from public/widget.js)
-    if (pathname === "/widget.js") return NextResponse.next();
+    if (pathname === "/widget.js") return nextWithPath(req);
 
     // Allow public APIs: widget-settings + conversation-log
-    if (pathname.startsWith("/api/public/")) return NextResponse.next();
+    if (pathname.startsWith("/api/public/")) return nextWithPath(req);
 
     // Allow Next.js static chunks (needed for the JS file itself)
-    if (pathname.startsWith("/_next")) return NextResponse.next();
+    if (pathname.startsWith("/_next")) return nextWithPath(req);
 
     // Block everything else — this domain is widget-script-only
     return new NextResponse(
@@ -68,10 +76,10 @@ export function middleware(req: NextRequest) {
   // ── clinicbridge-ai.com (landing domain) ──────────────────────────────────
   if (context === "landing") {
     // Serve these before the homepage redirect. Otherwise both return the landing HTML.
-    if (pathname === "/sitemap.xml" || pathname === "/robots.txt") return NextResponse.next();
+    if (pathname === "/sitemap.xml" || pathname === "/robots.txt") return nextWithPath(req);
 
     // Allow "/" (landing page itself)
-    if (pathname === "/") return NextResponse.next();
+    if (pathname === "/") return nextWithPath(req);
 
     // Allow static assets and Next.js internals
     if (
@@ -82,17 +90,17 @@ export function middleware(req: NextRequest) {
       pathname.startsWith("/public") ||
       pathname.match(/\.(svg|png|jpg|ico|webp|css|js|woff2?)$/)
     ) {
-      return NextResponse.next();
+      return nextWithPath(req);
     }
 
     // Allow /landing (for backward compat — it redirects to "/" internally)
-    if (pathname === "/landing") return NextResponse.next();
+    if (pathname === "/landing") return nextWithPath(req);
 
     // Allow demo-request API (called from the landing page form)
-    if (pathname === "/api/demo-request") return NextResponse.next();
-    if (pathname.startsWith("/api/public/preview/")) return NextResponse.next();
-    if (pathname === "/api/public/preview-request") return NextResponse.next();
-    if (pathname.startsWith("/onizleme/")) return NextResponse.next();
+    if (pathname === "/api/demo-request") return nextWithPath(req);
+    if (pathname.startsWith("/api/public/preview/")) return nextWithPath(req);
+    if (pathname === "/api/public/preview-request") return nextWithPath(req);
+    if (pathname.startsWith("/onizleme/")) return nextWithPath(req);
     if (pathname === "/kayit" || pathname === "/kurulum") {
       const target = new URL(`https://app.clinicbridge-ai.com${pathname}`);
       target.search = req.nextUrl.search;
@@ -102,7 +110,7 @@ export function middleware(req: NextRequest) {
     // Allow legal pages accessible from landing footer
     const LEGAL_PATHS = ["/privacy", "/terms", "/kvkk", "/hakkimizda", "/fiyatlandirma", "/teslimat-ve-iade", "/mesafeli-satis-sozlesmesi", "/klinikler-icin-yapay-zeka-asistani"];
     if (pathname.startsWith("/(legal)") || LEGAL_PATHS.includes(pathname)) {
-      return NextResponse.next();
+      return nextWithPath(req);
     }
 
     // Allow LinkedIn showcase demos and assets, and widget guide
@@ -112,7 +120,7 @@ export function middleware(req: NextRequest) {
       pathname === "/linkedin-assets" ||
       pathname === "/social-posts" ||
       pathname === "/widget-guide"
-    ) return NextResponse.next();
+    ) return nextWithPath(req);
 
     // Block everything else → back to landing
     return NextResponse.redirect(new URL("/", req.url));
@@ -125,11 +133,11 @@ export function middleware(req: NextRequest) {
       return NextResponse.redirect(new URL("/login", req.url));
     }
     // Everything else is allowed — AuthGuard handles auth state
-    return NextResponse.next();
+    return nextWithPath(req);
   }
 
   // ── localhost / dev mode → no restrictions ────────────────────────────────
-  return NextResponse.next();
+  return nextWithPath(req);
 }
 
 export const config = {

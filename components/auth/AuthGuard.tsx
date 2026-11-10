@@ -60,7 +60,12 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [user, profile, loading, pathname, router]);
 
+  // Public marketing pages must appear in the first HTML response for search.
+  // Wait for auth only on protected panel routes.
   if (loading) {
+    if (isPublicRoute(pathname)) {
+      return <>{children}</>;
+    }
     return (
       <div style={{ 
         height: "100dvh", 
