@@ -132,6 +132,8 @@ export function middleware(req: NextRequest) {
     if (pathname === "/" || pathname === "/landing") {
       return NextResponse.redirect(new URL("/login", req.url));
     }
+    // /api/webhooks/whatsapp is intentionally reachable here (Meta Cloud API
+    // callbacks). Auth is the X-Hub-Signature-256 check inside the route.
     // Everything else is allowed — AuthGuard handles auth state
     return nextWithPath(req);
   }

@@ -2,6 +2,7 @@ import { getAdminDb } from "@/lib/firebase-admin";
 import { sendClinicAppointmentEmail } from "@/lib/appointment-notifications";
 import { Appointment } from "@/lib/types";
 import { normalizeLegacyChannel } from "@/lib/services/channelPolicyService";
+import { sendClinicStaffWhatsApp } from "@/lib/services/notifications/whatsapp/sendClinicStaffWhatsApp";
 import {
   resolveClinicTimeZone,
   validateAppointmentDateTime,
@@ -253,6 +254,18 @@ export async function sendClinicNewAppointmentNotification(appointment: Partial<
     if (emailRegex.test(cleanEmail)) validRecipients.push(cleanEmail);
   }
   const uniqueRecipients = Array.from(new Set(validRecipients));
+
+  // WhatsApp is independent of email: fire-and-forget, never blocks or fails the email path.
+  void sendClinicStaffWhatsApp({
+    clinicId: appointment.clinicId!,
+    clinicData,
+    kind: "appointment",
+    recordId: appointment.id,
+    patientName: appointment.patientName,
+    treatment: appointment.requestedService,
+    preferredDate: appointment.requestedDate,
+    preferredTime: appointment.requestedTime || appointment.preferredTimeStart,
+  }).catch(() => undefined);
 
   if (!clinicEmailEnabled || uniqueRecipients.length === 0) {
      return { status: "DISABLED" };

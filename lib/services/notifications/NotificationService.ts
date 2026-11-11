@@ -10,6 +10,7 @@ import {
 } from '../../types/notification';
 import { NotificationProvider, NotificationPayload } from './providers/NotificationProvider';
 import { ResendEmailProvider } from './providers/ResendEmailProvider';
+import { WhatsAppCloudProvider } from './whatsapp/WhatsAppCloudProvider';
 
 import { resolveAppointmentDisplaySchedule } from '../appointments/AppointmentScheduleResolver';
 import { safeErrorMeta } from '../infrastructureErrors';
@@ -21,8 +22,8 @@ export class NotificationService {
     this.providers = new Map();
     // Register default providers
     this.registerProvider(new ResendEmailProvider());
+    this.registerProvider(new WhatsAppCloudProvider());
     // Future: this.registerProvider(new TwilioSmsProvider());
-    // Future: this.registerProvider(new WhatsAppProvider());
   }
 
   public registerProvider(provider: NotificationProvider) {

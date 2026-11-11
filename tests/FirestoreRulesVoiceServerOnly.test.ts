@@ -126,23 +126,26 @@ function isAllowed(method: Method, docPath: string, auth: boolean): boolean {
   });
 }
 
-const VOICE_COLLECTIONS = [
+const SERVER_ONLY_COLLECTIONS = [
   "voiceNumbers",
   "voiceCallSessions",
   "voiceCalls",
   "voiceRuntimeLeases",
   "voiceSettings",
   "voiceProfiles",
+  "clinicWhatsappSettings",
+  "whatsappNotifications",
+  "whatsappAutoReplies",
 ] as const;
 
-describe("firestore.rules — voice infrastructure is server-only", () => {
+describe("firestore.rules — server-only infrastructure collections", () => {
   it("parses rules and the server-only list", () => {
     expect(allows.length).toBeGreaterThan(0);
-    expect(functions.isServerOnlyCollection).toEqual([...VOICE_COLLECTIONS]);
+    expect(functions.isServerOnlyCollection).toEqual([...SERVER_ONLY_COLLECTIONS]);
   });
 
-  it("contains only the voice deny blocks plus the authenticated catch-all (no unrelated rules)", () => {
-    expect(allows).toHaveLength(VOICE_COLLECTIONS.length + 1);
+  it("contains only the server-only deny blocks plus the authenticated catch-all (no unrelated rules)", () => {
+    expect(allows).toHaveLength(SERVER_ONLY_COLLECTIONS.length + 1);
     const catchAll = allows.filter((rule) => rule.condition !== "false");
     expect(catchAll).toHaveLength(1);
     expect(catchAll[0].pattern.slice(3)).toEqual(["{collectionId}", "{document=**}"]);
@@ -150,7 +153,7 @@ describe("firestore.rules — voice infrastructure is server-only", () => {
     expect([...catchAll[0].methods].sort()).toEqual([...ALL_METHODS].sort());
   });
 
-  for (const collection of VOICE_COLLECTIONS) {
+  for (const collection of SERVER_ONLY_COLLECTIONS) {
     for (const auth of [false, true]) {
       const who = auth ? "authenticated" : "unauthenticated";
       it(`${who} client cannot read or write ${collection}`, () => {
@@ -162,18 +165,18 @@ describe("firestore.rules — voice infrastructure is server-only", () => {
     }
   }
 
-  it("has no root recursive catch-all that would re-grant voice paths", () => {
+  it("has no root recursive catch-all that would re-grant server-only paths", () => {
     expect(RULES_SRC).not.toMatch(/match\s+\/\{\w+=\*\*\}\s*\{/);
   });
 
-  it("has no leading recursive (collection-group style) rule that could re-open nested voice paths", () => {
+  it("has no leading recursive (collection-group style) rule that could re-open nested server-only paths", () => {
     // Known caveat: without such a rule, generic client collection-group queries that the
     // live root `/{document=**}` rule authorized are no longer authorized. No client code uses them.
     expect(RULES_SRC).not.toMatch(/match\s+\/\{\w+=\*\*\}\//);
   });
 
   it("every server-only collection has an explicit deny block (documentation of intent)", () => {
-    for (const collection of VOICE_COLLECTIONS) {
+    for (const collection of SERVER_ONLY_COLLECTIONS) {
       expect(RULES_SRC).toMatch(
         new RegExp(`match\\s+/${collection}/\\{document=\\*\\*\\}\\s*\\{\\s*allow read, write: if false;\\s*\\}`)
       );

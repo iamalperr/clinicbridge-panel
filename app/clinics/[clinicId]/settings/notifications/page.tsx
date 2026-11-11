@@ -3,6 +3,7 @@
 import { use, useEffect, useState, useCallback } from "react";
 import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { useAuth } from "@/lib/auth-context";
 import SectionCard from "@/components/ui/SectionCard";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -11,6 +12,13 @@ import { UI_COLORS } from "@/components/ui/ui-shared";
 import { Loader2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { ClinicNotificationSettings, ClinicEmailSettings } from "@/lib/types/notification";
+
+/** Keep in sync with lib/services/notifications/whatsapp/settings.ts — do not import that module from the client. */
+const MAX_WHATSAPP_RECIPIENTS = 5;
+
+type WhatsAppRecipientDraft = { phone: string; optIn: boolean };
+
+const emptyWhatsAppRecipient = (): WhatsAppRecipientDraft => ({ phone: "", optIn: false });
 
 interface PageProps {
   params: Promise<{ clinicId: string }>;
@@ -45,6 +53,7 @@ const DEFAULT_SETTINGS: ClinicNotificationSettings = {
 
 export default function NotificationsSettingsPage({ params }: PageProps) {
   const { clinicId } = use(params);
+  const { getToken } = useAuth();
   const [settings, setSettings] = useState<ClinicNotificationSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -56,6 +65,12 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
   const [testEmailAddress, setTestEmailAddress] = useState("");
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [testResult, setTestResult] = useState<{success?: boolean; message?: string} | null>(null);
+
+  const [whatsappEnabled, setWhatsappEnabled] = useState(false);
+  const [whatsappRecipients, setWhatsappRecipients] = useState<WhatsAppRecipientDraft[]>([emptyWhatsAppRecipient()]);
+  const [testWhatsAppPhone, setTestWhatsAppPhone] = useState("");
+  const [isSendingWhatsAppTest, setIsSendingWhatsAppTest] = useState(false);
+  const [whatsappTestResult, setWhatsappTestResult] = useState<{ success?: boolean; message?: string } | null>(null);
 
   const [notificationSettings, setNotificationSettings] = useState({
     patient: {
@@ -139,12 +154,35 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
         console.error("Failed to fetch email settings API", err);
       }
 
+      try {
+        const token = await getToken();
+        if (token) {
+          const waRes = await fetch(`/api/clinics/${clinicId}/settings/whatsapp`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (waRes.ok) {
+            const waData = await waRes.json();
+            setWhatsappEnabled(waData.enabled === true);
+            const loaded: WhatsAppRecipientDraft[] = Array.isArray(waData.recipients) && waData.recipients.length > 0
+              ? waData.recipients.map((r: { phone?: string; optIn?: boolean }) => ({
+                  phone: typeof r.phone === "string" ? r.phone : "",
+                  optIn: r.optIn === true,
+                }))
+              : [emptyWhatsAppRecipient()];
+            setWhatsappRecipients(loaded);
+            if (!testWhatsAppPhone && loaded[0]?.phone) setTestWhatsAppPhone(loaded[0].phone);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch WhatsApp settings API", err);
+      }
+
     } catch (err) {
       console.error("Failed to load notification settings", err);
     } finally {
       setLoading(false);
     }
-  }, [clinicId]);
+  }, [clinicId, getToken]);
 
   useEffect(() => {
     loadSettings();
@@ -167,6 +205,42 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
         body: JSON.stringify(emailSettings)
       });
       if (!emailRes.ok) throw new Error("E-posta ayarları API üzerinden kaydedilemedi.");
+
+      const token = await getToken();
+      if (!token) throw new Error("Oturum süresi doldu. Lütfen yeniden giriş yapın.");
+      const waRes = await fetch(`/api/clinics/${clinicId}/settings/whatsapp`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          enabled: whatsappEnabled,
+          recipients: whatsappRecipients
+            .map((r) => ({ phone: r.phone.trim(), optIn: r.optIn === true }))
+            .filter((r) => r.phone),
+        }),
+      });
+      if (!waRes.ok) {
+        const waErr = await waRes.json().catch(() => ({}));
+        if (waErr?.errors?.some((e: { code?: string }) => e.code === "opt_in_required")) {
+          throw new Error("Her WhatsApp numarası için onay kutusu zorunludur.");
+        }
+        if (waErr?.errors?.some((e: { code?: string }) => e.code === "invalid_number")) {
+          throw new Error("WhatsApp numaraları E.164 formatında olmalıdır (ör. +905321112233).");
+        }
+        throw new Error("WhatsApp ayarları kaydedilemedi.");
+      }
+      const savedWa = await waRes.json();
+      setWhatsappEnabled(savedWa.enabled === true);
+      setWhatsappRecipients(
+        Array.isArray(savedWa.recipients) && savedWa.recipients.length > 0
+          ? savedWa.recipients.map((r: { phone?: string; optIn?: boolean }) => ({
+              phone: typeof r.phone === "string" ? r.phone : "",
+              optIn: r.optIn === true,
+            }))
+          : [emptyWhatsAppRecipient()]
+      );
 
       // Save subcollection settings
       await updateDoc(doc(db, "clinics", clinicId, "settings", "notifications"), {
@@ -232,6 +306,55 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
       setTestResult({ success: false, message: "Sunucu bağlantı hatası." });
     } finally {
       setIsSendingTest(false);
+    }
+  };
+
+  const handleSendWhatsAppTest = async () => {
+    if (!testWhatsAppPhone) {
+      setWhatsappTestResult({ success: false, message: "Lütfen test edilecek numarayı seçin." });
+      return;
+    }
+    setIsSendingWhatsAppTest(true);
+    setWhatsappTestResult(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("no_token");
+      const res = await fetch(`/api/clinics/${clinicId}/settings/whatsapp/test`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ phone: testWhatsAppPhone }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setWhatsappTestResult({ success: true, message: "Test mesajı gönderildi." });
+      } else if (res.status === 429) {
+        setWhatsappTestResult({
+          success: false,
+          message:
+            data.error === "daily_limit"
+              ? "Günlük test limiti doldu (5/gün)."
+              : `Çok sık denendi. ${data.retryAfterSeconds || 60} sn sonra tekrar deneyin.`,
+        });
+      } else if (data.status === "skipped") {
+        setWhatsappTestResult({
+          success: false,
+          message: "WhatsApp bildirimleri şu an kapalı veya yapılandırılmamış (kill switch / env).",
+        });
+      } else {
+        setWhatsappTestResult({
+          success: false,
+          message: data.error === "recipient_not_opted_in"
+            ? "Önce numarayı kaydedin ve onay kutusunu işaretleyin."
+            : "Test mesajı gönderilemedi.",
+        });
+      }
+    } catch {
+      setWhatsappTestResult({ success: false, message: "Sunucu bağlantı hatası." });
+    } finally {
+      setIsSendingWhatsAppTest(false);
     }
   };
 
@@ -355,6 +478,115 @@ export default function NotificationsSettingsPage({ params }: PageProps) {
             </Button>
           </div>
         )}
+      </SectionCard>
+
+      <SectionCard title="WhatsApp Bildirimleri (Klinik Ekibi)">
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <p style={{ fontSize: 13, color: UI_COLORS.textSecondary, margin: 0 }}>
+            Mesajlar Meta üzerinden <strong>Clinic Bridge AI</strong> görünen adıyla gönderilir.
+            Hasta sağlık detayı, telefon veya e-posta içerilmez; yalnızca ad soyad baş harfi, işlem, tarih ve panel linki yer alır.
+          </p>
+
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <h3 style={{ fontSize: 15, fontWeight: 600, color: UI_COLORS.textPrimary }}>WhatsApp Bildirimleri Aktif</h3>
+              <p style={{ fontSize: 13, color: UI_COLORS.textSecondary }}>
+                Yeni randevu ve iletişim taleplerinde onaylı ekip numaralarına şablon mesajı gönderilir. E-posta bildirimleri etkilenmez.
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={whatsappEnabled}
+              onChange={(e) => setWhatsappEnabled(e.target.checked)}
+              style={{ width: 20, height: 20, accentColor: UI_COLORS.brand, cursor: "pointer" }}
+            />
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 8, borderTop: `1px solid ${UI_COLORS.border}` }}>
+            <h4 style={{ fontSize: 14, fontWeight: 600, color: UI_COLORS.textPrimary }}>
+              Alıcı Numaralar (en fazla {MAX_WHATSAPP_RECIPIENTS})
+            </h4>
+            {whatsappRecipients.map((recipient, index) => (
+              <div key={index} style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, border: `1px solid ${UI_COLORS.border}`, borderRadius: 8 }}>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Input
+                    value={recipient.phone}
+                    placeholder="+905321112233"
+                    onChange={(e) => {
+                      const next = [...whatsappRecipients];
+                      next[index] = { ...next[index], phone: e.target.value };
+                      setWhatsappRecipients(next);
+                    }}
+                    style={{ flex: 1 }}
+                  />
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      const next = whatsappRecipients.filter((_, i) => i !== index);
+                      setWhatsappRecipients(next.length > 0 ? next : [emptyWhatsAppRecipient()]);
+                    }}
+                  >
+                    Sil
+                  </Button>
+                </div>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: UI_COLORS.textPrimary, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={recipient.optIn}
+                    onChange={(e) => {
+                      const next = [...whatsappRecipients];
+                      next[index] = { ...next[index], optIn: e.target.checked };
+                      setWhatsappRecipients(next);
+                    }}
+                    style={{ width: 16, height: 16, marginTop: 2, accentColor: UI_COLORS.brand, cursor: "pointer" }}
+                  />
+                  <span>Bu kişi WhatsApp bildirimi almayı kabul etti</span>
+                </label>
+              </div>
+            ))}
+            {whatsappRecipients.length < MAX_WHATSAPP_RECIPIENTS && (
+              <Button
+                variant="secondary"
+                onClick={() => setWhatsappRecipients((prev) => [...prev, emptyWhatsAppRecipient()])}
+                style={{ width: "fit-content" }}
+              >
+                + Numara Ekle
+              </Button>
+            )}
+          </div>
+
+          <div style={{ marginTop: 8, padding: 16, borderRadius: 8, border: `1px solid ${UI_COLORS.border}`, background: UI_COLORS.bgPage }}>
+            <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Test mesajı gönder</h4>
+            <p style={{ fontSize: 13, color: UI_COLORS.textSecondary, marginBottom: 16 }}>
+              Önce numarayı kaydedin. Test, seçilen onaylı numaraya örnek değerlerle şablon mesajı yollar (dakikada 1, günde 5).
+            </p>
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              <Select
+                value={testWhatsAppPhone}
+                onChange={(e) => setTestWhatsAppPhone(e.target.value)}
+                options={[
+                  { label: "Numara seçin", value: "" },
+                  ...whatsappRecipients
+                    .filter((r) => r.phone.trim() && r.optIn)
+                    .map((r) => ({ label: r.phone.trim(), value: r.phone.trim() })),
+                ]}
+                style={{ flex: 1, marginBottom: 0 }}
+              />
+              <Button
+                variant="secondary"
+                onClick={handleSendWhatsAppTest}
+                disabled={isSendingWhatsAppTest || !testWhatsAppPhone}
+              >
+                {isSendingWhatsAppTest ? <Loader2 size={16} className="animate-spin" /> : "Test mesajı gönder"}
+              </Button>
+            </div>
+            {whatsappTestResult && (
+              <div style={{ marginTop: 12, fontSize: 13, color: whatsappTestResult.success ? "#10b981" : UI_COLORS.danger }}>
+                {whatsappTestResult.message}
+              </div>
+            )}
+          </div>
+        </div>
       </SectionCard>
 
       <SectionCard title="E-Posta Ayarları (Email Channel)">

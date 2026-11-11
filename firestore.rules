@@ -13,7 +13,10 @@ service cloud.firestore {
         'voiceCalls',
         'voiceRuntimeLeases',
         'voiceSettings',
-        'voiceProfiles'
+        'voiceProfiles',
+        'clinicWhatsappSettings',
+        'whatsappNotifications',
+        'whatsappAutoReplies'
       ];
     }
 
@@ -39,6 +42,19 @@ service cloud.firestore {
     }
 
     match /voiceProfiles/{document=**} {
+      allow read, write: if false;
+    }
+
+    // WhatsApp staff notifications: opt-in timestamps + delivery logs are Admin SDK only.
+    match /clinicWhatsappSettings/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /whatsappNotifications/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /whatsappAutoReplies/{document=**} {
       allow read, write: if false;
     }
 

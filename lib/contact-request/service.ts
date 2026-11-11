@@ -6,6 +6,7 @@
 import { getAdminDb } from "@/lib/firebase-admin";
 import { stripUndefinedDeep } from "@/lib/firestore/stripUndefined";
 import { sendClinicContactRequestEmail } from "./notifications";
+import { sendClinicStaffWhatsApp } from "@/lib/services/notifications/whatsapp/sendClinicStaffWhatsApp";
 import type {
   ContactRequest,
   ContactRequestStatus,
@@ -141,6 +142,16 @@ async function sendClinicNewContactRequestNotification(
         )
     )
   );
+
+  // WhatsApp is independent of email and must not affect NOTIFICATION_FAILED.
+  void sendClinicStaffWhatsApp({
+    clinicId: request.clinicId,
+    clinicData,
+    kind: "contact_request",
+    recordId: request.id,
+    conversationId: request.conversationId,
+    patientName: request.patientName,
+  }).catch(() => undefined);
 
   if (!clinicEmailEnabled || uniqueRecipients.length === 0) {
     return { status: "DISABLED" };
