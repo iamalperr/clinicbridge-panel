@@ -8,7 +8,11 @@
  *   <script src="..." data-clinic-id="CLINIC_ID" data-language="en" data-debug="true" async></script>
  *   <script src="..." data-clinic-id="CLINIC_ID" data-locale="en" async></script>
  *
- * What's new in v6.4.0:
+ * What's new in v6.4.1:
+ *   - Live-support buttons use the reply's language (replyLanguage from the chat
+ *     API), not the host page language; Arabic buttons render right-to-left
+ *
+ * v6.4.0:
  *   - WhatsApp / Telegram live-support buttons when the chat reply carries
  *     whatsappNumber / telegramLink; clicks are logged as redirect events
  *
@@ -27,6 +31,8 @@
       telegramHref: liveSupportTelegramHref,
       buildButtons: buildLiveSupportButtons,
       sendChannelClick: sendLiveSupportChannelClick,
+      pickLang: pickLiveSupportLang,
+      copy: liveSupportCopy,
     };
     return;
   }
@@ -57,7 +63,7 @@
   var debugMode = scriptEl && scriptEl.dataset.debug === 'true';
   var API_BASE  = 'https://app.clinicbridge-ai.com';
   var POLL_MS   = 5000;
-  var VERSION   = '6.4.0';
+  var VERSION   = '6.4.1';
   /* ── Session ID ── */
   var sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
 
@@ -169,9 +175,6 @@
       consentLinkText: 'Aydınlatma Metni',
       consentAccept: 'Kabul Ediyorum ve Devam Et',
       consentDecline: 'Reddet',
-      waCta: 'WhatsApp ile Bağlan',
-      tgCta: 'Telegram ile Bağlan',
-      waPrefill: 'Merhaba, web sitenizdeki asistan üzerinden yazıyorum.',
     },
     en: {
       online:    'Online',
@@ -187,9 +190,6 @@
       consentLinkText: 'Privacy Notice',
       consentAccept: 'Accept and Continue',
       consentDecline: 'Decline',
-      waCta: 'Connect on WhatsApp',
-      tgCta: 'Connect on Telegram',
-      waPrefill: 'Hello, I am writing via the assistant on your website.',
     },
     de: {
       online: 'Online', justNow: 'Gerade eben', send: 'Senden',
@@ -199,8 +199,6 @@
       closeAria: 'Schließen', openAria: 'Assistent öffnen',
       consentTitle: 'Datenschutz', consentText: 'Bitte lesen Sie den {LINK}.',
       consentLinkText: 'Hinweis', consentAccept: 'Akzeptieren', consentDecline: 'Ablehnen',
-      waCta: 'Über WhatsApp verbinden', tgCta: 'Über Telegram verbinden',
-      waPrefill: 'Hallo, ich schreibe über den Assistenten auf Ihrer Website.',
     },
     ar: {
       online: 'متصل', justNow: 'الآن', send: 'إرسال',
@@ -210,8 +208,6 @@
       closeAria: 'إغلاق', openAria: 'فتح المساعد',
       consentTitle: 'الخصوصية', consentText: 'يرجى قراءة {LINK}.',
       consentLinkText: 'الإشعار', consentAccept: 'موافق', consentDecline: 'رفض',
-      waCta: 'تواصل عبر واتساب', tgCta: 'تواصل عبر تيليجرام',
-      waPrefill: 'مرحباً، أكتب إليكم عبر المساعد على موقعكم.',
     },
     ru: {
       online: 'Онлайн', justNow: 'Только что', send: 'Отправить',
@@ -221,8 +217,6 @@
       closeAria: 'Закрыть', openAria: 'Открыть ассистента',
       consentTitle: 'Конфиденциальность', consentText: 'Прочитайте {LINK}.',
       consentLinkText: 'уведомление', consentAccept: 'Принять', consentDecline: 'Отклонить',
-      waCta: 'Связаться в WhatsApp', tgCta: 'Связаться в Telegram',
-      waPrefill: 'Здравствуйте, пишу через ассистента на вашем сайте.',
     },
   };
 
@@ -552,6 +546,8 @@
 
       /* ── Live support redirect buttons ── */
       '.cbw-ls{gap:8px!important;align-items:flex-start!important}',
+      /* Keep the buttons on the assistant side when their direction differs from the panel's */
+      ':host([dir="ltr"]) .cbw-ls[dir="rtl"],:host([dir="rtl"]) .cbw-ls[dir="ltr"]{align-items:flex-end!important}',
       '.cbw-lsbtn{display:inline-flex!important;align-items:center!important;gap:8px!important;',
         'padding:10px 16px!important;border-radius:8px!important;color:#fff!important;',
         'font-size:13px!important;font-weight:600!important;line-height:1.3!important;',
@@ -785,6 +781,33 @@
   }
 
   /* ─── Live support redirect buttons (WhatsApp / Telegram) ─── */
+  function liveSupportCopy(lang) {
+    var COPY = {
+      tr: { wa: 'WhatsApp ile Bağlan', tg: 'Telegram ile Bağlan', prefill: 'Merhaba, web sitenizdeki asistan üzerinden yazıyorum.' },
+      en: { wa: 'Connect on WhatsApp', tg: 'Connect on Telegram', prefill: 'Hello, I am writing via the assistant on your website.' },
+      de: { wa: 'Über WhatsApp verbinden', tg: 'Über Telegram verbinden', prefill: 'Hallo, ich schreibe über den Assistenten auf Ihrer Website.' },
+      fr: { wa: 'Contacter sur WhatsApp', tg: 'Contacter sur Telegram', prefill: 'Bonjour, je vous écris via l’assistant de votre site web.' },
+      ar: { wa: 'تواصل عبر واتساب', tg: 'تواصل عبر تيليجرام', prefill: 'مرحباً، أكتب إليكم عبر المساعد على موقعكم.' },
+      ru: { wa: 'Связаться в WhatsApp', tg: 'Связаться в Telegram', prefill: 'Здравствуйте, пишу через ассистента на вашем сайте.' },
+    };
+    return COPY[lang] || COPY.en;
+  }
+
+  /**
+   * First supported language among the candidates, in priority order:
+   * reply language → conversation language → clinic default → widget UI language.
+   */
+  function pickLiveSupportLang(candidates) {
+    var supported = ['tr', 'en', 'de', 'fr', 'ar', 'ru'];
+    for (var i = 0; i < (candidates || []).length; i++) {
+      var raw = candidates[i];
+      if (typeof raw !== 'string') continue;
+      var primary = raw.trim().toLowerCase().replace(/_/g, '-').split('-')[0];
+      if (supported.indexOf(primary) !== -1) return primary;
+    }
+    return 'en';
+  }
+
   function liveSupportWhatsAppHref(raw, prefill) {
     if (typeof raw !== 'string') return '';
     var digits = raw.replace(/\D/g, '');
@@ -841,6 +864,10 @@
     if (!waHref && !tgHref) return null;
     var wrap = doc.createElement('div');
     wrap.className = 'cbw-msg cbw-bot cbw-ls';
+    if (opts.lang) {
+      wrap.setAttribute('lang', opts.lang);
+      wrap.setAttribute('dir', opts.lang === 'ar' ? 'rtl' : 'ltr');
+    }
     if (waHref) wrap.appendChild(liveSupportButton(doc, 'whatsapp', waHref, opts.waLabel, opts.onClick));
     if (tgHref) wrap.appendChild(liveSupportButton(doc, 'telegram', tgHref, opts.tgLabel, opts.onClick));
     return wrap;
@@ -895,6 +922,7 @@
     var latestSettings = null;
     var latestRawCfg = null;
     var hostLangObserver = null;
+    var conversationLang = null; // last replyLanguage the chat API returned
 
     /* Create host element (Shadow DOM container) */
     var hostEl = d.createElement('div');
@@ -1109,15 +1137,24 @@
       }
     }
 
-    function renderLiveSupportButtons(shadowRoot, data, sys) {
+    function renderLiveSupportButtons(shadowRoot, data) {
       var msgs = shadowRoot.getElementById('cbw-msgs');
       if (!msgs || !data) return;
+      var lang = pickLiveSupportLang([
+        data.replyLanguage,
+        conversationLang,
+        latestRawCfg && latestRawCfg.defaultLanguage,
+        resolvedLang,
+      ]);
+      if (typeof data.replyLanguage === 'string') conversationLang = data.replyLanguage;
+      var copy = liveSupportCopy(lang);
       var el = buildLiveSupportButtons(d, {
         whatsappNumber: data.whatsappNumber,
         telegramLink: data.telegramLink,
-        waLabel: sys.waCta,
-        tgLabel: sys.tgCta,
-        waPrefill: sys.waPrefill,
+        lang: lang,
+        waLabel: copy.wa,
+        tgLabel: copy.tg,
+        waPrefill: copy.prefill,
         onClick: function (channel) {
           sendLiveSupportChannelClick(
             w.fetch ? w.fetch.bind(w) : null,
@@ -1293,7 +1330,7 @@
 
         chatHistory.push({ role: 'assistant', content: reply });
         appendMsg(shadowRoot, reply, false, '', false);
-        if (!previewId) renderLiveSupportButtons(shadowRoot, data, sys);
+        if (!previewId) renderLiveSupportButtons(shadowRoot, data);
         if (previewId && data && typeof data.uiLanguage === 'string') {
           applyResolvedLocale(data.uiLanguage, 'preview-conversation', true);
         }

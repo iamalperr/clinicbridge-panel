@@ -42,3 +42,16 @@ export function resolveLiveSupportChannels(
     ...(telegramLink ? { telegramLink } : {}),
   };
 }
+
+export interface LiveSupportButtonsPayload extends LiveSupportChannels {
+  /** Language of the reply the buttons are attached to; the widget labels the buttons in it. */
+  replyLanguage?: string;
+}
+
+export function resolveLiveSupportButtons(
+  clinicData: Record<string, unknown> | null | undefined,
+  replyLanguage: string
+): LiveSupportButtonsPayload {
+  const channels = resolveLiveSupportChannels(clinicData);
+  return channels.whatsappNumber || channels.telegramLink ? { ...channels, replyLanguage } : channels;
+}

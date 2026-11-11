@@ -19,6 +19,8 @@ export { tryHandleContactHandoffTurn } from "./handleContactHandoffTurn";
 export {
   normalizeTelegramLink,
   normalizeWhatsAppDigits,
+  resolveLiveSupportButtons,
   resolveLiveSupportChannels,
+  type LiveSupportButtonsPayload,
   type LiveSupportChannels,
 } from "./liveSupportChannels";

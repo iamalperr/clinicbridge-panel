@@ -13,6 +13,7 @@ import { RequestTimer } from "@/lib/performance/requestTimer";
 import {
   normalizeTelegramLink,
   normalizeWhatsAppDigits,
+  resolveLiveSupportButtons,
   resolveLiveSupportChannels,
 } from "@/lib/contact-request/liveSupportChannels";
 
@@ -78,6 +79,8 @@ interface LiveSupportHooks {
     conversationId: string,
     channel: string
   ) => void;
+  pickLang: (candidates: unknown) => string;
+  copy: (lang: string) => { wa: string; tg: string; prefill: string };
 }
 
 function loadWidgetHooks() {
@@ -130,6 +133,13 @@ describe("resolveLiveSupportChannels (server payload rule)", () => {
     expect(
       resolveLiveSupportChannels({ enableHumanHandoff: true, whatsapp: "0532 111 22 33", telegram: "@agency_team" })
     ).toEqual({ whatsappNumber: "05321112233", telegramLink: "https://t.me/agency_team" });
+  });
+
+  it("attaches replyLanguage only when there is at least one button", () => {
+    const fields = { enableHumanHandoff: true, whatsappNumber: "+905321112233" };
+    expect(resolveLiveSupportButtons(fields, "ar")).toEqual({ whatsappNumber: "905321112233", replyLanguage: "ar" });
+    expect(resolveLiveSupportButtons({ ...fields, whatsappNumber: "" }, "ar")).toEqual({});
+    expect(resolveLiveSupportButtons({ ...fields, enableHumanHandoff: false }, "tr")).toEqual({});
   });
 
   it("normalizes legacy Telegram values and rejects anything that is not a t.me handle", () => {
@@ -273,7 +283,86 @@ describe("public/widget.js live-support helpers", () => {
   });
 
   it("wires the buttons into the live chat reply, not the marketing preview", () => {
-    expect(WIDGET_SRC).toContain("if (!previewId) renderLiveSupportButtons(shadowRoot, data, sys);");
+    expect(WIDGET_SRC).toContain("if (!previewId) renderLiveSupportButtons(shadowRoot, data);");
+  });
+});
+
+describe("public/widget.js live-support button language", () => {
+  // Same candidate order the widget passes: [replyLanguage, conversationLang, clinic default, page/UI lang]
+  const buttonsFor = (candidates: unknown[]) => {
+    const { hooks, document } = loadWidgetHooks();
+    const lang = hooks.pickLang(candidates);
+    const copy = hooks.copy(lang);
+    const wrap = hooks.buildButtons(document, {
+      whatsappNumber: "905321112233",
+      telegramLink: "https://t.me/testdental",
+      lang,
+      waLabel: copy.wa,
+      tgLabel: copy.tg,
+      waPrefill: copy.prefill,
+    })!;
+    const [wa, tg] = anchorsOf(wrap);
+    return { lang, wrap, wa, tg };
+  };
+
+  it("Turkish reply on an English page: Turkish labels and prefill", () => {
+    const { lang, wrap, wa, tg } = buttonsFor(["tr", null, "en", "en"]);
+    expect(lang).toBe("tr");
+    expect(labelOf(wa)).toBe("WhatsApp ile Bağlan");
+    expect(labelOf(tg)).toBe("Telegram ile Bağlan");
+    expect(wa.getAttribute("href")).toContain(encodeURIComponent("Merhaba"));
+    expect(wrap.getAttribute("dir")).toBe("ltr");
+    expect(wrap.getAttribute("lang")).toBe("tr");
+  });
+
+  it("English reply on a Turkish page: English labels", () => {
+    const { lang, wa, tg } = buttonsFor(["en", null, "tr", "tr"]);
+    expect(lang).toBe("en");
+    expect(labelOf(wa)).toBe("Connect on WhatsApp");
+    expect(labelOf(tg)).toBe("Connect on Telegram");
+  });
+
+  it("Arabic reply: Arabic labels and a right-to-left container, icon before text in DOM order", () => {
+    const { lang, wrap, wa, tg } = buttonsFor(["ar", null, "tr", "en"]);
+    expect(lang).toBe("ar");
+    expect(wrap.getAttribute("dir")).toBe("rtl");
+    expect(wrap.getAttribute("lang")).toBe("ar");
+    expect(labelOf(wa)).toBe("تواصل عبر واتساب");
+    expect(labelOf(tg)).toBe("تواصل عبر تيليجرام");
+    expect(wa.children.map((c) => c.tagName)).toEqual(["svg", "span"]);
+  });
+
+  it.each([
+    ["de", "Über WhatsApp verbinden"],
+    ["fr", "Contacter sur WhatsApp"],
+    ["ru", "Связаться в WhatsApp"],
+  ])("labels %s replies in that language", (replyLanguage, waLabel) => {
+    const { wa } = buttonsFor([replyLanguage, null, "tr", "en"]);
+    expect(labelOf(wa)).toBe(waLabel);
+  });
+
+  it("falls back without crashing when replyLanguage is missing or unsupported", () => {
+    const { hooks } = loadWidgetHooks();
+    expect(hooks.pickLang([undefined, "de", "tr", "en"])).toBe("de");
+    expect(hooks.pickLang([undefined, null, "tr", "en"])).toBe("tr");
+    expect(hooks.pickLang([undefined, null, "auto", "en"])).toBe("en");
+    expect(hooks.pickLang(["es", null, undefined, "tr"])).toBe("tr");
+    expect(hooks.pickLang(["tr-TR", null, null, "en"])).toBe("tr");
+    expect(hooks.pickLang([42, {}, "", null])).toBe("en");
+    expect(hooks.pickLang(undefined)).toBe("en");
+    expect(hooks.copy("xx").wa).toBe("Connect on WhatsApp");
+
+    const { document } = loadWidgetHooks();
+    const wrap = hooks.buildButtons(document, { whatsappNumber: "905321112233" })!;
+    expect(wrap.getAttribute("dir")).toBeNull();
+    expect(labelOf(anchorsOf(wrap)[0])).toBe("WhatsApp");
+  });
+
+  it("the live widget picks the button language from the reply first, then conversation, clinic, page", () => {
+    expect(WIDGET_SRC).toMatch(
+      /pickLiveSupportLang\(\[\s*data\.replyLanguage,\s*conversationLang,\s*latestRawCfg && latestRawCfg\.defaultLanguage,\s*resolvedLang,\s*\]\)/
+    );
+    expect(WIDGET_SRC).toContain("var VERSION   = '6.4.1';");
   });
 });
 
@@ -283,7 +372,7 @@ describe("Agent Core live-support payload (web chat)", () => {
     vi.clearAllMocks();
   });
 
-  async function runTurn(text: string, clinicFields: Record<string, unknown>) {
+  async function runTurn(text: string, clinicFields: Record<string, unknown>, locale = "tr") {
     const logDoc = {
       get: async () => ({ exists: false, data: () => undefined }),
       set: async () => undefined,
@@ -345,7 +434,7 @@ describe("Agent Core live-support payload (web chat)", () => {
         channel: "web_widget",
         text,
         history: [],
-        locale: "tr",
+        locale,
       },
       adminDb,
       perf: new RequestTimer({}),
@@ -366,6 +455,29 @@ describe("Agent Core live-support payload (web chat)", () => {
     expect(result.payload.whatsappNumber).toBe("905321112233");
     expect(result.payload.telegramLink).toBe("https://t.me/testdental");
     expect(result.payload.reply).toBeTruthy();
+  });
+
+  it("'canlı destek' tags the buttons with the Turkish reply language", async () => {
+    const result = await runTurn("canlı destek", CONFIGURED);
+    expect(result.payload.replyLanguage).toBe("tr");
+  });
+
+  it("an English live-support request tags the buttons with English, even for a Turkish clinic", async () => {
+    const result = await runTurn("I want to talk to live support", CONFIGURED, "en");
+    expect(result.payload.whatsappNumber).toBe("905321112233");
+    expect(result.payload.replyLanguage).toBe("en");
+    expect(result.payload.reply).not.toMatch(/Bağlan|ulaşabilirsiniz/);
+  });
+
+  it("short-circuit handoff also carries replyLanguage", async () => {
+    const result = await runTurn("insana bağla", CONFIGURED);
+    expect(result.payload.liveSupportRequired).toBe(true);
+    expect(result.payload.replyLanguage).toBe("tr");
+  });
+
+  it("no replyLanguage when there are no buttons", async () => {
+    const result = await runTurn("canlı destek", { ...CONFIGURED, enableHumanHandoff: false });
+    expect(result.payload.replyLanguage).toBeUndefined();
   });
 
   it("'whatsapp' returns the WhatsApp button data", async () => {

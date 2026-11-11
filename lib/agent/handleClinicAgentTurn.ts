@@ -67,7 +67,7 @@ import { extractAppointmentFromHistory, parseTimeText } from "./appointmentParse
 import { saveAppointmentState, respondWithVisibleReply } from "./persistence";
 import { fetchClinicDoctorMatchInputs, getClientDb } from "./clinicRuntime";
 import { tryHandleContactHandoffTurn } from "@/lib/contact-request/handleContactHandoffTurn";
-import { resolveLiveSupportChannels } from "@/lib/contact-request/liveSupportChannels";
+import { resolveLiveSupportButtons } from "@/lib/contact-request/liveSupportChannels";
 import {
   LLM_EMERGENCY_TIMEOUT_MS,
   startLlmEmergencyCheck,
@@ -1356,7 +1356,7 @@ export async function handleClinicAgentTurn(
         responseType: "CHAT_REPLY",
         reply: contactMsg,
         pendingAppointmentData: appointmentDraft,
-        ...(offersChannelButtons ? resolveLiveSupportChannels(clinicData) : {}),
+        ...(offersChannelButtons ? resolveLiveSupportButtons(clinicData, conversationLocale) : {}),
       }, basePersist({ appointmentState, isLiveSupport: conversationIntent.intent === "live_support_request" }));
     }
 
@@ -2469,7 +2469,7 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
         clinicName,
         detectedLanguage: lang,
       };
-      const channels = resolveLiveSupportChannels(clinicData);
+      const channels = resolveLiveSupportButtons(clinicData, lang);
       Object.assign(handoffPayload, channels);
 
       debugLog.push(`liveSupport=short-circuit wa=${!!channels.whatsappNumber} tg=${!!channels.telegramLink} lang=${lang} apptSubmitted=${appointmentAlreadySubmitted}`);
