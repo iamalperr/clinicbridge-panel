@@ -19,6 +19,7 @@ const PUBLIC_ROUTES = [
   "/widget-guide",
   "/agency-demo",
   "/kayit",
+  "/setup-wizard-fixture",
 ];
 
 export function isPublicRoute(pathname: string): boolean {

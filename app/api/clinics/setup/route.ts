@@ -82,7 +82,7 @@ export async function PATCH(req: Request) {
 
 async function readSetup(db: Firestore, clinicId: string, clinic: DocumentData) {
   const snap = await db.collection("trainingMaterials").where("clinicId", "==", clinicId).get();
-  const treatments: Array<{ id: string; name: string; priceRange: string }> = [];
+  const treatments: Array<{ id: string; name: string; priceRange: string; note?: string }> = [];
   const faq: Array<{ id: string; question: string; answer: string }> = [];
   let hours = typeof clinic.workingHours === "string" ? clinic.workingHours : "";
   let doNotSay = "";
@@ -90,7 +90,12 @@ async function readSetup(db: Firestore, clinicId: string, clinic: DocumentData) 
     const data = item.data();
     if (data.category === "Tedaviler") {
       const parsed = parseTreatment(String(data.title || ""), String(data.content || ""));
-      treatments.push({ id: item.id, ...parsed });
+      treatments.push({
+        id: item.id,
+        name: parsed.name,
+        priceRange: parsed.priceRange,
+        note: parsed.note || undefined,
+      });
     } else if (data.category === "Sık Sorulan Sorular") {
       const parsed = parseFaq(String(data.title || ""), String(data.content || ""));
       faq.push({ id: item.id, ...parsed });
@@ -134,6 +139,7 @@ function asTreatments(value: unknown): SetupTreatmentInput[] {
       id: typeof record.id === "string" ? record.id : undefined,
       name: text(record.name, 120),
       priceRange: text(record.priceRange, 80),
+      note: block(record.note, 400),
     };
   });
 }

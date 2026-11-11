@@ -5,12 +5,12 @@ export function buildLiveBotEmail(input: { language: "tr" | "en"; clinicName: st
   const domain = escapeHtml(input.domain);
   if (input.language === "en") {
     return {
-      subject: "Your bot is live",
+      subject: "Your assistant is live",
       html: `<p>The ClinicBridge assistant for <strong>${clinic}</strong> is live on <strong>${domain}</strong>.</p>`,
     };
   }
   return {
-    subject: "Botunuz yayında",
+    subject: "Asistanınız yayında",
     html: `<p><strong>${clinic}</strong> için ClinicBridge asistanı <strong>${domain}</strong> adresinde yayında.</p>`,
   };
 }

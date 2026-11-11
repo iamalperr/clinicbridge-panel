@@ -1,16 +1,19 @@
 "use client";
 
-import { use, useEffect, useState, useMemo, useCallback } from "react";
+import { use, useEffect, useState, useMemo } from "react";
 import {
-  collection, query, where, getDocs, addDoc, deleteDoc,
+  collection, query, where, addDoc, deleteDoc,
   doc, updateDoc, serverTimestamp, orderBy, onSnapshot
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useI18n } from "@/lib/i18n-context";
 import { UI_COLORS, UI_COMMON_STYLES } from "@/components/ui/ui-shared";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
 import Modal from "@/components/ui/Modal";
+import KnowledgeEditor, {
+  EMPTY_KNOWLEDGE_VALUES,
+  type KnowledgeEditorValues,
+} from "@/components/clinic/training/KnowledgeEditor";
 import { FileText, Plus, Search, Trash2, Edit2, Loader2, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react";
 import type { TrainingMaterial } from "@/lib/types";
 
@@ -26,15 +29,12 @@ export default function TrainingPage({ params }: PageProps) {
   const [loading, setLoading]       = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
 
-  /* ── Add modal ── */
+  /* ── Add / edit editor (shared KnowledgeEditor) ── */
   const [isAddOpen, setIsAddOpen]       = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAddSuccess, setIsAddSuccess] = useState(false);
-  const [newNote, setNewNote]           = useState({ title: "", content: "", entity_type: "general" as string });
-
-  /* ── Edit modal ── */
   const [editTarget, setEditTarget]     = useState<TrainingMaterial | null>(null);
-  const [editForm, setEditForm]         = useState({ title: "", content: "", entity_type: "general" as string });
+  const [editInitial, setEditInitial]   = useState(EMPTY_KNOWLEDGE_VALUES);
   const [isSaving, setIsSaving]         = useState(false);
   const [isEditSuccess, setIsEditSuccess] = useState(false);
   const [editError, setEditError]       = useState("");
@@ -67,22 +67,21 @@ export default function TrainingPage({ params }: PageProps) {
   }, [clinicId]);
 
   /* ── Add ── */
-  const handleAdd = async () => {
-    if (!newNote.title || !newNote.content) return;
+  const handleAdd = async (values: KnowledgeEditorValues) => {
+    if (!values.title || !values.content) return;
     setIsSubmitting(true);
     try {
       const docRef = await addDoc(collection(db, "trainingMaterials"), {
-        title: newNote.title,
-        content: newNote.content,
-        entity_type: newNote.entity_type || "general",
+        title: values.title,
+        content: values.content,
+        entity_type: values.entity_type || "general",
         category: "", tags: [], type: "note", status: "learned",
         clinicId,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         embedding_status: "indexing",
       });
-      
-      // Trigger backend embedding generation asynchronously
+
       fetch("/api/admin/embeddings/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -93,7 +92,6 @@ export default function TrainingPage({ params }: PageProps) {
       setTimeout(() => {
         setIsAddOpen(false);
         setIsAddSuccess(false);
-        setNewNote({ title: "", content: "", entity_type: "general" });
       }, 1500);
     } catch (err) {
       console.error("Failed to add:", err);
@@ -105,32 +103,36 @@ export default function TrainingPage({ params }: PageProps) {
   /* ── Open edit modal ── */
   const openEdit = (m: TrainingMaterial) => {
     setEditTarget(m);
-    setEditForm({ title: m.title, content: m.content, entity_type: m.entity_type || "general" });
+    setEditInitial({
+      title: m.title,
+      content: m.content,
+      entity_type: m.entity_type || "general",
+      priceRange: "",
+    });
     setIsEditSuccess(false);
     setEditError("");
   };
 
   /* ── Save edit ── */
-  const handleSaveEdit = async () => {
-    if (!editTarget || !editForm.title || !editForm.content) return;
+  const handleSaveEdit = async (values: KnowledgeEditorValues) => {
+    if (!editTarget || !values.title || !values.content) return;
     setIsSaving(true);
     setEditError("");
     try {
       await updateDoc(doc(db, "trainingMaterials", editTarget.id), {
-        title: editForm.title,
-        content: editForm.content,
-        entity_type: editForm.entity_type || "general",
+        title: values.title,
+        content: values.content,
+        entity_type: values.entity_type || "general",
         updatedAt: serverTimestamp(),
         embedding_status: "indexing",
       });
-      
-      // Trigger backend embedding generation asynchronously
+
       fetch("/api/admin/embeddings/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ docPath: `trainingMaterials/${editTarget.id}` }),
       }).catch(console.error);
-      
+
       setIsEditSuccess(true);
       setTimeout(() => {
         setEditTarget(null);
@@ -214,7 +216,7 @@ export default function TrainingPage({ params }: PageProps) {
     ), [materials, searchQuery]);
 
   /* ── Shared styles ── */
-  const iconBtn = (danger = false): React.CSSProperties => ({
+  const iconBtn = (_danger = false): React.CSSProperties => ({
     background: "none", border: "none",
     color: UI_COLORS.textMuted, cursor: "pointer",
     padding: 8, borderRadius: 8, transition: "all 0.2s",
@@ -407,46 +409,34 @@ export default function TrainingPage({ params }: PageProps) {
         </div>
       </div>
 
-      {/* ═══════ ADD MODAL ═══════ */}
-      <Modal isOpen={isAddOpen} onClose={() => !isSubmitting && setIsAddOpen(false)} title={isAddSuccess ? "" : t("training.addNoteTitle")} width={600}>
-        {isAddSuccess ? (
-          <SuccessFeedback title={t("training.noteSaved")} subtitle={t("training.aiInstruction")} />
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            <Input label={t("training.fields.title")} placeholder={t("training.placeholders.title")} value={newNote.title} onChange={e => setNewNote({ ...newNote, title: e.target.value })} />
-            <EntityTypeSelect value={newNote.entity_type} onChange={v => setNewNote({ ...newNote, entity_type: v })} />
-            <TextareaField label={t("training.fields.content")} placeholder={t("training.placeholders.content")} value={newNote.content} onChange={v => setNewNote({ ...newNote, content: v })} />
-            <ModalActions
-              onCancel={() => setIsAddOpen(false)}
-              onConfirm={handleAdd}
-              confirmLabel={t("common.save")}
-              loading={isSubmitting}
-              disabled={!newNote.title || !newNote.content}
-            />
-          </div>
-        )}
-      </Modal>
+      <KnowledgeEditor
+        isOpen={isAddOpen}
+        mode="knowledge"
+        title={t("training.addNoteTitle")}
+        initialValues={EMPTY_KNOWLEDGE_VALUES}
+        saving={isSubmitting}
+        success={isAddSuccess}
+        successTitle={t("training.noteSaved")}
+        successSubtitle={t("training.aiInstruction")}
+        presentation="auto"
+        onClose={() => !isSubmitting && setIsAddOpen(false)}
+        onSave={handleAdd}
+      />
 
-      {/* ═══════ EDIT MODAL ═══════ */}
-      <Modal isOpen={!!editTarget} onClose={() => !isSaving && setEditTarget(null)} title={isEditSuccess ? "" : "Bilgiyi Düzenle"} width={600}>
-        {isEditSuccess ? (
-          <SuccessFeedback title="Bilgi güncellendi" subtitle="Asistan bu güncellemeyi hemen kullanmaya başlayacak." />
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            <Input label={t("training.fields.title")} placeholder={t("training.placeholders.title")} value={editForm.title} onChange={e => setEditForm({ ...editForm, title: e.target.value })} />
-            <EntityTypeSelect value={editForm.entity_type} onChange={v => setEditForm({ ...editForm, entity_type: v })} />
-            <TextareaField label={t("training.fields.content")} placeholder={t("training.placeholders.content")} value={editForm.content} onChange={v => setEditForm({ ...editForm, content: v })} />
-            {editError && <p style={{ fontSize: 13, color: "#ef4444", marginTop: -8 }}>{editError}</p>}
-            <ModalActions
-              onCancel={() => setEditTarget(null)}
-              onConfirm={handleSaveEdit}
-              confirmLabel="Kaydet"
-              loading={isSaving}
-              disabled={!editForm.title || !editForm.content}
-            />
-          </div>
-        )}
-      </Modal>
+      <KnowledgeEditor
+        isOpen={!!editTarget}
+        mode="knowledge"
+        title="Bilgiyi Düzenle"
+        initialValues={editInitial}
+        saving={isSaving}
+        success={isEditSuccess}
+        successTitle="Bilgi güncellendi"
+        successSubtitle="Asistan bu güncellemeyi hemen kullanmaya başlayacak."
+        error={editError}
+        presentation="auto"
+        onClose={() => !isSaving && setEditTarget(null)}
+        onSave={handleSaveEdit}
+      />
 
       {/* ═══════ DELETE CONFIRMATION MODAL ═══════ */}
       <Modal isOpen={!!deleteTarget} onClose={() => !isDeleting && setDeleteTarget(null)} title="" width={480}>
@@ -490,97 +480,3 @@ export default function TrainingPage({ params }: PageProps) {
   );
 }
 
-/* ── Shared sub-components ── */
-
-function SuccessFeedback({ title, subtitle }: { title: string; subtitle: string }) {
-  return (
-    <div style={{ padding: "40px 0", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
-      <div style={{ width: 80, height: 80, borderRadius: "50%", background: "rgba(16,185,129,0.1)", color: "#10b981", display: "flex", alignItems: "center", justifyContent: "center", animation: "popIn 0.5s cubic-bezier(0.68,-0.55,0.265,1.55)" }}>
-        <CheckCircle2 size={48} />
-      </div>
-      <h3 style={{ fontSize: 22, fontWeight: 800, color: "#f8fafc" }}>{title}</h3>
-      <p style={{ color: "#94a3b8", fontSize: 15 }}>{subtitle}</p>
-    </div>
-  );
-}
-
-function TextareaField({ label, placeholder, value, onChange }: { label: string; placeholder: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <label style={{ fontSize: 13, fontWeight: 700, color: UI_COLORS.textSecondary, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</label>
-      <textarea
-        placeholder={placeholder} value={value} onChange={e => onChange(e.target.value)}
-        style={{
-          width: "100%", height: 240, padding: 16, borderRadius: 12,
-          background: "rgba(0,0,0,0.2)", border: `1px solid ${UI_COLORS.border}`,
-          fontSize: 14.5, color: UI_COLORS.textPrimary, outline: "none", resize: "none",
-          transition: "border-color 0.2s",
-        }}
-        onFocus={e => e.currentTarget.style.borderColor = UI_COLORS.brand}
-        onBlur={e => e.currentTarget.style.borderColor = UI_COLORS.border}
-      />
-    </div>
-  );
-}
-
-function ModalActions({ onCancel, onConfirm, confirmLabel, loading, disabled }: {
-  onCancel: () => void; onConfirm: () => void;
-  confirmLabel: string; loading: boolean; disabled: boolean;
-}) {
-  return (
-    <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 12, paddingTop: 20, borderTop: `1px solid ${UI_COLORS.border}` }}>
-      <Button variant="ghost" onClick={onCancel} disabled={loading}>İptal</Button>
-      <Button onClick={onConfirm} disabled={disabled || loading} style={{ minWidth: 120 }}>
-        {loading ? (
-          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> Kaydediliyor…
-          </span>
-        ) : confirmLabel}
-      </Button>
-    </div>
-  );
-}
-
-const ENTITY_TYPE_OPTIONS: { value: string; label: string }[] = [
-  { value: "general", label: "Genel Bilgi" },
-  { value: "doctor_profile", label: "Doktor Profili" },
-  { value: "treatment_profile", label: "Tedavi Profili" },
-  { value: "clinic_general_information", label: "Klinik Genel Bilgi" },
-  { value: "pricing_information", label: "Fiyatlandırma Bilgisi" },
-  { value: "appointment_information", label: "Randevu Bilgisi" },
-  { value: "policy_information", label: "Politika / Kural" },
-];
-
-function EntityTypeSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <label style={{ fontSize: 13, fontWeight: 700, color: UI_COLORS.textSecondary, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-        Kayıt Türü
-      </label>
-      <select
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        style={{
-          width: "100%", padding: "12px 16px", borderRadius: 12,
-          background: "rgba(0,0,0,0.2)", border: `1px solid ${UI_COLORS.border}`,
-          fontSize: 14.5, color: UI_COLORS.textPrimary, outline: "none",
-          cursor: "pointer", appearance: "none",
-          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-          backgroundRepeat: "no-repeat",
-          backgroundPosition: "right 16px center",
-        }}
-      >
-        {ENTITY_TYPE_OPTIONS.map(opt => (
-          <option key={opt.value} value={opt.value}>{opt.label}</option>
-        ))}
-      </select>
-      {(value === "doctor_profile" || value === "treatment_profile") && (
-        <p style={{ fontSize: 12, color: UI_COLORS.textMuted, marginTop: 2, lineHeight: 1.5 }}>
-          {value === "doctor_profile"
-            ? "Bu kayıt bir doktor profili olarak işlenecek. Doktorun adı, unvanı, uzmanlık alanı ve tedavileri yapılandırılmış veri olarak değerlendirilecektir."
-            : "Bu kayıt bir tedavi profili olarak işlenecek. Tedavi adı, tanımı, süre bilgisi, atanan doktorlar ve öncesi/sonrası URL'si yapılandırılmış veri olarak değerlendirilecektir."}
-        </p>
-      )}
-    </div>
-  );
-}

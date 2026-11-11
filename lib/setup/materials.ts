@@ -11,6 +11,7 @@ export interface SetupTreatmentInput {
   id?: string;
   name: string;
   priceRange?: string | null;
+  note?: string | null;
 }
 
 export interface SetupFaqInput {
@@ -27,17 +28,30 @@ export interface SetupMaterialDraft {
   language: "TR" | "EN";
 }
 
-export function treatmentContent(name: string, priceRange: string | null | undefined): string {
+export function treatmentContent(
+  name: string,
+  priceRange: string | null | undefined,
+  note?: string | null
+): string {
   const title = name.trim();
   const price = priceRange?.trim();
-  return price ? `${title}\nFiyat aralığı: ${price}` : title;
+  const extra = note?.trim();
+  const lines = [title];
+  if (price) lines.push(`Fiyat aralığı: ${price}`);
+  if (extra) lines.push(extra);
+  return lines.join("\n");
 }
 
-export function parseTreatment(title: string, content: string): { name: string; priceRange: string } {
+export function parseTreatment(title: string, content: string): { name: string; priceRange: string; note: string } {
+  const lines = content.split("\n").map((line) => line.trim()).filter(Boolean);
   const match = content.match(/Fiyat aralığı:\s*(.+)/);
+  const noteLines = lines.filter(
+    (line) => line !== title.trim() && line !== lines[0] && !/^Fiyat aralığı:/i.test(line)
+  );
   return {
-    name: title.trim() || content.split("\n")[0]?.trim() || "",
+    name: title.trim() || lines[0] || "",
     priceRange: match?.[1]?.trim() || "",
+    note: noteLines.join("\n"),
   };
 }
 
@@ -65,7 +79,7 @@ export function draftsFromSetup(input: {
       id: treatment.id,
       title: name,
       category: "Tedaviler",
-      content: treatmentContent(name, treatment.priceRange),
+      content: treatmentContent(name, treatment.priceRange, treatment.note),
       language: input.language,
     });
   }
