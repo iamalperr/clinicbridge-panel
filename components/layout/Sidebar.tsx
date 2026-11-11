@@ -126,6 +126,9 @@ export default function Sidebar() {
         {isSuperAdmin(profile?.role) && (
           <NavItem href="/admin/previews" label="Önizlemeler" icon={<Eye size={18} />} />
         )}
+        {isSuperAdmin(profile?.role) && (
+          <NavItem href="/admin/trials" label="Trials" icon={<ClipboardList size={18} />} />
+        )}
         {hasPermission("ai_usage") && (
           <NavItem href="/analytics/ai-usage" label="AI Kullanımı" icon={<Zap size={18} />} />
         )}

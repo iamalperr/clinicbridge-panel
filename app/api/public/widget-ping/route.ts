@@ -5,6 +5,8 @@ import { planInstallPing, type InstallState } from "@/lib/setup/installPing";
 import { buildLiveBotEmail } from "@/lib/setup/emails";
 import { getPasswordResetFromAddress } from "@/lib/auth/passwordReset";
 import { Resend } from "resend";
+import { originMatchesClinicDomain } from "@/lib/lifecycle/origins";
+import { safeRecordLifecycleMilestone } from "@/lib/lifecycle/safeRecord";
 
 export const runtime = "nodejs";
 
@@ -41,9 +43,28 @@ export async function POST(req: Request) {
     installedDomain: typeof data.installedDomain === "string" ? data.installedDomain : null,
     widgetLiveEmailSent: data.widgetLiveEmailSent === true,
   };
+  const originHeader = req.headers.get("origin") || req.headers.get("referer") || "";
+  const clinicDomain = typeof data.domain === "string" ? data.domain : "";
+  const hostForMatch = domain || originHeader;
+  const eligibleInstall = originMatchesClinicDomain(hostForMatch, clinicDomain);
+
   const plan = planInstallPing(state, domain, new Date().toISOString());
   if (plan.status === "invalid") return NextResponse.json({ error: "invalid" }, { status: 400, headers: CORS });
   if (plan.status === "missing") return NextResponse.json({ error: "not_found" }, { status: 404, headers: CORS });
+
+  // Lifecycle milestone only when Origin/host matches the clinic domain (not localhost/demo).
+  if (eligibleInstall && data.acquisition === "direct") {
+    await safeRecordLifecycleMilestone(db, {
+      clinicId,
+      milestone: "widget_installed",
+      meta: { domain: hostForMatch.slice(0, 200) },
+    });
+  }
+
+  // Existing install email/flag still requires a parseable domain; skip first-install from ignored hosts.
+  if (!eligibleInstall && plan.status === "first") {
+    return NextResponse.json({ installed: false, domain: null, ignored: true }, { headers: CORS });
+  }
 
   let sendEmail = false;
   if (plan.status === "first" || plan.status === "retry-email") {

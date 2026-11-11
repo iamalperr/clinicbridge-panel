@@ -52,6 +52,17 @@ export async function POST(
       return NextResponse.json({ error: "validation_failed", errors: built.errors }, { status: 400 });
     }
     await saveWhatsAppSettings(adminDb, built.settings);
+    const hasRecipient = built.settings.recipients.some(
+      (recipient) => typeof recipient.phoneE164 === "string" && recipient.phoneE164.replace(/\D/g, "").length >= 8
+    );
+    if (built.settings.enabled && hasRecipient) {
+      const { safeRecordLifecycleMilestone } = await import("@/lib/lifecycle/safeRecord");
+      await safeRecordLifecycleMilestone(adminDb, {
+        clinicId,
+        milestone: "notifications_configured",
+        meta: { via: "whatsapp" },
+      });
+    }
     return NextResponse.json(built.settings);
   } catch (error) {
     if (error instanceof AuthError) {

@@ -26,6 +26,14 @@ export function trainingDocsFromPreview(items: PreviewKnowledgeItem[]): PreviewK
   return items.filter((item) => item.title.trim() && item.content.trim()).slice(0, 80);
 }
 
+export interface SignupAttributionInput {
+  utmSource?: unknown;
+  utmMedium?: unknown;
+  utmCampaign?: unknown;
+  referrer?: unknown;
+  landingPage?: unknown;
+}
+
 export interface SignupInput {
   name?: unknown;
   clinicName?: unknown;
@@ -37,6 +45,7 @@ export interface SignupInput {
   acceptedKvkk?: unknown;
   previewId?: unknown;
   language?: unknown;
+  attribution?: SignupAttributionInput;
 }
 
 export interface ValidSignup {
@@ -47,6 +56,13 @@ export interface ValidSignup {
   phone: string;
   previewId: string | null;
   language: "tr" | "en";
+  attribution: {
+    utmSource: string;
+    utmMedium: string;
+    utmCampaign: string;
+    referrer: string;
+    landingPage: string;
+  };
 }
 
 export type SignupValidationError = "invalid" | "consent_required";
@@ -81,7 +97,15 @@ export function validateSignup(input: SignupInput): { ok: true; value: ValidSign
     previewId = id;
   }
   const language = input.language === "en" ? "en" : "tr";
-  return { ok: true, value: { name, clinicName, email, password, phone: phone!, previewId, language } };
+  const attr = input.attribution && typeof input.attribution === "object" ? input.attribution : {};
+  const attribution = {
+    utmSource: text(attr.utmSource, 1, 120) || "",
+    utmMedium: text(attr.utmMedium, 1, 120) || "",
+    utmCampaign: text(attr.utmCampaign, 1, 120) || "",
+    referrer: text(attr.referrer, 1, 500) || "",
+    landingPage: text(attr.landingPage, 1, 300) || "/",
+  };
+  return { ok: true, value: { name, clinicName, email, password, phone: phone!, previewId, language, attribution } };
 }
 
 export function nextRateWindow(

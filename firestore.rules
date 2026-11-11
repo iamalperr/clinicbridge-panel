@@ -16,7 +16,8 @@ service cloud.firestore {
         'voiceProfiles',
         'clinicWhatsappSettings',
         'whatsappNotifications',
-        'whatsappAutoReplies'
+        'whatsappAutoReplies',
+        'clinicLifecycle'
       ];
     }
 
@@ -55,6 +56,11 @@ service cloud.firestore {
     }
 
     match /whatsappAutoReplies/{document=**} {
+      allow read, write: if false;
+    }
+
+    // Trial lifecycle: Admin SDK only (milestones, CSM notes, email send log).
+    match /clinicLifecycle/{document=**} {
       allow read, write: if false;
     }
 

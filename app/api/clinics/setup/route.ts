@@ -11,6 +11,8 @@ import {
   type SetupTreatmentInput,
 } from "@/lib/setup/materials";
 import { buildWidgetEmbedCode } from "@/lib/widget/embedCode";
+import { hasKnowledgeMinimum } from "@/lib/lifecycle/milestones";
+import { safeRecordLifecycleMilestone } from "@/lib/lifecycle/safeRecord";
 
 export const runtime = "nodejs";
 
@@ -76,6 +78,25 @@ export async function PATCH(req: Request) {
     setupCompleted: body.complete === true ? true : clinic.setupCompleted === true,
   });
   await batch.commit();
+  const treatmentCount = treatments.filter((item) => item.name.trim()).length;
+  const faqCount = faq.filter((item) => item.question.trim() && item.answer.trim()).length;
+  if (hasKnowledgeMinimum({ treatmentCount, faqCount })) {
+    await safeRecordLifecycleMilestone(db, {
+      clinicId,
+      milestone: "knowledge_min_reached",
+      meta: { treatmentCount, faqCount },
+    });
+  }
+  if (body.complete === true) {
+    await safeRecordLifecycleMilestone(db, { clinicId, milestone: "wizard_completed" });
+  }
+  if (appointmentEmail || appointmentWhatsapp.replace(/\D/g, "").length >= 8) {
+    await safeRecordLifecycleMilestone(db, {
+      clinicId,
+      milestone: "notifications_configured",
+      meta: { via: appointmentEmail ? "email" : "whatsapp" },
+    });
+  }
   const fresh = await db.collection("clinics").doc(clinicId).get();
   return NextResponse.json(await readSetup(db, clinicId, fresh.data() || {}));
 }

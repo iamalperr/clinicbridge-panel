@@ -1260,7 +1260,8 @@
             pendingAppointmentData: pendingApptData || undefined,
             pendingAction:         currentPendingAction || undefined,
             traceId:               traceId,
-            clientMessageId:       clientMessageId
+            clientMessageId:       clientMessageId,
+            originUrl:             w.location.origin
           };
       console.log('[WIDGET_REQUEST_STARTED]', {
         endpoint: chatEndpoint,

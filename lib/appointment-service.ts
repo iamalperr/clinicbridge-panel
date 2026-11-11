@@ -10,6 +10,7 @@ import {
 import { ClinicWorkingHoursResolver } from "@/lib/skills/ClinicWorkingHoursResolver";
 import { toPersistedRequestedDoctor } from "@/lib/appointment/requestedDoctorPreference";
 import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
+import { safeRecordLifecycleMilestone } from "@/lib/lifecycle/safeRecord";
 
 export interface CreateAppointmentPayload {
   clinicId: string;
@@ -447,6 +448,15 @@ export async function createAppointmentAndNotify(draft: CreateAppointmentPayload
     // ── INSTRUMENTATION LOG 7 & 8 ──
     console.log(JSON.stringify({ checkpoint: "APPT_07_DATABASE_INSERT_SUCCEEDED", clinicId: validatedPayload.clinicId, timestamp: new Date().toISOString() }));
     console.log(JSON.stringify({ checkpoint: "APPT_08_APPOINTMENT_ID_CREATED", clinicId: validatedPayload.clinicId, appointmentId: record.id, timestamp: new Date().toISOString() }));
+
+    const lifecycleDb = getAdminDb();
+    if (lifecycleDb) {
+      await safeRecordLifecycleMilestone(lifecycleDb, {
+        clinicId: validatedPayload.clinicId,
+        milestone: "first_appointment_request",
+        meta: { appointmentId: record.id },
+      });
+    }
 
     let clinicNotificationStatus = "NOT_CONFIGURED";
     let patientNotificationStatus = "NOT_ATTEMPTED";

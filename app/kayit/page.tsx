@@ -29,6 +29,16 @@ function SignupForm() {
   const [emailSent, setEmailSent] = useState(false);
 
   useEffect(() => {
+    try {
+      if (!sessionStorage.getItem("cb_signup_landing")) {
+        sessionStorage.setItem("cb_signup_landing", window.location.pathname + window.location.search);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
     if (!previewId) return;
     let cancelled = false;
     fetch(`/api/public/preview/${encodeURIComponent(previewId)}`)
@@ -49,6 +59,19 @@ function SignupForm() {
     setError("");
     setLoading(true);
     try {
+      const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+      const attribution = {
+        utmSource: params?.get("utm_source") || "",
+        utmMedium: params?.get("utm_medium") || "",
+        utmCampaign: params?.get("utm_campaign") || "",
+        referrer: typeof document !== "undefined" ? document.referrer || "" : "",
+        landingPage:
+          (typeof sessionStorage !== "undefined" && sessionStorage.getItem("cb_signup_landing")) ||
+          (typeof window !== "undefined" ? window.location.pathname + window.location.search : "/kayit"),
+      };
+      if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem("cb_signup_landing")) {
+        sessionStorage.setItem("cb_signup_landing", attribution.landingPage);
+      }
       const response = await fetch("/api/public/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -63,6 +86,7 @@ function SignupForm() {
           acceptedKvkk,
           previewId,
           language: language === "en" ? "en" : "tr",
+          attribution,
         }),
       });
       const payload = await response.json().catch(() => ({}));

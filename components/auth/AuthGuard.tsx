@@ -144,7 +144,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     if (pathname.startsWith("/demo-requests") && !hasPermission("demo_requests")) {
       return <UnauthorizedScreen />;
     }
-    if (pathname.startsWith("/admin/previews") && !isSuperAdmin(roleStr)) {
+    if (
+      (pathname.startsWith("/admin/previews") || pathname.startsWith("/admin/trials")) &&
+      !isSuperAdmin(roleStr)
+    ) {
       return <UnauthorizedScreen />;
     }
   }

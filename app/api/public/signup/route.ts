@@ -17,6 +17,10 @@ import {
   validateSignup,
 } from "@/lib/signup/account";
 import { buildWelcomeEmail } from "@/lib/signup/welcomeEmail";
+import { buildSignupAdminAlert } from "@/lib/lifecycle/emails";
+import { sourceLabel } from "@/lib/lifecycle/milestones";
+import { safeRecordLifecycleMilestone } from "@/lib/lifecycle/safeRecord";
+import { sendClinicEmail } from "@/lib/trial/sendClinicEmail";
 
 export const runtime = "nodejs";
 
@@ -127,6 +131,36 @@ export async function POST(req: Request) {
     }
 
     const emailSent = await sendWelcome(adminAuth, signup);
+    await safeRecordLifecycleMilestone(db, {
+      clinicId,
+      milestone: "signed_up",
+      at: createdAt,
+      attribution: signup.attribution,
+      contact: {
+        clinicName: signup.clinicName,
+        contactName: signup.name,
+        contactEmail: signup.email,
+        contactPhone: signup.phone,
+        trialEndsAt: trialEndsAtFrom(createdAt),
+        plan: "trial",
+      },
+      meta: {
+        landingPage: signup.attribution.landingPage,
+        utmSource: signup.attribution.utmSource || null,
+      },
+    });
+    const adminAlertTo = process.env.ADMIN_ALERT_EMAIL || "";
+    if (adminAlertTo) {
+      const alert = buildSignupAdminAlert({
+        clinicId,
+        clinicName: signup.clinicName,
+        contactName: signup.name,
+        contactEmail: signup.email,
+        contactPhone: signup.phone,
+        source: sourceLabel(signup.attribution),
+      });
+      await sendClinicEmail({ to: adminAlertTo, subject: alert.subject, html: alert.html }).catch(() => false);
+    }
     return NextResponse.json({ success: true, clinicId, emailSent }, { status: 201 });
   } catch (error: unknown) {
     const code = error && typeof error === "object" && "code" in error ? String((error as { code: string }).code) : "";

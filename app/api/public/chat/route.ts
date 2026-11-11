@@ -15,6 +15,8 @@ import { directClinicChatGate } from "@/lib/trial/policy";
 import { clearUsageWarning, recordMonthlyConversation } from "@/lib/trial/recordUsage";
 import { buildUsageWarningEmail } from "@/lib/trial/emails";
 import { sendClinicEmail } from "@/lib/trial/sendClinicEmail";
+import { isRealConversationOrigin } from "@/lib/lifecycle/origins";
+import { safeRecordLifecycleMilestone } from "@/lib/lifecycle/safeRecord";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -220,6 +222,18 @@ export async function POST(req: Request) {
             });
             const sent = await sendClinicEmail({ to: tick.email, subject: notice.subject, html: notice.html });
             if (!sent) await clearUsageWarning(gateDb, String(clinicId), tick.month, tick.notify);
+          }
+          const originHint =
+            (typeof body.originUrl === "string" && body.originUrl) ||
+            req.headers.get("origin") ||
+            req.headers.get("referer") ||
+            "";
+          if (isRealConversationOrigin(originHint)) {
+            await safeRecordLifecycleMilestone(gateDb, {
+              clinicId: String(clinicId),
+              milestone: "first_real_conversation",
+              meta: { host: originHint.slice(0, 200) },
+            });
           }
         }
       } catch (gateError: unknown) {
