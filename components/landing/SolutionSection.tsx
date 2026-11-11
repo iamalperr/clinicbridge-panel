@@ -1,12 +1,13 @@
 "use client";
 
 import { useLandingLang } from "@/lib/landing-translations";
-import { Clock, Stethoscope, MessageCircle, CalendarCheck, Database, Globe } from "lucide-react";
+import { Clock, Stethoscope, MessageCircle, CalendarCheck, Database, Globe, Bell } from "lucide-react";
 
 const iconMap = {
   "clock-24": Clock,
   stethoscope: Stethoscope,
   "message-circle": MessageCircle,
+  bell: Bell,
   "calendar-check": CalendarCheck,
   database: Database,
   globe: Globe,

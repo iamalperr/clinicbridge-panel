@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 export default function LandingFooter() {
-  const { t } = useLandingLang();
+  const { t, lang } = useLandingLang();
   const router = useRouter();
   const year = new Date().getFullYear();
 
@@ -28,10 +28,11 @@ export default function LandingFooter() {
           </div>
           <div className="lp-footer-rows">
             <div className="lp-footer-links">
-              <Link href="/#pricing">{t.footer.pricing}</Link>
+              <Link href="/fiyatlandirma">{t.footer.pricing}</Link>
               <Link href="/hakkimizda">{t.footer.about}</Link>
               <Link href="/klinikler-icin-yapay-zeka-asistani">{t.footer.assistant}</Link>
               <Link href="/kurulum-rehberi">{t.footer.setupGuide}</Link>
+              <Link href={lang === "en" ? "/en/sss" : "/sss"}>{lang === "en" ? "FAQ" : "SSS"}</Link>
               <a href="#contact" onClick={(e) => { e.preventDefault(); goTo("contact"); }}>{t.footer.requestDemo}</a>
               <a href="#contact" onClick={(e) => { e.preventDefault(); goTo("contact"); }}>{t.footer.contact}</a>
             </div>

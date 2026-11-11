@@ -53,7 +53,7 @@ export async function POST(
     }
     await saveWhatsAppSettings(adminDb, built.settings);
     const hasRecipient = built.settings.recipients.some(
-      (recipient) => typeof recipient.phoneE164 === "string" && recipient.phoneE164.replace(/\D/g, "").length >= 8
+      (recipient) => typeof recipient.phone === "string" && recipient.phone.replace(/\D/g, "").length >= 8
     );
     if (built.settings.enabled && hasRecipient) {
       const { safeRecordLifecycleMilestone } = await import("@/lib/lifecycle/safeRecord");

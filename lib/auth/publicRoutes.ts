@@ -8,6 +8,9 @@ const PUBLIC_ROUTES = [
   "/klinikler-icin-yapay-zeka-asistani",
   "/fiyatlandirma",
   "/kurulum-rehberi",
+  "/sss",
+  "/en",
+  "/en/sss",
   "/teslimat-ve-iade",
   "/mesafeli-satis-sozlesmesi",
   "/landing",
@@ -23,7 +26,13 @@ const PUBLIC_ROUTES = [
 ];
 
 export function isPublicRoute(pathname: string): boolean {
-  return PUBLIC_ROUTES.includes(pathname) || pathname.startsWith("/demo/") || pathname.startsWith("/agency-demo") || pathname.startsWith("/onizleme/");
+  return (
+    PUBLIC_ROUTES.includes(pathname) ||
+    pathname.startsWith("/demo/") ||
+    pathname.startsWith("/agency-demo") ||
+    pathname.startsWith("/onizleme/") ||
+    pathname.startsWith("/en/")
+  );
 }
 
 /** Marketing pages that must emit document HTML without the panel AuthGuard shell. */
@@ -35,6 +44,9 @@ const MARKETING_DOCUMENT_PATHS = new Set([
   "/hakkimizda",
   "/fiyatlandirma",
   "/kurulum-rehberi",
+  "/sss",
+  "/en",
+  "/en/sss",
   "/privacy",
   "/terms",
   "/kvkk",
@@ -43,5 +55,9 @@ const MARKETING_DOCUMENT_PATHS = new Set([
 ]);
 
 export function isMarketingDocumentPath(pathname: string): boolean {
-  return MARKETING_DOCUMENT_PATHS.has(pathname) || pathname.startsWith("/onizleme/");
+  return (
+    MARKETING_DOCUMENT_PATHS.has(pathname) ||
+    pathname.startsWith("/onizleme/") ||
+    pathname.startsWith("/en/")
+  );
 }

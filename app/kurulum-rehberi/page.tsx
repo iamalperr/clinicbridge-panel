@@ -23,7 +23,8 @@ const faqEntities = [
   },
   {
     question: "Asistan hangi dillerde konuşuyor?",
-    answer: "Çok dilli çalışır; hasta hangi dilde yazarsa o dilde cevap verir.",
+    answer:
+      "Türkçe, İngilizce, Almanca, Arapça, Rusça, Fransızca ve daha fazlası. Hasta hangi dilde yazarsa asistan o dilde cevap verir.",
   },
   {
     question: "Asistan yanlış bilgi verir mi?",
@@ -122,6 +123,13 @@ const jsonLd = {
       description:
         "Kliniğinizin web sitesine çok dilli yapay zeka asistanını adım adım kurun. Kod bilgisi gerekmez. 14 gün ücretsiz deneyin.",
       significantLink: SETUP_SIGNUP_URL,
+    },
+    {
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Ana sayfa", item: `${PUBLIC_SITE_ORIGIN}/` },
+        { "@type": "ListItem", position: 2, name: "Kurulum rehberi", item: CANONICAL },
+      ],
     },
   ],
 };

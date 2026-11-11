@@ -15,12 +15,15 @@ const tr = {
     requestDemo: "Demo Talep Et",
   },
   hero: {
-    badge: "Yapay Zekâ Destekli Hasta İletişim Platformu",
-    title: "Hastalarınızla Her Kanaldan İletişim Kurabilen Yapay Zekâ",
+    badge: "Sağlık Turizmi Klinikleri İçin AI Hasta İletişimi",
+    title: "Yabancı Hastalarınıza 7/24, Kendi Dillerinde Cevap Veren AI Asistan",
     subtitle:
-      "ClinicBridge AI, web sitenizden gelen mesajları ve telefon aramalarını yapay zekâ destekli asistanlarla karşılar. Hasta sorularını yanıtlar, randevu taleplerini toplar ve kliniğinizin iletişim süreçlerini 7/24 destekler.",
-    ctaPrimary: "Demo Talep Et",
-    ctaSecondary: "Çözümleri İncele",
+      "ClinicBridge AI, diş, saç ekimi ve estetik klinikleri için web sitesi sohbet asistanı ve AI telefon asistanıdır. Hasta sorularını yanıtlar, randevu taleplerini toplar, ekibinize e-posta ve WhatsApp ile iletir. Birkaç adımda kendiniz kurun.",
+    definition:
+      "ClinicBridge AI, Türkiye'deki sağlık turizmi klinikleri için geliştirilmiş, çok dilli bir yapay zeka hasta iletişim platformudur. Web sitesine eklenen sohbet asistanı ve AI telefon asistanı, yabancı hastaların tedavi, süreç ve randevu sorularını 7/24 kendi dillerinde yanıtlar; randevu taleplerini toplar ve klinik ekibine e-posta ve WhatsApp ile iletir. Klinikler sistemi kendileri kurabilir ve 14 gün ücretsiz deneyebilir.",
+    trustLine: "Kredi kartı gerekmez · KVKK uyumlu · Acil durumda hastayı 112'ye yönlendirir · İstediğiniz zaman iptal",
+    ctaPrimary: "14 gün ücretsiz başla",
+    ctaSecondary: "Kurulum rehberi",
     sampleCta: "Örnek klinikte deneyin",
     setupGuideLink: "Kurulum rehberi",
     requestTitle: "Kliniğiniz için ücretsiz önizleme isteyin",
@@ -88,10 +91,11 @@ const tr = {
     features: [
       { icon: "clock-24", title: "7/24 Hasta Karşılama", desc: "Gece gündüz fark etmez, web ve telefon üzerinden her hasta anında karşılanır." },
       { icon: "stethoscope", title: "Tedavi Bazlı Soru-Cevap", desc: "İmplant, ortodonti, estetik gibi tedaviler hakkında detaylı ve doğru bilgi sunar." },
-      { icon: "message-circle", title: "WhatsApp / Telegram Yönlendirme", desc: "Hasta hazır olduğunda doğrudan WhatsApp veya Telegram üzerinden iletişime geçirilir." },
+      { icon: "message-circle", title: "WhatsApp / Telegram Yönlendirme", desc: "Canlı destek isteyen hastayı tek tıkla kliniğin WhatsApp/Telegram hattına bağlar." },
+      { icon: "bell", title: "Ekip Bildirimi", desc: "Yeni talepleri ekibinize WhatsApp ile bildirir." },
       { icon: "calendar-check", title: "Randevu Talebi Toplama", desc: "Asistan, hastadan gerekli bilgileri alarak randevu talebini oluşturur." },
       { icon: "database", title: "Klinik Özelinde Bilgi Tabanı", desc: "Her klinik için özel eğitilmiş bilgi tabanı ile doğru ve tutarlı yanıtlar verir." },
-      { icon: "globe", title: "Çok Dilli Kullanım Altyapısı", desc: "Türkçe, İngilizce, Almanca ve daha fazla dilde hasta iletişimi sağlar." },
+      { icon: "globe", title: "Çok Dilli Kullanım Altyapısı", desc: "Türkçe, İngilizce, Almanca, Arapça, Rusça, Fransızca ve daha fazlası." },
     ],
   },
   journey: {
@@ -128,11 +132,11 @@ const tr = {
       "ClinicBridge AI; diş, estetik, saç ekimi, psikoloji, dermatoloji ve sağlık turizmi odaklı kliniklerde web ve telefon üzerinden hasta sorularını yanıtlamak ve randevu taleplerini yönlendirmek için kullanılabilir.",
     cards: [
       { icon: "tooth", title: "Diş Klinikleri", desc: "İmplant, ortodonti, diş beyazlatma ve randevu sorularını otomatik yanıtlayın." },
-      { icon: "sparkles", title: "Estetik & Plastik Cerrahi Klinikleri", desc: "Operasyon süreçleri, ön görüşme talepleri ve fiyat aralığı sorularını profesyonel şekilde yönlendirin." },
       { icon: "scissors", title: "Saç Ekimi Klinikleri", desc: "Yurt içi ve yurt dışı hasta adaylarının paket, süreç ve uygunluk sorularını anında karşılayın." },
+      { icon: "sparkles", title: "Estetik & Plastik Cerrahi Klinikleri", desc: "Operasyon süreçleri, ön görüşme talepleri ve fiyat aralığı sorularını profesyonel şekilde yönlendirin." },
+      { icon: "plane", title: "Sağlık Turizmi Klinikleri", desc: "Çok dilli hasta iletişimi, transfer, konaklama ve ön görüşme taleplerini tek akışta yönetin." },
       { icon: "sun", title: "Dermatoloji Klinikleri", desc: "Cilt tedavileri, leke tedavisi, akne ve kontrol randevuları için ön bilgilendirme sağlayın." },
       { icon: "brain", title: "Psikoloji & Terapi Merkezleri", desc: "Seans bilgileri, uzman seçimi ve uygun randevu taleplerini hızlıca yönlendirin." },
-      { icon: "plane", title: "Sağlık Turizmi Klinikleri", desc: "Çok dilli hasta iletişimi, transfer, konaklama ve ön görüşme taleplerini tek akışta yönetin." },
     ],
   },
   benefits: {
@@ -171,10 +175,11 @@ const tr = {
     perMonth: "/ay",
     customPrice: "Özel fiyat",
     popular: "En popüler",
-    ctaStart: "Başla",
-    ctaBuy: "Satın Al",
+    trialBadge: "14 gün ücretsiz",
+    ctaStart: "14 gün ücretsiz başla",
+    ctaBuy: "14 gün ücretsiz başla",
     ctaContact: "Bize ulaşın",
-    note: "Fiyatlara KDV dahil değildir. Euro fiyatlar ödeme günündeki kurla TL olarak tahsil edilir. Taahhüt yok, dilediğiniz zaman iptal.",
+    note: "Fiyatlara KDV dahil değildir. Euro fiyatlar ödeme günündeki kurla TL olarak tahsil edilir. Taahhüt yok, dilediğiniz zaman iptal. Üç ücretli pakette 14 gün ücretsiz deneme (kredi kartı gerekmez).",
     names: {
       starter: "Başlangıç",
       clinic: "Klinik",
@@ -185,9 +190,9 @@ const tr = {
       webChat: "Web chat",
       monthlyChats: "Ayda {count} hasta sohbeti",
       panel: "Klinik paneli",
-      webChatWhatsapp: "Web chat (WhatsApp yakında)",
-      allLanguages: "Tüm diller",
-      appointmentDelivery: "Randevu taleplerinin e-posta/WhatsApp ile iletimi",
+      webChatWhatsapp: "Web chat + WhatsApp/Telegram canlı destek yönlendirmesi",
+      allLanguages: "Türkçe, İngilizce, Almanca, Arapça, Rusça, Fransızca ve daha fazlası",
+      appointmentDelivery: "Yeni talepleri ekibinize e-posta ve WhatsApp ile bildirir",
       weeklyReport: "Haftalık rapor",
       everythingInClinic: "Klinik paketindeki her şey",
       phoneAssistant: "AI telefon asistanı",
@@ -197,13 +202,17 @@ const tr = {
       agencyScope: "Birden fazla şube veya ajans hesabı için",
       agencySetup: "Kurulum ve kullanım hacmine göre teklif",
     },
-    faqTitle: "Sık sorulan sorular",
+    faqTitle: "Fiyatlandırma SSS",
     faq: [
       { q: "Aboneliği iptal edebilir miyim?", a: "Evet. Taahhüt yoktur; aboneliğinizi dilediğiniz zaman iptal edebilirsiniz. İptal, içinde bulunulan dönemin sonunda geçerli olur." },
       { q: "Fatura kesiliyor mu?", a: "Her ödeme için e-Arşiv fatura düzenlenir." },
       { q: "Nasıl ödeme yaparım?", a: "Ödemeler iyzico güvencesiyle kredi kartı veya banka kartı ile alınır. Euro fiyatlar, ödeme günündeki kurla TL olarak tahsil edilir." },
       { q: "Telefon paketinde aşım ücreti var mı?", a: "Klinik + Telefon paketinde ayda {minutes} dakika dahildir. Aşımda {overage}/dk tahsil edilir." },
     ],
+  },
+  productFaq: {
+    title: "Sık sorulan sorular",
+    seeAll: "Tüm sorular",
   },
   about: {
     title: "Hakkımızda",
@@ -269,12 +278,15 @@ const en = {
     requestDemo: "Request a Demo",
   },
   hero: {
-    badge: "AI-Powered Patient Communication Platform",
-    title: "AI That Communicates With Your Patients on Every Channel",
+    badge: "AI Patient Communication for Medical Tourism Clinics",
+    title: "AI Assistant That Answers International Patients 24/7 in Their Language",
     subtitle:
-      "ClinicBridge AI greets website messages and phone calls with AI-powered assistants. It answers patient questions, collects appointment requests, and supports your clinic’s communication around the clock.",
-    ctaPrimary: "Request a Demo",
-    ctaSecondary: "Explore Solutions",
+      "ClinicBridge AI is a website chat assistant and AI phone assistant for dental, hair transplant, and aesthetic clinics. It answers patient questions, collects appointment requests, and notifies your team by email and WhatsApp. Set it up yourself in a few steps.",
+    definition:
+      "ClinicBridge AI is a multilingual AI patient communication platform built for medical tourism clinics in Turkey. The website chat assistant and AI phone assistant answer international patients’ treatment, process, and appointment questions 24/7 in their own languages; collect appointment requests; and deliver them to the clinic team by email and WhatsApp. Clinics can set the system up themselves and try it free for 14 days.",
+    trustLine: "No credit card · KVKK-aligned · Routes emergencies to 112 first · Cancel anytime",
+    ctaPrimary: "Start 14-day free trial",
+    ctaSecondary: "Setup guide",
     sampleCta: "Try a sample clinic",
     setupGuideLink: "Setup guide",
     requestTitle: "Request a free preview for your clinic",
@@ -342,10 +354,11 @@ const en = {
     features: [
       { icon: "clock-24", title: "24/7 Patient Reception", desc: "Every patient is greeted and informed instantly, day or night, on web and phone." },
       { icon: "stethoscope", title: "Treatment-Based Q&A", desc: "Provides detailed, accurate information about implants, orthodontics, aesthetics, and more." },
-      { icon: "message-circle", title: "WhatsApp / Telegram Routing", desc: "When the patient is ready, they're connected directly via WhatsApp or Telegram." },
+      { icon: "message-circle", title: "WhatsApp / Telegram Handoff", desc: "Connects patients who want live support to your clinic WhatsApp/Telegram in one tap." },
+      { icon: "bell", title: "Team Notifications", desc: "Notifies your team of new requests on WhatsApp." },
       { icon: "calendar-check", title: "Appointment Request Collection", desc: "The assistant gathers necessary details and creates appointment requests automatically." },
       { icon: "database", title: "Clinic-Specific Knowledge Base", desc: "Custom-trained knowledge base for each clinic ensures accurate, consistent responses." },
-      { icon: "globe", title: "Multi-Language Support", desc: "Communicate with patients in Turkish, English, German, and more." },
+      { icon: "globe", title: "Multi-Language Support", desc: "Turkish, English, German, Arabic, Russian, French, and more." },
     ],
   },
   journey: {
@@ -382,11 +395,11 @@ const en = {
       "ClinicBridge AI can be used by dental, aesthetic, hair transplant, dermatology, psychology, and medical tourism clinics to answer patient questions and guide appointment requests on web and phone.",
     cards: [
       { icon: "tooth", title: "Dental Clinics", desc: "Automatically answer questions about implants, orthodontics, teeth whitening, and appointment availability." },
-      { icon: "sparkles", title: "Aesthetic & Plastic Surgery Clinics", desc: "Guide patients through procedure details, consultation requests, and pricing-related questions professionally." },
       { icon: "scissors", title: "Hair Transplant Clinics", desc: "Instantly support local and international patient candidates with package, process, and eligibility questions." },
+      { icon: "sparkles", title: "Aesthetic & Plastic Surgery Clinics", desc: "Guide patients through procedure details, consultation requests, and pricing-related questions professionally." },
+      { icon: "plane", title: "Medical Tourism Clinics", desc: "Manage multilingual patient communication, transfer, accommodation, and consultation requests in a single flow." },
       { icon: "sun", title: "Dermatology Clinics", desc: "Provide initial guidance for skin treatments, acne care, pigmentation treatments, and follow-up appointments." },
       { icon: "brain", title: "Psychology & Therapy Centers", desc: "Guide patients about session details, specialist selection, and appointment requests." },
-      { icon: "plane", title: "Medical Tourism Clinics", desc: "Manage multilingual patient communication, transfer, accommodation, and consultation requests in a single flow." },
     ],
   },
   benefits: {
@@ -425,10 +438,11 @@ const en = {
     perMonth: "/mo",
     customPrice: "Custom pricing",
     popular: "Most popular",
-    ctaStart: "Get started",
-    ctaBuy: "Buy",
+    trialBadge: "14-day free trial",
+    ctaStart: "Start 14-day free trial",
+    ctaBuy: "Start 14-day free trial",
     ctaContact: "Contact us",
-    note: "Prices exclude VAT. Euro prices are charged in TRY at the exchange rate on the payment date. No commitment, cancel anytime.",
+    note: "Prices exclude VAT. Euro prices are charged in TRY at the exchange rate on the payment date. No commitment, cancel anytime. The three paid plans include a 14-day free trial (no credit card).",
     names: {
       starter: "Starter",
       clinic: "Clinic",
@@ -439,9 +453,9 @@ const en = {
       webChat: "Web chat",
       monthlyChats: "{count} patient conversations per month",
       panel: "Clinic panel",
-      webChatWhatsapp: "Web chat (WhatsApp coming soon)",
-      allLanguages: "All languages",
-      appointmentDelivery: "Appointment requests delivered by email or WhatsApp",
+      webChatWhatsapp: "Web chat + one-tap WhatsApp/Telegram live-support handoff",
+      allLanguages: "Turkish, English, German, Arabic, Russian, French, and more",
+      appointmentDelivery: "Notifies your team of new requests by email and WhatsApp",
       weeklyReport: "Weekly report",
       everythingInClinic: "Everything in the Clinic plan",
       phoneAssistant: "AI phone assistant",
@@ -451,13 +465,17 @@ const en = {
       agencyScope: "For multiple branches or an agency account",
       agencySetup: "A quote based on setup and usage",
     },
-    faqTitle: "Frequently asked questions",
+    faqTitle: "Pricing FAQ",
     faq: [
       { q: "Can I cancel?", a: "Yes. There is no commitment, and you can cancel anytime. Cancellation takes effect at the end of the current period." },
       { q: "Do you issue invoices?", a: "An e-Archive invoice is issued for every payment." },
       { q: "How do I pay?", a: "Payments are taken by credit or debit card through iyzico. Euro prices are charged in TRY at the exchange rate on the payment date." },
       { q: "Is there an overage fee on the phone plan?", a: "The Clinic + Phone plan includes {minutes} minutes per month. Additional minutes are charged at {overage}/min." },
     ],
+  },
+  productFaq: {
+    title: "Frequently asked questions",
+    seeAll: "See all questions",
   },
   about: {
     title: "About",
@@ -523,8 +541,14 @@ interface LandingLangContextType {
 
 const LandingLangContext = createContext<LandingLangContextType | undefined>(undefined);
 
-export function LandingLangProvider({ children }: { children: React.ReactNode }) {
-  const [lang, setLangState] = useState<LandingLanguage>("tr");
+export function LandingLangProvider({
+  children,
+  initialLang = "tr",
+}: {
+  children: React.ReactNode;
+  initialLang?: LandingLanguage;
+}) {
+  const [lang, setLangState] = useState<LandingLanguage>(initialLang);
   const setLang = useCallback((l: LandingLanguage) => {
     setLangState(l);
   }, []);

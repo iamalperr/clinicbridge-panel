@@ -35,7 +35,7 @@ describe("setup guide marketing page", () => {
   });
 
   it("links the in-app wizard to the public guide in a new tab", () => {
-    const wizard = readFileSync("app/kurulum/page.tsx", "utf8");
+    const wizard = readFileSync("components/setup/SetupWizard.tsx", "utf8");
     expect(wizard).toContain("https://clinicbridge-ai.com/kurulum-rehberi");
     expect(wizard).toContain('target="_blank"');
     expect(wizard).toContain("setup.guideLink");

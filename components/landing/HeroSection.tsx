@@ -3,7 +3,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useLandingLang } from "@/lib/landing-translations";
-import { ArrowRight, ChevronDown, Bot, Globe, Phone } from "lucide-react";
+import { ArrowRight, Bot, Globe, Phone } from "lucide-react";
+
+const SIGNUP_URL = "https://app.clinicbridge-ai.com/kayit";
 
 export default function HeroSection() {
   const { t } = useLandingLang();
@@ -61,6 +63,7 @@ export default function HeroSection() {
             </div>
             <h1>{t.hero.title}</h1>
             <p className="lp-hero-subtitle">{t.hero.subtitle}</p>
+            <p className="lp-hero-definition">{t.hero.definition}</p>
             <div className="lp-hero-channels" aria-label="ClinicBridge AI solutions">
               <span className="lp-hero-channel">
                 <Globe size={14} />
@@ -71,10 +74,19 @@ export default function HeroSection() {
                 {t.hero.channelPhone}
               </span>
             </div>
-            <div className="lp-hero-actions">
-              <Link className="lp-btn lp-btn-primary" href="/onizleme/demo">
-                {t.hero.sampleCta} <ArrowRight size={18} />
+            <div className="lp-hero-ctas">
+              <a className="lp-btn lp-btn-primary" href={SIGNUP_URL}>
+                {t.hero.ctaPrimary} <ArrowRight size={18} />
+              </a>
+              <Link className="lp-btn lp-btn-secondary" href="/kurulum-rehberi">
+                {t.hero.ctaSecondary}
               </Link>
+            </div>
+            <p className="lp-hero-sample-link">
+              <Link href="/onizleme/demo">{t.hero.sampleCta}</Link>
+            </p>
+            <p className="lp-hero-trust">{t.hero.trustLine}</p>
+            <div className="lp-hero-actions">
               {submitted ? (
                 <p className="lp-scan-progress" role="status">{t.hero.requestSuccess}</p>
               ) : (
@@ -93,25 +105,6 @@ export default function HeroSection() {
                 </form>
               )}
             </div>
-            <div className="lp-hero-ctas">
-              <button
-                type="button"
-                className="lp-btn lp-btn-secondary"
-                onClick={() => document.getElementById("contact")?.scrollIntoView({ behavior: "smooth" })}
-              >
-                {t.hero.ctaPrimary}
-              </button>
-              <button
-                type="button"
-                className="lp-btn lp-btn-secondary"
-                onClick={() => document.getElementById("products")?.scrollIntoView({ behavior: "smooth" })}
-              >
-                {t.hero.ctaSecondary} <ChevronDown size={18} />
-              </button>
-            </div>
-            <p className="lp-hero-setup-link">
-              <Link href="/kurulum-rehberi">{t.hero.setupGuideLink}</Link>
-            </p>
           </div>
 
           <div className="lp-hero-previews">

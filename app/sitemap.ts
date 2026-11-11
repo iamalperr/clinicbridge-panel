@@ -1,6 +1,17 @@
 import type { MetadataRoute } from "next";
-import { publicSitemapUrls } from "@/lib/seo/publicSitemap";
+import { absolutePublicUrl, PUBLIC_INDEXABLE_ENTRIES } from "@/lib/seo/publicSitemap";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  return publicSitemapUrls().map((url) => ({ url }));
+  return PUBLIC_INDEXABLE_ENTRIES.map((entry) => ({
+    url: absolutePublicUrl(entry.path),
+    lastModified: entry.lastmod,
+    alternates: entry.languages
+      ? {
+          languages: {
+            tr: absolutePublicUrl(entry.languages.tr),
+            en: absolutePublicUrl(entry.languages.en),
+          },
+        }
+      : undefined,
+  }));
 }

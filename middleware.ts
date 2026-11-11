@@ -76,10 +76,12 @@ export function middleware(req: NextRequest) {
   // ── clinicbridge-ai.com (landing domain) ──────────────────────────────────
   if (context === "landing") {
     // Serve these before the homepage redirect. Otherwise both return the landing HTML.
-    if (pathname === "/sitemap.xml" || pathname === "/robots.txt") return nextWithPath(req);
+    if (pathname === "/sitemap.xml" || pathname === "/robots.txt" || pathname === "/llms.txt") {
+      return nextWithPath(req);
+    }
 
-    // Allow "/" (landing page itself)
-    if (pathname === "/") return nextWithPath(req);
+    // Allow "/" (landing page itself) and English homepage
+    if (pathname === "/" || pathname === "/en") return nextWithPath(req);
 
     // Allow static assets and Next.js internals
     if (
@@ -108,8 +110,20 @@ export function middleware(req: NextRequest) {
     }
 
     // Allow legal pages accessible from landing footer
-    const LEGAL_PATHS = ["/privacy", "/terms", "/kvkk", "/hakkimizda", "/fiyatlandirma", "/kurulum-rehberi", "/teslimat-ve-iade", "/mesafeli-satis-sozlesmesi", "/klinikler-icin-yapay-zeka-asistani"];
-    if (pathname.startsWith("/(legal)") || LEGAL_PATHS.includes(pathname)) {
+    const LEGAL_PATHS = [
+      "/privacy",
+      "/terms",
+      "/kvkk",
+      "/hakkimizda",
+      "/fiyatlandirma",
+      "/kurulum-rehberi",
+      "/sss",
+      "/en/sss",
+      "/teslimat-ve-iade",
+      "/mesafeli-satis-sozlesmesi",
+      "/klinikler-icin-yapay-zeka-asistani",
+    ];
+    if (pathname.startsWith("/(legal)") || LEGAL_PATHS.includes(pathname) || pathname.startsWith("/en/")) {
       return nextWithPath(req);
     }
 

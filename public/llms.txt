@@ -1,0 +1,19 @@
+# ClinicBridge AI
+
+ClinicBridge AI is a multilingual AI patient communication platform for medical tourism clinics in Turkey.
+It provides a website chat assistant and an AI phone assistant that answer patient questions 24/7 in the patient's language, collect appointment requests, and notify the clinic team by email and WhatsApp.
+Clinics can set it up themselves. 14-day free trial. No credit card required.
+
+## Key pages
+- https://clinicbridge-ai.com/
+- https://clinicbridge-ai.com/en
+- https://clinicbridge-ai.com/sss
+- https://clinicbridge-ai.com/en/sss
+- https://clinicbridge-ai.com/kurulum-rehberi
+- https://clinicbridge-ai.com/fiyatlandirma
+- https://clinicbridge-ai.com/klinikler-icin-yapay-zeka-asistani
+- https://clinicbridge-ai.com/hakkimizda
+- https://app.clinicbridge-ai.com/kayit
+
+## Contact
+- info@clinicbridge-ai.com

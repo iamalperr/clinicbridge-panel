@@ -13,9 +13,8 @@ describe("clinic assistant SEO page", () => {
     expect(publicSitemapUrls()).toContain(
       "https://clinicbridge-ai.com/klinikler-icin-yapay-zeka-asistani"
     );
-    expect(home).toContain(
-      'title: "ClinicBridge AI — Yapay Zekâ Destekli Hasta İletişim Platformu"'
-    );
+    expect(home).toContain("homeMetadata");
+    expect(home).toContain('homeMetadata("tr")');
   });
 
   it("describes three clinic flows and clinic appointment approval in the page source", () => {

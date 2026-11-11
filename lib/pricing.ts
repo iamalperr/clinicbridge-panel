@@ -1,8 +1,12 @@
+/**
+ * Self-serve signup always starts a 14-day `trial` clinic (see /api/public/signup).
+ * Badge applies to the three priced packages that funnel into that trial — not custom agency.
+ */
 export const PRICING_PLANS = [
-  { id: "starter", monthlyEur: 49, chatsPerMonth: 100, popular: false, cta: "start" },
-  { id: "clinic", monthlyEur: 149, chatsPerMonth: 500, popular: true, cta: "buy" },
-  { id: "clinicPhone", monthlyEur: 299, includedMinutes: 500, overageEurPerMinute: 0.35, popular: false, cta: "buy" },
-  { id: "agency", monthlyEur: null, popular: false, cta: "contact" },
+  { id: "starter", monthlyEur: 49, chatsPerMonth: 100, popular: false, cta: "start", trialEligible: true },
+  { id: "clinic", monthlyEur: 149, chatsPerMonth: 500, popular: true, cta: "buy", trialEligible: true },
+  { id: "clinicPhone", monthlyEur: 299, includedMinutes: 500, overageEurPerMinute: 0.35, popular: false, cta: "buy", trialEligible: true },
+  { id: "agency", monthlyEur: null, popular: false, cta: "contact", trialEligible: false },
 ] as const;
 
 export type PricingPlan = (typeof PRICING_PLANS)[number];

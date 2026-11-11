@@ -7,6 +7,9 @@ describe("public sitemap", () => {
     const urls = publicSitemapUrls();
     expect(urls).toEqual([
       "https://clinicbridge-ai.com/",
+      "https://clinicbridge-ai.com/en",
+      "https://clinicbridge-ai.com/sss",
+      "https://clinicbridge-ai.com/en/sss",
       "https://clinicbridge-ai.com/klinikler-icin-yapay-zeka-asistani",
       "https://clinicbridge-ai.com/hakkimizda",
       "https://clinicbridge-ai.com/fiyatlandirma",

@@ -10,6 +10,8 @@ import {
   type PricingPlan,
 } from "@/lib/pricing";
 
+const SIGNUP_URL = "https://app.clinicbridge-ai.com/kayit";
+
 function fill(template: string, values: Record<string, string>) {
   return Object.entries(values).reduce((text, [key, value]) => text.replaceAll(`{${key}}`, value), template);
 }
@@ -43,7 +45,11 @@ export default function PricingSection() {
   const { t, lang } = useLandingLang();
   const router = useRouter();
 
-  const choose = (planName: string) => {
+  const choose = (plan: PricingPlan, planName: string) => {
+    if (plan.trialEligible) {
+      window.location.href = SIGNUP_URL;
+      return;
+    }
     const message = planInterestMessage(planName, lang);
     sessionStorage.setItem(PLAN_INTEREST_STORAGE_KEY, message);
     const contact = document.getElementById("contact");
@@ -60,13 +66,23 @@ export default function PricingSection() {
       <div className="lp-container">
         <h2 className="lp-section-title">{t.pricing.title}</h2>
         <p className="lp-section-subtitle">{t.pricing.subtitle}</p>
+        <p className="lp-pricing-canonical">
+          <a href="/fiyatlandirma">{lang === "en" ? "Full pricing page" : "Detaylı fiyatlandırma sayfası"}</a>
+        </p>
         <div className="lp-pricing-grid">
           {PRICING_PLANS.map((plan) => {
             const name = t.pricing.names[plan.id];
-            const cta = plan.cta === "start" ? t.pricing.ctaStart : plan.cta === "buy" ? t.pricing.ctaBuy : t.pricing.ctaContact;
+            const cta = plan.cta === "start" || plan.cta === "buy" ? (plan.trialEligible ? t.pricing.ctaStart : t.pricing.ctaBuy) : t.pricing.ctaContact;
             return (
               <article className={`lp-card lp-pricing-card${plan.popular ? " lp-pricing-card-popular" : ""}`} key={plan.id}>
-                {plan.popular ? <p className="lp-pricing-badge">{t.pricing.popular}</p> : <p className="lp-pricing-badge lp-pricing-badge-spacer" aria-hidden="true" />}
+                {plan.trialEligible ? (
+                  <p className="lp-pricing-badge lp-pricing-badge-trial">{t.pricing.trialBadge}</p>
+                ) : plan.popular ? (
+                  <p className="lp-pricing-badge">{t.pricing.popular}</p>
+                ) : (
+                  <p className="lp-pricing-badge lp-pricing-badge-spacer" aria-hidden="true" />
+                )}
+                {plan.popular && plan.trialEligible ? <p className="lp-pricing-popular-tag">{t.pricing.popular}</p> : null}
                 <h3>{name}</h3>
                 <p className="lp-pricing-price">
                   {plan.monthlyEur == null ? t.pricing.customPrice : formatEur(plan.monthlyEur, lang)}
@@ -77,7 +93,7 @@ export default function PricingSection() {
                     <li key={feature}>{feature}</li>
                   ))}
                 </ul>
-                <button type="button" className={`lp-btn ${plan.popular ? "lp-btn-primary" : "lp-btn-secondary"} lp-pricing-cta`} onClick={() => choose(name)}>
+                <button type="button" className={`lp-btn ${plan.popular ? "lp-btn-primary" : "lp-btn-secondary"} lp-pricing-cta`} onClick={() => choose(plan, name)}>
                   {cta}
                 </button>
               </article>
