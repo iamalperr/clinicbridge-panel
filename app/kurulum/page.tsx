@@ -151,7 +151,17 @@ export default function SetupPage() {
           </div>
         </div>
         <h1 style={{ fontSize: 26, fontWeight: 800, color: UI_COLORS.textPrimary, letterSpacing: "-0.6px", marginBottom: 8 }}>{t("setup.title")}</h1>
-        <p style={{ color: UI_COLORS.textSecondary, marginBottom: 20 }}>{t("setup.subtitle")}</p>
+        <p style={{ color: UI_COLORS.textSecondary, marginBottom: 12 }}>{t("setup.subtitle")}</p>
+        <p style={{ marginBottom: 20 }}>
+          <a
+            href="https://clinicbridge-ai.com/kurulum-rehberi"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: UI_COLORS.brand, fontWeight: 700, fontSize: 14 }}
+          >
+            {t("setup.guideLink")}
+          </a>
+        </p>
         <div style={{ display: "flex", gap: 8, marginBottom: 16, color: UI_COLORS.textSecondary, fontSize: 13, fontWeight: 700 }}>
           <span>{t("setup.stepFacts")}</span>
           <span>{t("setup.stepContact")}</span>

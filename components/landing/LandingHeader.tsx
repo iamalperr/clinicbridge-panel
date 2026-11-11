@@ -52,6 +52,7 @@ export default function LandingHeader() {
             <a href="#products" onClick={(e) => { e.preventDefault(); scrollTo("products"); }}>{t.nav.solutions}</a>
             <Link href="/#pricing" onClick={() => setMobileOpen(false)}>{t.nav.pricing}</Link>
             <Link href="/hakkimizda" onClick={() => setMobileOpen(false)}>{t.nav.about}</Link>
+            <Link href="/kurulum-rehberi" onClick={() => setMobileOpen(false)}>{t.nav.setupGuide}</Link>
             <a href="#how-it-works" onClick={(e) => { e.preventDefault(); scrollTo("how-it-works"); }}>{t.nav.howItWorks}</a>
             <a href="#benefits" onClick={(e) => { e.preventDefault(); scrollTo("benefits"); }}>{t.nav.benefits}</a>
             <a href="#contact" onClick={(e) => { e.preventDefault(); scrollTo("contact"); }}>{t.nav.contact}</a>
@@ -79,6 +80,7 @@ export default function LandingHeader() {
         <a href="#products" onClick={(e) => { e.preventDefault(); scrollTo("products"); }}>{t.nav.solutions}</a>
         <Link href="/#pricing" onClick={() => setMobileOpen(false)}>{t.nav.pricing}</Link>
         <Link href="/hakkimizda" onClick={() => setMobileOpen(false)}>{t.nav.about}</Link>
+        <Link href="/kurulum-rehberi" onClick={() => setMobileOpen(false)}>{t.nav.setupGuide}</Link>
         <a href="#how-it-works" onClick={(e) => { e.preventDefault(); scrollTo("how-it-works"); }}>{t.nav.howItWorks}</a>
         <a href="#benefits" onClick={(e) => { e.preventDefault(); scrollTo("benefits"); }}>{t.nav.benefits}</a>
         <a href="#contact" onClick={(e) => { e.preventDefault(); scrollTo("contact"); }}>{t.nav.contact}</a>

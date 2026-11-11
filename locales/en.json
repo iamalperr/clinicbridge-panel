@@ -1056,6 +1056,7 @@
   "setup": {
     "title": "Put your bot live",
     "subtitle": "Review what we learned from your site, choose where appointment requests go, and add the bot to your website.",
+    "guideLink": "Setup guide",
     "stepFacts": "1. Facts",
     "stepContact": "2. Appointments",
     "stepInstall": "3. Install",

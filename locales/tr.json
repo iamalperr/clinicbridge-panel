@@ -1093,6 +1093,7 @@
   "setup": {
     "title": "Botunuzu yayına alın",
     "subtitle": "Sitenizden öğrenilen bilgileri kontrol edin, randevu taleplerinin gideceği yeri seçin ve botu sitenize ekleyin.",
+    "guideLink": "Kurulum rehberi",
     "stepFacts": "1. Bilgiler",
     "stepContact": "2. Randevu",
     "stepInstall": "3. Kurulum",

@@ -10,6 +10,7 @@ describe("public sitemap", () => {
       "https://clinicbridge-ai.com/klinikler-icin-yapay-zeka-asistani",
       "https://clinicbridge-ai.com/hakkimizda",
       "https://clinicbridge-ai.com/fiyatlandirma",
+      "https://clinicbridge-ai.com/kurulum-rehberi",
       "https://clinicbridge-ai.com/privacy",
       "https://clinicbridge-ai.com/terms",
       "https://clinicbridge-ai.com/kvkk",

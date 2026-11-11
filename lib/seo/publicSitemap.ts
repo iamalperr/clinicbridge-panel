@@ -10,6 +10,7 @@ export const PUBLIC_INDEXABLE_PATHS = [
   "/klinikler-icin-yapay-zeka-asistani",
   "/hakkimizda",
   "/fiyatlandirma",
+  "/kurulum-rehberi",
   "/privacy",
   "/terms",
   "/kvkk",

@@ -109,6 +109,9 @@ export default function HeroSection() {
                 {t.hero.ctaSecondary} <ChevronDown size={18} />
               </button>
             </div>
+            <p className="lp-hero-setup-link">
+              <Link href="/kurulum-rehberi">{t.hero.setupGuideLink}</Link>
+            </p>
           </div>
 
           <div className="lp-hero-previews">
