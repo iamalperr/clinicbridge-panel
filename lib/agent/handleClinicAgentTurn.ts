@@ -66,6 +66,7 @@ import { extractAppointmentFromHistory, parseTimeText } from "./appointmentParse
 import { saveAppointmentState, respondWithVisibleReply } from "./persistence";
 import { fetchClinicDoctorMatchInputs, getClientDb } from "./clinicRuntime";
 import { tryHandleContactHandoffTurn } from "@/lib/contact-request/handleContactHandoffTurn";
+import { resolveLiveSupportChannels } from "@/lib/contact-request/liveSupportChannels";
 import {
   formatAppointmentCancellationInfo,
   formatAppointmentCancellationNotForwarded,
@@ -146,7 +147,6 @@ export async function handleClinicAgentTurn(
     let promptSettings: any = null;
     let trainingDocs: Array<{ id: string; title: string; content: string; embeddingChunks?: any[] }> = [];
     let clinicWhatsapp = "";
-    let clinicTelegram = "";
     let clinicLanguage = "tr";
     let clinicData: any = null;
 
@@ -161,7 +161,6 @@ export async function handleClinicAgentTurn(
         clinicData = cachedRuntime.clinicData;
         clinicName = cachedRuntime.clinicName;
         clinicWhatsapp = cachedRuntime.clinicWhatsapp;
-        clinicTelegram = cachedRuntime.clinicTelegram;
         clinicLanguage = cachedRuntime.clinicLanguage;
         promptSettings = cachedRuntime.promptSettings;
         trainingDocs = cachedRuntime.trainingDocs;
@@ -176,7 +175,6 @@ export async function handleClinicAgentTurn(
         clinicData      = loadedRuntime.clinicData;
         clinicName      = loadedRuntime.clinicName;
         clinicWhatsapp  = loadedRuntime.clinicWhatsapp;
-        clinicTelegram  = loadedRuntime.clinicTelegram;
         clinicLanguage  = loadedRuntime.clinicLanguage;
         promptSettings  = loadedRuntime.promptSettings;
         trainingDocs    = loadedRuntime.trainingDocs;
@@ -205,7 +203,6 @@ export async function handleClinicAgentTurn(
              clinicData = aData;
              clinicName = aData.clinicName || aData.name || "Klinik";
              clinicWhatsapp = aData.whatsapp || aData.whatsappNumber || "";
-             clinicTelegram = aData.telegram || aData.telegramUsername || "";
              clinicLanguage = aData.language || "tr";
              
              if (aData.aiQuoteSettings?.prompt) {
@@ -244,7 +241,6 @@ export async function handleClinicAgentTurn(
         clinicData      = cData;
         clinicName      = cData.name          ?? "Klinik";
         clinicWhatsapp  = cData.whatsappNumber  ?? "";
-        clinicTelegram  = cData.telegramUsername ?? "";
         clinicLanguage  = cData.language         ?? "tr";
         
         if (promptSnap.exists()) promptSettings = promptSnap.data();
@@ -1310,6 +1306,10 @@ export async function handleClinicAgentTurn(
         conversationIntent.entities?.contactTarget ||
         (/\bwhatsapp\b/i.test(message) ? "whatsapp" : undefined);
       const contactMsg = formatContactResponse(effectiveContactNumber, contactTarget, conversationLocale);
+      const offersChannelButtons =
+        conversationIntent.intent === "live_support_request" ||
+        contactTarget === "whatsapp" ||
+        /\btelegram\b/i.test(message);
       console.log(JSON.stringify({
         checkpoint: "CONTACT_RESPONSE_LANGUAGE",
         traceId: activeTraceId,
@@ -1321,7 +1321,8 @@ export async function handleClinicAgentTurn(
       return respondWithVisibleReply({
         responseType: "CHAT_REPLY",
         reply: contactMsg,
-        pendingAppointmentData: appointmentDraft
+        pendingAppointmentData: appointmentDraft,
+        ...(offersChannelButtons ? resolveLiveSupportChannels(clinicData) : {}),
       }, basePersist({ appointmentState, isLiveSupport: conversationIntent.intent === "live_support_request" }));
     }
 
@@ -2424,10 +2425,10 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
         clinicName,
         detectedLanguage: lang,
       };
-      if (clinicWhatsapp) handoffPayload.whatsappNumber = clinicWhatsapp;
-      if (clinicTelegram) handoffPayload.telegramLink   = clinicTelegram;
+      const channels = resolveLiveSupportChannels(clinicData);
+      Object.assign(handoffPayload, channels);
 
-      debugLog.push(`liveSupport=short-circuit wa=${!!clinicWhatsapp} tg=${!!clinicTelegram} lang=${lang} apptSubmitted=${appointmentAlreadySubmitted}`);
+      debugLog.push(`liveSupport=short-circuit wa=${!!channels.whatsappNumber} tg=${!!channels.telegramLink} lang=${lang} apptSubmitted=${appointmentAlreadySubmitted}`);
       console.log("[widget-chat]", debugLog.join(" | "));
 
       return respondWithVisibleReply(handoffPayload, basePersist({

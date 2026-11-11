@@ -307,6 +307,11 @@
       return `https://wa.me/${phone}?text=${encodeURIComponent(msgText.trim())}`;
     }
 
+    // TODO: Production renders these buttons in public/widget.js (buildLiveSupportButtons),
+    // which uses only the server's whatsappNumber / telegramLink, whitelists wa.me / t.me
+    // and sends no patient name or message text. This standalone demo (v2) still has its
+    // own copy: it builds a prefilled message with patient details and falls back to
+    // clinic-config numbers. Retire it once the demo page embeds public/widget.js.
     function appendLiveSupportButtons(waNum, tgLink, ctx) {
       const hasWa = !!waNum;
       const hasTg = !!tgLink;

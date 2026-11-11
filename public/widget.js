@@ -8,7 +8,11 @@
  *   <script src="..." data-clinic-id="CLINIC_ID" data-language="en" data-debug="true" async></script>
  *   <script src="..." data-clinic-id="CLINIC_ID" data-locale="en" async></script>
  *
- * What's new in v6.3.0:
+ * What's new in v6.4.0:
+ *   - WhatsApp / Telegram live-support buttons when the chat reply carries
+ *     whatsappNumber / telegramLink; clicks are logged as redirect events
+ *
+ * v6.3.0:
  *   - Host page locale (<html lang>) beats browser language
  *   - data-language / data-locale explicit embed locale
  *   - ClinicBridgeWidget.setLang() for SPA language switches
@@ -16,6 +20,16 @@
  */
 (function (w, d) {
   'use strict';
+  // Test harness entry only: host pages never define __cbwTestHooks.
+  if (w.__cbwTestHooks && typeof w.__cbwTestHooks === 'object') {
+    w.__cbwTestHooks.liveSupport = {
+      whatsAppHref: liveSupportWhatsAppHref,
+      telegramHref: liveSupportTelegramHref,
+      buildButtons: buildLiveSupportButtons,
+      sendChannelClick: sendLiveSupportChannelClick,
+    };
+    return;
+  }
   if (w.__cbwLoaded) return;
 
   var scriptEl = d.currentScript || d.querySelector('script[data-preview-id], script[data-clinic-id]');
@@ -43,12 +57,12 @@
   var debugMode = scriptEl && scriptEl.dataset.debug === 'true';
   var API_BASE  = 'https://app.clinicbridge-ai.com';
   var POLL_MS   = 5000;
-  var VERSION   = '6.3.0';
+  var VERSION   = '6.4.0';
   /* ── Session ID ── */
   var sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
 
   console.log('[WIDGET_VERSION]', {
-    commit: 'locale-host-priority',
+    commit: 'live-support-buttons',
     apiHost: API_BASE,
     widgetScriptUrl: scriptEl ? scriptEl.src : 'unknown',
     testMode: embedTestMode
@@ -155,6 +169,9 @@
       consentLinkText: 'Aydınlatma Metni',
       consentAccept: 'Kabul Ediyorum ve Devam Et',
       consentDecline: 'Reddet',
+      waCta: 'WhatsApp ile Bağlan',
+      tgCta: 'Telegram ile Bağlan',
+      waPrefill: 'Merhaba, web sitenizdeki asistan üzerinden yazıyorum.',
     },
     en: {
       online:    'Online',
@@ -170,6 +187,9 @@
       consentLinkText: 'Privacy Notice',
       consentAccept: 'Accept and Continue',
       consentDecline: 'Decline',
+      waCta: 'Connect on WhatsApp',
+      tgCta: 'Connect on Telegram',
+      waPrefill: 'Hello, I am writing via the assistant on your website.',
     },
     de: {
       online: 'Online', justNow: 'Gerade eben', send: 'Senden',
@@ -179,6 +199,8 @@
       closeAria: 'Schließen', openAria: 'Assistent öffnen',
       consentTitle: 'Datenschutz', consentText: 'Bitte lesen Sie den {LINK}.',
       consentLinkText: 'Hinweis', consentAccept: 'Akzeptieren', consentDecline: 'Ablehnen',
+      waCta: 'Über WhatsApp verbinden', tgCta: 'Über Telegram verbinden',
+      waPrefill: 'Hallo, ich schreibe über den Assistenten auf Ihrer Website.',
     },
     ar: {
       online: 'متصل', justNow: 'الآن', send: 'إرسال',
@@ -188,6 +210,8 @@
       closeAria: 'إغلاق', openAria: 'فتح المساعد',
       consentTitle: 'الخصوصية', consentText: 'يرجى قراءة {LINK}.',
       consentLinkText: 'الإشعار', consentAccept: 'موافق', consentDecline: 'رفض',
+      waCta: 'تواصل عبر واتساب', tgCta: 'تواصل عبر تيليجرام',
+      waPrefill: 'مرحباً، أكتب إليكم عبر المساعد على موقعكم.',
     },
     ru: {
       online: 'Онлайн', justNow: 'Только что', send: 'Отправить',
@@ -197,6 +221,8 @@
       closeAria: 'Закрыть', openAria: 'Открыть ассистента',
       consentTitle: 'Конфиденциальность', consentText: 'Прочитайте {LINK}.',
       consentLinkText: 'уведомление', consentAccept: 'Принять', consentDecline: 'Отклонить',
+      waCta: 'Связаться в WhatsApp', tgCta: 'Связаться в Telegram',
+      waPrefill: 'Здравствуйте, пишу через ассистента на вашем сайте.',
     },
   };
 
@@ -524,6 +550,18 @@
         'line-height:1.3!important;white-space:normal!important;word-break:break-word!important;flex:1 1 auto!important}',
       '.cbw-qbtn:hover{background:' + c + '30!important;transform:translateY(-1px)!important}',
 
+      /* ── Live support redirect buttons ── */
+      '.cbw-ls{gap:8px!important;align-items:flex-start!important}',
+      '.cbw-lsbtn{display:inline-flex!important;align-items:center!important;gap:8px!important;',
+        'padding:10px 16px!important;border-radius:8px!important;color:#fff!important;',
+        'font-size:13px!important;font-weight:600!important;line-height:1.3!important;',
+        'text-decoration:none!important;cursor:pointer!important;font-family:inherit!important;',
+        'max-width:86%!important;transition:opacity .2s!important}',
+      '.cbw-lsbtn:hover{opacity:.88!important}',
+      '.cbw-lsbtn svg{flex-shrink:0!important}',
+      '.cbw-lsbtn-wa{background:#25D366!important}',
+      '.cbw-lsbtn-tg{background:#0088cc!important}',
+
       /* ── Input row ── */
       '#cbw-inputrow{display:flex!important;align-items:center!important;gap:8px!important;',
         'padding:12px 14px!important;border-top:1px solid #E2E8F0!important;',
@@ -744,6 +782,87 @@
                     '<span class="cbw-ts">' + time + '</span>';
     msgs.appendChild(div);
     msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  /* ─── Live support redirect buttons (WhatsApp / Telegram) ─── */
+  function liveSupportWhatsAppHref(raw, prefill) {
+    if (typeof raw !== 'string') return '';
+    var digits = raw.replace(/\D/g, '');
+    if (digits.length < 8 || digits.length > 15) return '';
+    var href = 'https://wa.me/' + digits;
+    return prefill ? href + '?text=' + encodeURIComponent(prefill) : href;
+  }
+
+  function liveSupportTelegramHref(raw) {
+    if (typeof raw !== 'string') return '';
+    var value = raw.trim();
+    return /^https:\/\/t\.me\/[A-Za-z0-9_]{5,32}\/?$/.test(value) ? value : '';
+  }
+
+  function liveSupportIcon(doc, channel) {
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = doc.createElementNS(ns, 'svg');
+    svg.setAttribute('width', '18');
+    svg.setAttribute('height', '18');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'currentColor');
+    svg.setAttribute('aria-hidden', 'true');
+    var path = doc.createElementNS(ns, 'path');
+    path.setAttribute('d', channel === 'whatsapp'
+      ? 'M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z'
+      : 'M11.944 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0a12 12 0 00-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 01.171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z');
+    svg.appendChild(path);
+    return svg;
+  }
+
+  function liveSupportButton(doc, channel, href, label, onClick) {
+    var a = doc.createElement('a');
+    a.className = 'cbw-lsbtn ' + (channel === 'whatsapp' ? 'cbw-lsbtn-wa' : 'cbw-lsbtn-tg');
+    a.setAttribute('href', href);
+    a.setAttribute('target', '_blank');
+    a.setAttribute('rel', 'noopener noreferrer');
+    a.setAttribute('data-channel', channel);
+    a.appendChild(liveSupportIcon(doc, channel));
+    var text = doc.createElement('span');
+    text.textContent = label || (channel === 'whatsapp' ? 'WhatsApp' : 'Telegram');
+    a.appendChild(text);
+    if (typeof onClick === 'function') {
+      a.addEventListener('click', function () {
+        try { onClick(channel); } catch (e) { /* never block the redirect */ }
+      });
+    }
+    return a;
+  }
+
+  /** Returns null when neither channel is valid, so callers render nothing. */
+  function buildLiveSupportButtons(doc, opts) {
+    var waHref = liveSupportWhatsAppHref(opts && opts.whatsappNumber, opts && opts.waPrefill);
+    var tgHref = liveSupportTelegramHref(opts && opts.telegramLink);
+    if (!waHref && !tgHref) return null;
+    var wrap = doc.createElement('div');
+    wrap.className = 'cbw-msg cbw-bot cbw-ls';
+    if (waHref) wrap.appendChild(liveSupportButton(doc, 'whatsapp', waHref, opts.waLabel, opts.onClick));
+    if (tgHref) wrap.appendChild(liveSupportButton(doc, 'telegram', tgHref, opts.tgLabel, opts.onClick));
+    return wrap;
+  }
+
+  function sendLiveSupportChannelClick(fetchFn, url, clinic, conversationId, channel) {
+    if (typeof fetchFn !== 'function' || !conversationId) return;
+    try {
+      var pending = fetchFn(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify({
+          clinicId: clinic,
+          message: '[SYS:channel_click:' + channel + ']',
+          conversationId: conversationId,
+          history: [],
+          _systemAction: { type: 'liveSupportChannelClick', channel: channel },
+        }),
+      });
+      if (pending && typeof pending.catch === 'function') pending.catch(function () {});
+    } catch (e) { /* logging must not block the redirect */ }
   }
 
   /* ─── Log conversation to Firestore ─── */
@@ -990,6 +1109,30 @@
       }
     }
 
+    function renderLiveSupportButtons(shadowRoot, data, sys) {
+      var msgs = shadowRoot.getElementById('cbw-msgs');
+      if (!msgs || !data) return;
+      var el = buildLiveSupportButtons(d, {
+        whatsappNumber: data.whatsappNumber,
+        telegramLink: data.telegramLink,
+        waLabel: sys.waCta,
+        tgLabel: sys.tgCta,
+        waPrefill: sys.waPrefill,
+        onClick: function (channel) {
+          sendLiveSupportChannelClick(
+            w.fetch ? w.fetch.bind(w) : null,
+            API_BASE + '/api/public/chat',
+            clinicId,
+            sessionId,
+            channel
+          );
+        },
+      });
+      if (!el) return;
+      msgs.appendChild(el);
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+
     function sendFromInput(shadowRoot) {
       var inp = shadowRoot.getElementById('cbw-input');
       if (!inp) return;
@@ -1150,6 +1293,7 @@
 
         chatHistory.push({ role: 'assistant', content: reply });
         appendMsg(shadowRoot, reply, false, '', false);
+        if (!previewId) renderLiveSupportButtons(shadowRoot, data, sys);
         if (previewId && data && typeof data.uiLanguage === 'string') {
           applyResolvedLocale(data.uiLanguage, 'preview-conversation', true);
         }

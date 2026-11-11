@@ -16,3 +16,9 @@ export {
 } from "./service";
 export { sendClinicContactRequestEmail, buildClinicContactRequestEmailHtml } from "./notifications";
 export { tryHandleContactHandoffTurn } from "./handleContactHandoffTurn";
+export {
+  normalizeTelegramLink,
+  normalizeWhatsAppDigits,
+  resolveLiveSupportChannels,
+  type LiveSupportChannels,
+} from "./liveSupportChannels";
