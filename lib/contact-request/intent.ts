@@ -108,6 +108,56 @@ export function isPatientContactHandoffIntent(text: string): boolean {
   return hasOutboundContactRequest(lower);
 }
 
+/**
+ * Assistant offered to forward an unanswered question / verification to the clinic.
+ * Used so "Lütfen" / "Evet" binds to Contact Request instead of appointment start.
+ */
+export function isClinicForwardOffer(text: string): boolean {
+  if (!text) return false;
+  const lower = text.toLocaleLowerCase("tr-TR");
+  return (
+    /klinik\s+ekibi(?:miz|niz)?(?:nden|ne)?\s+teyit/i.test(lower) ||
+    /ekibimizden\s+teyit/i.test(lower) ||
+    /(?:sorunuzu|soruyu|talebinizi|isteğinizi|isteginizi)\s+(?:klinik\s+)?ekibimize\s+ilet/i.test(lower) ||
+    /(?:klinik\s+)?ekibimize\s+iletebil(?:irim|iriz)/i.test(lower) ||
+    /ileti[sş]ime\s+ge[cç]meniz\s+i[cç]in\s+yardımcı/i.test(lower) ||
+    /ileti[sş]im\s+talebinizi/i.test(lower) ||
+    /share your contact request|forward your (?:contact request|question|request|enquiry|inquiry)/i.test(
+      lower
+    ) ||
+    /would you like me to forward|pass (?:this|your question) (?:on )?to (?:our )?clinic/i.test(
+      lower
+    ) ||
+    /clinic team (?:can |to )?(?:verify|confirm|get back)/i.test(lower) ||
+    /an unser klinikteam weiterleiten|vom klinikteam bestätigen|frage an unser klinikteam/i.test(
+      lower
+    )
+  );
+}
+
+/** Assistant is collecting name/phone/email for a Contact Request, not a booking. */
+export function isContactDetailCollectionPrompt(text: string): boolean {
+  if (!text) return false;
+  const lower = text.toLocaleLowerCase("tr-TR");
+  return (
+    /(?:telefon\s+numaran[ıi]z[ıi]|ad[ıi]n[ıi]z[ıi]\s+ve\s+telefon|ileti[sş]im\s+bilgilerinizi)\s+payla[sş]/i.test(
+      lower
+    ) ||
+    /klinik\s+ekibinin\s+size\s+ula[sş]abilmesi/i.test(lower) ||
+    /share your (?:phone number|email|contact details|name and phone)/i.test(lower) ||
+    /so the clinic team can reach you/i.test(lower) ||
+    /telefonnummer.{0,40}mitteilen|damit das klinikteam sie erreichen/i.test(lower)
+  );
+}
+
+/** Coverage / insurance verification — booking in the same turn stays clinic-confirmed. */
+export function isCoverageVerificationQuery(text: string): boolean {
+  if (!text) return false;
+  return /\b(sigorta|sigortam|poli[cç]e|tamamlay[ıi]c[ıi]\s+sa[gğ]l[ıi]k|anadolu\s+hayat|insurance|insurer|coverage|krankenkasse|zusatzversicherung|police)\b/i.test(
+    text
+  );
+}
+
 function hasOutboundContactRequest(lower: string): boolean {
   const patterns = [
     // English — clinic → patient
@@ -127,6 +177,9 @@ function hasOutboundContactRequest(lower: string): boolean {
     /\b(reach\s+out\s+to\s+me)\b/i,
     /\b(contact\s+me\s+(by|via|on|through|please|asap)?)\b/i,
     /\b(have\s+(the\s+)?clinic\s+(contact|call|text|message)\s+me)\b/i,
+    /\b(please\s+ask\s+the\s+clinic\s+to\s+(call|contact|text|message)\s+me)\b/i,
+    /\b(can\s+someone\s+contact\s+me)\b/i,
+    /\bk[öo]nnen\s+sie\s+mich\s+kontaktieren\b/i,
 
     // Turkish — clinic → patient
     /\b(beni\s+aras[ıi]nlar|beni\s+aray[ıi]n|beni\s+ara)\b/i,
@@ -135,7 +188,11 @@ function hasOutboundContactRequest(lower: string): boolean {
     /\b(biri\s+(beni\s+)?(aras[ıi]n|yazs[ıi]n|ula[sş]s[ıi]n))\b/i,
     /\b(klinik\s+(beni\s+)?(aras[ıi]n|yazs[ıi]n|ula[sş]s[ıi]n|ileti[sş]ime\s+ge[cç]sin))\b/i,
     /\b(ileti[sş]ime\s+ge[cç](sinler|melerini|memizi)?\s+[iı]sterim)\b/i,
-    /\b(geri\s+d[öo]n[üu][sş]\s+(yap[ıi]n|bekliyorum|[iı]sterim))\b/i,
+    /\b(geri\s+d[öo]n[üu][sş]\s+(yap[ıi]n|bekliyorum|[iı]sterim|yapabilir\s+misiniz))\b/i,
+    /\b(bana\s+ula[sş]abilir\s+misiniz|bana\s+ula[sş][ıi]n|bana\s+d[öo]n[üu][sş]\s+yap[ıi]n)\b/i,
+    /\b(klinik\s+beni\s+aras[ıi]n)\b/i,
+    /\b(sorumu\s+klini[gğ]e\s+ilet|soruyu\s+klini[gğ]e\s+ilet|klini[gğ]e\s+iletebilirsiniz)\b/i,
+    /\b([öo][gğ]renip\s+bana\s+haber\s+ver|bana\s+haber\s+verir\s+misiniz)\b/i,
     /\b(whatsapp['’]?tan\s+yaz|[wp]+\s*['’]?den\s+yaz)\b/i,
     /\b(konu[sş]amam|konusamam|i[sş]teyim|i[sş]teyim).{0,40}(yaz|mesaj|sms|whatsapp)\b/i,
     /\b(konu[sş]am[ıi]yorum|konusamiyorum).{0,50}(yaz|mesaj|sms|text)\b/i,

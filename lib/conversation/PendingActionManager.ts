@@ -13,6 +13,7 @@ import {
   PendingActionType,
   PendingActionStatus
 } from "./types";
+import { isClinicForwardOffer } from "@/lib/contact-request/intent";
 
 export interface PendingActionResolution {
   shouldExecute: boolean;
@@ -126,19 +127,15 @@ export class PendingActionManager {
       return "show_service_information";
     }
 
-    // Contact / phone call / live support / contact-request forwarding offer
+    // Contact / phone call / live support / contact-request / clinic-verification forwarding offer
+    if (isClinicForwardOffer(assistantMessage)) {
+      return "create_contact_request";
+    }
     if (
-      /(sizi telefonla aramamızı|sizi aramamızı|telefonla aramamızı|yetkili bir temsilcimizin|canlı destek|temsilcimizle görüşmek|müşteri temsilcisi|call you directly|call you|phone contact|live support|reach out to you by phone|telefonisch kontaktieren|sie anrufen|share your contact request|forward your contact request|iletişim talebinizi|iletisim talebinizi|contact request with the clinic|note that you prefer)/i.test(
+      /(sizi telefonla aramamızı|sizi aramamızı|telefonla aramamızı|yetkili bir temsilcimizin|canlı destek|temsilcimizle görüşmek|müşteri temsilcisi|call you directly|call you|phone contact|live support|reach out to you by phone|telefonisch kontaktieren|sie anrufen)/i.test(
         text
       )
     ) {
-      if (
-        /share your contact request|forward your contact request|iletişim talebinizi|iletisim talebinizi|contact request with the clinic|note that you prefer/i.test(
-          text
-        )
-      ) {
-        return "create_contact_request";
-      }
       return "request_phone_contact";
     }
 

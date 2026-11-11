@@ -26,6 +26,9 @@ import { slotNameForExpected, splitUtteranceClauses, type MeridiemContext, type 
 import { detectExplicitBookingIntent } from "./appointmentIntentGate";
 import {
   detectPreferredContactMethod as detectPreferredContactMethodFromDomain,
+  isClinicForwardOffer,
+  isContactDetailCollectionPrompt,
+  isCoverageVerificationQuery,
   isPatientContactHandoffIntent,
 } from "@/lib/contact-request/intent";
 
@@ -213,7 +216,36 @@ export class IntentRouter {
       };
     }
 
+    const latestAssistantMsg = params.conversationHistory?.filter((m) => m.role === "assistant").pop()?.content || "";
+    const lastOfferWasContact =
+      isClinicForwardOffer(latestAssistantMsg) || isContactDetailCollectionPrompt(latestAssistantMsg);
+    const hasContactDetails = Boolean(extracted.phone || extracted.email);
+
     // Step 3a: Patient contact handoff (clinic → patient). Distinct from asking for clinic's number.
+    // Confirming a clinic-forward offer, or supplying contact details after that offer,
+    // is Contact Request — never appointment collection by itself.
+    if (
+      !isInAppointmentFlow &&
+      lastOfferWasContact &&
+      (PendingActionManager.isConfirmation(raw) || hasContactDetails || Boolean(extracted.fullName))
+    ) {
+      const preferred =
+        extracted.preferredContactMethod ||
+        this.detectPreferredContactMethod(lower);
+      return {
+        intent: "contact_handoff_request",
+        confidence: 0.97,
+        entities: {
+          ...extracted,
+          preferredContactMethod: preferred,
+          contactTarget: extracted.contactTarget || "clinic_team",
+        },
+        requiresKnowledgeBase: false,
+        shouldContinueActiveFlow: false,
+        explanation: "Contact-forward offer confirmed or contact details supplied",
+      };
+    }
+
     if (this.isPatientContactHandoff(lower)) {
       const preferred =
         extracted.preferredContactMethod ||
@@ -265,7 +297,7 @@ export class IntentRouter {
     }
 
     // Step 5: Appointment Start / Booking Intent (Highest precedence over generic info/treatment words)
-    if (this.isAppointmentStart(lower)) {
+    if (this.isAppointmentStart(lower) && !isCoverageVerificationQuery(raw)) {
       return {
         intent: "appointment_start",
         confidence: 0.95,
@@ -342,7 +374,6 @@ export class IntentRouter {
     const isRej = PendingActionManager.isRejection(raw);
 
     if (isConf || isRej) {
-      const latestAssistantMsg = params.conversationHistory?.filter(m => m.role === "assistant").pop()?.content;
       const resolution = PendingActionManager.resolvePendingConfirmation({
         message: raw,
         pendingAction: params.pendingAction,
@@ -528,7 +559,7 @@ export class IntentRouter {
     }
 
     // Step 12: Appointment Start / Booking Intent
-    if (this.isAppointmentStart(lower)) {
+    if (this.isAppointmentStart(lower) && !isCoverageVerificationQuery(raw)) {
       return {
         intent: "appointment_start",
         confidence: 0.95,

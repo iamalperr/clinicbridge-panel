@@ -1337,7 +1337,10 @@ export async function handleClinicAgentTurn(
       message: knowledgeTurnMessage,
       intent: conversationIntent.intent,
       isAppointmentFlowActive,
-      entities: conversationIntent.entities
+      entities: conversationIntent.entities,
+      activeContactHandoff:
+        contactPendingAtLoad ||
+        conversationIntent.intent === "contact_handoff_request",
     });
     perf.end("appointment_gate", {
       allowed: appointmentGate.allowed,
@@ -2722,6 +2725,8 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
         intent: conversationIntent.intent,
         isAppointmentFlowActive: appointmentState !== "IDLE" && appointmentState !== "APPOINTMENT_SUBMITTED",
         entities: conversationIntent.entities,
+        activeContactHandoff:
+          contactPendingAtLoad || conversationIntent.intent === "contact_handoff_request",
       });
 
       if (flowActiveGate.allowed) {
@@ -2788,11 +2793,11 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
            replyLength: reply.length,
          }));
          if (activeLang === "tr") {
-            reply = "Bu bilgiyi şu online güvenilir şekilde doğrulayamıyorum. Yanlış yönlendirmemek için klinik ekibimizden teyit edilmesi gerekir.";
+            reply = "Bu konuda doğrulanmış bir bilgim bulunmuyor. Yanlış yönlendirmemek için klinik ekibimizden teyit edilmesi gerekir. Dilerseniz sorunuzu klinik ekibimize iletebilirim.";
          } else if (activeLang === "de") {
-            reply = "Ich kann diese Informationen im Moment nicht zuverlässig überprüfen. Dies muss von unserem Klinikteam bestätigt werden, um Sie nicht falsch zu informieren.";
+            reply = "Dazu liegt mir keine bestätigte Information vor. Das Klinikteam muss dies prüfen, damit ich Sie nicht falsch informiere. Soll ich Ihre Frage an unser Klinikteam weiterleiten?";
          } else {
-            reply = "I cannot reliably verify this information at the moment. It needs to be confirmed by our clinic team to avoid misleading you.";
+            reply = "I do not have verified information on this. Our clinic team needs to confirm it so I do not mislead you. Would you like me to forward your question to the clinic team?";
          }
       }
     }
@@ -3078,9 +3083,13 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
     if (!responsePayload.pendingAction && responsePayload.reply) {
       const offeredAction = PendingActionManager.detectOfferedAction(responsePayload.reply);
       if (offeredAction) {
+        const lastUserMsg = [...history].reverse().find((m: any) => m?.role === "user" || m?.role === "patient")?.content
+          || message;
         responsePayload.pendingAction = PendingActionManager.createPendingAction(
           offeredAction,
-          {},
+          offeredAction === "create_contact_request" || offeredAction === "request_phone_contact"
+            ? { originalQuestion: String(lastUserMsg || "").slice(0, 500), origin: "assistant_offer" }
+            : {},
           undefined,
           `Assistant offer: ${offeredAction}`
         );

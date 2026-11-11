@@ -29,9 +29,13 @@ export function formatContactRequestConfirmationPrompt(
 
 export function formatAskForPhone(locale: string = "en"): string {
   if (isTr(locale)) {
-    return "Tabii. Klinik ekibinin size ulaşabilmesi için lütfen telefon numaranızı paylaşır mısınız?";
+    return "Elbette. Size dönüş yapabilmemiz için adınızı ve telefon numaranızı paylaşabilir misiniz?";
   }
-  return "Of course. Could you share your phone number so the clinic team can reach you?";
+  const lower = (locale || "en").toLowerCase();
+  if (lower.startsWith("de")) {
+    return "Gerne. Können Sie uns Ihren Namen und Ihre Telefonnummer mitteilen, damit das Klinikteam Sie erreichen kann?";
+  }
+  return "Of course. Could you share your name and phone number so the clinic team can reach you?";
 }
 
 export function formatAskForEmail(locale: string = "en"): string {
@@ -50,7 +54,11 @@ export function formatContactRequestSuccess(params: {
   const m = methodLabel(params.preferredMethod, locale);
   if (isTr(locale)) {
     if (params.preferredMethod === "unspecified") {
-      return "Tabii. İletişim talebinizi klinik ekibine ilettim. Ekip talebinizi inceleyip size uygun şekilde dönüş yapabilir.";
+      const topic = params.patientNoteHint
+        ? ` ${params.patientNoteHint.replace(/\s+/g, " ").trim().slice(0, 160)}`
+        : "";
+      const topicBit = topic ? ` (${topic})` : "";
+      return `Tabii. İletişim talebinizi klinik ekibine ilettim${topicBit}. Ekip talebinizi inceleyip size uygun şekilde dönüş yapabilir.`;
     }
     return `Tabii. İletişim talebinizi klinik ekibine ilettim ve ${m} tercih ettiğinizi not ettim. Ekip talebinizi inceleyip size uygun şekilde ulaşabilir.`;
   }

@@ -180,7 +180,8 @@ describe("Appointment collection entry gate", () => {
 
     it("does not treat a bare name as a scheduling commitment", () => {
       expect(hasSchedulingCommitmentEntities({ fullName: "Ahmet Yılmaz" })).toBe(false);
-      expect(hasSchedulingCommitmentEntities({ fullName: "Ahmet Yılmaz", phone: "+905551112233" })).toBe(true);
+      expect(hasSchedulingCommitmentEntities({ fullName: "Ahmet Yılmaz", phone: "+905551112233" })).toBe(false);
+      expect(hasSchedulingCommitmentEntities({ preferredDate: "2026-08-20" })).toBe(true);
     });
 
     it("always continues an already active appointment flow", () => {
@@ -194,15 +195,46 @@ describe("Appointment collection entry gate", () => {
       expect(gate.mode).toBe("continue");
     });
 
-    it("lets volunteered contact and scheduling details start the flow", () => {
+    it("does not start appointment collection from name and phone alone", () => {
       const gate = evaluateAppointmentCollectionGate({
         message: "Ahmet Yılmaz, 0555 111 22 33, ahmet@example.com",
         intent: "unknown",
         isAppointmentFlowActive: false,
         entities: { fullName: "Ahmet Yılmaz", phone: "+905551112233", email: "ahmet@example.com" },
       });
-      expect(gate.allowed).toBe(true);
-      expect(gate.reason).toBe("scheduling_commitment_entities");
+      expect(gate.allowed).toBe(false);
+      expect(gate.reason).toBe("no_booking_intent");
+    });
+
+    it("blocks appointment start while a Contact Request is active unless booking is explicit", () => {
+      const blocked = evaluateAppointmentCollectionGate({
+        message: "Adem Gül 05326430553",
+        intent: "contact_handoff_request",
+        isAppointmentFlowActive: false,
+        entities: { fullName: "Adem Gül", phone: "05326430553" },
+        activeContactHandoff: true,
+      });
+      expect(blocked.allowed).toBe(false);
+      expect(blocked.reason).toBe("active_contact_handoff");
+
+      const booking = evaluateAppointmentCollectionGate({
+        message: "Yarın diş temizliği için randevu almak istiyorum.",
+        intent: "appointment_start",
+        isAppointmentFlowActive: false,
+        entities: {},
+        activeContactHandoff: true,
+      });
+      expect(booking.allowed).toBe(true);
+
+      const continueFlow = evaluateAppointmentCollectionGate({
+        message: "Evet, Yusuf Alper Özgül.",
+        intent: "appointment_continuation",
+        isAppointmentFlowActive: true,
+        entities: { fullName: "Yusuf Alper Özgül" },
+        activeContactHandoff: true,
+      });
+      expect(continueFlow.allowed).toBe(true);
+      expect(continueFlow.mode).toBe("continue");
     });
 
     it("exposes an inspectable reason for every decision", () => {

@@ -3,7 +3,7 @@
  * Returns null when the turn is not a contact-handoff concern.
  */
 
-import { PendingActionManager, SlotExtractor } from "@/lib/conversation";
+import { detectExplicitBookingIntent, PendingActionManager, SlotExtractor } from "@/lib/conversation";
 import type { AgentChannel, AgentTurnResult, AppointmentData, AppointmentState } from "@/lib/agent/types";
 import { respondWithVisibleReply, saveAppointmentState } from "@/lib/agent/persistence";
 import {
@@ -13,6 +13,8 @@ import {
   cancelUnresolvedContactRequest,
   createContactRequestAndNotify,
   detectContactHandoff,
+  isClinicForwardOffer,
+  isContactDetailCollectionPrompt,
   findUnresolvedContactRequest,
   formatAskForEmail,
   formatAppointmentCancellationAddedToOpenRequest,
@@ -63,6 +65,29 @@ export interface ContactHandoffTurnParams {
   basePersist: PersistFn;
   /** When IntentRouter / pending confirmation already affirmed handoff. */
   confirmationAffirmed?: boolean;
+}
+
+function lastAssistantContent(history: Array<{ role?: string; content?: string }>): string {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i]?.role === "assistant") return String(history[i]?.content || "");
+  }
+  return "";
+}
+
+function lastUserQuestion(
+  history: Array<{ role?: string; content?: string }>,
+  fallback: string
+): string {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const turn = history[i];
+    if (turn?.role !== "user" && turn?.role !== "patient") continue;
+    const text = String(turn.content || "").trim();
+    if (!text) continue;
+    if (PendingActionManager.isConfirmation(text) || PendingActionManager.isRejection(text)) continue;
+    if (SlotExtractor.parsePhone(text) && text.length < 80) continue;
+    return text.slice(0, 500);
+  }
+  return String(fallback || "").slice(0, 500);
 }
 
 function mapChannel(channel: AgentChannel): ContactRequestChannel {
@@ -160,6 +185,10 @@ export async function tryHandleContactHandoffTurn(
   const detection = detectContactHandoff(params.message);
   const pending = params.loadedPendingAction;
   const pendingType = pending?.status === "pending" ? pending?.type : null;
+  const lastAssistant = lastAssistantContent(params.history);
+  const lastOfferWasContact =
+    params.appointmentState === "IDLE" &&
+    (isClinicForwardOffer(lastAssistant) || isContactDetailCollectionPrompt(lastAssistant));
 
   const pendingContactConfirm =
     pendingType === "create_contact_request" || pendingType === "request_phone_contact";
@@ -167,12 +196,50 @@ export async function tryHandleContactHandoffTurn(
   const awaitingContactDetail =
     pendingType === "collect_contact_phone" || pendingType === "collect_contact_email";
 
+  const explicitBooking = detectExplicitBookingIntent(params.message).hasBookingIntent;
+  const phoneFromThisTurn =
+    params.entities?.phone || SlotExtractor.parsePhone(params.message || "");
+  const emailFromThisTurn =
+    params.entities?.email || SlotExtractor.parseEmail(params.message || "");
+  const nameFromThisTurn = params.entities?.fullName;
+
+  // Explicit booking while collecting contact details: hand off to Appointment Flow
+  // with already-captured identity preserved. Do not keep this Contact Request pending.
+  if (
+    explicitBooking &&
+    params.appointmentState === "IDLE" &&
+    (pendingContactConfirm || awaitingContactDetail || lastOfferWasContact)
+  ) {
+    await persistPending(params, null, {
+      ...(phoneFromThisTurn ? { patientPhone: phoneFromThisTurn } : {}),
+      ...(emailFromThisTurn ? { patientEmail: emailFromThisTurn } : {}),
+      ...(nameFromThisTurn ? { patientName: nameFromThisTurn } : {}),
+    });
+    return null;
+  }
+
+  const answeringContactSlots =
+    awaitingContactDetail || lastOfferWasContact
+      ? Boolean(phoneFromThisTurn || emailFromThisTurn || nameFromThisTurn)
+      : false;
+
+  const slotRecoveryOrigin = pending?.payload?.origin === "slot_recovery";
+  const tokenCount = params.message.trim().split(/\s+/).filter(Boolean).length;
+  const bareConfirm =
+    PendingActionManager.isConfirmation(params.message) && tokenCount <= 3 && !phoneFromThisTurn && !emailFromThisTurn;
+  if (slotRecoveryOrigin && !bareConfirm && !PendingActionManager.isRejection(params.message)) {
+    return null;
+  }
+
   const isHandoffIntent =
     params.intent === "contact_handoff_request" ||
     detection.isHandoffIntent ||
     (pendingContactConfirm &&
-      (params.confirmationAffirmed || PendingActionManager.isConfirmation(params.message))) ||
-    awaitingContactDetail;
+      (params.confirmationAffirmed || bareConfirm)) ||
+    (lastOfferWasContact &&
+      (params.confirmationAffirmed || bareConfirm || answeringContactSlots)) ||
+    (awaitingContactDetail && answeringContactSlots) ||
+    (awaitingContactDetail && bareConfirm);
 
   const isCancel =
     detection.isCancel ||
@@ -384,6 +451,20 @@ export async function tryHandleContactHandoffTurn(
     }
   }
 
+  // Topic change: a new question while waiting for contact details is not a
+  // Contact Request answer. Keep pending so the patient can resume later.
+  if (
+    awaitingContactDetail &&
+    !answeringContactSlots &&
+    !params.confirmationAffirmed &&
+    !PendingActionManager.isConfirmation(params.message) &&
+    !detection.isHandoffIntent &&
+    params.intent !== "contact_handoff_request" &&
+    params.message.trim().length > 24
+  ) {
+    return null;
+  }
+
   if (!isHandoffIntent && !awaitingContactDetail) {
     return null;
   }
@@ -430,6 +511,7 @@ export async function tryHandleContactHandoffTurn(
         language: params.locale,
         clinicId: params.clinicId,
         conversationId: params.conversationId,
+        originalQuestion: lastUserQuestion(params.history, params.message),
       },
       undefined,
       "Confirm contact request forwarding"
@@ -466,16 +548,27 @@ export async function tryHandleContactHandoffTurn(
 
   const patientName =
     params.entities?.fullName ||
+    SlotExtractor.parseName(params.message)?.fullName ||
     params.appointmentDraft.patientName ||
     params.loadedConversationLogData?.patientName ||
     pending?.payload?.patientName;
+
+  const patientNote =
+    pending?.payload?.originalQuestion ||
+    lastUserQuestion(params.history, params.message);
 
   const needed = requiredContactDetail(preferredMethod);
 
   if (needed === "phone" && !phone) {
     const action = PendingActionManager.createPendingAction(
       "collect_contact_phone",
-      { preferredContactMethod: preferredMethod, patientName, patientEmail: email, ...purposePayload },
+      {
+        preferredContactMethod: preferredMethod,
+        patientName,
+        patientEmail: email,
+        originalQuestion: patientNote,
+        ...purposePayload,
+      },
       undefined,
       "Collect phone for contact request"
     );
@@ -494,7 +587,13 @@ export async function tryHandleContactHandoffTurn(
   if (needed === "email" && !email) {
     const action = PendingActionManager.createPendingAction(
       "collect_contact_email",
-      { preferredContactMethod: preferredMethod, patientName, patientPhone: phone, ...purposePayload },
+      {
+        preferredContactMethod: preferredMethod,
+        patientName,
+        patientPhone: phone,
+        originalQuestion: patientNote,
+        ...purposePayload,
+      },
       undefined,
       "Collect email for contact request"
     );
@@ -551,7 +650,7 @@ export async function tryHandleContactHandoffTurn(
     preferredContactMethod: preferredMethod,
     patientNote: cancellationPurpose
       ? appointmentCancellationRequestNote(pending?.payload?.appointmentId)
-      : String(params.message || "").slice(0, 500),
+      : patientNote,
     language: params.locale,
     channel: mapChannel(params.channel),
     source: "AI Assistant",
@@ -598,6 +697,7 @@ export async function tryHandleContactHandoffTurn(
       : formatContactRequestSuccess({
           preferredMethod: result.record?.preferredContactMethod || preferredMethod,
           locale: params.locale,
+          patientNoteHint: patientNote,
         });
 
   if (params.adminDb) {

@@ -12,6 +12,7 @@
  */
 
 import { ConversationIntent } from "./types";
+import { isCoverageVerificationQuery } from "@/lib/contact-request/intent";
 
 export type AppointmentGateMode = "continue" | "start" | "blocked";
 
@@ -31,6 +32,8 @@ export interface AppointmentCollectionGateInput {
   intent: ConversationIntent;
   isAppointmentFlowActive: boolean;
   entities?: AppointmentGateEntities | null;
+  /** Contact Request / human handoff is the active pending action. */
+  activeContactHandoff?: boolean;
 }
 
 export interface AppointmentCollectionGateResult {
@@ -158,20 +161,15 @@ export function detectExplicitBookingIntent(message: string): BookingIntentDetec
 }
 
 /**
- * Slots a patient only volunteers when they intend to be scheduled or contacted.
+ * Slots a patient only volunteers when they intend to be scheduled.
  *
- * `treatment` is excluded because it is the subject of most clinic questions, and a
- * bare name is excluded because it is weak evidence on its own ("Ben Ahmet, fiyat
- * nedir?") and is the slot most often over-extracted from free-form sentences.
+ * `treatment` is excluded because it is the subject of most clinic questions.
+ * Name, phone and email are excluded: they are Contact Request details and must
+ * not open appointment collection unless the patient also states booking intent.
  */
 export function hasSchedulingCommitmentEntities(entities?: AppointmentGateEntities | null): boolean {
   if (!entities) return false;
-  return Boolean(
-    entities.preferredDate ||
-    entities.preferredTime ||
-    entities.phone ||
-    entities.email
-  );
+  return Boolean(entities.preferredDate || entities.preferredTime);
 }
 
 /**
@@ -180,6 +178,15 @@ export function hasSchedulingCommitmentEntities(entities?: AppointmentGateEntiti
 export function evaluateAppointmentCollectionGate(
   input: AppointmentCollectionGateInput
 ): AppointmentCollectionGateResult {
+  const booking = detectExplicitBookingIntent(input.message);
+
+  // Slot-recovery Contact Request offers sit on an already-open booking. Blocking
+  // CONTINUE would swallow name/phone answers ("Evet, Yusuf Alper Özgül.") into
+  // the idle-handoff path. Only START is gated while contact is active.
+  if (input.activeContactHandoff && !booking.hasBookingIntent && !input.isAppointmentFlowActive) {
+    return { allowed: false, mode: "blocked", reason: "active_contact_handoff" };
+  }
+
   if (input.isAppointmentFlowActive) {
     return { allowed: true, mode: "continue", reason: "appointment_flow_active" };
   }
@@ -188,8 +195,10 @@ export function evaluateAppointmentCollectionGate(
     return { allowed: true, mode: "start", reason: `appointment_intent:${input.intent}` };
   }
 
-  const booking = detectExplicitBookingIntent(input.message);
   if (booking.hasBookingIntent) {
+    if (isCoverageVerificationQuery(input.message)) {
+      return { allowed: false, mode: "blocked", reason: "coverage_confirmation_required" };
+    }
     return { allowed: true, mode: "start", reason: `booking_signal:${booking.signal}` };
   }
 
