@@ -27,6 +27,7 @@ import {
   ConversationStateEngine,
   PendingActionManager,
   formatContactResponse,
+  formatEmergencyResponse,
   formatLiveSupportHandoff,
   buildAppointmentReviewMessage,
   evaluateAppointmentCollectionGate,
@@ -67,6 +68,11 @@ import { saveAppointmentState, respondWithVisibleReply } from "./persistence";
 import { fetchClinicDoctorMatchInputs, getClientDb } from "./clinicRuntime";
 import { tryHandleContactHandoffTurn } from "@/lib/contact-request/handleContactHandoffTurn";
 import { resolveLiveSupportChannels } from "@/lib/contact-request/liveSupportChannels";
+import {
+  LLM_EMERGENCY_TIMEOUT_MS,
+  startLlmEmergencyCheck,
+  type LlmEmergencyStatus,
+} from "@/lib/agent/llmEmergencySignal";
 import {
   formatAppointmentCancellationInfo,
   formatAppointmentCancellationNotForwarded,
@@ -907,6 +913,34 @@ export async function handleClinicAgentTurn(
       surnameCorrection: true,
     });
     perf.end("intent_classify", { intent: conversationIntent.intent });
+
+    // Safety: the emergency reply text is deterministic (never LLM-written) and points to 112 first.
+    // Logs carry the trigger path and the LLM status only, never patient text.
+    const respondWithEmergencyGuidance = (trigger: "keyword" | "llm", llmStatus: LlmEmergencyStatus | "not_run") => {
+      const emergencyContactNumber =
+        clinicWhatsapp || clinicData?.turkishContactNumber || clinicData?.internationalContactNumber || clinicData?.phone;
+      console.log(JSON.stringify({
+        checkpoint: "EMERGENCY_GUIDANCE",
+        traceId: activeTraceId,
+        conversationId: convId,
+        clinicId: actualClinicId,
+        channel,
+        trigger,
+        llmStatus,
+        responseLanguage: conversationLocale,
+        appointmentState,
+      }));
+      return respondWithVisibleReply({
+        responseType: "CHAT_REPLY",
+        reply: formatEmergencyResponse(emergencyContactNumber, conversationLocale),
+        pendingAppointmentData: appointmentDraft,
+      }, basePersist({ appointmentState }));
+    };
+
+    // isEmergency is re-checked because compound-message routing can return a different primary intent.
+    if (conversationIntent.intent === "emergency" || IntentRouter.isEmergency(message.toLowerCase())) {
+      return respondWithEmergencyGuidance("keyword", "not_run");
+    }
 
     // Slot-recovery handoff offer from the previous turn: a valid slot answer or a bare
     // "no" keeps collecting (never cancels the booking); "yes" goes to the contact handoff.
@@ -2315,6 +2349,16 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
       searchMessage = "tedaviler uzmanlık alanları hizmetler işlemler servisler treatments procedures clinical specialties medical services";
     }
 
+    // Free-form turn headed for the LLM reply: the emergency classifier runs alongside retrieval
+    // and is awaited (bounded by its own timeout) just before the chat call.
+    const llmEmergencyCheck = startLlmEmergencyCheck({
+      message,
+      clinicId,
+      conversationId: convId,
+      channel: toAIUsageChannel(channel),
+      timeoutMs: channel === "voice" ? LLM_EMERGENCY_TIMEOUT_MS.voice : LLM_EMERGENCY_TIMEOUT_MS.web,
+    });
+
     perf.start("rag_hybrid_search");
     const topDocs =
       channel === "voice"
@@ -2514,7 +2558,7 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
     }
 
     // emergency_guidance — always active regardless of toggle
-    skillBlocks.push("\nACİL DURUM: Hasta acil semptomlar tarif ederse (şiddetli ağrı, kanama, nefes darlığı vb.) TEŞHİS KOYMA. Doğrudan kliniği veya 112'yi aramasını söyle.");
+    skillBlocks.push("\nACİL DURUM: Hasta acil semptomlar tarif ederse (şiddetli ağrı, kanama, nefes darlığı vb.) TEŞHİS KOYMA. Önce hemen 112'yi (Türkiye dışındaysa bulunduğu ülkenin acil numarasını) aramasını söyle; kliniğin numarasını yalnızca sonra ve sadece numara biliniyorsa ekle.");
 
     // knowledge_lookup — always active
     if (knowledgeContext) {
@@ -2613,6 +2657,23 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       effectiveTemperature: temperatureResolved.effectiveTemperature,
       temperatureSource: temperatureResolved.source,
     });
+    perf.start("llm_emergency_wait");
+    const llmEmergency = await llmEmergencyCheck;
+    perf.end("llm_emergency_wait", { status: llmEmergency.status });
+    console.log(JSON.stringify({
+      checkpoint: "EMERGENCY_LLM_CHECK",
+      traceId: activeTraceId,
+      conversationId: convId,
+      clinicId: actualClinicId,
+      channel,
+      keywordEmergency: false,
+      llmStatus: llmEmergency.status,
+      llmLatencyMs: llmEmergency.latencyMs,
+    }));
+    if (llmEmergency.status === "emergency") {
+      return respondWithEmergencyGuidance("llm", llmEmergency.status);
+    }
+
     perf.start("llm_chat");
     const completion = await trackableAIRequest({
       clinicId,

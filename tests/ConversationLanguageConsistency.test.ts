@@ -140,6 +140,30 @@ describe("Conversation language policy — production Russian WhatsApp case", ()
     );
   });
 
+  it.each([
+    ["tr", /Klinik ekibimizle iletişime geçmenize/],
+    ["en", /get in touch with our clinic team/],
+    ["de", /mit unserem Klinikteam in Kontakt/],
+    ["ar", /التواصل مع فريق العيادة/],
+    ["ru", /связаться с командой клиники/],
+    ["fr", /entrer en contact avec notre équipe/],
+  ])("11b. Contact response without a number never mentions a number or WhatsApp (%s)", (locale, expected) => {
+    for (const phone of [undefined, "", "   "]) {
+      for (const target of [undefined, "whatsapp", "clinic_team"]) {
+        const reply = formatContactResponse(phone, target, locale);
+        expect(reply).toMatch(expected);
+        expect(reply).not.toMatch(/numaras|number|Nummer|номер|numéro|رقم|WhatsApp|واتساب|\(\s*\)|\s\./i);
+      }
+    }
+  });
+
+  it("11c. Contact response with a number still includes it", () => {
+    expect(formatContactResponse(" +90 212 555 01 01 ", undefined, "tr")).toBe(
+      "Klinik ekibimize doğrudan (+90 212 555 01 01) numarasından ulaşabilirsiniz. Dilerseniz yetkili bir temsilcimizin size ulaşmasını sağlayabilir veya randevu talebinizi hemen oluşturabilirim."
+    );
+    expect(formatContactResponse("+90 532 111 22 33", "whatsapp", "en")).toContain("on WhatsApp (+90 532 111 22 33)");
+  });
+
   it("12. Generic pricing fallback uses active conversation language", () => {
     expect(formatPricingFallback("implant", "ru")).toMatch(/прайс|клиник/i);
     expect(formatPricingFallback("implant", "en")).toMatch(/verified list price/i);

@@ -608,8 +608,18 @@ export function formatContactResponse(phone?: string, contactTarget?: string, lo
   const isAr = locale.toLowerCase().startsWith("ar");
   const isRu = locale.toLowerCase().startsWith("ru");
 
-  const phoneStr = phone ? ` (${phone})` : "";
+  const trimmedPhone = typeof phone === "string" ? phone.trim() : "";
+  const phoneStr = trimmedPhone ? ` (${trimmedPhone})` : "";
   const wantsWhatsApp = String(contactTarget || "").toLowerCase().includes("whatsapp");
+
+  if (!trimmedPhone) {
+    if (isEn) return "I can help you get in touch with our clinic team. Would you like us to have a representative contact you, or would you like help with booking an appointment?";
+    if (isDe) return "Gerne helfe ich Ihnen, mit unserem Klinikteam in Kontakt zu treten. Möchten Sie, dass sich ein Mitarbeiter bei Ihnen meldet, oder kann ich Ihnen bei der Terminvereinbarung helfen?";
+    if (isFr) return "Je peux vous aider à entrer en contact avec notre équipe clinique. Souhaitez-vous qu'un représentant vous contacte ou puis-je vous aider à prendre rendez-vous ?";
+    if (isAr) return "يسعدني مساعدتك في التواصل مع فريق العيادة. هل ترغب في أن يتواصل معك ممثلنا، أم يمكنني مساعدتك في حجز موعد؟";
+    if (isRu) return "Я помогу вам связаться с командой клиники. Хотите, чтобы с вами связался представитель, или вам помочь с записью на приём?";
+    return "Klinik ekibimizle iletişime geçmenize yardımcı olabilirim. Dilerseniz yetkili bir temsilcimizin size ulaşmasını sağlayabilir veya randevu talebinizi hemen oluşturabilirim.";
+  }
 
   if (isEn) {
     return wantsWhatsApp
@@ -632,6 +642,49 @@ export function formatContactResponse(phone?: string, contactTarget?: string, lo
   }
 
   return `Klinik ekibimize doğrudan${phoneStr} numarasından ulaşabilirsiniz. Dilerseniz yetkili bir temsilcimizin size ulaşmasını sağlayabilir veya randevu talebinizi hemen oluşturabilirim.`;
+}
+
+/**
+ * Emergency reply: emergency services (112 / local number) always come first; the clinic
+ * number is appended only when it looks like a real phone number. No emoji (voice-safe).
+ */
+export function formatEmergencyResponse(phone?: string | null, locale: string = "tr"): string {
+  const lang = locale.toLowerCase();
+  const trimmedPhone = typeof phone === "string" ? phone.trim() : "";
+  const digitCount = trimmedPhone.replace(/\D/g, "").length;
+  const clinicPhone = digitCount >= 7 && digitCount <= 15 ? trimmedPhone : "";
+
+  const copy = lang.startsWith("en")
+    ? {
+        first: "If this is an emergency, please call 112 immediately (or your local emergency number if you are outside Türkiye).",
+        clinic: (p: string) => `You can also reach our clinic at ${p}.`,
+      }
+    : lang.startsWith("de")
+    ? {
+        first: "Wenn es sich um einen Notfall handelt, rufen Sie bitte sofort die 112 an (außerhalb der Türkei die Notrufnummer Ihres Landes).",
+        clinic: (p: string) => `Sie können unsere Klinik außerdem unter ${p} erreichen.`,
+      }
+    : lang.startsWith("fr")
+    ? {
+        first: "S'il s'agit d'une urgence, appelez immédiatement le 112 (ou le numéro d'urgence de votre pays si vous êtes hors de Turquie).",
+        clinic: (p: string) => `Vous pouvez également joindre notre clinique au ${p}.`,
+      }
+    : lang.startsWith("ar")
+    ? {
+        first: "إذا كانت حالة طارئة، يرجى الاتصال فوراً بالرقم 112 (أو برقم الطوارئ في بلدك إذا كنت خارج تركيا).",
+        clinic: (p: string) => `يمكنك أيضاً التواصل مع عيادتنا على الرقم ${p}.`,
+      }
+    : lang.startsWith("ru")
+    ? {
+        first: "Если это экстренная ситуация, немедленно позвоните по номеру 112 (или по номеру экстренной службы вашей страны, если вы находитесь за пределами Турции).",
+        clinic: (p: string) => `Вы также можете связаться с нашей клиникой по номеру ${p}.`,
+      }
+    : {
+        first: "Acil bir durumsa lütfen hemen 112'yi arayın (Türkiye dışındaysanız bulunduğunuz ülkenin acil numarasını).",
+        clinic: (p: string) => `Kliniğimize ayrıca ${p} numarasından ulaşabilirsiniz.`,
+      };
+
+  return clinicPhone ? `${copy.first} ${copy.clinic(clinicPhone)}` : copy.first;
 }
 
 /**

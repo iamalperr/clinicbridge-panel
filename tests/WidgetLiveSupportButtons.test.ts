@@ -384,6 +384,20 @@ describe("Agent Core live-support payload (web chat)", () => {
     expect(result.payload.reply).toBeTruthy();
   });
 
+  it("'canlı destek' with handoff on but every contact field empty: no buttons, no empty number in the reply", async () => {
+    const result = await runTurn("canlı destek", {
+      enableHumanHandoff: true,
+      whatsappNumber: "",
+      telegramUsername: "",
+      turkishContactNumber: "",
+      internationalContactNumber: "",
+    });
+    expect(result.payload.whatsappNumber).toBeUndefined();
+    expect(result.payload.telegramLink).toBeUndefined();
+    expect(result.payload.reply).toContain("Klinik ekibimizle iletişime geçmenize yardımcı olabilirim.");
+    expect(result.payload.reply).not.toMatch(/numaras/i);
+  });
+
   it("short-circuit handoff uses the clinic's WhatsApp field, not the general contact line", async () => {
     const result = await runTurn("insana bağla", CONFIGURED);
     expect(result.payload.liveSupportRequired).toBe(true);

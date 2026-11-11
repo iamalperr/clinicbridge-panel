@@ -14,6 +14,7 @@ export type AIRequestType =
   | "translation"
   | "voice"
   | "admin_test"
+  | "safety_check"
   | "system";
 
 export type AIChannel =
@@ -330,5 +331,6 @@ export const REQUEST_TYPE_LABELS: Record<AIRequestType, string> = {
   translation: "Çeviri",
   voice: "Sesli Yanıt",
   admin_test: "Admin Testleri",
+  safety_check: "Güvenlik Kontrolü",
   system: "Sistem İşlemleri",
 };

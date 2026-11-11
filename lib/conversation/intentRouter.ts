@@ -24,6 +24,7 @@ import { ContextResolver } from "./contextResolver";
 import { PendingActionManager } from "./PendingActionManager";
 import { slotNameForExpected, splitUtteranceClauses, type MeridiemContext, type SlotOutcomes } from "./slotParsing";
 import { detectExplicitBookingIntent } from "./appointmentIntentGate";
+import { isEmergencyMessage } from "./emergencyDetection";
 import {
   detectPreferredContactMethod as detectPreferredContactMethodFromDomain,
   isClinicForwardOffer,
@@ -634,12 +635,7 @@ export class IntentRouter {
   // --- Helper Predicates ---
 
   public static isEmergency(lower: string): boolean {
-    if (/\bacil\s*(?:yetkili|temsilci|dönüş|donus|cevap|arama|destek|biri)\b/i.test(lower)) {
-      return false;
-    }
-    return /\b(tıbbi acil|tibbi acil|kanama|dayanılmaz ağrı|dayanilmaz agri|bayılma|bayilma|nefes alamıyorum|nefes alamiyorum|şiddetli kanama|siddetli kanama|şiddetli ağrı|siddetli agri|emergency|severe pain|heavy bleeding|fainting|severe bleeding)\b/i.test(
-      lower
-    ) || (/\bacil\b/i.test(lower) && /\b(ağrı|agri|kanama|hastane|doktor|ambulans|durum|tedavi)\b/i.test(lower));
+    return isEmergencyMessage(lower);
   }
 
   public static isContactOrLiveSupport(lower: string): boolean {

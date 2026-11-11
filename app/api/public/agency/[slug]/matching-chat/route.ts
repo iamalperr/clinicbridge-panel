@@ -9,7 +9,8 @@ import {
   SlotExtractor,
   ConversationFeatureFlags,
   ConversationLogger,
-  looksLikeRequestPhrase
+  looksLikeRequestPhrase,
+  formatEmergencyResponse
 } from "@/lib/conversation";
 import {
   getCuratedClinicsForFeelinHealthy,
@@ -1380,13 +1381,9 @@ export async function POST(
     });
 
     if (agencyIntentResult.intent === "emergency") {
-      const isEn = (agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en");
-      const emMsg = isEn
-        ? "⚠️ If you are experiencing a medical emergency, severe pain, or bleeding, please immediately contact emergency services (112) or the nearest emergency medical clinic."
-        : "⚠️ Acil bir sağlık durumu, şiddetli ağrı veya kanama yaşıyorsanız lütfen derhal en yakın acil servise başvurun veya 112 Acil Yardım hattını arayın.";
       return NextResponse.json({
         responseType: "chat_message",
-        reply: emMsg,
+        reply: formatEmergencyResponse(null, agencyData.defaultLanguage || "tr"),
         sessionContext: serializeAgencySessionState(ctx)
       }, { headers: CORS });
     }
@@ -1786,13 +1783,9 @@ export async function POST(
     }
 
     if ((agencyIntentResult.intent as string) === "emergency") {
-      const isEn = (agencyData.defaultLanguage || "tr").toLowerCase().startsWith("en");
-      const emMsg = isEn
-        ? "⚠️ If you are experiencing a medical emergency, severe pain, or bleeding, please immediately contact emergency services (112) or the nearest emergency medical clinic."
-        : "⚠️ Acil bir sağlık durumu, şiddetli ağrı veya kanama yaşıyorsanız lütfen derhal en yakın acil servise başvurun veya 112 Acil Yardım hattını arayın.";
       return NextResponse.json({
         responseType: "chat_message",
-        reply: emMsg,
+        reply: formatEmergencyResponse(null, agencyData.defaultLanguage || "tr"),
         sessionContext: serializeAgencySessionState(ctx)
       }, { headers: CORS });
     }

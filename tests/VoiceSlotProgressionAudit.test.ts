@@ -543,8 +543,10 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
   const createAppointmentAndNotify = vi.fn(async () => ({ success: true, appointmentId: "apt_1" }));
   const createContactRequestAndNotify = vi.fn(async () => ({ success: true, contactRequestId: "cr_1" }));
   const KNOWLEDGE_ANSWER = "Kliniğimizde bu konudaki bilgiyi klinik ekibimiz netleştirir.";
-  type AiRequest = (req: { messages: Array<{ role: string; content: string }> }) => Promise<{ content: string; durationMs: number }>;
+  type AiRequest = (req: { requestType?: string; messages: Array<{ role: string; content: string }> }) => Promise<{ content: string; durationMs: number }>;
   const aiRequest = vi.fn<AiRequest>(async () => ({ content: KNOWLEDGE_ANSWER, durationMs: 1 }));
+  // The emergency safety check is routed separately so chat-call counts and one-shot mocks keep their meaning.
+  const safetyCheck = vi.fn<AiRequest>(async () => ({ content: '{"emergency":false}', durationMs: 1 }));
   const hybridSearch = vi.fn<(query: string) => Promise<unknown[]>>(async () => []);
 
   beforeAll(async () => {
@@ -555,7 +557,10 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
         logLines.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));
       });
     }
-    vi.doMock("@/lib/services/aiGateway", () => ({ trackableAIRequest: aiRequest }));
+    vi.doMock("@/lib/services/aiGateway", () => ({
+      trackableAIRequest: (req: Parameters<AiRequest>[0]) =>
+        req.requestType === "safety_check" ? safetyCheck(req) : aiRequest(req),
+    }));
     vi.doMock("@/lib/services/retrievalService", () => ({
       hybridSearch,
       validateGroundedness: vi.fn(async () => ({ isGrounded: true })),

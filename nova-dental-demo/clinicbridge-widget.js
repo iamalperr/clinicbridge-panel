@@ -706,9 +706,12 @@
         const msgLang = detectLang(text);
         const name = clinicCtx.clinicName || 'Nova Dental Clinic';
         console.log('[ClinicBridge Widget] Intent: 🚨 EMERGENCY_DETECTED');
+        const hasChannels = !!(clinicCtx.whatsapp || clinicCtx.telegram);
         const emergencyMsg = msgLang === 'tr'
-          ? `Bu durum acil değerlendirme gerektirebilir. Lütfen vakit kaybetmeden kliniğinizle veya en yakın sağlık kuruluşuyla iletişime geçin. Dilerseniz sizi WhatsApp üzerinden ${name} ekibine yönlendirebilirim.`
-          : `This may require urgent evaluation. Please contact the clinic or the nearest healthcare provider as soon as possible. If you wish, I can direct you to the ${name} team via WhatsApp.`;
+          ? `Acil bir durumsa lütfen hemen 112'yi arayın (Türkiye dışındaysanız bulunduğunuz ülkenin acil numarasını).` +
+            (hasChannels ? ` Acil değilse ${name} ekibine aşağıdaki kanallardan ulaşabilirsiniz.` : '')
+          : `If this is an emergency, please call 112 immediately (or your local emergency number if you are outside Türkiye).` +
+            (hasChannels ? ` If it is not urgent, you can reach the ${name} team through the channels below.` : '');
         appendMsg(emergencyMsg, false, msgs, false);
         conversationHistory.push({ role: 'assistant', content: emergencyMsg });
         appendLiveSupportButtons(clinicCtx.whatsapp, clinicCtx.telegram, { ...clinicCtx, lastUserMsg: text, lang: msgLang });

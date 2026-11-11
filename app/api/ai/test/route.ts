@@ -11,7 +11,8 @@ import {
   ConversationState,
   ConversationSlots,
   formatPricingFallback,
-  formatContactResponse
+  formatContactResponse,
+  formatEmergencyResponse
 } from "@/lib/conversation";
 import { ClinicWorkingHoursResolver } from "@/lib/skills";
 import { resolveEffectiveAITemperature } from "@/lib/ai/temperaturePolicy";
@@ -162,17 +163,14 @@ export async function POST(req: Request) {
 
     // ── 7. Handle Direct Safety / Live Support / Contact / Complaint Intents ──
     if (intentResult.intent === "emergency") {
-      const emMsg = isEn
-        ? `⚠️ If you are experiencing a medical emergency, severe pain, or bleeding, please immediately contact the nearest emergency room or call emergency services (112). You can also contact our clinic directly at ${effectivePhone || "our phone line"}.`
-        : `⚠️ Acil bir durum, şiddetli ağrı veya kanama yaşıyorsanız lütfen derhal en yakın acil servise başvurun veya 112 Acil Yardım hattını arayın. Kliniğimize doğrudan ${effectivePhone || "telefon numaramızdan"} ulaşabilirsiniz.`;
-      return NextResponse.json({ message: emMsg });
+      return NextResponse.json({ message: formatEmergencyResponse(effectivePhone, clinicLanguage) });
     }
 
     if (intentResult.intent === "complaint") {
       const phoneStr = effectivePhone ? ` (${effectivePhone})` : "";
       const complaintMsg = isEn
         ? `We apologize for any inconvenience you may have experienced. Your satisfaction is very important to us. Our clinic team is available to assist you directly${phoneStr}. Would you like us to have a representative contact you?`
-        : `Yaşadığınız aksaklık veya gecikme için çok özür dileriz. Memnuniyetiniz bizim için çok önemlidir. Klinik ekibimize doğrudan${phoneStr} numarasından ulaşabilirsiniz. Dilerseniz yetkili bir temsilcimizin size ulaşmasını da sağlayabiliriz.`;
+        : `Yaşadığınız aksaklık veya gecikme için çok özür dileriz. Memnuniyetiniz bizim için çok önemlidir. ${effectivePhone ? `Klinik ekibimize doğrudan${phoneStr} numarasından ulaşabilirsiniz.` : "Klinik ekibimiz size yardımcı olmaktan memnuniyet duyar."} Dilerseniz yetkili bir temsilcimizin size ulaşmasını da sağlayabiliriz.`;
       return NextResponse.json({
         message: complaintMsg,
         quickReplies: isEn ? ["Call Clinic", "Continue Appointment"] : ["Kliniği Ara", "Randevuya Devam Et"]
