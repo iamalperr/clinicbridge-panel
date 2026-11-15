@@ -29,7 +29,10 @@ export function detectPreferredContactMethod(text: string): PreferredContactMeth
   if (
     /\b(whatsapp|whats\s*app|wp['’]?den|wp['’]?dan|whatsapp['’]?tan|whatsapp['’]?ten)\b/i.test(
       lower
-    )
+    ) ||
+    /\b(send\s+me\s+(a\s+)?(whatsapp|wp|wa)\b)/i.test(lower) ||
+    // Arabic script has no \b word boundaries — match substrings directly.
+    /(واتساب|واتس[\s]*اب)/.test(lower)
   ) {
     return "whatsapp";
   }
@@ -37,7 +40,9 @@ export function detectPreferredContactMethod(text: string): PreferredContactMeth
   if (
     /\b(text\s*me|sms|message\s*me|text\s+them|can\s+they\s+text|ask\s+them\s+to\s+text|prefer\s+text|by\s+text|via\s+text|yaz[ıi]ş|mesaj\s+at|mesaj\s+yaz|sms\s+at|yazs[ıi]nlar|yazabilirler|yaz[ıi]n|mesajla|metin\s+mesaj)\b/i.test(
       lower
-    )
+    ) ||
+    // "mess" is a common typo/abbreviation for "message" in outbound requests
+    /\b(send\s+me\s+(a\s+)?(message|mess|msg|text|sms)\b)/i.test(lower)
   ) {
     return "sms";
   }
@@ -131,7 +136,16 @@ export function isClinicForwardOffer(text: string): boolean {
     /clinic team (?:can |to )?(?:verify|confirm|get back)/i.test(lower) ||
     /an unser klinikteam weiterleiten|vom klinikteam bestätigen|frage an unser klinikteam/i.test(
       lower
-    )
+    ) ||
+    // "Would you like us to have a representative contact you…?"
+    /(?:have\s+(?:a\s+|our\s+)?representative\s+contact\s+you|representative\s+contact\s+you)/i.test(
+      lower
+    ) ||
+    /would you like (?:us|me|someone).{0,60}contact you/i.test(lower) ||
+    /(?:m[öo]chten sie|soll(?:en)?\s+(?:wir|jemand)).{0,40}(?:kontaktieren|zur[uü]ckrufen)/i.test(
+      lower
+    ) ||
+    /هل\s+ترغب.{0,40}يتواصل/i.test(lower)
   );
 }
 
@@ -180,6 +194,13 @@ function hasOutboundContactRequest(lower: string): boolean {
     /\b(please\s+ask\s+the\s+clinic\s+to\s+(call|contact|text|message)\s+me)\b/i,
     /\b(can\s+someone\s+contact\s+me)\b/i,
     /\bk[öo]nnen\s+sie\s+mich\s+kontaktieren\b/i,
+    // "Send me a whatsapp mess on +221…" / "message me on +44…"
+    /\b(send\s+me\s+(a\s+)?(whatsapp|wp|wa|text|sms|message|mess|msg)(\s+(message|mess|msg))?)\b/i,
+    /\b(send\s+(a\s+)?(whatsapp|wp|wa|text|sms|message|mess|msg)\s+(to\s+me|me)\b)/i,
+    /\b((whatsapp|wp|wa|message|mess|msg|text|sms)\s+(me\s+)?(on|at|to)\s*\+?\d)/i,
+    /\b((message|mess|msg|text)\s+me\s+on)\b/i,
+    /\b(schreib(?:e)?\s+mir|nachricht\s+an\s+mich|kontaktiere\s+mich|whatsapp\s+mir)\b/i,
+    /(راسلني|أرسل\s+لي|تواصل\s+معي)/,
 
     // Turkish — clinic → patient
     /\b(beni\s+aras[ıi]nlar|beni\s+aray[ıi]n|beni\s+ara)\b/i,
@@ -211,7 +232,15 @@ export function isLiveAgentRequest(text: string): boolean {
   const lower = (text || "").toLocaleLowerCase("tr-TR");
   return (
     new RegExp(String.raw`(?<!\p{L})${LIVE_AGENT_TARGET}\s+(?:ile\s+)?ba[ğg]la(?:r|n|y|t)\p{L}*`, "u").test(lower) ||
-    new RegExp(String.raw`(?<!\p{L})${LIVE_AGENT_TARGET}\s+(?:ile\s+)?(?:g[öo]r[üu][sş]|konu[sş])(?:ebilir|abilir|mek|mak|eyim|ay[ıi]m|mem|mam)\p{L}*`, "u").test(lower)
+    new RegExp(String.raw`(?<!\p{L})${LIVE_AGENT_TARGET}\s+(?:ile\s+)?(?:g[öo]r[üu][sş]|konu[sş])(?:ebilir|abilir|mek|mak|eyim|ay[ıi]m|mem|mam)\p{L}*`, "u").test(lower) ||
+    /\b(insanla\s+(?:g[öo]r[üu][sş]|konu[sş])(?:mek|mak)|biriyle\s+(?:g[öo]r[üu][sş]|konu[sş])(?:mek|mak)|ger[çc]ek\s+(?:bir\s+)?ki[sş]i(?:yle)?)\b/i.test(
+      lower
+    ) ||
+    /\b(i\s+(?:want|need|would\s+like)\s+to\s+(?:talk|speak)\s+to\s+(?:a\s+)?(?:human|person|someone|agent|representative))\b/i.test(
+      lower
+    ) ||
+    /\b(mit\s+(?:einem\s+)?(?:menschen|mitarbeiter|agenten)\s+sprechen)\b/i.test(lower) ||
+    /\b(أريد\s+(?:التحدث|الكلام)\s+(?:مع\s+)?(?:شخص|إنسان|موظف))\b/i.test(lower)
   );
 }
 
@@ -219,7 +248,7 @@ export function isLiveAgentRequest(text: string): boolean {
  * Asking for the clinic's own contact details (informational) — not a handoff.
  */
 export function isInformationalClinicContactQuery(lower: string): boolean {
-  return /\b(what('?s|\s+is)\s+your\s+(phone|number|whatsapp|email)|how\s+can\s+i\s+reach\s+you|your\s+(phone|contact)\s+number|telefonunuz|numaran[ıi]z|whatsapp\s+numaran[ıi]z|ileti[sş]im\s+bilgileriniz|nas[ıi]l\s+ula[sş]abilirim)\b/i.test(
+  return /\b(what('?s|\s+is)\s+your\s+(phone|number|whatsapp|email)|how\s+can\s+i\s+reach\s+you|your\s+(phone|contact)\s+number|do\s+you\s+have\s+(a\s+)?(whatsapp|phone|telegram)|telefonunuz|numaran[ıi]z|whatsapp\s+numaran[ıi]z|ileti[sş]im\s+bilgileriniz|nas[ıi]l\s+ula[sş]abilirim)\b/i.test(
     lower
   );
 }
@@ -238,7 +267,9 @@ export function isAmbiguousContactHandoff(text: string): boolean {
     /\b(please\s+(text|call|message|email|whatsapp|contact)\s+me|ask\s+them\s+to|have\s+them\s+(text|call|message|email|whatsapp|contact)|beni\s+ara|yazs[ıi]nlar|aras[ıi]nlar)\b/i.test(
       lower
     ) ||
-    /^(?:please\s+)?(?:text|call|message|email|whatsapp)\s+me\b/i.test(lower.trim())
+    /^(?:please\s+)?(?:text|call|message|email|whatsapp)\s+me\b/i.test(lower.trim()) ||
+    /\b(send\s+me\s+(a\s+)?(whatsapp|wp|wa|text|sms|message|mess|msg))\b/i.test(lower) ||
+    /\b((whatsapp|message|mess|msg|text|sms)\s+(me\s+)?(on|at|to)\s*\+?\d)/i.test(lower)
   ) {
     return false;
   }

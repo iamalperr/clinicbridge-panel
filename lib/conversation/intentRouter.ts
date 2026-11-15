@@ -653,7 +653,7 @@ export class IntentRouter {
 
   public static isLiveSupport(lower: string): boolean {
     // "call me" / "beni arayın" are patient handoff intents (handled in isPatientContactHandoff).
-    return /\b(canlı destek|canli destek|müşteri temsilcisi|yetkili|yetkiliyle|insanla görüşmek|biriyle görüşmek|temsilci|operator|human agent|live support|talk to human|representative|real person|speak with someone|speak to someone|talk to someone|connect me with a person|need human support)\b/i.test(
+    return /\b(canlı destek|canli destek|müşteri temsilcisi|yetkili|yetkiliyle|insanla görüşmek|insanla konu[sş]mak|biriyle görüşmek|biriyle konu[sş]mak|temsilci|operator|human agent|live support|talk to human|talk to a human|speak to a human|representative|real person|speak with someone|speak to someone|talk to someone|connect me with a person|need human support|mit einem menschen sprechen|أريد التحدث مع شخص)\b/i.test(
       lower
     );
   }
