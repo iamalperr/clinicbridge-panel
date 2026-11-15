@@ -69,6 +69,13 @@ import { fetchClinicDoctorMatchInputs, getClientDb } from "./clinicRuntime";
 import { tryHandleContactHandoffTurn } from "@/lib/contact-request/handleContactHandoffTurn";
 import { resolveLiveSupportButtons } from "@/lib/contact-request/liveSupportChannels";
 import {
+  buildContactRequestIdempotencyKey,
+  createContactRequestAndNotify,
+  detectPreferredContactMethod,
+} from "@/lib/contact-request";
+import { resolvePatientDisplayName } from "@/lib/contact-request/anonymousVisitor";
+import { maskPhoneForLogs } from "@/lib/phone/e164";
+import {
   LLM_EMERGENCY_TIMEOUT_MS,
   startLlmEmergencyCheck,
   type LlmEmergencyStatus,
@@ -1333,7 +1340,8 @@ export async function handleClinicAgentTurn(
       }
     }
 
-    // 4b. Informational contact / live-support display (clinic number / WhatsApp UI) — not a Contact Request
+    // 4b. Informational contact / live-support display (clinic number / WhatsApp UI).
+    // Pure "what's your WhatsApp?" stays informational. Explicit live-support still notifies the clinic.
     if (conversationIntent.intent === "contact_request" || conversationIntent.intent === "live_support_request") {
       const effectiveContactNumber = clinicWhatsapp || clinicData?.turkishContactNumber || clinicData?.internationalContactNumber || clinicData?.phone;
       const contactTarget =
@@ -1352,12 +1360,113 @@ export async function handleClinicAgentTurn(
         ...languageResolutionLogFields(localeResolution),
         handler: "formatContactResponse",
       }));
+
+      let liveSupportContactRequestId: string | undefined;
+      let liveSupportContactRequestStatus: string | undefined;
+      let isContactRequest = false;
+
+      if (conversationIntent.intent === "live_support_request" && actualClinicId && convId) {
+        const livePhone =
+          conversationIntent.entities?.phone ||
+          SlotExtractor.parsePhone(message) ||
+          appointmentDraft?.patientPhone ||
+          undefined;
+        const liveEmail =
+          conversationIntent.entities?.email ||
+          SlotExtractor.parseEmail(message) ||
+          appointmentDraft?.patientEmail ||
+          undefined;
+        const preferred =
+          (conversationIntent.entities?.preferredContactMethod as
+            | "whatsapp"
+            | "sms"
+            | "phone"
+            | "email"
+            | "unspecified"
+            | undefined) || detectPreferredContactMethod(message);
+        try {
+          const notifyResult = await createContactRequestAndNotify({
+            clinicId: actualClinicId,
+            conversationId: convId,
+            patientName: resolvePatientDisplayName(
+              conversationIntent.entities?.fullName || appointmentDraft?.patientName,
+              conversationLocale
+            ),
+            patientPhone: livePhone || undefined,
+            patientEmail: liveEmail || undefined,
+            preferredContactMethod: preferred,
+            patientNote: String(message || "").slice(0, 500),
+            language: conversationLocale,
+            channel: channel === "web_widget" ? "web_widget" : channel === "voice" ? "voice" : "other",
+            source: "AI Assistant",
+            idempotencyKey: buildContactRequestIdempotencyKey({
+              conversationId: convId,
+              preferredContactMethod: preferred,
+              patientPhone: livePhone || undefined,
+              patientEmail: liveEmail || undefined,
+            }),
+          });
+          liveSupportContactRequestId = notifyResult.contactRequestId;
+          liveSupportContactRequestStatus = notifyResult.record?.status || "pending";
+          isContactRequest = Boolean(notifyResult.contactRequestId);
+          if (!notifyResult.success) {
+            console.error(
+              JSON.stringify({
+                checkpoint: "LIVE_SUPPORT_CLINIC_NOTIFY_FAILED",
+                traceId: activeTraceId,
+                clinicId: actualClinicId,
+                conversationId: convId,
+                code: notifyResult.code || null,
+                hasPhone: Boolean(livePhone),
+                phoneMasked: maskPhoneForLogs(livePhone),
+              })
+            );
+          } else {
+            console.log(
+              JSON.stringify({
+                checkpoint: "LIVE_SUPPORT_CLINIC_NOTIFIED",
+                traceId: activeTraceId,
+                clinicId: actualClinicId,
+                conversationId: convId,
+                contactRequestId: liveSupportContactRequestId || null,
+                isDuplicate: Boolean(notifyResult.isDuplicate),
+                hasPhone: Boolean(livePhone),
+              })
+            );
+          }
+        } catch (e: unknown) {
+          console.error(
+            JSON.stringify({
+              checkpoint: "LIVE_SUPPORT_CLINIC_NOTIFY_EXCEPTION",
+              traceId: activeTraceId,
+              clinicId: actualClinicId,
+              conversationId: convId,
+              ...safeErrorMeta(e),
+            })
+          );
+        }
+      }
+
       return respondWithVisibleReply({
         responseType: "CHAT_REPLY",
         reply: contactMsg,
         pendingAppointmentData: appointmentDraft,
         ...(offersChannelButtons ? resolveLiveSupportButtons(clinicData, conversationLocale) : {}),
-      }, basePersist({ appointmentState, isLiveSupport: conversationIntent.intent === "live_support_request" }));
+        ...(liveSupportContactRequestId
+          ? {
+              contactRequestCreated: true,
+              contactRequestId: liveSupportContactRequestId,
+              contactRequestStatus: liveSupportContactRequestStatus,
+            }
+          : {}),
+      }, basePersist({
+        appointmentState,
+        isLiveSupport: conversationIntent.intent === "live_support_request",
+        // Prefer contact_request_pending when we created/linked a CR for live support.
+        isContactRequest: isContactRequest || undefined,
+        contactRequestId: liveSupportContactRequestId,
+        contactRequestStatus: liveSupportContactRequestStatus,
+      }));
     }
 
     let isMidFlowInterruption = false;
