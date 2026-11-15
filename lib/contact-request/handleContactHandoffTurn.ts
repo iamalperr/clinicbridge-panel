@@ -36,6 +36,7 @@ import {
   type ContactRequestChannel,
   type PreferredContactMethod,
 } from "@/lib/contact-request";
+import { resolvePatientDisplayName } from "@/lib/contact-request/anonymousVisitor";
 
 type PersistFn = (
   extra?: Partial<Parameters<typeof respondWithVisibleReply>[1]>
@@ -558,8 +559,15 @@ export async function tryHandleContactHandoffTurn(
     lastUserQuestion(params.history, params.message);
 
   const needed = requiredContactDetail(preferredMethod);
+  // Live-agent-only requests ("insanla konuşmak istiyorum") must still notify the clinic
+  // even when the patient left no phone/email — including after confirming a pending offer.
+  const allowNotifyWithoutContactDetails =
+    preferredMethod === "unspecified" &&
+    !phone &&
+    !email &&
+    (detection.asksForLiveAgent || (pendingContactConfirm && affirmed));
 
-  if (needed === "phone" && !phone) {
+  if (needed === "phone" && !phone && !allowNotifyWithoutContactDetails) {
     const action = PendingActionManager.createPendingAction(
       "collect_contact_phone",
       {
@@ -584,7 +592,7 @@ export async function tryHandleContactHandoffTurn(
     );
   }
 
-  if (needed === "email" && !email) {
+  if (needed === "email" && !email && !allowNotifyWithoutContactDetails) {
     const action = PendingActionManager.createPendingAction(
       "collect_contact_email",
       {
@@ -641,10 +649,12 @@ export async function tryHandleContactHandoffTurn(
     patientEmail: email,
   });
 
+  const displayName = resolvePatientDisplayName(patientName, params.locale);
+
   const result = await createContactRequestAndNotify({
     clinicId: params.clinicId,
     conversationId: params.conversationId,
-    patientName: patientName || undefined,
+    patientName: displayName,
     patientPhone: phone,
     patientEmail: email,
     preferredContactMethod: preferredMethod,

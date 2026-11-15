@@ -9,6 +9,7 @@
  */
 
 import { normalizeTurkishPhone } from "../phoneUtils";
+import { normalizeToE164 } from "@/lib/phone/e164";
 import type { DayOfWeek, WeeklySchedule } from "../skills/ClinicWorkingHoursResolver";
 import { spokenTurkishPhoneDigitCandidates } from "./turkishSpokenNumbers";
 
@@ -556,28 +557,38 @@ export function looksLikeRequestPhrase(segment: string): boolean {
 /* ── Phone ─────────────────────────────────────────────────────────────── */
 
 function typedPhone(raw: string): string | null {
-  const norm = normalizeTurkishPhone(raw);
-  if (norm.valid) return norm.display;
-
-  // International format with country code (+44 7911 123456, +90 532 123 45 67)
-  const intlMatch = raw.match(/\+\d{1,4}(?:[\s.-]?\(?\d{1,4}\)?)*(?:[\s.-]?\d{1,4}){2,5}/);
-  if (intlMatch) {
-    const digits = intlMatch[0].replace(/\D/g, "");
-    if (digits.length >= 9 && digits.length <= 16) return intlMatch[0].trim();
+  // Explicit country code → strict E.164 (accepts +221 / +44 / +49 / +90, rejects invalid).
+  if (/\+\d/.test(raw)) {
+    const intl = normalizeToE164(raw);
+    return intl.ok ? intl.e164 : null;
   }
 
-  // Local format with optional leading zero or parentheses
+  // Turkish national formats (05xx / 5xx) → E.164 with TR default.
+  const norm = normalizeTurkishPhone(raw);
+  if (norm.valid) {
+    const asE164 = normalizeToE164(norm.display, "TR");
+    return asE164.ok ? asE164.e164 : norm.display;
+  }
+
+  const e164Tr = normalizeToE164(raw, "TR");
+  if (e164Tr.ok) return e164Tr.e164;
+
+  // Ambiguous national formats without country code (e.g. UK 07…) — keep prior loose extract
+  // so booking/contact flows do not drop the digits; contact notify prefers +E.164 when present.
   const localMatch =
     raw.match(/(?:\+?\d{1,3}[\s-]?)?\(?0?\d{2,4}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}/) ||
     raw.match(/\b(?:\+\d{1,3}[\s-]?)?\d{9,14}\b/);
   if (localMatch) {
-    const digits = localMatch[0].replace(/[\s()\-]/g, "").replace(/\D/g, "");
+    const digits = localMatch[0].replace(/\D/g, "");
     if (digits.length >= 9 && digits.length <= 16) return localMatch[0].trim();
   }
 
-  // The message itself is a clean phone number
   const allDigits = raw.replace(/\D/g, "");
-  if (allDigits.length >= 9 && allDigits.length <= 16 && (raw.startsWith("+") || raw.startsWith("0") || raw.startsWith("5"))) {
+  if (
+    allDigits.length >= 9 &&
+    allDigits.length <= 16 &&
+    (raw.startsWith("0") || raw.startsWith("5"))
+  ) {
     return raw.trim();
   }
   return null;

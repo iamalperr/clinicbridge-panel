@@ -5,6 +5,7 @@
 export * from "./types";
 export * from "./intent";
 export * from "./formatters";
+export { anonymousVisitorName, resolvePatientDisplayName } from "./anonymousVisitor";
 export {
   createContactRequestAndNotify,
   findUnresolvedContactRequest,

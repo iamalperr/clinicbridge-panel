@@ -7,6 +7,15 @@ import { getAdminDb } from "@/lib/firebase-admin";
 import { stripUndefinedDeep } from "@/lib/firestore/stripUndefined";
 import { sendClinicContactRequestEmail } from "./notifications";
 import { sendClinicStaffWhatsApp } from "@/lib/services/notifications/whatsapp/sendClinicStaffWhatsApp";
+import { resolvePatientDisplayName } from "./anonymousVisitor";
+import { maskPhoneForLogs, normalizeToE164 } from "@/lib/phone/e164";
+
+function normalizeStoredPhone(raw?: string): string | undefined {
+  const value = String(raw || "").trim();
+  if (!value) return undefined;
+  const e164 = normalizeToE164(value, "TR");
+  return e164.ok ? e164.e164 : value;
+}
 import type {
   ContactRequest,
   ContactRequestStatus,
@@ -144,14 +153,43 @@ async function sendClinicNewContactRequestNotification(
   );
 
   // WhatsApp is independent of email and must not affect NOTIFICATION_FAILED.
-  void sendClinicStaffWhatsApp({
-    clinicId: request.clinicId,
-    clinicData,
-    kind: "contact_request",
-    recordId: request.id,
-    conversationId: request.conversationId,
-    patientName: request.patientName,
-  }).catch(() => undefined);
+  // Failures are logged (masked) and left for the next create/retry path — never swallowed silently.
+  try {
+    const wa = await sendClinicStaffWhatsApp({
+      clinicId: request.clinicId,
+      clinicData,
+      kind: "contact_request",
+      recordId: request.id,
+      conversationId: request.conversationId,
+      patientName: request.patientName,
+    });
+    if (wa.status === "failed") {
+      console.error(
+        JSON.stringify({
+          checkpoint: "CONTACT_REQUEST_WHATSAPP_NOTIFY_FAILED",
+          clinicId: request.clinicId,
+          contactRequestId: request.id,
+          conversationId: request.conversationId,
+          waStatus: wa.status,
+          recipientCount: wa.results?.length ?? 0,
+          hasPhone: Boolean(request.patientPhone),
+          phoneMasked: maskPhoneForLogs(request.patientPhone),
+        })
+      );
+    }
+  } catch (e: unknown) {
+    console.error(
+      JSON.stringify({
+        checkpoint: "CONTACT_REQUEST_WHATSAPP_NOTIFY_EXCEPTION",
+        clinicId: request.clinicId,
+        contactRequestId: request.id,
+        conversationId: request.conversationId,
+        hasPhone: Boolean(request.patientPhone),
+        phoneMasked: maskPhoneForLogs(request.patientPhone),
+        ...safeErrorMeta(e),
+      })
+    );
+  }
 
   if (!clinicEmailEnabled || uniqueRecipients.length === 0) {
     return { status: "DISABLED" };
@@ -195,8 +233,10 @@ async function applyContactRequestUpdates(
     // Keep key aligned with latest contact details so retries stay sticky.
     idempotencyKey: payload.idempotencyKey,
   };
-  if (payload.patientName) updates.patientName = payload.patientName;
-  if (payload.patientPhone) updates.patientPhone = payload.patientPhone;
+  if (payload.patientName) {
+    updates.patientName = resolvePatientDisplayName(payload.patientName, payload.language || existing.language);
+  }
+  if (payload.patientPhone) updates.patientPhone = normalizeStoredPhone(payload.patientPhone);
   if (payload.patientEmail) updates.patientEmail = payload.patientEmail;
   if (payload.patientNote) updates.patientNote = payload.patientNote;
   if (payload.language) updates.language = payload.language;
@@ -306,16 +346,17 @@ export async function createContactRequestAndNotify(
 
     const now = new Date().toISOString();
     const ref = col.doc();
+    const language = payload.language || "en";
     const record: ContactRequest = stripUndefinedDeep({
       id: ref.id,
       clinicId: payload.clinicId,
       conversationId: payload.conversationId,
-      patientName: payload.patientName,
-      patientPhone: payload.patientPhone,
+      patientName: resolvePatientDisplayName(payload.patientName, language),
+      patientPhone: normalizeStoredPhone(payload.patientPhone),
       patientEmail: payload.patientEmail,
       preferredContactMethod: payload.preferredContactMethod,
       patientNote: payload.patientNote,
-      language: payload.language || "en",
+      language,
       channel: payload.channel || "web_widget",
       source: payload.source || "AI Assistant",
       status: "pending",
