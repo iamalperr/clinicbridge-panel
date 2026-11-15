@@ -617,7 +617,8 @@ describe("Contact Request service — persistence/notify semantics", () => {
     expect(second.success).toBe(true);
     expect(second.contactRequestId).toBe(first.contactRequestId);
     expect(Object.keys(store).length).toBe(1);
-    expect(store[first.contactRequestId!].patientPhone).toBe("2222222222");
+    // Stored phones are normalized to E.164 when libphonenumber can validate them.
+    expect(store[first.contactRequestId!].patientPhone).toBe("+902222222222");
     expect(notifyCalls).toBe(1);
   });
 
