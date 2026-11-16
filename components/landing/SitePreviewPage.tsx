@@ -9,6 +9,7 @@ import { previewLanguageLabel, type PreviewUiLanguage } from "@/lib/preview/prev
 import type { PreviewLead } from "@/lib/preview/previewIntake";
 import LandingHeader from "@/components/landing/LandingHeader";
 import LandingFooter from "@/components/landing/LandingFooter";
+import AppSignupLink from "@/components/analytics/AppSignupLink";
 import "@/app/(landing)/landing.css";
 
 interface PreviewView {
@@ -187,9 +188,12 @@ export default function SitePreviewPage({ previewId }: { previewId: string }) {
                   <Link className="lp-btn lp-btn-primary lp-preview-cta" href="/#onizleme-istegi">{t.preview.requestPreview}</Link>
                   <Link className="lp-btn lp-btn-secondary lp-preview-cta" href="/#contact">{t.preview.requestDemo}</Link>
                   {!isDemo ? (
-                    <Link className="lp-btn lp-btn-secondary lp-preview-cta" href={`https://app.clinicbridge-ai.com/kayit?preview=${encodeURIComponent(previewId)}`}>
+                    <AppSignupLink
+                      className="lp-btn lp-btn-secondary lp-preview-cta"
+                      extraQuery={{ preview: previewId }}
+                    >
                       {t.preview.cta}
-                    </Link>
+                    </AppSignupLink>
                   ) : null}
                 </div>
               </aside>

@@ -9,8 +9,8 @@ import {
   planInterestMessage,
   type PricingPlan,
 } from "@/lib/pricing";
-
-const SIGNUP_URL = "https://app.clinicbridge-ai.com/kayit";
+import { trackBeginCheckout } from "@/lib/analytics/marketingEvents";
+import { buildAppSignupUrl } from "@/lib/analytics/signupRedirect";
 
 function fill(template: string, values: Record<string, string>) {
   return Object.entries(values).reduce((text, [key, value]) => text.replaceAll(`{${key}}`, value), template);
@@ -46,8 +46,15 @@ export default function PricingSection() {
   const router = useRouter();
 
   const choose = (plan: PricingPlan, planName: string) => {
+    trackBeginCheckout({
+      planId: plan.id,
+      planName,
+      value: plan.monthlyEur ?? null,
+      currency: "EUR",
+    });
     if (plan.trialEligible) {
-      window.location.href = SIGNUP_URL;
+      // Preserve UTM / click ids through marketing → app /kayit redirect.
+      window.location.href = buildAppSignupUrl();
       return;
     }
     const message = planInterestMessage(planName, lang);

@@ -513,6 +513,7 @@ export async function tryHandleContactHandoffTurn(
         clinicId: params.clinicId,
         conversationId: params.conversationId,
         originalQuestion: lastUserQuestion(params.history, params.message),
+        ...(detection.asksForLiveAgent ? { asksForLiveAgent: true } : {}),
       },
       undefined,
       "Confirm contact request forwarding"
@@ -561,11 +562,14 @@ export async function tryHandleContactHandoffTurn(
   const needed = requiredContactDetail(preferredMethod);
   // Live-agent-only requests ("insanla konuşmak istiyorum") must still notify the clinic
   // even when the patient left no phone/email — including after confirming a pending offer.
+  // Live-agent phrasing may notify without phone; slot-recovery / SMS handoffs still collect a number.
+  // Appointment-cancellation offers always need a reachable number.
   const allowNotifyWithoutContactDetails =
+    !cancellationPurpose &&
     preferredMethod === "unspecified" &&
     !phone &&
     !email &&
-    (detection.asksForLiveAgent || (pendingContactConfirm && affirmed));
+    (detection.asksForLiveAgent || Boolean(pending?.payload?.asksForLiveAgent));
 
   if (needed === "phone" && !phone && !allowNotifyWithoutContactDetails) {
     const action = PendingActionManager.createPendingAction(

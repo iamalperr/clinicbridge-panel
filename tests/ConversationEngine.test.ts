@@ -191,7 +191,7 @@ describe('Unified Conversation Engine & Hardened Intent Resolution Suite', () =>
 
     it('D3: normalizes Turkish phone with international prefix', () => {
       const parsed = SlotExtractor.parsePhone('+90 (532) 123 45 67');
-      expect(parsed).toBe('+90 532 123 45 67');
+      expect(parsed).toBe('+905321234567');
     });
 
     it('D4: extracts date, time and treatment from a single mixed sentence', () => {

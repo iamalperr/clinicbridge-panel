@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useLandingLang, LandingLanguage } from "@/lib/landing-translations";
 import { Menu, X } from "lucide-react";
 import Image from "next/image";
+import AppSignupLink from "@/components/analytics/AppSignupLink";
 
 export default function LandingHeader() {
   const { lang, setLang, t } = useLandingLang();
@@ -78,9 +79,9 @@ export default function LandingHeader() {
                 </button>
               ))}
             </div>
-            <a className="lp-btn lp-btn-primary" style={{ padding: "10px 24px", fontSize: 14 }} href="https://app.clinicbridge-ai.com/kayit">
+            <AppSignupLink className="lp-btn lp-btn-primary" style={{ padding: "10px 24px", fontSize: 14 }}>
               {t.hero.ctaPrimary}
-            </a>
+            </AppSignupLink>
             <button type="button" className="lp-mobile-toggle" onClick={() => setMobileOpen(!mobileOpen)} aria-label="Toggle menu">
               {mobileOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
@@ -97,7 +98,7 @@ export default function LandingHeader() {
         <a href="#how-it-works" onClick={(e) => { e.preventDefault(); scrollTo("how-it-works"); }}>{t.nav.howItWorks}</a>
         <a href="#benefits" onClick={(e) => { e.preventDefault(); scrollTo("benefits"); }}>{t.nav.benefits}</a>
         <a href="#contact" onClick={(e) => { e.preventDefault(); scrollTo("contact"); }}>{t.nav.contact}</a>
-        <a className="lp-btn lp-btn-primary" href="https://app.clinicbridge-ai.com/kayit">{t.hero.ctaPrimary}</a>
+        <AppSignupLink className="lp-btn lp-btn-primary">{t.hero.ctaPrimary}</AppSignupLink>
       </div>
     </>
   );

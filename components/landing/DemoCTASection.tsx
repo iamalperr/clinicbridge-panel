@@ -3,7 +3,7 @@
 import { useEffect, useState, FormEvent } from "react";
 import { useLandingLang } from "@/lib/landing-translations";
 import { CheckCircle, ArrowRight, Loader2, AlertCircle } from "lucide-react";
-import { trackGenerateLead } from "@/lib/analytics/generateLead";
+import { trackGenerateLead } from "@/lib/analytics/marketingEvents";
 import { submitDemoRequest } from "@/lib/services/demoRequestService";
 import { getAttributionForSubmit } from "@/lib/attribution";
 import { useRouter } from "next/navigation";

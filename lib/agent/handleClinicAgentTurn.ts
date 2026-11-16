@@ -74,7 +74,6 @@ import {
   detectPreferredContactMethod,
 } from "@/lib/contact-request";
 import { resolvePatientDisplayName } from "@/lib/contact-request/anonymousVisitor";
-import { maskPhoneForLogs } from "@/lib/phone/e164";
 import {
   LLM_EMERGENCY_TIMEOUT_MS,
   startLlmEmergencyCheck,
@@ -1418,7 +1417,6 @@ export async function handleClinicAgentTurn(
                 conversationId: convId,
                 code: notifyResult.code || null,
                 hasPhone: Boolean(livePhone),
-                phoneMasked: maskPhoneForLogs(livePhone),
               })
             );
           } else {

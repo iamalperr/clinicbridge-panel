@@ -4,6 +4,7 @@ import Script from "next/script";
 import { headers } from "next/headers";
 import "./globals.css";
 import MarketingGoogleTag from "@/components/analytics/MarketingGoogleTag";
+import MarketingMetaPixel from "@/components/analytics/MarketingMetaPixel";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/lib/auth-context";
 import { I18nProvider } from "@/lib/i18n-context";
@@ -12,12 +13,18 @@ import CookieBanner from "@/components/ui/CookieBanner";
 import ActivityTracker from "@/components/analytics/ActivityTracker";
 import LeadAttributionTracker from "@/components/landing/LeadAttributionTracker";
 import { isMarketingDocumentPath } from "@/lib/auth/publicRoutes";
+import { consentModeBootstrapScript } from "@/lib/analytics/consentMode";
 
 const inter = Inter({ subsets: ["latin"] });
 
+/**
+ * Root fallback for pages without their own metadata (e.g. /hakkimizda).
+ * Turkish homepage (/) and /en set absolute titles via homeMetadata — do not change those.
+ */
 export const metadata: Metadata = {
-  title: "ClinicBridge — AI Clinic Management Platform",
-  description: "Multi-tenant AI assistant management platform for clinics.",
+  title: "Multilingual AI Assistant for Medical Tourism Clinics | ClinicBridge AI",
+  description:
+    "AI chat and phone assistant that answers international patients 24/7 in their language. Set it up yourself. 14-day free trial. No credit card required.",
   icons: {
     icon: [{ url: "/favicon.png", type: "image/png", sizes: "96x96" }],
   },
@@ -32,7 +39,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <MarketingGoogleTag host={host} />
+        {/* Consent Mode v2 defaults before GTM/GA so page_view is modeled when storage is denied. */}
+        <script
+          id="google-consent-default"
+          dangerouslySetInnerHTML={{ __html: consentModeBootstrapScript() }}
+        />
+        {/* Direct GA4 + Meta — authoritative. GTM must not also fire that GA4 stream or a duplicate Meta Pixel. */}
+        <MarketingGoogleTag host={host} pathname={pathname} />
+        <MarketingMetaPixel host={host} pathname={pathname} />
         <Script id="google-tag-manager" strategy="afterInteractive">
           {`
             (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':

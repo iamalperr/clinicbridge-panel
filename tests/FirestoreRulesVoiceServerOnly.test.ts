@@ -136,6 +136,7 @@ const SERVER_ONLY_COLLECTIONS = [
   "clinicWhatsappSettings",
   "whatsappNotifications",
   "whatsappAutoReplies",
+  "clinicLifecycle",
 ] as const;
 
 describe("firestore.rules — server-only infrastructure collections", () => {

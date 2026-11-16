@@ -7,16 +7,17 @@ describe("demo form generate_lead", () => {
   it("uses the single configured marketing measurement id", () => {
     expect(GA_MEASUREMENT_ID).toBe("G-DP3FV4PQWD");
     const tag = readFileSync("components/analytics/MarketingGoogleTag.tsx", "utf8");
-    expect(tag.match(/G-[A-Z0-9]+/g)).toEqual(["G-DP3FV4PQWD"]);
+    // Appears in gtag/js?id=… and gtag('config', …) — same single stream.
+    expect(new Set(tag.match(/G-[A-Z0-9]+/g))).toEqual(new Set(["G-DP3FV4PQWD"]));
   });
 
   it("sends generate_lead once through the supplied gtag and skips a missing tag", () => {
     const calls: unknown[][] = [];
     trackGenerateLead((...args) => {
       calls.push(args);
-    });
+    }, undefined);
     expect(calls).toEqual([["event", "generate_lead", { transport_type: "beacon" }]]);
-    expect(() => trackGenerateLead(undefined)).not.toThrow();
+    expect(() => trackGenerateLead(undefined, undefined)).not.toThrow();
   });
 
   it("fires only after the shared demo form is accepted", () => {
@@ -29,6 +30,6 @@ describe("demo form generate_lead", () => {
     expect(failureAt).toBeGreaterThan(trackAt);
     expect(source.slice(failureAt)).not.toContain("trackGenerateLead");
     expect(readFileSync("components/landing/LandingHomePage.tsx", "utf8")).toContain("<DemoCTASection />");
-    expect(readFileSync("app/(marketing)/klinikler-icin-yapay-zeka-asistani/page.tsx", "utf8")).toContain("<DemoCTASection />");
+    expect(readFileSync("app/klinikler-icin-yapay-zeka-asistani/page.tsx", "utf8")).toContain("<DemoCTASection />");
   });
 });

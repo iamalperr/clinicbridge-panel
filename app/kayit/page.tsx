@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { UI_COLORS } from "@/components/ui/ui-shared";
 import Logo from "@/components/ui/Logo";
+import { trackSignUp } from "@/lib/analytics/marketingEvents";
 
 function SignupForm() {
   const { t, language, setLanguage } = useI18n();
@@ -95,6 +96,8 @@ function SignupForm() {
         setError(code === "email_taken" ? t("signup.emailTaken") : code === "rate_limited" ? t("signup.limited") : code === "invalid" || code === "consent_required" ? t("signup.invalid") : t("signup.failed"));
         return;
       }
+      // GA4 sign_up + Meta CompleteRegistration — no PII in params; once per session.
+      trackSignUp();
       setPassword("");
       setEmailSent(payload.emailSent === true);
       setClinicId(typeof payload.clinicId === "string" ? payload.clinicId : "");

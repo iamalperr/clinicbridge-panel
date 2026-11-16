@@ -345,7 +345,7 @@ describe("tryHandleContactHandoffTurn — second-turn intl + anonymous + live-on
 
     const pending = PendingActionManager.createPendingAction(
       "create_contact_request",
-      { preferredContactMethod: "unspecified", language: "tr" },
+      { preferredContactMethod: "unspecified", language: "tr", asksForLiveAgent: true },
       undefined,
       "Confirm"
     );

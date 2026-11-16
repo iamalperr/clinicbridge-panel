@@ -208,13 +208,13 @@ describe("D. corrections", () => {
 describe("E. spoken phone numbers", () => {
   it("complete local mobile", () => {
     expect(SlotExtractor.parsePhone("telefon numaram sıfır beş yüz otuz iki iki yüz doksan bir kırk beş altmış yedi")).toBe(
-      "+90 532 291 45 67"
+      "+905322914567"
     );
   });
 
   it("complete +90 mobile ('artı doksan beş yüz otuz iki ...')", () => {
     expect(SlotExtractor.parsePhone("artı doksan beş yüz otuz iki iki yüz doksan bir kırk beş altmış yedi")).toBe(
-      "+90 532 291 45 67"
+      "+905322914567"
     );
   });
 
@@ -226,7 +226,7 @@ describe("E. spoken phone numbers", () => {
 
   it("spoken phone reaches the phone slot through extractSlots", () => {
     expect(extract("numaram sıfır beş yüz otuz iki iki yüz doksan bir kırk beş altmış yedi", { expectedSlot: "phone" }).extracted.phone).toBe(
-      "+90 532 291 45 67"
+      "+905322914567"
     );
   });
 
@@ -235,9 +235,9 @@ describe("E. spoken phone numbers", () => {
     expect(spokenTurkishPhoneDigits("on iki ekim saat on dört otuz")).toBeNull();
   });
 
-  it("typed phones are unchanged", () => {
-    expect(SlotExtractor.parsePhone("0532 291 45 67")).toBe("+90 532 291 45 67");
-    expect(SlotExtractor.parsePhone("+905322914567")).toBe("+90 532 291 45 67");
+  it("typed phones normalize to E.164", () => {
+    expect(SlotExtractor.parsePhone("0532 291 45 67")).toBe("+905322914567");
+    expect(SlotExtractor.parsePhone("+905322914567")).toBe("+905322914567");
   });
 });
 

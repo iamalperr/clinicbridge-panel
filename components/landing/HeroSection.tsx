@@ -4,8 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useLandingLang } from "@/lib/landing-translations";
 import { ArrowRight, Bot, Globe, Phone } from "lucide-react";
-
-const SIGNUP_URL = "https://app.clinicbridge-ai.com/kayit";
+import AppSignupLink from "@/components/analytics/AppSignupLink";
 
 export default function HeroSection() {
   const { t } = useLandingLang();
@@ -75,9 +74,9 @@ export default function HeroSection() {
               </span>
             </div>
             <div className="lp-hero-ctas">
-              <a className="lp-btn lp-btn-primary" href={SIGNUP_URL}>
+              <AppSignupLink className="lp-btn lp-btn-primary">
                 {t.hero.ctaPrimary} <ArrowRight size={18} />
-              </a>
+              </AppSignupLink>
               <Link className="lp-btn lp-btn-secondary" href="/kurulum-rehberi">
                 {t.hero.ctaSecondary}
               </Link>

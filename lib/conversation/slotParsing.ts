@@ -614,7 +614,10 @@ export function parsePhoneSlot(input: SlotInput): SlotParseResult<string> {
       readings
         .map((digits) => normalizeTurkishPhone(digits))
         .filter((norm) => norm.valid)
-        .map((norm) => norm.display)
+        .map((norm) => {
+          const asE164 = normalizeToE164(norm.display, "TR");
+          return asE164.ok ? asE164.e164 : norm.display;
+        })
     )
   );
   if (valid.length === 1 && readings.length === 1) return filled(valid[0], "PHONE_SPOKEN");

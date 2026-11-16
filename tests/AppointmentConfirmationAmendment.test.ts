@@ -232,9 +232,10 @@ describe("Appointment confirmation amendment invariant", () => {
   });
 
   it("15. phone correction at confirmation", () => {
-    const res = amend("My phone is +447700900999");
+    // Use a libphonenumber-valid UK mobile (7700 900999 is reserved/invalid).
+    const res = amend("My phone is +44 7911 123456");
     expect(res.outcome).toBe("applied");
-    expect(res.nextDraft.patientPhone).toMatch(/447700900999/);
+    expect(res.nextDraft.patientPhone).toMatch(/447911123456/);
     expect(res.nextDraft.requestedTime).toBe("14:00");
   });
 

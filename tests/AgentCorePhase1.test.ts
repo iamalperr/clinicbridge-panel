@@ -296,7 +296,8 @@ describe("Agent Core — handleClinicAgentTurn direct call (mocked I/O)", () => 
       patientPhone: "+905551112233",
       patientEmail: "ada@example.com",
       requestedService: "Cleaning",
-      requestedDate: "2026-11-16",
+      // Future clinic-local slot — avoid PAST_TIME when the suite runs later the same day.
+      requestedDate: "2026-12-16",
       requestedTime: "11:00",
       originalText: "yes",
     };

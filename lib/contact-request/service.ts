@@ -8,7 +8,7 @@ import { stripUndefinedDeep } from "@/lib/firestore/stripUndefined";
 import { sendClinicContactRequestEmail } from "./notifications";
 import { sendClinicStaffWhatsApp } from "@/lib/services/notifications/whatsapp/sendClinicStaffWhatsApp";
 import { resolvePatientDisplayName } from "./anonymousVisitor";
-import { maskPhoneForLogs, normalizeToE164 } from "@/lib/phone/e164";
+import { normalizeToE164 } from "@/lib/phone/e164";
 
 function normalizeStoredPhone(raw?: string): string | undefined {
   const value = String(raw || "").trim();
@@ -173,7 +173,6 @@ async function sendClinicNewContactRequestNotification(
           waStatus: wa.status,
           recipientCount: wa.results?.length ?? 0,
           hasPhone: Boolean(request.patientPhone),
-          phoneMasked: maskPhoneForLogs(request.patientPhone),
         })
       );
     }
@@ -185,7 +184,6 @@ async function sendClinicNewContactRequestNotification(
         contactRequestId: request.id,
         conversationId: request.conversationId,
         hasPhone: Boolean(request.patientPhone),
-        phoneMasked: maskPhoneForLogs(request.patientPhone),
         ...safeErrorMeta(e),
       })
     );

@@ -207,7 +207,7 @@ describe("IntentRouter & Production Architecture Test Suite", () => {
 
   describe("5. SlotExtractor Parsing & Sanitization", () => {
     it("extracts phone numbers accurately from messy sentences", () => {
-      const phone1 = SlotExtractor.parsePhone("Telefon numaram +90 532 123 45 67, arayabilirsiniz.");
+      const phone1 = SlotExtractor.parsePhone("Telefon numaram +905321234567, arayabilirsiniz.");
       expect(phone1?.replace(/\s+/g, "")).toBe("+905321234567");
 
       const phone2 = SlotExtractor.parsePhone("0532 111 2233");

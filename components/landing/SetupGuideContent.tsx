@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import SetupGuideVideo from "@/components/landing/SetupGuideVideo";
+import AppSignupLink from "@/components/analytics/AppSignupLink";
 
 /** Real signup page used after preview CTAs and post-auth continue → /kurulum. */
 export const SETUP_SIGNUP_URL = "https://app.clinicbridge-ai.com/kayit";
@@ -91,9 +92,9 @@ export default function SetupGuideContent() {
           </p>
           <SetupGuideVideo src={SETUP_GUIDE_VIDEO_SRC} />
           <div className="lp-hero-ctas">
-            <a className="lp-btn lp-btn-primary" href={SETUP_SIGNUP_URL}>
+            <AppSignupLink className="lp-btn lp-btn-primary">
               14 gün ücretsiz başla
-            </a>
+            </AppSignupLink>
             <a className="lp-btn lp-btn-secondary" href="#adim-1">
               Adım adım rehber ↓
             </a>
@@ -125,7 +126,7 @@ export default function SetupGuideContent() {
             <h3>Adım 1: Hesabınızı açın</h3>
             <ol>
               <li>
-                <a href={SETUP_SIGNUP_URL}>Kayıt sayfasında</a> hesabınızı oluşturun.
+                <AppSignupLink>Kayıt sayfasında</AppSignupLink> hesabınızı oluşturun.
               </li>
               <li>
                 Ad soyad, klinik adı, e-posta, şifre ve telefon girin; Kullanım Şartları, Mesafeli Satış Sözleşmesi ve KVKK onaylarını işaretleyin.
@@ -282,9 +283,9 @@ export default function SetupGuideContent() {
       <section className="lp-section" id="son-cagri">
         <div className="lp-container" style={{ textAlign: "center" }}>
           <h2 className="lp-section-title">Bu gece gelen yabancı hasta mesajı cevapsız kalmasın</h2>
-          <a className="lp-btn lp-btn-primary" href={SETUP_SIGNUP_URL}>
+          <AppSignupLink className="lp-btn lp-btn-primary">
             14 gün ücretsiz başla
-          </a>
+          </AppSignupLink>
         </div>
       </section>
     </>

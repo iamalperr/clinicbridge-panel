@@ -266,9 +266,9 @@ describe("time: natural Turkish with clinic hours", () => {
 
 describe("phone: deterministic and ambiguity-safe", () => {
   it("typed and uniquely spoken numbers resolve", () => {
-    expect(routeSlot("0532 291 45 67", "phone").entities?.phone).toBe("+90 532 291 45 67");
+    expect(routeSlot("0532 291 45 67", "phone").entities?.phone).toBe("+905322914567");
     const spoken = routeSlot(SPOKEN_PHONE, "phone");
-    expect(spoken.entities?.phone).toBe("+90 532 291 45 67");
+    expect(spoken.entities?.phone).toBe("+905322914567");
     expect(spoken.slotOutcomes?.phone?.reasonCode).toBe("PHONE_SPOKEN");
   });
 
@@ -279,7 +279,7 @@ describe("phone: deterministic and ambiguity-safe", () => {
     expect(SlotExtractor.parsePhone(AMBIGUOUS_SPOKEN_PHONE)).toBeNull();
     const typed = parsePhoneSlot(toSlotInput(AMBIGUOUS_SPOKEN_PHONE));
     expect(typed.status).toBe("ambiguous");
-    expect(typed.status === "ambiguous" && typed.candidates).toEqual(["+90 530 223 45 67", "+90 532 123 45 67"]);
+    expect(typed.status === "ambiguous" && typed.candidates).toEqual(["+905302234567", "+905321234567"]);
   });
 
   it("incomplete numbers are rejected, never completed", () => {
@@ -319,7 +319,7 @@ describe("multi-slot natural utterances", () => {
     const r = routeName(`Yusuf Alper Özgül, telefonum ${SPOKEN_PHONE}`);
     expect(r.intent).toBe("appointment_continuation");
     expect(r.entities?.fullName).toBe("Yusuf Alper Özgül");
-    expect(r.entities?.phone).toBe("+90 532 291 45 67");
+    expect(r.entities?.phone).toBe("+905322914567");
   });
 });
 
@@ -434,7 +434,7 @@ describe("targeted: Agency matching-chat call shape", () => {
 
   it("an ambiguous spoken phone is never stored", () => {
     expect(agencyTurn(AMBIGUOUS_SPOKEN_PHONE, { patientName: "Yusuf Alper Özgül" }, "phone").extracted.phone).toBeUndefined();
-    expect(agencyTurn(SPOKEN_PHONE, { patientName: "Yusuf Alper Özgül" }, "phone").extracted.phone).toBe("+90 532 291 45 67");
+    expect(agencyTurn(SPOKEN_PHONE, { patientName: "Yusuf Alper Özgül" }, "phone").extracted.phone).toBe("+905322914567");
   });
 });
 
@@ -794,7 +794,7 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
       });
       const r = await say("Ahmet Kaya 0532 291 45 67 tarih bilmiyorum");
       expect(r.state).toBe("AWAITING_DATE_CLARIFICATION");
-      expect(r.draft.patientPhone).toContain("532 291 45 67");
+      expect(r.draft.patientPhone).toBe("+905322914567");
       expect(r.draft.requestedService).toBe("Diş İmplantı");
     });
   });
@@ -984,14 +984,14 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
     it("expected phone: a statement that mentions WhatsApp is a phone answer, not a live-support request", async () => {
       const { say } = makeConversation({ seed: seedAt("COLLECTING_PHONE", { ...BASE_DRAFT, patientName: "Yusuf Alper Özgül" }) });
       const r = await say("Numaram 0532 291 45 67. Bu numaradan WhatsApp da kullanıyorum.");
-      expect(r.draft.patientPhone).toContain("532 291 45 67");
+      expect(r.draft.patientPhone).toBe("+905322914567");
       expect(r.state).toBe("COLLECTING_EMAIL");
       expect(r.reply).toMatch(/e-posta/i);
     });
 
     it("expected email: decline + 'can it still be created?' → declined, review summary, nothing created yet", async () => {
       const { say } = makeConversation({
-        seed: seedAt("COLLECTING_EMAIL", { ...BASE_DRAFT, patientName: "Yusuf Alper Özgül", patientPhone: "+90 532 291 45 67" }),
+        seed: seedAt("COLLECTING_EMAIL", { ...BASE_DRAFT, patientName: "Yusuf Alper Özgül", patientPhone: "+905322914567" }),
       });
       const r = await say("E-posta vermek istemiyorum. Randevum yine oluşturulabilir mi?");
       expect(r.draft.emailDisposition).toBe("DECLINED");

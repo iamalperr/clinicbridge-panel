@@ -10,7 +10,7 @@ const HOME = {
     path: "/",
   },
   en: {
-    title: "Multilingual AI Assistant for Medical Tourism Clinics | ClinicBridge",
+    title: "Multilingual AI Assistant for Medical Tourism Clinics | ClinicBridge AI",
     description:
       "AI chat and phone assistant that answers international patients 24/7 in their language. Set it up yourself. 14-day free trial. No credit card required.",
     path: "/en",
