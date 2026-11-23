@@ -12,6 +12,9 @@ import { toPersistedRequestedDoctor } from "@/lib/appointment/requestedDoctorPre
 import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
 import { safeRecordLifecycleMilestone } from "@/lib/lifecycle/safeRecord";
 
+/** Distinguishes a first request from a same-conversation date/time change. */
+export type AppointmentRequestKind = "new" | "change";
+
 export interface CreateAppointmentPayload {
   clinicId: string;
   patientName: string;
@@ -41,6 +44,13 @@ export interface CreateAppointmentPayload {
   now?: Date;
   clinicTimeZone?: string;
   startsAtUtc?: string;
+  /**
+   * "change" = update the prior preliminary request in this conversation (same patient).
+   * "new" (default) = create an independent request.
+   */
+  requestKind?: AppointmentRequestKind;
+  /** When requestKind is "change", the appointment id to update instead of duplicating. */
+  replacesAppointmentId?: string;
 }
 
 export function validateAppointmentPayload(payload: CreateAppointmentPayload): CreateAppointmentPayload {
@@ -104,6 +114,69 @@ export async function createAppointmentRecord(payload: CreateAppointmentPayload)
   
   try {
     const appointmentsCol = adminDb.collection("clinics").doc(payload.clinicId).collection("appointments");
+    const requestKind: AppointmentRequestKind = payload.requestKind === "change" ? "change" : "new";
+    const now = new Date().toISOString();
+
+    // Same-conversation reschedule: update the prior preliminary request instead of a duplicate row.
+    if (requestKind === "change" && payload.replacesAppointmentId) {
+      const existingRef = appointmentsCol.doc(payload.replacesAppointmentId);
+      const existingSnap = await existingRef.get();
+      if (existingSnap.exists) {
+        const existingData = existingSnap.data() as Appointment;
+        const persistedDoctor = toPersistedRequestedDoctor(payload.requestedDoctor);
+        const updated: Partial<Appointment> = {
+          ...existingData,
+          id: payload.replacesAppointmentId,
+          patientName: payload.patientName,
+          patientPhone: payload.patientPhone,
+          patientPhoneRaw: payload.patientPhone,
+          patientEmail: payload.patientEmail || existingData.patientEmail || "",
+          requestedService: payload.requestedService,
+          requestedDate: payload.requestedDate,
+          requestedTime: payload.requestedTime || "",
+          preferredDate: payload.requestedDate,
+          preferredTime: payload.requestedTime || "",
+          notes: payload.notes || existingData.notes || "",
+          updatedAt: now,
+          rescheduledAt: now,
+          rescheduleCount: (existingData.rescheduleCount || 0) + 1,
+          rescheduleReason: "patient_requested_new_datetime_in_chat",
+        };
+        if (payload.preferredTimeText) updated.preferredTimeText = payload.preferredTimeText;
+        if (payload.preferredTimePeriod) updated.preferredTimePeriod = payload.preferredTimePeriod as any;
+        if (payload.preferredTimeStart) updated.preferredTimeStart = payload.preferredTimeStart;
+        if (payload.preferredTimeEnd) updated.preferredTimeEnd = payload.preferredTimeEnd;
+        if (payload.clinicTimeZone) updated.clinicTimeZone = payload.clinicTimeZone;
+        if (payload.startsAtUtc) updated.startsAtUtc = payload.startsAtUtc;
+        if (persistedDoctor) updated.requestedDoctor = persistedDoctor;
+        (updated as any).requestKind = "change";
+        (updated as any).previousRequestedDate = existingData.requestedDate;
+        (updated as any).previousRequestedTime = existingData.requestedTime;
+
+        await existingRef.set(updated, { merge: true });
+        try {
+          await adminDb.collection("clinics").doc(payload.clinicId).collection("notifications").add({
+            type: "appointment_request_change",
+            title: "Randevu talebi güncellendi",
+            message: `${payload.patientName} (${payload.patientPhone}) adlı hasta randevu talebini ${payload.requestedDate} ${payload.requestedTime || ""} olarak güncelledi.`,
+            appointmentId: payload.replacesAppointmentId,
+            conversationId: payload.conversationId || "",
+            requestKind: "change",
+            read: false,
+            createdAt: now,
+          });
+        } catch {
+          /* in-app notify is best-effort */
+        }
+        console.log(JSON.stringify({
+          checkpoint: "APPT_CHANGE_UPDATED_EXISTING",
+          clinicId: payload.clinicId,
+          appointmentId: payload.replacesAppointmentId,
+          requestKind: "change",
+        }));
+        return { record: updated, isDuplicate: false };
+      }
+    }
 
     // ── Idempotency Check: By idempotencyKey ──
     if (payload.idempotencyKey) {
@@ -133,7 +206,6 @@ export async function createAppointmentRecord(payload: CreateAppointmentPayload)
       }
     }
 
-    const now = new Date().toISOString();
     const appointmentRef = appointmentsCol.doc();
     const appointmentId = appointmentRef.id;
 
@@ -156,6 +228,7 @@ export async function createAppointmentRecord(payload: CreateAppointmentPayload)
       updatedAt: now,
       createdBy: payload.createdBy
     };
+    (newAppointment as any).requestKind = "new";
 
     if (payload.preferredTimeText) newAppointment.preferredTimeText = payload.preferredTimeText;
     if (payload.preferredTimePeriod) newAppointment.preferredTimePeriod = payload.preferredTimePeriod as any;
@@ -188,6 +261,7 @@ export async function createAppointmentRecord(payload: CreateAppointmentPayload)
         message: `${payload.patientName} (${payload.patientPhone}) adlı hasta ${payload.requestedService} için randevu talebinde bulundu.`,
         appointmentId,
         conversationId: payload.conversationId || "",
+        requestKind: "new",
         read: false,
         createdAt: now,
       });

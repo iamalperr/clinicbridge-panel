@@ -3,8 +3,11 @@ import { getAdminDb } from "@/lib/firebase-admin";
 import { RequestTimer } from "@/lib/performance/requestTimer";
 import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
 import {
+  formatTechnicalFallbackReply,
   handleClinicAgentTurn,
+  logTechnicalFallbackEvent,
   resolveAgentChannel,
+  resolveClinicPhoneForFallback,
   respondWithVisibleReply,
   safeMergeDraft,
   type AgentTurnResult,
@@ -48,22 +51,25 @@ export async function POST(req: Request) {
   const startTime = Date.now();
   const debugLog: string[] = [];
   const perf = new RequestTimer({});
+  let clinicId: string | undefined;
+  let message: string | undefined;
+  let language: string | undefined;
+  let history: Array<{ role?: string; content?: string }> = [];
+  let convId = `session_${Date.now()}`;
 
   try {
     perf.start("parse_request");
     const body = await req.json();
-    const {
-      clinicId,
-      widgetId,
-      message,
-      language,
-      history = [],
-      conversationId = "",
-      pendingAppointmentData,
-      _systemAction,
-      traceId,
-    } = body;
-    const convId = conversationId || `session_${Date.now()}`;
+    clinicId = body.clinicId;
+    const widgetId = body.widgetId;
+    message = body.message;
+    language = body.language;
+    history = Array.isArray(body.history) ? body.history : [];
+    const conversationId = body.conversationId || "";
+    const pendingAppointmentData = body.pendingAppointmentData;
+    const _systemAction = body._systemAction;
+    const traceId = body.traceId;
+    convId = conversationId || convId;
     perf.end("parse_request");
     perf.setContext({ conversationId: convId, clinicId, traceId });
     debugLog.push(`clinicId=${clinicId} msgLength=${message?.length ?? 0}`);
@@ -242,13 +248,26 @@ export async function POST(req: Request) {
     }
 
     if (!process.env.OPENAI_API_KEY) {
+      const locale = typeof language === "string" && language.trim() ? language.trim().slice(0, 2) : "tr";
+      logTechnicalFallbackEvent({
+        category: "unknown",
+        fallbackReason: "unconfigured_ai",
+        clinicId,
+        conversationId: convId,
+      });
       const result = await respondWithVisibleReply(
-        { reply: "Yapay zeka servisi şu an yapılandırılmamış. Lütfen kliniğimizi arayın." },
+        {
+          reply: formatTechnicalFallbackReply({ locale }),
+          responseType: "CHAT_REPLY",
+          technicalFallback: true,
+        },
         {
           clinicId,
           convId,
           userMessage: message,
           history,
+          detectedLanguage: locale,
+          fallbackReason: "unconfigured_ai",
         }
       );
       return agentTurnResultToResponse(result);
@@ -271,7 +290,7 @@ export async function POST(req: Request) {
         traceId,
         originUrl: body.originUrl,
         sourceDomain,
-        context: { messageId: body.messageId },
+        context: { messageId: body.messageId || body.clientMessageId },
       },
       adminDb,
       perf,
@@ -279,13 +298,74 @@ export async function POST(req: Request) {
       startTime,
     });
 
+    // Guard: never return an empty assistant message to the widget.
+    if (!String(result.replyText || result.payload?.reply || "").trim()) {
+      const locale =
+        result.locale ||
+        (typeof language === "string" && language.trim() ? language.trim().slice(0, 2) : "tr");
+      logTechnicalFallbackEvent({
+        category: "unknown",
+        fallbackReason: "empty_reply_guard",
+        clinicId,
+        conversationId: convId,
+      });
+      const guarded = await respondWithVisibleReply(
+        {
+          reply: formatTechnicalFallbackReply({ locale }),
+          responseType: "CHAT_REPLY",
+          technicalFallback: true,
+          conversationId: convId,
+        },
+        {
+          clinicId,
+          convId,
+          userMessage: message,
+          history,
+          detectedLanguage: locale,
+          fallbackReason: "empty_reply_guard",
+        }
+      );
+      return agentTurnResultToResponse(guarded);
+    }
+
     return agentTurnResultToResponse(result);
   } catch (err: unknown) {
     debugLog.push(`ERROR: ${JSON.stringify(safeErrorMeta(err))}`);
     console.error("[widget-chat]", debugLog.join(" | "));
-    return NextResponse.json(
-      { reply: "Şu an teknik bir sorun yaşıyoruz. Lütfen kliniğimizi doğrudan arayın." },
-      { status: 200, headers: CORS }
+    // Prefer request language; default EN so broken-English pricing questions never get a TR-only catch.
+    const locale = typeof language === "string" && language.trim() ? language.trim().slice(0, 2) : "en";
+    let clinicPhone = "";
+    try {
+      const adminDb = getAdminDb();
+      if (adminDb && clinicId) {
+        const snap = await adminDb.collection("clinics").doc(String(clinicId)).get();
+        if (snap.exists) clinicPhone = resolveClinicPhoneForFallback(snap.data() as any);
+      }
+    } catch {
+      /* phone lookup must not block the fallback reply */
+    }
+    logTechnicalFallbackEvent({
+      category: "unknown",
+      fallbackReason: "route_unhandled_exception",
+      clinicId: String(clinicId || "unknown"),
+      conversationId: convId,
+    });
+    const fallback = await respondWithVisibleReply(
+      {
+        reply: formatTechnicalFallbackReply({ locale, clinicPhone }),
+        responseType: "CHAT_REPLY",
+        technicalFallback: true,
+        conversationId: convId,
+      },
+      {
+        clinicId: String(clinicId || "unknown"),
+        convId,
+        userMessage: typeof message === "string" ? message : "",
+        history: Array.isArray(history) ? (history as any) : [],
+        detectedLanguage: locale,
+        fallbackReason: "route_unhandled_exception",
+      }
     );
+    return agentTurnResultToResponse(fallback);
   }
 }

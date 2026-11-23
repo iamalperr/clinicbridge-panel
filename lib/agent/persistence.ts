@@ -7,6 +7,10 @@ import { stripUndefinedDeep } from "@/lib/firestore/stripUndefined";
 import { normalizeTimestampIso } from "@/lib/datetime/normalizeTimestamp";
 import type { AgentTurnResult, AppointmentData, AppointmentState } from "./types";
 import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
+import {
+  formatTechnicalFallbackReply,
+  looksLikeTechnicalFallbackReply,
+} from "./technicalFallback";
 
 function isFirestoreAlreadyExistsError(err: unknown): boolean {
   const code = (err as { code?: unknown } | null)?.code;
@@ -206,11 +210,20 @@ function buildConversationLogData(
       status = "liveSupport";
     } else if (params.appointmentState && params.appointmentState !== "IDLE") {
       status = "collecting";
-    } else if (replyLower.includes("üzgünüm") && (replyLower.includes("yardımcı olamıyorum") || replyLower.includes("anlayamadım") || replyLower.includes("yanıt üretemiyorum") || replyLower.includes("bilgi havuzumda"))) {
+    } else if (
+      looksLikeTechnicalFallbackReply(params.aiReply) ||
+      Boolean(params.fallbackReason) ||
+      (replyLower.includes("üzgünüm") &&
+        (replyLower.includes("yardımcı olamıyorum") ||
+          replyLower.includes("anlayamadım") ||
+          replyLower.includes("yanıt üretemiyorum") ||
+          replyLower.includes("bilgi havuzumda")))
+    ) {
+      // Technical / knowledge failure — never count as "Başarılı Yanıtlandı".
       status = "unanswered";
       needsTraining = true;
       if (!trainingTopic) trainingTopic = params.userMessage.slice(0, 60);
-    } else if (replyLower.includes("canlı destek") || replyLower.includes("temsilci") || replyLower.includes("klinik ekibi") || replyLower.includes("iletişime geç") || replyLower.includes("doğrudan arayın") || replyLower.includes("whatsapp")) {
+    } else if (replyLower.includes("canlı destek") || replyLower.includes("temsilci") || replyLower.includes("klinik ekibi") || replyLower.includes("iletişime geç") || replyLower.includes("whatsapp")) {
       status = "liveSupport";
     } else {
       status = "answered";
@@ -385,68 +398,93 @@ export async function respondWithVisibleReply(
     persistMode?: ConversationPersistMode;
   }
 ): Promise<AgentTurnResult> {
-  const reply = typeof payload.reply === "string" ? payload.reply : "";
+  let reply = typeof payload.reply === "string" ? payload.reply : "";
+  let persistOpts = persist;
+  // Hard guard: no code path may end a turn with a blank assistant message in the HTTP/voice payload.
+  if (!reply.trim()) {
+    reply = formatTechnicalFallbackReply({
+      locale: persistOpts.detectedLanguage,
+    });
+    payload = {
+      ...payload,
+      reply,
+      responseType: payload.responseType || "CHAT_REPLY",
+      emptyReplyGuarded: true,
+    };
+    if (!persistOpts.skipPersist && !persistOpts.fallbackReason) {
+      persistOpts = { ...persistOpts, fallbackReason: "empty_reply_guard" };
+    }
+    if (!persistOpts.skipPersist) {
+      const { logTechnicalFallbackEvent } = await import("./technicalFallback");
+      logTechnicalFallbackEvent({
+        category: "unknown",
+        fallbackReason: persistOpts.fallbackReason || "empty_reply_guard",
+        clinicId: persistOpts.clinicId,
+        conversationId: persistOpts.convId,
+      });
+    }
+  }
   const shouldPersist =
-    !persist.skipPersist && Boolean(persist.clinicId && persist.convId && reply.trim());
+    !persistOpts.skipPersist && Boolean(persistOpts.clinicId && persistOpts.convId && reply.trim());
 
   if (shouldPersist) {
     const persistStartedAt = performance.now();
     await logConversation({
-      clinicId: persist.clinicId,
-      convId: persist.convId,
-      userMessage: persist.userMessage,
+      clinicId: persistOpts.clinicId,
+      convId: persistOpts.convId,
+      userMessage: persistOpts.userMessage,
       aiReply: reply,
-      historyLength: persist.history?.length || 0,
-      history: persist.history,
-      apptData: persist.apptData,
-      appointmentId: persist.appointmentId,
-      isAppointmentCreated: persist.isAppointmentCreated,
-      isLiveSupport: persist.isLiveSupport,
-      isContactRequest: persist.isContactRequest,
-      contactRequestId: persist.contactRequestId,
-      contactRequestStatus: persist.contactRequestStatus,
-      preferredContactMethod: persist.preferredContactMethod,
-      tenantId: persist.tenantId,
-      widgetId: persist.widgetId,
-      sourceDomain: persist.sourceDomain,
-      detectedLanguage: persist.detectedLanguage,
-      promptVersionId: persist.promptVersionId,
-      knowledgeBaseId: persist.knowledgeBaseId,
-      retrievedDocumentCount: persist.retrievedDocumentCount,
-      fallbackReason: persist.fallbackReason,
-      appointmentState: persist.appointmentState,
-      ...(persist.persistMode ? { persistMode: persist.persistMode } : {}),
+      historyLength: persistOpts.history?.length || 0,
+      history: persistOpts.history,
+      apptData: persistOpts.apptData,
+      appointmentId: persistOpts.appointmentId,
+      isAppointmentCreated: persistOpts.isAppointmentCreated,
+      isLiveSupport: persistOpts.isLiveSupport,
+      isContactRequest: persistOpts.isContactRequest,
+      contactRequestId: persistOpts.contactRequestId,
+      contactRequestStatus: persistOpts.contactRequestStatus,
+      preferredContactMethod: persistOpts.preferredContactMethod,
+      tenantId: persistOpts.tenantId,
+      widgetId: persistOpts.widgetId,
+      sourceDomain: persistOpts.sourceDomain,
+      detectedLanguage: persistOpts.detectedLanguage,
+      promptVersionId: persistOpts.promptVersionId,
+      knowledgeBaseId: persistOpts.knowledgeBaseId,
+      retrievedDocumentCount: persistOpts.retrievedDocumentCount,
+      fallbackReason: persistOpts.fallbackReason,
+      appointmentState: persistOpts.appointmentState,
+      ...(persistOpts.persistMode ? { persistMode: persistOpts.persistMode } : {}),
     });
     console.log(JSON.stringify({
       checkpoint: "AGENT_TURN_PERSIST_PERF",
-      clinicId: persist.clinicId,
-      conversationId: persist.convId,
-      persistMode: persist.persistMode ?? "SEQUENTIAL",
+      clinicId: persistOpts.clinicId,
+      conversationId: persistOpts.convId,
+      persistMode: persistOpts.persistMode ?? "SEQUENTIAL",
       persistMs: Math.round(performance.now() - persistStartedAt),
     }));
   }
 
-  if (persist.convId && payload.conversationId === undefined) {
-    payload.conversationId = persist.convId;
+  if (persistOpts.convId && payload.conversationId === undefined) {
+    payload.conversationId = persistOpts.convId;
   }
 
   const draft =
     (payload.pendingAppointmentData as Partial<AppointmentData> | null | undefined) ??
-    persist.apptData ??
+    persistOpts.apptData ??
     null;
 
   return {
     replyText: reply,
-    conversationId: String(payload.conversationId || persist.convId || ""),
-    locale: persist.detectedLanguage,
-    appointmentState: persist.appointmentState,
+    conversationId: String(payload.conversationId || persistOpts.convId || ""),
+    locale: persistOpts.detectedLanguage,
+    appointmentState: persistOpts.appointmentState,
     appointmentDraft: draft,
     payload,
     httpStatus: 200,
-    escalation: persist.isLiveSupport ? { kind: "live_support" } : undefined,
+    escalation: persistOpts.isLiveSupport ? { kind: "live_support" } : undefined,
     sideEffects: {
-      appointmentCreated: Boolean(persist.isAppointmentCreated || payload.appointmentCreated),
-      appointmentId: persist.appointmentId || payload.appointmentId,
+      appointmentCreated: Boolean(persistOpts.isAppointmentCreated || payload.appointmentCreated),
+      appointmentId: persistOpts.appointmentId || payload.appointmentId,
     },
   };
 }

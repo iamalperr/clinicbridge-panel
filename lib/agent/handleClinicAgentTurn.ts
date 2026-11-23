@@ -65,7 +65,17 @@ import { normalizeSpokenEmail } from "@/lib/conversation/emailCollection";
 import { controlPhraseKey } from "@/lib/conversation/controlPhrase";
 import { extractAppointmentFromHistory, parseTimeText } from "./appointmentParse";
 import { saveAppointmentState, respondWithVisibleReply } from "./persistence";
+import {
+  classifyTechnicalFallbackError,
+  fallbackReasonForErrorCategory,
+  formatPostAppointmentAnythingElse,
+  formatPriorAppointmentRescheduleNotice,
+  formatTechnicalFallbackReply,
+  logTechnicalFallbackEvent,
+  resolveClinicPhoneForFallback,
+} from "./technicalFallback";
 import { fetchClinicDoctorMatchInputs, getClientDb } from "./clinicRuntime";
+import { detectExplicitBookingIntent } from "@/lib/conversation/appointmentIntentGate";
 import { tryHandleContactHandoffTurn } from "@/lib/contact-request/handleContactHandoffTurn";
 import { resolveLiveSupportButtons } from "@/lib/contact-request/liveSupportChannels";
 import {
@@ -638,6 +648,16 @@ export async function handleClinicAgentTurn(
              // ── INSTRUMENTATION LOG 5 ──
              console.log(JSON.stringify({ checkpoint: "APPT_05_CREATE_APPOINTMENT_CALLED", traceId: activeTraceId, conversationId: convId, clinicId: actualClinicId, timestamp: new Date().toISOString() }));
 
+             const requestKind =
+               loadedConversationLogData?.appointmentRequestKind === "change" ? "change" : "new";
+             const replacesAppointmentId =
+               requestKind === "change"
+                 ? String(
+                     loadedConversationLogData?.replacesAppointmentId ||
+                       loadedAppointmentId ||
+                       ""
+                   ).trim() || undefined
+                 : undefined;
              const result = await createAppointmentAndNotify({
                  clinicId: actualClinicId, // Must be the real Firestore doc ID
                  patientName: loadedDraft.patientName,
@@ -661,6 +681,8 @@ export async function handleClinicAgentTurn(
                  clinicData,
                  clinicTimeZone: (loadedDraft as any).clinicTimeZone,
                  startsAtUtc: (loadedDraft as any).startsAtUtc,
+                 requestKind,
+                 replacesAppointmentId,
              });
 
              // 3. Require a real appointmentId
@@ -669,7 +691,9 @@ export async function handleClinicAgentTurn(
                    isAppointmentCreated: true,
                    appointmentId: result.appointmentId,
                    pendingAction: null,
-                   conversationLocale
+                   conversationLocale,
+                   appointmentRequestKind: null,
+                   replacesAppointmentId: null,
                  });
 
                  const successReply = conversationLocale.startsWith("en")
@@ -919,6 +943,13 @@ export async function handleClinicAgentTurn(
       surnameCorrection: true,
     });
     perf.end("intent_classify", { intent: conversationIntent.intent });
+
+    const postSubmitOnRecord =
+      priorAppointmentSubmitted ||
+      loadedState === "APPOINTMENT_SUBMITTED" ||
+      loadedState === "COMPLETED" ||
+      appointmentState === "APPOINTMENT_SUBMITTED" ||
+      loadedIsAppointmentCreated;
 
     // Safety: the emergency reply text is deterministic (never LLM-written) and points to 112 first.
     // Logs carry the trigger path and the LLM status only, never patient text.
@@ -1467,6 +1498,34 @@ export async function handleClinicAgentTurn(
       }));
     }
 
+    // Post-submit polite ack ("Tamam" / thanks): after cancellation/contact handlers so
+    // pending offers are never swallowed. New booking requests must not take this path.
+    const pendingBlocksPostSubmitAck =
+      (loadedPendingAction?.status === "pending") ||
+      cancellationPendingAtLoad ||
+      detectExplicitBookingIntent(message).hasBookingIntent;
+    if (
+      postSubmitOnRecord &&
+      !pendingBlocksPostSubmitAck &&
+      (conversationIntent.intent === "casual_conversation" ||
+        conversationIntent.intent === "greeting" ||
+        (positiveConfirmationDetected &&
+          conversationIntent.intent !== "appointment_confirmation" &&
+          conversationIntent.intent !== "contact_handoff_request"))
+    ) {
+      return respondWithVisibleReply(
+        {
+          responseType: "CHAT_REPLY",
+          reply: formatPostAppointmentAnythingElse(conversationLocale),
+        },
+        basePersist({
+          appointmentState: "APPOINTMENT_SUBMITTED",
+          appointmentId: loadedAppointmentId || undefined,
+          isAppointmentCreated: true,
+        })
+      );
+    }
+
     let isMidFlowInterruption = false;
     let interruptionStatementCaptured = false;
     let interruptionSchedulingNotice: string | null = null;
@@ -1588,22 +1647,57 @@ export async function handleClinicAgentTurn(
         }
       }
     } else if (appointmentGate.allowed) {
+      let priorAppointmentNotice: string | null = null;
       if (appointmentGate.mode === "start") {
         appointmentDraft = createFreshAppointmentDraft(appointmentDraft);
+        // After a completed request, when this turn already states a new date/time
+        // (same-patient reschedule), reuse known contact details so we do not re-ask.
+        // A bare "another appointment" start stays a fresh draft (may be another person).
+        const samePatientReschedule =
+          (postSubmitOnRecord || submittedAppointmentOnRecord) &&
+          Boolean(
+            conversationIntent.entities?.preferredDate ||
+              conversationIntent.entities?.preferredTime ||
+              conversationIntent.entities?.preferredTimeText
+          );
+        if (samePatientReschedule) {
+          const log = loadedConversationLogData || {};
+          if (!appointmentDraft.patientName && (log.patientName || log.appointmentDraft?.patientName)) {
+            appointmentDraft.patientName = log.patientName || log.appointmentDraft?.patientName;
+          }
+          if (!appointmentDraft.patientPhone && (log.patientPhone || log.appointmentDraft?.patientPhone)) {
+            appointmentDraft.patientPhone = log.patientPhone || log.appointmentDraft?.patientPhone;
+          }
+          if (!appointmentDraft.patientEmail && (log.patientEmail || log.appointmentDraft?.patientEmail)) {
+            appointmentDraft.patientEmail = log.patientEmail || log.appointmentDraft?.patientEmail;
+            appointmentDraft.emailDisposition = "PROVIDED";
+          }
+          priorAppointmentNotice = formatPriorAppointmentRescheduleNotice(conversationLocale);
+        }
         const persisted = loadedConversationLogData;
         const persistedStateToReplace =
           hasAppointmentDraftContent(persisted?.appointmentDraft) ||
           Boolean(persisted?.pendingAction) ||
           Boolean(persisted?.dateAlternatives) ||
-          (Boolean(loadedAppointmentId) && !loadedAppointmentFromClosedDraft);
+          (Boolean(loadedAppointmentId) && !loadedAppointmentFromClosedDraft) ||
+          postSubmitOnRecord;
         if (adminDb && convId && persistedStateToReplace) {
           await saveAppointmentState(
             adminDb, actualClinicId, convId, appointmentVersion, appointmentState, appointmentDraft,
-            appointmentDraftBoundaryFields("NEW_APPOINTMENT"),
+            {
+              ...appointmentDraftBoundaryFields("NEW_APPOINTMENT"),
+              // same-patient date/time restart → change (update) the first request; bare "another booking" → new.
+              appointmentRequestKind: samePatientReschedule ? "change" : "new",
+              replacesAppointmentId: samePatientReschedule
+                ? loadedAppointmentId || persisted?.appointmentId || null
+                : null,
+            },
             { replaceDraft: true }
           );
         }
       }
+      const withPriorNotice = (reply: string) =>
+        priorAppointmentNotice ? `${priorAppointmentNotice}\n\n${reply}` : reply;
       // 6. Handle slot extractions with immediate scheduling validation
       const clinicTzForScheduling = resolveClinicTimeZone(clinicData);
       const schedulingTimeZone = clinicTzForScheduling.confident
@@ -1680,9 +1774,9 @@ export async function handleClinicAgentTurn(
         slotTurnTelemetry();
         return respondWithVisibleReply({
           responseType: "appointment_date_clarification_required",
-          reply: schedulingAmendment.message || (conversationLocale.startsWith("en")
+          reply: withPriorNotice(schedulingAmendment.message || (conversationLocale.startsWith("en")
             ? "That date is not available. Please choose another day within clinic working hours."
-            : "Bu tarih uygun değil. Lütfen kliniğin çalışma saatlerine uygun başka bir gün seçin."),
+            : "Bu tarih uygun değil. Lütfen kliniğin çalışma saatlerine uygun başka bir gün seçin.")),
           suggestedTimes: schedulingAmendment.suggestions,
           pendingAppointmentData: appointmentDraft,
         }, basePersist({ appointmentState: "COLLECTING_DATE" }));
@@ -1697,9 +1791,9 @@ export async function handleClinicAgentTurn(
         slotTurnTelemetry();
         return respondWithVisibleReply({
           responseType: "appointment_date_clarification_required",
-          reply: schedulingAmendment.message || (conversationLocale.startsWith("en")
+          reply: withPriorNotice(schedulingAmendment.message || (conversationLocale.startsWith("en")
             ? "Which day of that month works for you?"
-            : "O ayın hangi günü uygun olur?"),
+            : "O ayın hangi günü uygun olur?")),
           pendingAppointmentData: appointmentDraft,
         }, basePersist({ appointmentState: "COLLECTING_DATE" }));
       }
@@ -1733,7 +1827,7 @@ export async function handleClinicAgentTurn(
           });
           return respondWithVisibleReply({
             responseType: "CHAT_REPLY",
-            reply: `${doctorPref.clarification}\n\n${reviewMsg}`,
+            reply: withPriorNotice(`${doctorPref.clarification}\n\n${reviewMsg}`),
             pendingAppointmentData: appointmentDraft
           }, basePersist({ appointmentState: "AWAITING_CONFIRMATION", apptData: appointmentDraft as AppointmentData }));
         }
@@ -1744,7 +1838,7 @@ export async function handleClinicAgentTurn(
           });
           return respondWithVisibleReply({
             responseType: "CHAT_REPLY",
-            reply: doctorPref.clarification,
+            reply: withPriorNotice(doctorPref.clarification),
             pendingAppointmentData: appointmentDraft
           }, basePersist({ appointmentState }));
         }
@@ -1871,7 +1965,7 @@ export async function handleClinicAgentTurn(
           });
           return respondWithVisibleReply({
             responseType: "appointment_date_clarification_required",
-            reply: preConfirmPolicy.message,
+            reply: withPriorNotice(preConfirmPolicy.message),
             suggestedTimes: preConfirmPolicy.suggestions,
             pendingAppointmentData: appointmentDraft,
           }, basePersist({ appointmentState: "COLLECTING_DATE" }));
@@ -1897,7 +1991,7 @@ export async function handleClinicAgentTurn(
         });
         return respondWithVisibleReply({
           responseType: "CHAT_REPLY",
-          reply: reviewMsg,
+          reply: withPriorNotice(reviewMsg),
           pendingAppointmentData: appointmentDraft
         }, basePersist({ appointmentState: "AWAITING_CONFIRMATION", apptData: appointmentDraft as AppointmentData }));
       }
@@ -1952,7 +2046,7 @@ export async function handleClinicAgentTurn(
 
       return respondWithVisibleReply({
         responseType: "CHAT_REPLY",
-        reply: nextSlotPrompt,
+        reply: withPriorNotice(nextSlotPrompt),
         pendingAppointmentData: appointmentDraft,
         ...(slotRecoveryAction ? { pendingAction: slotRecoveryAction } : {}),
       }, basePersist({ appointmentState: nextSubState }));
@@ -2443,9 +2537,6 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
     // HYBRID SEARCH & QUERY REWRITING
     const sliceLimit = isDoctorIntent ? 15 : 10;
     
-    // Dynamically import retrievalService to avoid edge runtime issues if applicable, but this is a node API route
-    const { hybridSearch } = await import("@/lib/services/retrievalService");
-    
     // YENİ: Override search query for specific price intents to guarantee deterministic RAG match
     let searchMessage = knowledgeTurnMessage;
     if (activePriceIntent === "examination_fee") {
@@ -2466,23 +2557,52 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
       timeoutMs: channel === "voice" ? LLM_EMERGENCY_TIMEOUT_MS.voice : LLM_EMERGENCY_TIMEOUT_MS.web,
     });
 
-    perf.start("rag_hybrid_search");
-    const topDocs =
-      channel === "voice"
-        ? await hybridSearch(searchMessage, trainingDocs, clinicName, sliceLimit, { voiceBudget: {} })
-        : await hybridSearch(searchMessage, trainingDocs, clinicName, sliceLimit);
-    perf.end("rag_hybrid_search", {
-      topK: topDocs.length,
-      trainingDocs: trainingDocs.length,
-    });
-    
-    let knowledgeContext = topDocs.length > 0
-      ? topDocs.map(d => `## ${d.title}\n${d.text}`).join("\n\n---\n\n")
-      : "";
-      
-    // Safeguard: Hard limit knowledgeContext to prevent TPM / max context limits
-    if (knowledgeContext.length > 15000) {
-       knowledgeContext = knowledgeContext.substring(0, 15000) + "\n...[METİN KESİLDİ]";
+    let knowledgeContext = "";
+    let topDocs: Array<{ title: string; text: string; score: number; vectorScore: number; keywordScore: number }> = [];
+    try {
+      // Dynamically import retrievalService to avoid edge runtime issues if applicable, but this is a node API route
+      const { hybridSearch } = await import("@/lib/services/retrievalService");
+      perf.start("rag_hybrid_search");
+      topDocs =
+        channel === "voice"
+          ? await hybridSearch(searchMessage, trainingDocs, clinicName, sliceLimit, { voiceBudget: {} })
+          : await hybridSearch(searchMessage, trainingDocs, clinicName, sliceLimit);
+      perf.end("rag_hybrid_search", {
+        topK: topDocs.length,
+        trainingDocs: trainingDocs.length,
+      });
+      knowledgeContext = topDocs.length > 0
+        ? topDocs.map(d => `## ${d.title}\n${d.text}`).join("\n\n---\n\n")
+        : "";
+      // Safeguard: Hard limit knowledgeContext to prevent TPM / max context limits
+      if (knowledgeContext.length > 15000) {
+        knowledgeContext = knowledgeContext.substring(0, 15000) + "\n...[METİN KESİLDİ]";
+      }
+    } catch (ragErr: unknown) {
+      console.error("[chat] RAG hybridSearch failed:", JSON.stringify(safeErrorMeta(ragErr)));
+      const category = classifyTechnicalFallbackError(ragErr, "rag");
+      const fallbackReason = fallbackReasonForErrorCategory(category, "rag");
+      logTechnicalFallbackEvent({
+        category,
+        fallbackReason,
+        clinicId: actualClinicId || clinicId,
+        conversationId: convId,
+      });
+      return respondWithVisibleReply(
+        {
+          responseType: "CHAT_REPLY",
+          reply: formatTechnicalFallbackReply({
+            locale: conversationLocale,
+            clinicPhone: resolveClinicPhoneForFallback(clinicData),
+          }),
+          technicalFallback: true,
+          conversationId: convId,
+        },
+        basePersist({
+          appointmentState,
+          fallbackReason,
+        })
+      );
     }
 
     debugLog.push(`topDocs=[${topDocs.slice(0, 4).map(d => d.title).join(", ")}]`);
@@ -2782,33 +2902,65 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
     }
 
     perf.start("llm_chat");
-    const completion = await trackableAIRequest({
-      clinicId,
-      conversationId: convId,
-      channel: toAIUsageChannel(channel),
-      requestType: "chat",
-      language: conversationLocale,
-      model: chatModel,
-      temperature: temperatureResolved.temperature,
-      omitTemperature: temperatureResolved.omitFromRequest,
-      temperatureSource: temperatureResolved.source,
-      maxTokens:   600,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...history.slice(-12).map((h: any) => ({
-          role:    h.role as "user" | "assistant",
-          content: h.content,
-        })),
-        { role: "user", content: knowledgeTurnMessage },
-      ],
-    });
+    let completion: Awaited<ReturnType<typeof trackableAIRequest>>;
+    try {
+      completion = await trackableAIRequest({
+        clinicId,
+        conversationId: convId,
+        channel: toAIUsageChannel(channel),
+        requestType: "chat",
+        language: conversationLocale,
+        model: chatModel,
+        temperature: temperatureResolved.temperature,
+        omitTemperature: temperatureResolved.omitFromRequest,
+        temperatureSource: temperatureResolved.source,
+        maxTokens:   600,
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...history.slice(-12).map((h: any) => ({
+            role:    h.role as "user" | "assistant",
+            content: h.content,
+          })),
+          { role: "user", content: knowledgeTurnMessage },
+        ],
+      });
+    } catch (llmErr: unknown) {
+      perf.end("llm_chat", { model: chatModel, error: true });
+      console.error("[chat] LLM request failed:", JSON.stringify(safeErrorMeta(llmErr)));
+      const category = classifyTechnicalFallbackError(llmErr, "llm");
+      const fallbackReason = fallbackReasonForErrorCategory(category, "llm");
+      logTechnicalFallbackEvent({
+        category,
+        fallbackReason,
+        clinicId: actualClinicId || clinicId,
+        conversationId: convId,
+      });
+      return respondWithVisibleReply(
+        {
+          responseType: "CHAT_REPLY",
+          reply: formatTechnicalFallbackReply({
+            locale: conversationLocale,
+            clinicPhone: resolveClinicPhoneForFallback(clinicData),
+          }),
+          technicalFallback: true,
+          conversationId: convId,
+        },
+        basePersist({
+          appointmentState,
+          fallbackReason,
+        })
+      );
+    }
     perf.end("llm_chat", {
       model: chatModel,
       durationMs: (completion as any).durationMs ?? null,
     });
 
     let reply = completion.content?.trim()
-      || "Üzgünüm, şu an yanıt üretemiyorum.";
+      || formatTechnicalFallbackReply({
+        locale: conversationLocale,
+        clinicPhone: resolveClinicPhoneForFallback(clinicData),
+      });
 
     // Strip markdown formatting characters (**, *, #) as requested
     reply = reply.replace(/\*\*|\*|#/g, '');

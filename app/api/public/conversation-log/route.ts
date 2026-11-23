@@ -129,6 +129,11 @@ export async function POST(req: Request) {
 
         const after = await messagesCol.get();
         const existingLog = logSnap.exists ? logSnap.data() : null;
+        const assistantText = turns.find((t) => t.role === "assistant")?.content || "";
+        const looksTechnical =
+          /teknik bir sorun|technical issue|temporary technical|technisches problem|problème technique/i.test(
+            assistantText
+          );
         await logRef.set(
           {
             clinicId,
@@ -136,13 +141,16 @@ export async function POST(req: Request) {
             ...(!existingLog
               ? {
                   createdAt: nowIso,
-                  status: "open",
+                  status: looksTechnical ? "unanswered" : "open",
                   language: "tr",
                   convertedToAppointment: false,
                 }
               : !existingLog.createdAt
                 ? { createdAt: (typeof existingLog.updatedAt === "string" && existingLog.updatedAt) || nowIso }
                 : {}),
+            ...(looksTechnical && existingLog?.status !== "appointment"
+              ? { status: "unanswered", fallbackReason: "technical_fallback_dual_write", needsTraining: true }
+              : {}),
             totalMessages: after.size,
             lastMessagePreview: turns[turns.length - 1].content.slice(0, 100),
           },

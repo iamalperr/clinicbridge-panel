@@ -17,3 +17,15 @@ export { safeMergeDraft, normalizeIncomingAppointmentDraft, isAppointmentDraftCo
 export { handleClinicAgentTurn } from "./handleClinicAgentTurn";
 export type { HandleClinicAgentTurnParams } from "./handleClinicAgentTurn";
 export { respondWithVisibleReply, saveAppointmentState, logConversation } from "./persistence";
+export {
+  formatTechnicalFallbackReply,
+  formatPostAppointmentAnythingElse,
+  formatPriorAppointmentRescheduleNotice,
+  looksLikeTechnicalFallbackReply,
+  resolveClinicPhoneForFallback,
+  classifyTechnicalFallbackError,
+  fallbackReasonForErrorCategory,
+  logTechnicalFallbackEvent,
+  type TechnicalFallbackCategory,
+  type TechnicalFallbackErrorCategory,
+} from "./technicalFallback";
