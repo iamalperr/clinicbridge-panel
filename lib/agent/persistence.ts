@@ -320,6 +320,23 @@ function buildConversationLogData(
       logData.appointmentId = params.appointmentId;
       logData.appointmentState = "APPOINTMENT_SUBMITTED";
       logData.isAppointmentCreated = true;
+      // Durable snapshot for same-patient reschedule carry-over (treatment/doctor/contact).
+      if (params.apptData) {
+        logData.lastSubmittedAppointment = stripUndefinedDeep({
+          patientName: params.apptData.patientName || "",
+          patientPhone: params.apptData.patientPhone || "",
+          patientEmail: params.apptData.patientEmail || "",
+          emailDisposition: params.apptData.emailDisposition || undefined,
+          requestedService: params.apptData.requestedService || "",
+          requestedDoctor: params.apptData.requestedDoctor || undefined,
+          notes: params.apptData.notes || "",
+          requestedDate: params.apptData.requestedDate || "",
+          requestedTime: params.apptData.requestedTime || "",
+        });
+        if (params.apptData.requestedService) {
+          logData.requestedService = params.apptData.requestedService;
+        }
+      }
     }
 
     logData.activeIntent = activeIntent;

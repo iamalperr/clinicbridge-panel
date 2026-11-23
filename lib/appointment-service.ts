@@ -51,6 +51,9 @@ export interface CreateAppointmentPayload {
   requestKind?: AppointmentRequestKind;
   /** When requestKind is "change", the appointment id to update instead of duplicating. */
   replacesAppointmentId?: string;
+  /** Prior date/time on the request being updated (CHANGE notify). */
+  previousRequestedDate?: string;
+  previousRequestedTime?: string;
 }
 
 export function validateAppointmentPayload(payload: CreateAppointmentPayload): CreateAppointmentPayload {
@@ -153,26 +156,39 @@ export async function createAppointmentRecord(payload: CreateAppointmentPayload)
         (updated as any).previousRequestedDate = existingData.requestedDate;
         (updated as any).previousRequestedTime = existingData.requestedTime;
 
+        (updated as any).previousRequestedDate =
+          payload.previousRequestedDate || (existingData as any).previousRequestedDate || existingData.requestedDate;
+        (updated as any).previousRequestedTime =
+          payload.previousRequestedTime || (existingData as any).previousRequestedTime || existingData.requestedTime;
         await existingRef.set(updated, { merge: true });
+        const oldDate = payload.previousRequestedDate || existingData.requestedDate || "";
+        const oldTime = payload.previousRequestedTime || existingData.requestedTime || "";
         try {
           await adminDb.collection("clinics").doc(payload.clinicId).collection("notifications").add({
             type: "appointment_request_change",
             title: "Randevu talebi güncellendi",
-            message: `${payload.patientName} (${payload.patientPhone}) adlı hasta randevu talebini ${payload.requestedDate} ${payload.requestedTime || ""} olarak güncelledi.`,
+            message: `${payload.patientName} (${payload.patientPhone}) adlı hasta randevu talebini ${oldDate} ${oldTime} → ${payload.requestedDate} ${payload.requestedTime || ""} olarak güncelledi.`,
             appointmentId: payload.replacesAppointmentId,
             conversationId: payload.conversationId || "",
             requestKind: "change",
+            previousRequestedDate: oldDate,
+            previousRequestedTime: oldTime,
+            requestedDate: payload.requestedDate,
+            requestedTime: payload.requestedTime || "",
             read: false,
             createdAt: now,
           });
         } catch {
           /* in-app notify is best-effort */
         }
+        const newTime = payload.requestedTime || "";
         console.log(JSON.stringify({
           checkpoint: "APPT_CHANGE_UPDATED_EXISTING",
           clinicId: payload.clinicId,
           appointmentId: payload.replacesAppointmentId,
           requestKind: "change",
+          hasPreviousSchedule: Boolean(oldDate || oldTime),
+          scheduleChanged: oldDate !== payload.requestedDate || oldTime !== newTime,
         }));
         return { record: updated, isDuplicate: false };
       }

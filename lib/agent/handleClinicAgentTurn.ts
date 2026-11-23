@@ -74,6 +74,15 @@ import {
   logTechnicalFallbackEvent,
   resolveClinicPhoneForFallback,
 } from "./technicalFallback";
+import {
+  applySamePatientRescheduleCarryover,
+  buildLastSubmittedAppointmentSnapshot,
+  detectSameTreatmentReference,
+  formatRescheduleConfirmationMessage,
+  formatSameTreatmentMissingClarification,
+  resolveLastSubmittedAppointment,
+  shouldApplyExtractedTreatmentOnReschedule,
+} from "./samePatientReschedule";
 import { fetchClinicDoctorMatchInputs, getClientDb } from "./clinicRuntime";
 import { detectExplicitBookingIntent } from "@/lib/conversation/appointmentIntentGate";
 import { tryHandleContactHandoffTurn } from "@/lib/contact-request/handleContactHandoffTurn";
@@ -683,6 +692,18 @@ export async function handleClinicAgentTurn(
                  startsAtUtc: (loadedDraft as any).startsAtUtc,
                  requestKind,
                  replacesAppointmentId,
+                 previousRequestedDate:
+                   requestKind === "change"
+                     ? loadedConversationLogData?.previousRequestedDate ||
+                       loadedConversationLogData?.lastSubmittedAppointment?.requestedDate ||
+                       undefined
+                     : undefined,
+                 previousRequestedTime:
+                   requestKind === "change"
+                     ? loadedConversationLogData?.previousRequestedTime ||
+                       loadedConversationLogData?.lastSubmittedAppointment?.requestedTime ||
+                       undefined
+                     : undefined,
              });
 
              // 3. Require a real appointmentId
@@ -694,6 +715,9 @@ export async function handleClinicAgentTurn(
                    conversationLocale,
                    appointmentRequestKind: null,
                    replacesAppointmentId: null,
+                   previousRequestedDate: null,
+                   previousRequestedTime: null,
+                   lastSubmittedAppointment: buildLastSubmittedAppointmentSnapshot(loadedDraft),
                  });
 
                  const successReply = conversationLocale.startsWith("en")
@@ -1526,6 +1550,71 @@ export async function handleClinicAgentTurn(
       );
     }
 
+    // Mid-change / collecting-treatment: "aynı tedavi" must resolve from the prior request
+    // before mid-flow Q&A or the LLM can steal the turn.
+    if (
+      detectSameTreatmentReference(message) &&
+      (appointmentState === "COLLECTING_TREATMENT" ||
+        loadedConversationLogData?.appointmentRequestKind === "change")
+    ) {
+      const priorForSame = resolveLastSubmittedAppointment(loadedConversationLogData);
+      if (priorForSame?.requestedService) {
+        appointmentDraft.requestedService = priorForSame.requestedService;
+      } else if (!appointmentDraft.requestedService) {
+        await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_TREATMENT", appointmentDraft, {
+          processedMessageIds: [...processedMessageIds, messageId],
+          conversationLocale,
+          sameTreatmentClarifyAsked: true,
+        });
+        return respondWithVisibleReply({
+          responseType: "CHAT_REPLY",
+          reply: formatSameTreatmentMissingClarification(conversationLocale),
+          pendingAppointmentData: appointmentDraft,
+        }, basePersist({ appointmentState: "COLLECTING_TREATMENT" }));
+      }
+      const missingAfterSame = ConversationStateEngine.getMissingSlots(appointmentDraftSlots(appointmentDraft));
+      if (missingAfterSame.length === 0) {
+        const confirmLocaleTz = resolveClinicTimeZone(clinicData);
+        const confirmTz = confirmLocaleTz.confident ? confirmLocaleTz.timeZone : "Europe/Istanbul";
+        await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "AWAITING_CONFIRMATION", appointmentDraft, {
+          processedMessageIds: [...processedMessageIds, messageId],
+          conversationLocale,
+        });
+        const confirmReply =
+          loadedConversationLogData?.appointmentRequestKind === "change"
+            ? formatRescheduleConfirmationMessage({
+                locale: conversationLocale,
+                appointmentData: appointmentDraft,
+                timeZone: confirmTz,
+              })
+            : buildAppointmentReviewMessage({
+                locale: conversationLocale,
+                appointmentData: appointmentDraft,
+                clinicName,
+              });
+        return respondWithVisibleReply({
+          responseType: "CHAT_REPLY",
+          reply: confirmReply,
+          pendingAppointmentData: appointmentDraft,
+        }, basePersist({ appointmentState: "AWAITING_CONFIRMATION", apptData: appointmentDraft as AppointmentData }));
+      }
+      const nextAfterSame = collectingStateForSlot(missingAfterSame[0]);
+      await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, nextAfterSame, appointmentDraft, {
+        processedMessageIds: [...processedMessageIds, messageId],
+        conversationLocale,
+      });
+      const nextPrompt = ConversationStateEngine.generateNextSlotPrompt(
+        appointmentDraftSlots(appointmentDraft),
+        missingAfterSame,
+        conversationLocale
+      );
+      return respondWithVisibleReply({
+        responseType: "CHAT_REPLY",
+        reply: nextPrompt,
+        pendingAppointmentData: appointmentDraft,
+      }, basePersist({ appointmentState: nextAfterSame }));
+    }
+
     let isMidFlowInterruption = false;
     let interruptionStatementCaptured = false;
     let interruptionSchedulingNotice: string | null = null;
@@ -1648,10 +1737,11 @@ export async function handleClinicAgentTurn(
       }
     } else if (appointmentGate.allowed) {
       let priorAppointmentNotice: string | null = null;
+      let samePatientRescheduleActive = loadedConversationLogData?.appointmentRequestKind === "change";
       if (appointmentGate.mode === "start") {
         appointmentDraft = createFreshAppointmentDraft(appointmentDraft);
         // After a completed request, when this turn already states a new date/time
-        // (same-patient reschedule), reuse known contact details so we do not re-ask.
+        // (same-patient reschedule), reuse known slots so we do not re-ask.
         // A bare "another appointment" start stays a fresh draft (may be another person).
         const samePatientReschedule =
           (postSubmitOnRecord || submittedAppointmentOnRecord) &&
@@ -1660,18 +1750,10 @@ export async function handleClinicAgentTurn(
               conversationIntent.entities?.preferredTime ||
               conversationIntent.entities?.preferredTimeText
           );
+        samePatientRescheduleActive = samePatientReschedule;
+        const priorSubmitted = resolveLastSubmittedAppointment(loadedConversationLogData);
         if (samePatientReschedule) {
-          const log = loadedConversationLogData || {};
-          if (!appointmentDraft.patientName && (log.patientName || log.appointmentDraft?.patientName)) {
-            appointmentDraft.patientName = log.patientName || log.appointmentDraft?.patientName;
-          }
-          if (!appointmentDraft.patientPhone && (log.patientPhone || log.appointmentDraft?.patientPhone)) {
-            appointmentDraft.patientPhone = log.patientPhone || log.appointmentDraft?.patientPhone;
-          }
-          if (!appointmentDraft.patientEmail && (log.patientEmail || log.appointmentDraft?.patientEmail)) {
-            appointmentDraft.patientEmail = log.patientEmail || log.appointmentDraft?.patientEmail;
-            appointmentDraft.emailDisposition = "PROVIDED";
-          }
+          applySamePatientRescheduleCarryover(appointmentDraft, priorSubmitted);
           priorAppointmentNotice = formatPriorAppointmentRescheduleNotice(conversationLocale);
         }
         const persisted = loadedConversationLogData;
@@ -1691,6 +1773,16 @@ export async function handleClinicAgentTurn(
               replacesAppointmentId: samePatientReschedule
                 ? loadedAppointmentId || persisted?.appointmentId || null
                 : null,
+              previousRequestedDate: samePatientReschedule
+                ? priorSubmitted?.requestedDate || null
+                : null,
+              previousRequestedTime: samePatientReschedule
+                ? priorSubmitted?.requestedTime || null
+                : null,
+              // Keep the snapshot available for "aynı tedavi" while the change is in progress.
+              ...(samePatientReschedule && priorSubmitted
+                ? { lastSubmittedAppointment: priorSubmitted }
+                : {}),
             },
             { replaceDraft: true }
           );
@@ -1714,10 +1806,43 @@ export async function handleClinicAgentTurn(
       const draftBeforeTurn: Partial<AppointmentData> = { ...appointmentDraft };
       // Non-scheduling entities (contact, treatment, name)
       if (conversationIntent.entities) {
-        mergeSafeSlotEntities(appointmentDraft, conversationIntent.entities, conversationLocale);
+        const entitiesForMerge = { ...conversationIntent.entities } as typeof conversationIntent.entities & {
+          additionalTreatments?: string[];
+        };
+        // Booking idioms ("muayene için…") must not wipe a carried-over specific treatment.
+        if (
+          samePatientRescheduleActive &&
+          !shouldApplyExtractedTreatmentOnReschedule({
+            previousService: appointmentDraft.requestedService,
+            extractedTreatment: entitiesForMerge.treatment,
+          })
+        ) {
+          delete entitiesForMerge.treatment;
+          delete entitiesForMerge.additionalTreatments;
+        }
+        mergeSafeSlotEntities(appointmentDraft, entitiesForMerge, conversationLocale);
         console.log(`[INTENT_ROUTER] Appointment slots updated:`, JSON.stringify({
-          entityKeys: Object.keys(conversationIntent.entities || {}),
+          entityKeys: Object.keys(entitiesForMerge || {}),
         }));
+      }
+
+      // "aynı tedavi" / "same treatment" → prior request's treatment (or one clear clarification).
+      if (detectSameTreatmentReference(message)) {
+        const priorForSame = resolveLastSubmittedAppointment(loadedConversationLogData);
+        if (priorForSame?.requestedService) {
+          appointmentDraft.requestedService = priorForSame.requestedService;
+        } else if (!appointmentDraft.requestedService) {
+          await saveAppointmentState(adminDb, actualClinicId, convId, appointmentVersion, "COLLECTING_TREATMENT", appointmentDraft, {
+            processedMessageIds: [...processedMessageIds, messageId],
+            conversationLocale,
+            sameTreatmentClarifyAsked: true,
+          });
+          return respondWithVisibleReply({
+            responseType: "CHAT_REPLY",
+            reply: withPriorNotice(formatSameTreatmentMissingClarification(conversationLocale)),
+            pendingAppointmentData: appointmentDraft,
+          }, basePersist({ appointmentState: "COLLECTING_TREATMENT" }));
+        }
       }
 
       const slotTurnTelemetry = (attempt = 0, handoffOffered = false) => {
@@ -1984,11 +2109,17 @@ export async function handleClinicAgentTurn(
           ...(slotRecoveryOfferPending ? { pendingAction: null } : {}),
         });
         slotTurnTelemetry();
-        const reviewMsg = buildAppointmentReviewMessage({
-          locale: conversationLocale,
-          appointmentData: appointmentDraft,
-          clinicName
-        });
+        const reviewMsg = samePatientRescheduleActive
+          ? formatRescheduleConfirmationMessage({
+              locale: conversationLocale,
+              appointmentData: appointmentDraft,
+              timeZone: schedulingTimeZone,
+            })
+          : buildAppointmentReviewMessage({
+              locale: conversationLocale,
+              appointmentData: appointmentDraft,
+              clinicName
+            });
         return respondWithVisibleReply({
           responseType: "CHAT_REPLY",
           reply: withPriorNotice(reviewMsg),

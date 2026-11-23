@@ -29,3 +29,13 @@ export {
   type TechnicalFallbackCategory,
   type TechnicalFallbackErrorCategory,
 } from "./technicalFallback";
+export {
+  applySamePatientRescheduleCarryover,
+  buildLastSubmittedAppointmentSnapshot,
+  detectSameTreatmentReference,
+  formatRescheduleConfirmationMessage,
+  formatSameTreatmentMissingClarification,
+  resolveLastSubmittedAppointment,
+  shouldApplyExtractedTreatmentOnReschedule,
+  type LastSubmittedAppointment,
+} from "./samePatientReschedule";

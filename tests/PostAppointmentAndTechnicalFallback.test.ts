@@ -432,18 +432,44 @@ describe("handleClinicAgentTurn — LLM/RAG failure and pricing (Bug 2/3)", () =
   });
 });
 
-describe("E2E: post-appointment same-patient reschedule (Bug 1 case 1)", () => {
+describe("same-patient reschedule helpers", () => {
+  it("detects aynı tedavi / same treatment phrases", async () => {
+    const { detectSameTreatmentReference, shouldApplyExtractedTreatmentOnReschedule } = await import(
+      "@/lib/agent/samePatientReschedule"
+    );
+    expect(detectSameTreatmentReference("aynı tedavi")).toBe(true);
+    expect(detectSameTreatmentReference("aynısı")).toBe(true);
+    expect(detectSameTreatmentReference("önceki gibi")).toBe(true);
+    expect(detectSameTreatmentReference("same treatment")).toBe(true);
+    expect(detectSameTreatmentReference("same as before")).toBe(true);
+    expect(detectSameTreatmentReference("implant")).toBe(false);
+    expect(
+      shouldApplyExtractedTreatmentOnReschedule({
+        previousService: "Diş İmplantı",
+        extractedTreatment: "general_consultation",
+      })
+    ).toBe(false);
+    expect(
+      shouldApplyExtractedTreatmentOnReschedule({
+        previousService: "Diş İmplantı",
+        extractedTreatment: "teeth_whitening",
+      })
+    ).toBe(true);
+  });
+});
+
+describe("E2E: post-appointment same-patient reschedule carry-over", () => {
   let handleClinicAgentTurn: typeof import("@/lib/agent/handleClinicAgentTurn").handleClinicAgentTurn;
   const createCalls: Array<Record<string, any>> = [];
   let activeAdminDb: unknown = null;
 
   beforeAll(async () => {
+    vi.resetModules();
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(FIXED_NOW);
     vi.spyOn(console, "log").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.spyOn(console, "info").mockImplementation(() => undefined);
-    // keep console.error for technical_fallback assertions if needed
     vi.doMock("@/lib/services/aiGateway", () => ({
       trackableAIRequest: vi.fn(async () => ({ content: "Tamam.", durationMs: 1 })),
     }));
@@ -505,7 +531,7 @@ describe("E2E: post-appointment same-patient reschedule (Bug 1 case 1)", () => {
   });
 
   let messageSeq = 0;
-  function makeConversation() {
+  function makeConversation(conversationId = "conv_post_appt_e2e") {
     let saved: Saved = {};
     const logRef = {
       get: async () => ({ exists: Object.keys(saved).length > 0, data: () => ({ ...saved }) }),
@@ -578,7 +604,7 @@ describe("E2E: post-appointment same-patient reschedule (Bug 1 case 1)", () => {
       const result = await handleClinicAgentTurn({
         input: {
           clinicId: "clinic_test",
-          conversationId: "conv_post_appt_e2e",
+          conversationId,
           channel: "web_widget",
           text,
           history: [...history],
@@ -598,73 +624,180 @@ describe("E2E: post-appointment same-patient reschedule (Bug 1 case 1)", () => {
         saved: () => ({ ...saved }),
       };
     };
-    return { say, saved: () => saved };
+    const patchSaved = (patch: Saved) => {
+      saved = deepMerge(saved, patch);
+    };
+    return { say, saved: () => saved, patchSaved };
   }
 
-  it("completed → Onaylıyorum → Tamam → Yarın 10: reuse contact, change first request, notify as change", async () => {
-    createCalls.length = 0;
-    const { say, saved } = makeConversation();
-
-    expect((await say("Muayene için randevu almak istiyorum.")).state).toBe("COLLECTING_DATE");
+  async function completeImplantAppointment(
+    say: (t: string) => Promise<{ reply: string; state: string; draft: Saved }>
+  ) {
+    expect((await say("İmplant için randevu almak istiyorum.")).state).toBe("COLLECTING_DATE");
     expect((await say("25 Kasım")).state).toBe("COLLECTING_TIME");
     expect((await say("saat 14:00")).state).toBe("COLLECTING_NAME");
     expect((await say("Ayşe Yılmaz")).state).toBe("COLLECTING_PHONE");
     expect((await say("0532 111 22 33")).state).toBe("COLLECTING_EMAIL");
-    const review = await say("E-posta vermek istemiyorum.");
-    expect(review.state).toBe("AWAITING_CONFIRMATION");
-    expect(review.reply).toMatch(/onaylıyor musunuz/i);
-
+    expect((await say("E-posta vermek istemiyorum.")).state).toBe("AWAITING_CONFIRMATION");
     const submitted = await say("Onaylıyorum");
     expect(submitted.state).toBe("APPOINTMENT_SUBMITTED");
-    expect(createCalls).toHaveLength(1);
-    expect(createCalls[0].requestKind || "new").toBe("new");
-    expect(createCalls[0]).toMatchObject({
-      patientName: "Ayşe Yılmaz",
-      requestedDate: "2026-11-25",
-      requestedTime: "14:00",
-    });
-    const firstAppointmentId = String(saved().appointmentId || "");
-    expect(firstAppointmentId).toBeTruthy();
-    expect(saved().patientName || createCalls[0].patientName).toBe("Ayşe Yılmaz");
+  }
 
-    const ack = await say("Tamam");
-    expect(ack.reply.trim().length).toBeGreaterThan(0);
-    expect(ack.reply).toMatch(/Başka bir konuda yardımcı olabileceğim bir şey var mı/);
-    expect(ack.state).toBe("APPOINTMENT_SUBMITTED");
+  it("case1: implant submitted → Tamam → yarın 10 → summary keeps implant, no treatment/name/phone ask", async () => {
+    createCalls.length = 0;
+    const { say, saved } = makeConversation("conv_case1");
+    await completeImplantAppointment(say);
     expect(createCalls).toHaveLength(1);
+    expect(String(createCalls[0].requestedService).toLocaleLowerCase("tr-TR")).toContain("implant");
+    const firstId = String(saved().appointmentId || "");
+
+    expect((await say("Tamam")).reply).toMatch(/Başka bir konuda yardımcı olabileceğim bir şey var mı/);
 
     const reschedule = await say("Yarın sabah saat 10 muayene için gelebilir miyim?");
-    expect(reschedule.reply.trim().length).toBeGreaterThan(0);
-    expect(reschedule.reply).not.toMatch(/adınız|isminiz|telefon\s*numaran|adınızı|isminizi/i);
-    expect(reschedule.draft.patientName || saved().appointmentDraft?.patientName).toBe("Ayşe Yılmaz");
-    expect(reschedule.draft.patientPhone || saved().appointmentDraft?.patientPhone).toBeTruthy();
+    expect(reschedule.reply).not.toMatch(/hangi tedavi|adınız|isminiz|telefon\s*numaran/i);
+    expect(reschedule.state).toBe("AWAITING_CONFIRMATION");
+    expect(String(reschedule.draft.requestedService).toLocaleLowerCase("tr-TR")).toContain("implant");
     expect(reschedule.draft.requestedDate).toBe("2026-11-25");
     expect(reschedule.draft.requestedTime).toBe("10:00");
+    expect(reschedule.draft.patientName).toBe("Ayşe Yılmaz");
+    expect(reschedule.reply).toMatch(/güncelliyorum/i);
+    expect(reschedule.reply).toMatch(/10:00/);
+    expect(reschedule.reply.toLocaleLowerCase("tr-TR")).toContain("implant");
     expect(saved().appointmentRequestKind).toBe("change");
-    expect(saved().replacesAppointmentId).toBe(firstAppointmentId);
-    expect(saved().appointmentDraftBoundary?.reason).toBe("NEW_APPOINTMENT");
+    expect(saved().replacesAppointmentId).toBe(firstId);
+  });
 
-    // Finish second confirmation so the notifier is invoked with requestKind=change.
-    let ready = reschedule;
-    if (ready.state === "COLLECTING_EMAIL") {
-      ready = await say("E-posta vermek istemiyorum.");
-    } else if (ready.state === "COLLECTING_NAME") {
-      throw new Error("Asked for name again after same-patient reschedule");
-    } else if (ready.state === "COLLECTING_PHONE") {
-      throw new Error("Asked for phone again after same-patient reschedule");
+  it("case2: treatment missing from prior → aynı tedavi → clear clarification, no loop", async () => {
+    createCalls.length = 0;
+    const { say, saved, patchSaved } = makeConversation("conv_case2");
+    await completeImplantAppointment(say);
+    await say("Tamam");
+    // Force prior treatment to be unknown for the reschedule path.
+    patchSaved({
+      lastSubmittedAppointment: {
+        ...(saved().lastSubmittedAppointment || {}),
+        requestedService: "",
+      },
+      requestedService: "",
+      appointmentDraft: {},
+    });
+
+    const reschedule = await say("Yarın sabah saat 10 muayene için gelebilir miyim?");
+    // Without a prior treatment, generic booking may ask once — then aynı tedavi clarifies.
+    if (reschedule.state === "COLLECTING_TREATMENT" || /hangi tedavi/i.test(reschedule.reply)) {
+      const same = await say("aynı tedavi");
+      expect(same.reply).toMatch(/kayıtlı bir tedavi bulamadım|couldn't find a treatment/i);
+      expect(same.reply).not.toMatch(/hangi tedavi veya işlem için randevu almak istersiniz/i);
+      const again = await say("aynı tedavi");
+      expect(again.reply).toMatch(/kayıtlı bir tedavi bulamadım|couldn't find a treatment/i);
+      expect(again.state).toBe("COLLECTING_TREATMENT");
+    } else {
+      // If the turn somehow retained treatment, force a collecting turn via patch then aynı tedavi.
+      patchSaved({
+        appointmentState: "COLLECTING_TREATMENT",
+        appointmentDraft: {
+          ...(saved().appointmentDraft || {}),
+          requestedService: undefined,
+          requestedDate: "2026-11-25",
+          requestedTime: "10:00",
+          patientName: "Ayşe Yılmaz",
+          patientPhone: createCalls[0].patientPhone,
+          emailDisposition: "DECLINED",
+        },
+        lastSubmittedAppointment: {
+          ...(saved().lastSubmittedAppointment || {}),
+          requestedService: "",
+        },
+        appointmentRequestKind: "change",
+      });
+      const same = await say("aynı tedavi");
+      expect(same.reply).toMatch(/kayıtlı bir tedavi bulamadım|couldn't find a treatment/i);
     }
-    expect(ready.state).toBe("AWAITING_CONFIRMATION");
+  });
+
+  it("case3: known prior treatment + aynı tedavi / aynısı / same treatment resolves", async () => {
+    createCalls.length = 0;
+    const { say, saved, patchSaved } = makeConversation("conv_case3");
+    await completeImplantAppointment(say);
+    await say("Tamam");
+    // Start a change draft that is missing treatment but keeps date/time/contact.
+    patchSaved({
+      appointmentState: "COLLECTING_TREATMENT",
+      appointmentRequestKind: "change",
+      replacesAppointmentId: saved().appointmentId,
+      appointmentDraft: {
+        requestedDate: "2026-11-25",
+        requestedTime: "10:00",
+        patientName: "Ayşe Yılmaz",
+        patientPhone: createCalls[0].patientPhone,
+        emailDisposition: "DECLINED",
+      },
+      lastSubmittedAppointment: {
+        ...(saved().lastSubmittedAppointment || {}),
+        requestedService: createCalls[0].requestedService,
+      },
+    });
+
+    for (const phrase of ["aynı tedavi", "aynısı", "same treatment"] as const) {
+      // Reset to collecting treatment between phrases.
+      patchSaved({
+        appointmentState: "COLLECTING_TREATMENT",
+        appointmentDraft: {
+          requestedDate: "2026-11-25",
+          requestedTime: "10:00",
+          patientName: "Ayşe Yılmaz",
+          patientPhone: createCalls[0].patientPhone,
+          emailDisposition: "DECLINED",
+        },
+      });
+      const r = await say(phrase);
+      expect(
+        String(r.draft.requestedService || saved().appointmentDraft?.requestedService).toLocaleLowerCase("tr-TR")
+      ).toContain("implant");
+
+      expect(r.reply).not.toMatch(/kayıtlı bir tedavi bulamadım/i);
+      expect(r.draft.requestedDate).toBe("2026-11-25");
+      expect(r.draft.requestedTime).toBe("10:00");
+    }
+  });
+
+  it("case4: update message names a different treatment → new treatment used", async () => {
+    createCalls.length = 0;
+    const { say } = makeConversation("conv_case4");
+    await completeImplantAppointment(say);
+    await say("Tamam");
+
+    const reschedule = await say("Yarın sabah saat 10 diş beyazlatma için gelebilir miyim?");
+    expect(reschedule.state).toBe("AWAITING_CONFIRMATION");
+    expect(reschedule.draft.requestedService).toMatch(/beyazlat/i);
+    expect(reschedule.draft.requestedService).not.toMatch(/implant/i);
+    expect(reschedule.draft.requestedDate).toBe("2026-11-25");
+    expect(reschedule.draft.requestedTime).toBe("10:00");
+    expect(reschedule.reply).toMatch(/beyazlat/i);
+  });
+
+  it("case5: confirmation updates existing request once with CHANGE + old/new date-time", async () => {
+    createCalls.length = 0;
+    const { say, saved } = makeConversation("conv_case5");
+    await completeImplantAppointment(say);
+    const firstId = String(saved().appointmentId || "");
+    const oldDate = createCalls[0].requestedDate;
+    const oldTime = createCalls[0].requestedTime;
+    await say("Tamam");
+
+    const reschedule = await say("Yarın sabah saat 10 muayene için gelebilir miyim?");
+    expect(reschedule.state).toBe("AWAITING_CONFIRMATION");
 
     const changed = await say("Onaylıyorum");
     expect(changed.state).toBe("APPOINTMENT_SUBMITTED");
     expect(createCalls).toHaveLength(2);
-    // First preliminary request is UPDATED (change) — not a confusing duplicate "new".
     expect(createCalls[1].requestKind).toBe("change");
-    expect(createCalls[1].replacesAppointmentId).toBe(firstAppointmentId);
+    expect(createCalls[1].replacesAppointmentId).toBe(firstId);
+    expect(createCalls[1].previousRequestedDate).toBe(oldDate);
+    expect(createCalls[1].previousRequestedTime).toBe(oldTime);
     expect(createCalls[1].requestedDate).toBe("2026-11-25");
     expect(createCalls[1].requestedTime).toBe("10:00");
-    expect(createCalls[1].patientName).toBe("Ayşe Yılmaz");
-    expect(createCalls[1].patientPhone).toBeTruthy();
-    expect(saved().appointmentId).toBe(firstAppointmentId);
+    expect(String(createCalls[1].requestedService).toLocaleLowerCase("tr-TR")).toContain("implant");
+    expect(saved().appointmentId).toBe(firstId);
   });
 });
