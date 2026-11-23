@@ -4,7 +4,7 @@ import { LegalPage, LegalSection, SELLER } from "@/components/legal/LegalPage";
 
 export default function DeliveryRefundPage() {
   return (
-    <LegalPage title="Teslimat ve İade Şartları" updated="5 Kasım 2026">
+    <LegalPage title="Teslimat ve İade Şartları" updated="23 Kasım 2026">
       <LegalSection title="1. Hizmetin niteliği">
         <p>ClinicBridge AI, fiziksel ürün değil, internet üzerinden sunulan bir yazılım hizmetidir (SaaS). Kargo veya fiziksel teslimat yapılmaz.</p>
       </LegalSection>

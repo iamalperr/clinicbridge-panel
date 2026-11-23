@@ -399,11 +399,11 @@ describe("Screenshot journey regressions (CTO P0)", () => {
   it("merge never wipes completed intake when LLM returns empty fields", () => {
     const previous = {
       quoteConsent: true,
-      patientName: "Alper Ozgul",
+      patientName: "Can Yilmaz",
       patientAge: 27,
       patientGender: "Erkek",
-      patientEmail: "yusufalperozgul@hotmail.com",
-      patientPhone: "+905314629921",
+      patientEmail: "patient@example.com",
+      patientPhone: "+905321234567",
       patientCountry: "Turkiye",
       travelDate: "Eylül 2026",
       lastTreatmentCategory: "implant",
@@ -416,8 +416,8 @@ describe("Screenshot journey regressions (CTO P0)", () => {
       lastTreatmentCategory: undefined,
       processingMode: "degraded",
     });
-    expect(merged.patientName).toBe("Alper Ozgul");
-    expect(merged.patientEmail).toBe("yusufalperozgul@hotmail.com");
+    expect(merged.patientName).toBe("Can Yilmaz");
+    expect(merged.patientEmail).toBe("patient@example.com");
     expect(merged.lastTreatmentCategory).toBe("implant");
     expect(merged.quoteConsent).toBe(true);
   });
@@ -429,13 +429,13 @@ describe("Screenshot journey regressions (CTO P0)", () => {
       pendingHealthRequest: "İmplant yaptırmak istiyorum",
     };
     // G1
-    ctx = { ...ctx, patientName: "Alper Ozgul", patientGender: "Erkek", patientAge: 27 };
+    ctx = { ...ctx, patientName: "Can Yilmaz", patientGender: "Erkek", patientAge: 27 };
     expect(resolveNextConversationAction(ctx, { locale: "tr" }).kind).toBe("intake");
     // G2
     ctx = {
       ...ctx,
-      patientEmail: "yusufalperozgul@hotmail.com",
-      patientPhone: "+905314629921",
+      patientEmail: "patient@example.com",
+      patientPhone: "+905321234567",
       patientCountry: "Turkiye",
     };
     expect((resolveNextConversationAction(ctx, { locale: "tr" }) as any).group).toBe(3);
@@ -461,7 +461,7 @@ describe("Screenshot journey regressions (CTO P0)", () => {
       isStructuredAction: true,
     });
     expect(afterSide.kind).toBe("match_clinics");
-    expect(ctx.patientName).toBe("Alper Ozgul");
+    expect(ctx.patientName).toBe("Can Yilmaz");
     expect(ctx.lastTreatmentCategory).toBe("implant");
   });
 });

@@ -6,12 +6,12 @@ export default function KvkkPage() {
   return (
     <div>
       <h1 style={{ fontSize: 32, fontWeight: 800, color: UI_COLORS.textPrimary, marginBottom: 16 }}>KVKK Aydınlatma Metni</h1>
-      <p style={{ color: UI_COLORS.textSecondary, marginBottom: 32 }}>Son güncellenme: 23 Nisan 2026</p>
+      <p style={{ color: UI_COLORS.textSecondary, marginBottom: 32 }}>Son güncellenme: 23 Kasım 2026</p>
       
       <div style={{ display: "flex", flexDirection: "column", gap: 24, color: UI_COLORS.textSecondary, fontSize: 15, lineHeight: 1.6 }}>
         <section>
           <h2 style={{ fontSize: 20, fontWeight: 700, color: UI_COLORS.textPrimary, marginBottom: 12 }}>1. Veri Sorumlusunun Kimliği</h2>
-          <p>6698 sayılı Kişisel Verilerin Korunması Kanunu (“KVKK”) uyarınca, ClinicBridge (“Platform”), veri sorumlusu sıfatıyla kişisel verilerinizi Kanun’a uygun olarak işlemektedir.</p>
+          <p>6698 sayılı Kişisel Verilerin Korunması Kanunu (“KVKK”) uyarınca, ClinicBridge AI (“Platform”), veri sorumlusu sıfatıyla kişisel verilerinizi Kanun’a uygun olarak işlemektedir. İletişim: <a href="mailto:info@clinicbridge-ai.com">info@clinicbridge-ai.com</a>, <a href="https://clinicbridge-ai.com">https://clinicbridge-ai.com</a>.</p>
         </section>
 
         <section>

@@ -12,7 +12,7 @@ Currently, clinic profiles are fetched via `node-fetch` and parsed using `cheeri
 ## Proposed Changes
 
 ### 1. Global Parser Module
-#### [NEW] [browserParser.ts](file:///Users/yusufalperozgul/clinicbridge-panel/scripts/utils/browserParser.ts)
+#### [NEW] [browserParser.ts](scripts/utils/browserParser.ts)
 Implement a Puppeteer-based parser utility that will:
 - Launch a headless browser instance.
 - Navigate to the canonical URL and wait for DOM stability (`networkidle0` or similar).
@@ -24,7 +24,7 @@ Implement a Puppeteer-based parser utility that will:
 - Produce extraction metrics for completeness validation (detected vs parsed rows).
 
 ### 2. Targeted Repair Script
-#### [NEW] [repair-beyazisik-marmaris-prices-services.ts](file:///Users/yusufalperozgul/clinicbridge-panel/scripts/repair-beyazisik-marmaris-prices-services.ts)
+#### [NEW] [repair-beyazisik-marmaris-prices-services.ts](scripts/repair-beyazisik-marmaris-prices-services.ts)
 Create a targeted script that:
 - Runs a dry-run by default, saving via `--apply`.
 - Connects to Firestore and fetches the existing "Beyazışık Marmaris Dental Group" record (ID preservation).

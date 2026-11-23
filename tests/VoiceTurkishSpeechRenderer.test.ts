@@ -98,8 +98,8 @@ describe("date", () => {
 
 describe("email, phone, URL, prose", () => {
   it("email symbols → natural Turkish speech", () => {
-    expect(renderTurkishSpeech("E-posta: yusuf.alper_oz-1@gmail.com.")).toBe(
-      "E-posta, yusuf nokta alper alt çizgi oz tire 1 et gmail nokta com."
+    expect(renderTurkishSpeech("E-posta: mehmet.can_demo-1@gmail.com.")).toBe(
+      "E-posta, mehmet nokta can alt çizgi demo tire 1 et gmail nokta com."
     );
   });
 

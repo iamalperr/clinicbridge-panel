@@ -321,7 +321,7 @@ export interface MixedTurnCapture {
 }
 
 /**
- * Slot information stated alongside an informational question ("Yusuf Alper Özgül. Bu arada
+ * Slot information stated alongside an informational question ("Mehmet Can Yılmaz. Bu arada
  * implant fiyatınız ne kadar?"). Values are read only from the statement clauses, through the
  * same extractor and scheduling validation as a normal collection turn; the question itself
  * is left to the existing knowledge answer. Ambiguous values stay unfilled.

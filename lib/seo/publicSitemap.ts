@@ -21,11 +21,8 @@ export const PUBLIC_INDEXABLE_ENTRIES: PublicIndexablePath[] = [
   { path: "/hakkimizda", lastmod: "2026-11-11" },
   { path: "/fiyatlandirma", lastmod: "2026-11-11" },
   { path: "/kurulum-rehberi", lastmod: "2026-11-11" },
-  { path: "/privacy", lastmod: "2026-11-01" },
-  { path: "/terms", lastmod: "2026-11-01" },
-  { path: "/kvkk", lastmod: "2026-11-01" },
-  { path: "/teslimat-ve-iade", lastmod: "2026-11-01" },
-  { path: "/mesafeli-satis-sozlesmesi", lastmod: "2026-11-01" },
+  // Legal pages (/privacy, /terms, /kvkk, /teslimat-ve-iade, /mesafeli-satis-sozlesmesi)
+  // are noindex,follow — keep them out of the sitemap.
 ];
 
 /** @deprecated Prefer PUBLIC_INDEXABLE_ENTRIES — kept for existing path-only callers/tests. */

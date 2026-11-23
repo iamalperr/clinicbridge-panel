@@ -181,7 +181,7 @@ export function evaluateAppointmentCollectionGate(
   const booking = detectExplicitBookingIntent(input.message);
 
   // Slot-recovery Contact Request offers sit on an already-open booking. Blocking
-  // CONTINUE would swallow name/phone answers ("Evet, Yusuf Alper Özgül.") into
+  // CONTINUE would swallow name/phone answers ("Evet, Mehmet Can Yılmaz.") into
   // the idle-handoff path. Only START is gated while contact is active.
   if (input.activeContactHandoff && !booking.hasBookingIntent && !input.isAppointmentFlowActive) {
     return { allowed: false, mode: "blocked", reason: "active_contact_handoff" };

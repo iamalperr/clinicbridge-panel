@@ -371,7 +371,7 @@ describe("Agent Core appointment flow → presentation → TTS copy", () => {
     expect((await say("İmplant için randevu almak istiyorum.")).state).toBe("COLLECTING_DATE");
     expect((await say("12 Ekim")).state).toBe("COLLECTING_TIME");
     expect((await say("saat 14:00")).state).toBe("COLLECTING_NAME");
-    expect((await say("Yusuf Alper")).state).toBe("COLLECTING_PHONE");
+    expect((await say("Mehmet Can")).state).toBe("COLLECTING_PHONE");
     expect((await say("0532 123 45 67")).state).toBe("COLLECTING_EMAIL");
 
     const review = await say("E-posta vermek istemiyorum.");
@@ -381,7 +381,7 @@ describe("Agent Core appointment flow → presentation → TTS copy", () => {
       requestedDate: "2026-10-12",
       requestedTime: "14:00",
       emailDisposition: "DECLINED",
-      patientName: "Yusuf Alper",
+      patientName: "Mehmet Can",
     });
     expect(review.canonical).toContain("14:00");
     expect(review.canonical).toMatch(/:/);
@@ -395,7 +395,7 @@ describe("Agent Core appointment flow → presentation → TTS copy", () => {
     expect(corrected.draft.requestedDate).toBe("2026-10-12");
     expect(corrected.draft.requestedService).toBe("Diş İmplantı");
     expect(corrected.draft.emailDisposition).toBe("DECLINED");
-    expect(corrected.draft.patientName).toBe("Yusuf Alper");
+    expect(corrected.draft.patientName).toBe("Mehmet Can");
     expect(corrected.canonical).toMatch(/12:00|saat 12/);
     expect(corrected.canonical).not.toMatch(/14:00/);
     expect(corrected.spoken).not.toContain("12:00");
@@ -410,7 +410,7 @@ describe("Agent Core appointment flow → presentation → TTS copy", () => {
       requestedDate: "2026-10-12",
       requestedTime: "12:00",
       requestedService: "Diş İmplantı",
-      patientName: "Yusuf Alper",
+      patientName: "Mehmet Can",
     });
     expect(createCalls[0].patientEmail).toBeUndefined();
     expect(saved().appointmentDraft?.requestedTime).toBe("12:00");

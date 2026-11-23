@@ -1,7 +1,7 @@
 import fs from 'fs';
 import * as cheerio from 'cheerio';
 
-const htmlPath = '/Users/yusufalperozgul/.gemini/antigravity-ide/brain/ee0eeea9-5716-4b2d-9b66-dac4cc390aab/.system_generated/steps/7623/content.md';
+const htmlPath = '/Users/local/.gemini/antigravity-ide/brain/ee0eeea9-5716-4b2d-9b66-dac4cc390aab/.system_generated/steps/7623/content.md';
 let html = fs.readFileSync(htmlPath, 'utf8');
 const docIndex = html.indexOf('<!DOCTYPE html>');
 if (docIndex > -1) {

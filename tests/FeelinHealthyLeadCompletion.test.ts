@@ -12,10 +12,10 @@ import { SlotExtractor } from "../lib/conversation/slotExtractor";
 describe("FeelinHealthy lead completion after clinic selection", () => {
   const baseIntake = {
     quoteConsent: true,
-    patientName: "Yusuf Alper Özgül",
+    patientName: "Mehmet Can Yılmaz",
     patientAge: 34,
     patientGender: "male",
-    patientEmail: "yusufalperozgul@hotmail.com",
+    patientEmail: "patient@example.com",
     patientPhone: "+905551112233",
     patientCountry: "TR",
     lastTreatmentCategory: "implant",

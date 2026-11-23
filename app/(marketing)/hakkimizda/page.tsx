@@ -22,7 +22,7 @@ export default function AboutPage() {
           {t.about.emailLabel}: <a href={`mailto:${SELLER.email}`}>{SELLER.email}</a>
         </p>
         <p>
-          {t.about.phoneLabel}: {SELLER.phone}
+          Web: <a href={SELLER.web}>{SELLER.web}</a>
         </p>
         <p>
           {t.about.sellerNote} <Link href="/mesafeli-satis-sozlesmesi">{t.about.contract}</Link>

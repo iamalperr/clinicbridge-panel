@@ -126,7 +126,7 @@ describe("patient offer email", () => {
     const { subject, html, text } = buildPatientOfferEmailContent({
       lang: "tr",
       agencyName: "FeelinHealthy",
-      patientName: "Alper Ozgul",
+      patientName: "Can Yilmaz",
       treatmentLabel: "implant",
       offers: [
         {

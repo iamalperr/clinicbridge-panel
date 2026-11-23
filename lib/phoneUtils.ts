@@ -17,14 +17,14 @@ export interface PhoneValidationResult {
  * Normalize and validate a Turkish mobile phone number.
  *
  * Supported input formats:
- *   0531 462 99 21
- *   05314629921
- *   +90 531 462 99 21
- *   905314629921
- *   5314629921
+ *   0532 123 45 67
+ *   05321234567
+ *   +90 532 123 45 67
+ *   905321234567
+ *   5321234567
  *   +90(531)462-99-21
  *
- * Returns canonical format: +905314629921
+ * Returns canonical format: +905321234567
  */
 export function normalizeTurkishPhone(raw: string): PhoneValidationResult {
   const original = raw;

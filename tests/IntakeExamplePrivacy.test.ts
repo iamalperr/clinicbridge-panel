@@ -6,9 +6,9 @@ import {
 } from "../lib/agency/feelinhealthyConfig";
 
 const PATIENT = {
-  patientName: "Alper Özgül",
+  patientName: "Can Yılmaz",
   firstName: "Alper",
-  lastName: "Özgül",
+  lastName: "Yılmaz",
   patientAge: 27,
   age: 27,
   patientGender: "Erkek",
@@ -25,7 +25,7 @@ describe("Intake example privacy", () => {
       const example = pickStaticGroup1Example("tr");
       expect(["John Smith, Erkek, 42", "Emma Johnson, Kadın, 35"]).toContain(example);
       expect(example).not.toContain("Alper");
-      expect(example).not.toContain("Özgül");
+      expect(example).not.toContain("Yılmaz");
     }
   });
 
@@ -36,7 +36,7 @@ describe("Intake example privacy", () => {
     expect(prompt).toMatch(/örnek: "(John Smith, Erkek, 42|Emma Johnson, Kadın, 35)"/i);
     expect(prompt).not.toContain("tek bir mesajda");
     expect(prompt).not.toContain("Alper");
-    expect(prompt).not.toContain("Özgül");
+    expect(prompt).not.toContain("Yılmaz");
     expect(prompt).not.toContain("27");
   });
 

@@ -155,7 +155,7 @@ export class IntentRouter {
     }
 
     // Step 1.15: The expected slot is parsed first. A valid answer to the pending question
-    // ("Evet, Yusuf Alper Özgül.", "Telefonum 0532 …") continues the flow even when its
+    // ("Evet, Mehmet Can Yılmaz.", "Telefonum 0532 …") continues the flow even when its
     // wording also resembles a confirmation or a contact phrase. Questions, complaints,
     // emergencies and explicit handoff / live-support requests still take precedence.
     const expectedSlotName = slotNameForExpected(expectedSlot);

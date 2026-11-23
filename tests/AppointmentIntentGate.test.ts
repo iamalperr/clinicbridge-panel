@@ -227,10 +227,10 @@ describe("Appointment collection entry gate", () => {
       expect(booking.allowed).toBe(true);
 
       const continueFlow = evaluateAppointmentCollectionGate({
-        message: "Evet, Yusuf Alper Özgül.",
+        message: "Evet, Mehmet Can Yılmaz.",
         intent: "appointment_continuation",
         isAppointmentFlowActive: true,
-        entities: { fullName: "Yusuf Alper Özgül" },
+        entities: { fullName: "Mehmet Can Yılmaz" },
         activeContactHandoff: true,
       });
       expect(continueFlow.allowed).toBe(true);

@@ -541,7 +541,7 @@ export class SlotExtractor {
     // Runs after age and gender so an unlabelled phrase is only read as a name
     // when the message is genuinely about the patient's identity: either a name
     // was asked for, or the same message also carries an age or a gender (the
-    // "Alper Özgül, Erkek, 27" form). A message that names a treatment is never
+    // "Can Yılmaz, Erkek, 27" form). A message that names a treatment is never
     // mined for a name, so a request like "implant yaptırmak istiyorum" cannot
     // become a patient name.
     if (!extracted.fullName && !extracted.firstName) {

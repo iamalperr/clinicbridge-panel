@@ -251,7 +251,7 @@ interface NameToken {
   core: string;
   /** Lower-cased (tr) lookup key. */
   key: string;
-  /** Punctuation after the token closes a clause ("Özgül." / "Özgül,"). */
+  /** Punctuation after the token closes a clause ("Yılmaz." / "Yılmaz,"). */
   endsClause: boolean;
   isInitial: boolean;
 }
@@ -352,7 +352,7 @@ function matchIntroAt(tokens: NameToken[], index: number): number {
     let ok = true;
     for (let k = 0; k < intro.length; k++) {
       const token = tokens[index + k];
-      // An intro may not be split across a clause boundary ("Adım. Yusuf" is fine; "Benim, adım" is not).
+      // An intro may not be split across a clause boundary ("Adım. Mehmet" is fine; "Benim, adım" is not).
       if (token.key !== intro[k] || (k < intro.length - 1 && token.endsClause)) {
         ok = false;
         break;
@@ -475,7 +475,7 @@ export function parseSurnameCorrection(
   const existing = String(existingFullName || "").normalize("NFC").trim().split(/\s+/).filter(Boolean);
   if (existing.length < 2) return null;
   const tokens = nameSegments(input.trimmed.normalize("NFC")).flat();
-  // "Adım Yusuf soyadım Özgül" restates the whole name; that is not a surname-only edit.
+  // "Adım Mehmet soyadım Yılmaz" restates the whole name; that is not a surname-only edit.
   if (tokens.some((t) => t.key === "adım" || t.key === "adim" || t.key === "ismim")) return null;
   for (let i = 0; i < tokens.length - 1; i++) {
     const intro = tokens[i];

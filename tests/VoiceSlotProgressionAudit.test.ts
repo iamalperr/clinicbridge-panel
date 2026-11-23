@@ -4,7 +4,7 @@
  * Real staff call: after "Randevu kaydını oluşturabilmem için adınızı ve soyadınızı paylaşabilir
  * misiniz?" the caller answered with a plain full name three times; every turn stayed in
  * COLLECTING_NAME with the identical prompt and no patientName. Root cause: STT terminal
- * punctuation ("Yusuf Alper Özgül.") failed the letters-only name parsers, and nothing stopped
+ * punctuation ("Mehmet Can Yılmaz.") failed the letters-only name parsers, and nothing stopped
  * the same prompt from repeating. These tests were first written as DEFECT reproductions and
  * now pin the corrected behavior: typed slot parsing, atomic draft transitions, next prompt
  * from the new state, bounded retry with a draft-preserving handoff offer, and speech-only
@@ -79,20 +79,20 @@ const routeSlot = (
 
 describe("full name: STT punctuation and natural intros", () => {
   it.each([
-    ["Yusuf Alper Özgül.", "Yusuf Alper Özgül"],
-    ["Yusuf Özgül.", "Yusuf Özgül"],
-    ["Yusuf Alper Özgül?", "Yusuf Alper Özgül"],
-    ["Ben Yusuf Alper Özgül", "Yusuf Alper Özgül"],
-    ["Benim adım Yusuf Alper Özgül.", "Yusuf Alper Özgül"],
-    ["Adım Yusuf Alper Özgül", "Yusuf Alper Özgül"],
-    ["İsmim Yusuf Alper Özgül", "Yusuf Alper Özgül"],
-    ["Evet, Yusuf Alper Özgül.", "Yusuf Alper Özgül"],
-    ["Evet Yusuf Alper Özgül", "Yusuf Alper Özgül"],
-    ["Tamam, Yusuf Alper Özgül", "Yusuf Alper Özgül"],
-    ["Tabii ki Yusuf Alper Özgül", "Yusuf Alper Özgül"],
-    ["Yusuf Alper Özgül efendim", "Yusuf Alper Özgül"],
-    ["Yusuf Alper Özgül,", "Yusuf Alper Özgül"],
-    ["yusuf alper özgül", "yusuf alper özgül"],
+    ["Mehmet Can Yılmaz.", "Mehmet Can Yılmaz"],
+    ["Mehmet Yılmaz.", "Mehmet Yılmaz"],
+    ["Mehmet Can Yılmaz?", "Mehmet Can Yılmaz"],
+    ["Ben Mehmet Can Yılmaz", "Mehmet Can Yılmaz"],
+    ["Benim adım Mehmet Can Yılmaz.", "Mehmet Can Yılmaz"],
+    ["Adım Mehmet Can Yılmaz", "Mehmet Can Yılmaz"],
+    ["İsmim Mehmet Can Yılmaz", "Mehmet Can Yılmaz"],
+    ["Evet, Mehmet Can Yılmaz.", "Mehmet Can Yılmaz"],
+    ["Evet Mehmet Can Yılmaz", "Mehmet Can Yılmaz"],
+    ["Tamam, Mehmet Can Yılmaz", "Mehmet Can Yılmaz"],
+    ["Tabii ki Mehmet Can Yılmaz", "Mehmet Can Yılmaz"],
+    ["Mehmet Can Yılmaz efendim", "Mehmet Can Yılmaz"],
+    ["Mehmet Can Yılmaz,", "Mehmet Can Yılmaz"],
+    ["mehmet can yılmaz", "mehmet can yılmaz"],
   ])("'%s' fills fullName = '%s' and continues the flow", (spoken, expected) => {
     const routed = routeName(spoken);
     expect(routed.intent).toBe("appointment_continuation");
@@ -103,7 +103,7 @@ describe("full name: STT punctuation and natural intros", () => {
   });
 
   it("never truncates a three-word explicit name to two words", () => {
-    expect(routeName("Adım Yusuf Alper Özgül").entities?.fullName).toBe("Yusuf Alper Özgül");
+    expect(routeName("Adım Mehmet Can Yılmaz").entities?.fullName).toBe("Mehmet Can Yılmaz");
     expect(SlotExtractor.parseName("Adım Kemal Sunal")?.fullName).toBe("Kemal Sunal");
   });
 
@@ -114,7 +114,7 @@ describe("full name: STT punctuation and natural intros", () => {
     expect(result.status === "filled" && result.value.fullName).toBe("Çağrı Işıl Öztürk");
   });
 
-  it.each(["Yusuf", "adım yusuf", "Yusuf."])("single token '%s' is an explicit NAME_SINGLE_TOKEN, never stored", (spoken) => {
+  it.each(["Mehmet", "adım mehmet", "Mehmet."])("single token '%s' is an explicit NAME_SINGLE_TOKEN, never stored", (spoken) => {
     const routed = routeName(spoken);
     expect(routed.entities?.fullName).toBeUndefined();
     expect(routed.slotOutcomes?.fullName).toEqual({ status: "rejected", reasonCode: "NAME_SINGLE_TOKEN" });
@@ -140,7 +140,7 @@ describe("full name: STT punctuation and natural intros", () => {
 
   it("compatibility: looksLikeRequestPhrase keeps its contract", () => {
     expect(looksLikeRequestPhrase("implant yaptırmak istiyorum")).toBe(true);
-    expect(looksLikeRequestPhrase("Alper Özgül")).toBe(false);
+    expect(looksLikeRequestPhrase("Can Yılmaz")).toBe(false);
   });
 });
 
@@ -289,19 +289,19 @@ describe("phone: deterministic and ambiguity-safe", () => {
 
 describe("email: existing policy preserved", () => {
   it("dictated, normal, refusal and malformed", () => {
-    expect(routeSlot("Yusuf nokta alper et gmail nokta com.", "email").entities?.email).toBe("yusuf.alper@gmail.com");
-    expect(routeSlot("yusuf@example.org", "email").entities?.email).toBe("yusuf@example.org");
+    expect(routeSlot("Mehmet nokta can et gmail nokta com.", "email").entities?.email).toBe("mehmet.can@gmail.com");
+    expect(routeSlot("mehmet@example.org", "email").entities?.email).toBe("mehmet@example.org");
     const declined = routeSlot("istemiyorum", "email");
     expect(declined.entities?.emailDeclined).toBe(true);
     expect(declined.slotOutcomes?.email).toEqual({ status: "declined", reasonCode: "EMAIL_DECLINED" });
-    expect(routeSlot("yusuf@gmail", "email").slotOutcomes?.email?.reasonCode).toBe("EMAIL_MALFORMED");
+    expect(routeSlot("mehmet@gmail", "email").slotOutcomes?.email?.reasonCode).toBe("EMAIL_MALFORMED");
   });
 });
 
 describe("multi-slot natural utterances", () => {
   it("treatment + date + time + name from one sentence", () => {
     const r = IntentRouter.classifyConversationIntent({
-      message: "İmplant için önümüzdeki cuma öğleden sonra iki gibi gelmek istiyorum. Adım Yusuf Alper Özgül.",
+      message: "İmplant için önümüzdeki cuma öğleden sonra iki gibi gelmek istiyorum. Adım Mehmet Can Yılmaz.",
       currentState: "INITIAL",
       collectedSlots: {},
       locale: "tr",
@@ -312,13 +312,13 @@ describe("multi-slot natural utterances", () => {
     expect(r.entities?.treatment).toBe("implant");
     expect(r.entities?.preferredDate).toBe("2026-10-16");
     expect(r.entities?.preferredTime).toBe("14:00");
-    expect(r.entities?.fullName).toBe("Yusuf Alper Özgül");
+    expect(r.entities?.fullName).toBe("Mehmet Can Yılmaz");
   });
 
   it("name + spoken phone in the name turn", () => {
-    const r = routeName(`Yusuf Alper Özgül, telefonum ${SPOKEN_PHONE}`);
+    const r = routeName(`Mehmet Can Yılmaz, telefonum ${SPOKEN_PHONE}`);
     expect(r.intent).toBe("appointment_continuation");
-    expect(r.entities?.fullName).toBe("Yusuf Alper Özgül");
+    expect(r.entities?.fullName).toBe("Mehmet Can Yılmaz");
     expect(r.entities?.phone).toBe("+905322914567");
   });
 });
@@ -390,9 +390,9 @@ describe("cross-product: agency intake (FeelinHealthy) uses the same parser", ()
     SlotExtractor.extractSlots(message, {}, "tr", "Europe/Istanbul", "patientName").extracted;
 
   it("punctuated and introduced names fill patientName", () => {
-    expect(agencyExtract("Yusuf Alper Özgül.").patientName).toBe("Yusuf Alper Özgül");
+    expect(agencyExtract("Mehmet Can Yılmaz.").patientName).toBe("Mehmet Can Yılmaz");
     expect(agencyExtract("Benim adım Ayşe Yılmaz").patientName).toBe("Ayşe Yılmaz");
-    expect(agencyExtract("Alper Özgül, Erkek, 27").patientName).toBe("Alper Özgül");
+    expect(agencyExtract("Can Yılmaz, Erkek, 27").patientName).toBe("Can Yılmaz");
   });
 
   it("treatment requests never become names in agency intake", () => {
@@ -417,13 +417,13 @@ describe("targeted: Agency matching-chat call shape", () => {
   };
 
   it("mixed name + price question: the route still receives the name and a pricing intent", () => {
-    const r = agencyTurn("Yusuf Alper Özgül. Bu arada implant fiyatınız ne kadar?");
-    expect(r.extracted.fullName).toBe("Yusuf Alper Özgül");
+    const r = agencyTurn("Mehmet Can Yılmaz. Bu arada implant fiyatınız ne kadar?");
+    expect(r.extracted.fullName).toBe("Mehmet Can Yılmaz");
     expect(r.intent).toBe("pricing_request");
   });
 
   it("surname-only correction is not applied to agency state (first/last name are stored separately there)", () => {
-    const r = agencyTurn("Soyadım Kaya olacaktı.", { patientName: "Yusuf Alper Özgül" });
+    const r = agencyTurn("Soyadım Kaya olacaktı.", { patientName: "Mehmet Can Yılmaz" });
     expect(r.extracted.fullName).toBeUndefined();
     expect(r.extracted.lastName).toBeUndefined();
   });
@@ -433,8 +433,8 @@ describe("targeted: Agency matching-chat call shape", () => {
   });
 
   it("an ambiguous spoken phone is never stored", () => {
-    expect(agencyTurn(AMBIGUOUS_SPOKEN_PHONE, { patientName: "Yusuf Alper Özgül" }, "phone").extracted.phone).toBeUndefined();
-    expect(agencyTurn(SPOKEN_PHONE, { patientName: "Yusuf Alper Özgül" }, "phone").extracted.phone).toBe("+905322914567");
+    expect(agencyTurn(AMBIGUOUS_SPOKEN_PHONE, { patientName: "Mehmet Can Yılmaz" }, "phone").extracted.phone).toBeUndefined();
+    expect(agencyTurn(SPOKEN_PHONE, { patientName: "Mehmet Can Yılmaz" }, "phone").extracted.phone).toBe("+905322914567");
   });
 });
 
@@ -442,8 +442,8 @@ describe("targeted: FeelinHealthy Group 1 intake", () => {
   const group1 = (message: string) => SlotExtractor.extractSlots(message, {}, "tr", "Europe/Istanbul", "patientName").extracted;
 
   it("a punctuated full name with age and gender completes Group 1", () => {
-    const extracted = group1("Alper Özgül., Erkek, 27");
-    expect(extracted.patientName).toBe("Alper Özgül");
+    const extracted = group1("Can Yılmaz., Erkek, 27");
+    expect(extracted.patientName).toBe("Can Yılmaz");
     expect(evaluateFeelinHealthyIntake(extracted).group1Complete).toBe(true);
   });
 
@@ -705,31 +705,31 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
     const { say } = makeConversation();
     const askName = await collectUpToName(say);
     expect(askName.reply).toMatch(/adınızı ve soyadınızı/i);
-    const r = await say("Yusuf Alper Özgül.");
+    const r = await say("Mehmet Can Yılmaz.");
     expect(r.state).toBe("COLLECTING_PHONE");
-    expect(r.draft.patientName).toBe("Yusuf Alper Özgül");
+    expect(r.draft.patientName).toBe("Mehmet Can Yılmaz");
     expect(r.reply).not.toMatch(/adınızı/i);
     expect(r.reply).toMatch(/telefon numaranızı/i);
   });
 
-  it.each(["Evet, Yusuf Alper Özgül.", "Benim adım Yusuf Alper Özgül.", "Tabii ki Yusuf Alper Özgül"])(
+  it.each(["Evet, Mehmet Can Yılmaz.", "Benim adım Mehmet Can Yılmaz.", "Tabii ki Mehmet Can Yılmaz"])(
     "voice: '%s' in COLLECTING_NAME progresses to the phone",
     async (spoken) => {
       const { say } = makeConversation();
       await collectUpToName(say);
       const r = await say(spoken);
       expect(r.state).toBe("COLLECTING_PHONE");
-      expect(r.draft.patientName).toBe("Yusuf Alper Özgül");
+      expect(r.draft.patientName).toBe("Mehmet Can Yılmaz");
     }
   );
 
   it("voice: multi-slot answer persists every safe slot and asks only the next missing one", async () => {
     const { say } = makeConversation();
-    const r = await say("İmplant için önümüzdeki cuma öğleden sonra iki gibi gelmek istiyorum. Adım Yusuf Alper Özgül.");
+    const r = await say("İmplant için önümüzdeki cuma öğleden sonra iki gibi gelmek istiyorum. Adım Mehmet Can Yılmaz.");
     expect(r.draft.requestedService).toBeTruthy();
     expect(r.draft.requestedDate).toBe("2026-10-16");
     expect(r.draft.requestedTime).toBe("14:00");
-    expect(r.draft.patientName).toBe("Yusuf Alper Özgül");
+    expect(r.draft.patientName).toBe("Mehmet Can Yılmaz");
     expect(r.state).toBe("COLLECTING_PHONE");
     expect(r.reply).toMatch(/telefon numaranızı/i);
     expect(r.reply).not.toMatch(/hangi gün|saat kaçta|adınızı|hangi tedavi/i);
@@ -738,8 +738,8 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
   it("voice: name + spoken phone in one answer fills both", async () => {
     const { say } = makeConversation();
     await collectUpToName(say);
-    const r = await say(`Yusuf Alper Özgül, telefonum ${SPOKEN_PHONE}`);
-    expect(r.draft.patientName).toBe("Yusuf Alper Özgül");
+    const r = await say(`Mehmet Can Yılmaz, telefonum ${SPOKEN_PHONE}`);
+    expect(r.draft.patientName).toBe("Mehmet Can Yılmaz");
     expect(r.draft.patientPhone).toBeTruthy();
     expect(r.state).toBe("COLLECTING_EMAIL");
     expect(r.reply).toMatch(/e-posta adresinizi/i);
@@ -749,7 +749,7 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
     it("phone failure branch: a name correction made while phone is expected is persisted", async () => {
       const { say } = makeConversation();
       await collectUpToName(say);
-      expect((await say("Yusuf Alper")).state).toBe("COLLECTING_PHONE");
+      expect((await say("Mehmet Can")).state).toBe("COLLECTING_PHONE");
       const corrected = await say("Adım Ahmet Kaya");
       expect(corrected.state).toBe("COLLECTING_PHONE");
       expect(corrected.draft.patientName).toBe("Ahmet Kaya");
@@ -760,25 +760,25 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
     it("scheduling-invalid branch: the name given with an out-of-hours time is kept", async () => {
       const { say } = makeConversation();
       await collectUpToName(say);
-      const r = await say("Adım Yusuf Alper Özgül, saat 22:00 olsun");
+      const r = await say("Adım Mehmet Can Yılmaz, saat 22:00 olsun");
       expect(r.state).toBe("COLLECTING_DATE");
-      expect(r.draft.patientName).toBe("Yusuf Alper Özgül");
+      expect(r.draft.patientName).toBe("Mehmet Can Yılmaz");
     });
 
     it("time-zone clarification branch: the name is saved before asking about the zone", async () => {
       const { say } = makeConversation();
       await collectUpToName(say);
-      const r = await say("Adım Yusuf Alper Özgül, saat 15:00 CST");
+      const r = await say("Adım Mehmet Can Yılmaz, saat 15:00 CST");
       expect(r.state).toBe("AWAITING_DATE_CLARIFICATION");
-      expect(r.draft.patientName).toBe("Yusuf Alper Özgül");
+      expect(r.draft.patientName).toBe("Mehmet Can Yılmaz");
     });
 
     it("email failure branch: the name given with a malformed email is kept", async () => {
       const { say } = makeConversation();
       await collectUpToName(say);
-      await say("Yusuf Alper Özgül");
+      await say("Mehmet Can Yılmaz");
       expect((await say("0532 291 45 67")).state).toBe("COLLECTING_EMAIL");
-      const r = await say("Adım Ahmet Kaya, mailim yusuf@gmail");
+      const r = await say("Adım Ahmet Kaya, mailim mehmet@gmail");
       expect(r.state).toBe("COLLECTING_EMAIL");
       expect(r.draft.patientName).toBe("Ahmet Kaya");
       expect(r.reply).toMatch(/eksik veya geçersiz/);
@@ -804,18 +804,18 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
     const askName = await collectUpToName(say);
     const replies = [askName.reply];
 
-    const first = await say("Yusuf");
+    const first = await say("Mehmet");
     replies.push(first.reply);
     expect(first.state).toBe("COLLECTING_NAME");
     expect(first.reply).toMatch(/soyadınızı/i);
     expect(saved().slotAttempts.fullName).toEqual({ count: 1, lastReasonCode: "NAME_SINGLE_TOKEN" });
 
-    const second = await say("Yusuf");
+    const second = await say("Mehmet");
     replies.push(second.reply);
     expect(second.reply).toMatch(/örneğin Ayşe Yılmaz/);
     expect(saved().slotAttempts.fullName.count).toBe(2);
 
-    const third = await say("Yusuf");
+    const third = await say("Mehmet");
     replies.push(third.reply);
     expect(third.reply).toMatch(/klinik ekibimiz sizinle iletişime geçsin/);
     expect(third.reply).toMatch(/bilgileri saklıyorum/);
@@ -833,9 +833,9 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
     expect(declined.draft).toMatchObject({ requestedDate: "2026-10-16", requestedTime: "14:00" });
     expect(saved().pendingAction).toBeNull();
 
-    const named = await say("Yusuf Alper Özgül.");
+    const named = await say("Mehmet Can Yılmaz.");
     expect(named.state).toBe("COLLECTING_PHONE");
-    expect(named.draft.patientName).toBe("Yusuf Alper Özgül");
+    expect(named.draft.patientName).toBe("Mehmet Can Yılmaz");
     expect(saved().slotAttempts.fullName).toBeNull();
     expect(createAppointmentAndNotify).not.toHaveBeenCalled();
   });
@@ -843,11 +843,11 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
   it("voice: answering the slot while the handoff offer is pending clears the offer", async () => {
     const { say, saved } = makeConversation();
     await collectUpToName(say);
-    for (let i = 0; i < 3; i++) await say("Yusuf");
+    for (let i = 0; i < 3; i++) await say("Mehmet");
     expect(saved().pendingAction?.payload?.origin).toBe("slot_recovery");
-    const r = await say("Evet, Yusuf Alper Özgül.");
+    const r = await say("Evet, Mehmet Can Yılmaz.");
     expect(r.state).toBe("COLLECTING_PHONE");
-    expect(r.draft.patientName).toBe("Yusuf Alper Özgül");
+    expect(r.draft.patientName).toBe("Mehmet Can Yılmaz");
     expect(saved().pendingAction).toBeNull();
     expect(createContactRequestAndNotify).not.toHaveBeenCalled();
   });
@@ -855,7 +855,7 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
   it("voice: accepting the handoff offer uses the existing contact path and keeps the draft", async () => {
     const { say, saved } = makeConversation();
     await collectUpToName(say);
-    for (let i = 0; i < 3; i++) await say("Yusuf");
+    for (let i = 0; i < 3; i++) await say("Mehmet");
     const accepted = await say("evet");
     expect(saved().appointmentDraft).toMatchObject({ requestedDate: "2026-10-16", requestedTime: "14:00" });
     expect(saved().appointmentState).toBe("COLLECTING_NAME");
@@ -883,7 +883,7 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
   it("voice: ambiguous spoken phone is not stored; a digit-by-digit read-back is requested", async () => {
     const { say } = makeConversation();
     await collectUpToName(say);
-    await say("Yusuf Alper Özgül");
+    await say("Mehmet Can Yılmaz");
     const r = await say(AMBIGUOUS_SPOKEN_PHONE);
     expect(r.state).toBe("COLLECTING_PHONE");
     expect(r.draft.patientPhone).toBeUndefined();
@@ -896,7 +896,7 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
       (await say("İmplant için randevu almak istiyorum.")).reply,
       (await say("16 Ekim")).reply,
       (await say("saat 14:00")).reply,
-      (await say("Yusuf Alper Özgül.")).reply,
+      (await say("Mehmet Can Yılmaz.")).reply,
     ];
     for (const reply of replies) {
       expect(reply).not.toMatch(/\(Örn|Örn[.:]|\(e\.g\./);
@@ -908,16 +908,16 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
     const { say } = makeConversation({ channel: "web_widget" });
     const askName = await collectUpToName(say);
     expect(askName.reply).toBe(WEB_NAME_PROMPT);
-    const r = await say("Yusuf Alper Özgül.");
+    const r = await say("Mehmet Can Yılmaz.");
     expect(r.state).toBe("COLLECTING_PHONE");
-    expect(r.draft.patientName).toBe("Yusuf Alper Özgül");
+    expect(r.draft.patientName).toBe("Mehmet Can Yılmaz");
     expect(r.reply).toBe(ConversationStateEngine.generateNextSlotPrompt({}, ["phone"], "tr"));
   });
 
   it("web: a failed name answer is clarified instead of repeating the identical prompt", async () => {
     const { say } = makeConversation({ channel: "web_widget" });
     const askName = await collectUpToName(say);
-    const r = await say("Yusuf");
+    const r = await say("Mehmet");
     expect(r.state).toBe("COLLECTING_NAME");
     expect(r.reply).not.toBe(askName.reply);
     expect(r.reply).toMatch(/soyadınızı/i);
@@ -939,13 +939,13 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
       "%s: name + price question → name persisted, question answered by Agent Core, resume asks the phone",
       async (channel) => {
         const { say } = makeConversation({ channel, seed: seedAt("COLLECTING_NAME") });
-        const r = await say("Yusuf Alper Özgül. Bu arada implant fiyatınız ne kadar?");
-        expect(r.draft.patientName).toBe("Yusuf Alper Özgül");
+        const r = await say("Mehmet Can Yılmaz. Bu arada implant fiyatınız ne kadar?");
+        expect(r.draft.patientName).toBe("Mehmet Can Yılmaz");
         expect(r.state).toBe("COLLECTING_PHONE");
         expect(r.draft).toMatchObject(BASE_DRAFT);
         expect(aiRequest).toHaveBeenCalledTimes(1);
         expect(hybridSearch).toHaveBeenCalledTimes(1);
-        expect(lastUserContent()).toBe("Yusuf Alper Özgül. Bu arada implant fiyatınız ne kadar?");
+        expect(lastUserContent()).toBe("Mehmet Can Yılmaz. Bu arada implant fiyatınız ne kadar?");
         expect(r.reply.startsWith(KNOWLEDGE_ANSWER)).toBe(true);
         expect(r.reply).toMatch(/telefon numaranızı/i);
         expect(r.reply).not.toMatch(/adınızı/i);
@@ -955,8 +955,8 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
 
     it("reverse order: question first, introduced name after", async () => {
       const { say } = makeConversation({ seed: seedAt("COLLECTING_NAME") });
-      const r = await say("İmplant fiyatınız ne kadar? Bu arada adım Yusuf Alper Özgül.");
-      expect(r.draft.patientName).toBe("Yusuf Alper Özgül");
+      const r = await say("İmplant fiyatınız ne kadar? Bu arada adım Mehmet Can Yılmaz.");
+      expect(r.draft.patientName).toBe("Mehmet Can Yılmaz");
       expect(r.state).toBe("COLLECTING_PHONE");
       expect(r.reply.startsWith(KNOWLEDGE_ANSWER)).toBe(true);
     });
@@ -982,7 +982,7 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
     });
 
     it("expected phone: a statement that mentions WhatsApp is a phone answer, not a live-support request", async () => {
-      const { say } = makeConversation({ seed: seedAt("COLLECTING_PHONE", { ...BASE_DRAFT, patientName: "Yusuf Alper Özgül" }) });
+      const { say } = makeConversation({ seed: seedAt("COLLECTING_PHONE", { ...BASE_DRAFT, patientName: "Mehmet Can Yılmaz" }) });
       const r = await say("Numaram 0532 291 45 67. Bu numaradan WhatsApp da kullanıyorum.");
       expect(r.draft.patientPhone).toBe("+905322914567");
       expect(r.state).toBe("COLLECTING_EMAIL");
@@ -991,7 +991,7 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
 
     it("expected email: decline + 'can it still be created?' → declined, review summary, nothing created yet", async () => {
       const { say } = makeConversation({
-        seed: seedAt("COLLECTING_EMAIL", { ...BASE_DRAFT, patientName: "Yusuf Alper Özgül", patientPhone: "+905322914567" }),
+        seed: seedAt("COLLECTING_EMAIL", { ...BASE_DRAFT, patientName: "Mehmet Can Yılmaz", patientPhone: "+905322914567" }),
       });
       const r = await say("E-posta vermek istemiyorum. Randevum yine oluşturulabilir mi?");
       expect(r.draft.emailDisposition).toBe("DECLINED");
@@ -1002,7 +1002,7 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
 
     it("correction + question: the corrected time is persisted BEFORE the knowledge answer runs", async () => {
       const conversation = makeConversation({
-        seed: seedAt("COLLECTING_PHONE", { ...BASE_DRAFT, patientName: "Yusuf Alper Özgül" }),
+        seed: seedAt("COLLECTING_PHONE", { ...BASE_DRAFT, patientName: "Mehmet Can Yılmaz" }),
       });
       let atAnswer: Saved | null = null;
       aiRequest.mockImplementationOnce(async () => {
@@ -1019,7 +1019,7 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
 
     it("surname correction + doctor question: persisted before the answer; only the surname changes", async () => {
       const conversation = makeConversation({
-        seed: seedAt("COLLECTING_PHONE", { ...BASE_DRAFT, patientName: "Yusuf Alper Özgül" }),
+        seed: seedAt("COLLECTING_PHONE", { ...BASE_DRAFT, patientName: "Mehmet Can Yılmaz" }),
       });
       let atAnswer: Saved | null = null;
       aiRequest.mockImplementationOnce(async () => {
@@ -1027,16 +1027,16 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
         return { content: KNOWLEDGE_ANSWER, durationMs: 1 };
       });
       const r = await conversation.say("Soyadım Kaya olacaktı. Bu tedaviyi hangi doktor yapıyor?");
-      expect(atAnswer!.appointmentDraft.patientName).toBe("Yusuf Alper Kaya");
-      expect(r.draft.patientName).toBe("Yusuf Alper Kaya");
+      expect(atAnswer!.appointmentDraft.patientName).toBe("Mehmet Can Kaya");
+      expect(r.draft.patientName).toBe("Mehmet Can Kaya");
       expect(r.state).toBe("COLLECTING_PHONE");
     });
 
     it("multi-slot + question: every safe field persists, then only the next missing field is asked", async () => {
       const { say } = makeConversation({ seed: seedAt("COLLECTING_DATE", { requestedService: "Diş İmplantı" }) });
-      const r = await say("Adım Yusuf Alper Özgül, cuma günü saat iki gibi gelebilirim. İmplant fiyatınız ne kadar?");
+      const r = await say("Adım Mehmet Can Yılmaz, cuma günü saat iki gibi gelebilirim. İmplant fiyatınız ne kadar?");
       expect(r.draft).toMatchObject({
-        patientName: "Yusuf Alper Özgül",
+        patientName: "Mehmet Can Yılmaz",
         requestedDate: "2026-10-16",
         requestedTime: "14:00",
         requestedService: "Diş İmplantı",
@@ -1050,8 +1050,8 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
     it("RAG/LLM failure after extraction does not roll back the accepted slot", async () => {
       const { say, saved } = makeConversation({ seed: seedAt("COLLECTING_NAME") });
       aiRequest.mockRejectedValueOnce(new Error("upstream unavailable"));
-      await say("Yusuf Alper Özgül. Bu arada implant fiyatınız ne kadar?").catch(() => undefined);
-      expect(saved().appointmentDraft.patientName).toBe("Yusuf Alper Özgül");
+      await say("Mehmet Can Yılmaz. Bu arada implant fiyatınız ne kadar?").catch(() => undefined);
+      expect(saved().appointmentDraft.patientName).toBe("Mehmet Can Yılmaz");
       expect(saved().appointmentState).toBe("COLLECTING_PHONE");
       const next = await say("0532 291 45 67");
       expect(next.state).toBe("COLLECTING_EMAIL");
@@ -1069,7 +1069,7 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
     });
 
     it("ambiguous spoken phone next to a question is not stored", async () => {
-      const { say } = makeConversation({ seed: seedAt("COLLECTING_PHONE", { ...BASE_DRAFT, patientName: "Yusuf Alper Özgül" }) });
+      const { say } = makeConversation({ seed: seedAt("COLLECTING_PHONE", { ...BASE_DRAFT, patientName: "Mehmet Can Yılmaz" }) });
       const r = await say(`${AMBIGUOUS_SPOKEN_PHONE}. Bu arada otopark var mı?`);
       expect(r.draft.patientPhone).toBeUndefined();
       expect(r.state).toBe("COLLECTING_PHONE");
@@ -1095,7 +1095,7 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
       expect(kept.draft).toMatchObject(BASE_DRAFT);
     });
 
-    it.each(["Yusuf Alper Özgül. Beni arayın lütfen.", "Yusuf Alper Özgül. Canlı destek istiyorum."])(
+    it.each(["Mehmet Can Yılmaz. Beni arayın lütfen.", "Mehmet Can Yılmaz. Canlı destek istiyorum."])(
       "explicit handoff keeps Contact Request/Handoff semantics: %s",
       async (spoken) => {
         const { say, saved } = makeConversation({ seed: seedAt("COLLECTING_NAME") });
@@ -1113,7 +1113,7 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
         seed: { appointmentState: "COLLECTING_NAME", appointmentDraft: { requestedService: "Diş İmplantı", requestedDate: "2026-10-16", requestedTime: "14:00" }, conversationLocale: "tr" },
       });
       const replies = [
-        (await say("Yusuf Alper Özgül. Otoparkınız var mı?")).reply,
+        (await say("Mehmet Can Yılmaz. Otoparkınız var mı?")).reply,
         (await say("Doktorunuz kim?")).reply,
         (await say("0532 291 45 67")).reply,
       ];
@@ -1125,7 +1125,7 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
         "İmplant için randevu almak istiyorum.",
         "Önümüzdeki cuma. Doktorunuz kim olacak?",
         "Öğleden sonra iki uygun olur. Otoparkınız var mı?",
-        "Yusuf Alper Özgül. Bu arada implant fiyatınız ne kadar?",
+        "Mehmet Can Yılmaz. Bu arada implant fiyatınız ne kadar?",
         "0532 291 45 67",
         "E-posta vermek istemiyorum.",
       ];
@@ -1166,11 +1166,11 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
       await say("İmplant için randevu almak istiyorum.");
       await say("16 Ekim");
       await say("saat 14:00");
-      await say("Yusuf Alper Özgül. Bu arada implant fiyatınız ne kadar?");
+      await say("Mehmet Can Yılmaz. Bu arada implant fiyatınız ne kadar?");
       await say("0532 291 45 67");
       const review = await say("istemiyorum");
       expect(saved().appointmentState).toBe("AWAITING_CONFIRMATION");
-      expect(review.reply).toMatch(/Yusuf Alper Özgül/);
+      expect(review.reply).toMatch(/Mehmet Can Yılmaz/);
       expect(createAppointmentAndNotify).not.toHaveBeenCalled();
     });
 
@@ -1179,11 +1179,11 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
       await say("İmplant için randevu almak istiyorum.");
       await say("16 Ekim");
       await say("saat 14:00");
-      await say("Yusuf Alper Özgül. Bu arada implant fiyatınız ne kadar?");
+      await say("Mehmet Can Yılmaz. Bu arada implant fiyatınız ne kadar?");
       await say(SPOKEN_PHONE);
       await say("istemiyorum");
       expect(saved().appointmentState).toBe("AWAITING_CONFIRMATION");
-      expect(saved().appointmentDraft.patientName).toBe("Yusuf Alper Özgül");
+      expect(saved().appointmentDraft.patientName).toBe("Mehmet Can Yılmaz");
       expect(createAppointmentAndNotify).not.toHaveBeenCalled();
     });
   });
@@ -1194,7 +1194,7 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
       appointmentDraft: {},
       isAppointmentCreated: true,
       appointmentId: "apt_submitted_1",
-      patientName: "Yusuf Alper Özgül",
+      patientName: "Mehmet Can Yılmaz",
       patientPhone: "+905322914567",
       conversationLocale: "tr",
     };
@@ -1447,7 +1447,7 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
     const { say } = makeConversation();
     await collectUpToName(say);
     logLines.length = 0;
-    await say("Yusuf Alper Özgül.");
+    await say("Mehmet Can Yılmaz.");
     await say(SPOKEN_PHONE);
     const events = logLines
       .filter((line) => line.includes('"VOICE_SLOT_TURN"'))
@@ -1471,6 +1471,6 @@ describe("Agent Core end-to-end: atomic slot turns", () => {
     expect(String(events[0].sessionRef)).toMatch(/^[0-9a-f]{16}$/);
     expect(events[1]).toMatchObject({ expectedSlot: "phone", resolvedSlotNames: ["phone"], reasonCode: "PHONE_SPOKEN" });
     const blob = JSON.stringify(events);
-    for (const pii of ["Yusuf", "Özgül", "532", "291", "sıfır", "conv_voice"]) expect(blob).not.toContain(pii);
+    for (const pii of ["Mehmet", "Yılmaz", "532", "291", "sıfır", "conv_voice"]) expect(blob).not.toContain(pii);
   });
 });

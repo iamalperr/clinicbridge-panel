@@ -1,27 +1,13 @@
-"use client";
+import type { Metadata } from "next";
+import LegalChrome from "@/components/legal/LegalChrome";
 
-import { UI_COLORS } from "@/components/ui/ui-shared";
-import Logo from "@/components/ui/Logo";
-import Link from "next/link";
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: true,
+  },
+};
 
 export default function LegalLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ minHeight: "100dvh", background: "var(--bg-app)", display: "flex", flexDirection: "column" }}>
-      <header style={{ padding: "20px 32px", borderBottom: `1px solid ${UI_COLORS.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", background: UI_COLORS.bgCard }}>
-        <Link href="/" style={{ textDecoration: "none" }}><Logo size="md" /></Link>
-      </header>
-      <main style={{ flex: 1, maxWidth: 760, margin: "0 auto", padding: "64px 24px", width: "100%" }}>
-        {children}
-      </main>
-      <footer style={{ padding: "32px", borderTop: `1px solid ${UI_COLORS.border}`, textAlign: "center", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "center", gap: 24, background: UI_COLORS.bgCard }}>
-        <Link href="/privacy" style={{ color: UI_COLORS.textMuted, fontSize: 13, textDecoration: "none" }}>Gizlilik Politikası</Link>
-        <Link href="/terms" style={{ color: UI_COLORS.textMuted, fontSize: 13, textDecoration: "none" }}>Kullanım Şartları</Link>
-        <Link href="/kvkk" style={{ color: UI_COLORS.textMuted, fontSize: 13, textDecoration: "none" }}>KVKK</Link>
-        <Link href="/teslimat-ve-iade" style={{ color: UI_COLORS.textMuted, fontSize: 13, textDecoration: "none" }}>Teslimat ve İade</Link>
-        <Link href="/mesafeli-satis-sozlesmesi" style={{ color: UI_COLORS.textMuted, fontSize: 13, textDecoration: "none" }}>Mesafeli Satış Sözleşmesi</Link>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/payment/iyzico-logo-band.svg" alt="iyzico ile Öde, Visa, Mastercard" style={{ height: 24 }} />
-      </footer>
-    </div>
-  );
+  return <LegalChrome>{children}</LegalChrome>;
 }

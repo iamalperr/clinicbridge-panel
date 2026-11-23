@@ -4,7 +4,7 @@ import { LegalPage, LegalSection, SellerInfo, SELLER } from "@/components/legal/
 
 export default function DistanceSalesPage() {
   return (
-    <LegalPage title="Mesafeli Satış Sözleşmesi" updated="5 Kasım 2026">
+    <LegalPage title="Mesafeli Satış Sözleşmesi" updated="23 Kasım 2026">
       <LegalSection title="1. Taraflar">
         <p><strong>Satıcı:</strong></p>
         <SellerInfo />

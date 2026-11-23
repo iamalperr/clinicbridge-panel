@@ -3,7 +3,7 @@
  *
  * Email is optional for a clinic appointment request: name, phone, treatment, date and time are
  * required. A patient may explicitly decline email; that is recorded as a disposition, never as an
- * email value. Spoken dictation ("yusuf nokta alper et gmail nokta com") is normalized only when the
+ * email value. Spoken dictation ("mehmet nokta can et gmail nokta com") is normalized only when the
  * caller is answering the email question or names email in the same message, and the result must
  * pass the canonical validator. Nothing here guesses a missing local part or domain.
  */
@@ -141,7 +141,7 @@ function joinItems(items: SpokenItem[]): string {
 }
 
 /**
- * Normalize a dictated address ("yusuf alt çizgi alper et gmail nokta com") to its canonical
+ * Normalize a dictated address ("mehmet alt çizgi can et gmail nokta com") to its canonical
  * form, or null when it is absent, ambiguous or invalid. The caller decides whether the message
  * is in email context; this function never applies outside it.
  */

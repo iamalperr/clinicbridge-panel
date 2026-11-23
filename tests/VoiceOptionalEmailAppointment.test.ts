@@ -59,11 +59,11 @@ describe("explicit email decline (deterministic)", () => {
   );
 
   it.each([
-    "yusuf et gmail",
-    "yusuf@gmail",
+    "mehmet et gmail",
+    "mehmet@gmail",
     "E-posta zorunlu mu?",
     "Mail adresim yok mu gerekiyor?",
-    "e-posta adresim yusuf@gmail.com, yok başka",
+    "e-posta adresim mehmet@gmail.com, yok başka",
     "Pazartesi uygun",
   ])("'%s' is never a decline", (msg) => {
     expect(detectEmailDecline(msg, { expectingEmail: true })).toBe(false);
@@ -72,36 +72,36 @@ describe("explicit email decline (deterministic)", () => {
 
 describe("spoken email normalization (email context only)", () => {
   it.each([
-    ["yusuf nokta alper et gmail nokta com", "yusuf.alper@gmail.com"],
-    ["yusuf alper et gmail nokta com", "yusufalper@gmail.com"],
-    ["yusuf alt çizgi alper et gmail nokta com", "yusuf_alper@gmail.com"],
-    ["Yusuf tire alper at hotmail dot com", "yusuf-alper@hotmail.com"],
-    ["E-posta adresim yusuf et gmail nokta com nokta tr", "yusuf@gmail.com.tr"],
+    ["mehmet nokta can et gmail nokta com", "mehmet.can@gmail.com"],
+    ["mehmet can et gmail nokta com", "mehmetcan@gmail.com"],
+    ["mehmet alt çizgi can et gmail nokta com", "mehmet_can@gmail.com"],
+    ["Mehmet tire can at hotmail dot com", "mehmet-can@hotmail.com"],
+    ["E-posta adresim mehmet et gmail nokta com nokta tr", "mehmet@gmail.com.tr"],
     ["Info et klinik nokta com.", "info@klinik.com"],
-    ["yusuf at işareti gmail.com", "yusuf@gmail.com"],
+    ["mehmet at işareti gmail.com", "mehmet@gmail.com"],
   ])("'%s' → %s", (spoken, email) => {
     expect(normalizeSpokenEmail(spoken)).toBe(email);
   });
 
   it.each([
-    "yusuf et gmail",
+    "mehmet et gmail",
     "et gmail nokta com",
-    "yusuf et",
-    "yusuf özgül et gmail nokta com",
-    "kayıt et yusuf et gmail nokta com",
-    "yusuf nokta et gmail nokta com",
+    "mehmet et",
+    "mehmet yılmaz et gmail nokta com",
+    "kayıt et mehmet et gmail nokta com",
+    "mehmet nokta et gmail nokta com",
     "E-posta vermek istemiyorum",
   ])("never invents missing parts: '%s' → null", (spoken) => {
     expect(normalizeSpokenEmail(spoken)).toBeNull();
   });
 
   it("extractor normalizes dictation only in email context", () => {
-    const spoken = "yusuf nokta alper et gmail nokta com";
-    expect(SlotExtractor.extractSlots(spoken, {}, "tr", TZ, "email", NOW).extracted.email).toBe("yusuf.alper@gmail.com");
+    const spoken = "mehmet nokta can et gmail nokta com";
+    expect(SlotExtractor.extractSlots(spoken, {}, "tr", TZ, "email", NOW).extracted.email).toBe("mehmet.can@gmail.com");
     expect(SlotExtractor.extractSlots(spoken, {}, "tr", TZ, "fullName", NOW).extracted.email).toBeUndefined();
     expect(
       SlotExtractor.extractSlots(`mail adresim ${spoken}`, {}, "tr", TZ, "confirmation", NOW).extracted.email
-    ).toBe("yusuf.alper@gmail.com");
+    ).toBe("mehmet.can@gmail.com");
   });
 
   it("decline is a disposition, malformed is a malformed attempt — never mixed", () => {
@@ -110,7 +110,7 @@ describe("spoken email normalization (email context only)", () => {
     expect(declined.extracted.email).toBeUndefined();
     expect(declined.invalidEmailAttempt).toBe(false);
 
-    const malformed = SlotExtractor.extractSlots("yusuf et gmail", {}, "tr", TZ, "email", NOW);
+    const malformed = SlotExtractor.extractSlots("mehmet et gmail", {}, "tr", TZ, "email", NOW);
     expect(malformed.extracted.emailDeclined).toBeUndefined();
     expect(malformed.invalidEmailAttempt).toBe(true);
   });
@@ -136,9 +136,9 @@ describe("intent routing of email answers", () => {
 
   it("'Mail adresi …' is not a location question and dictation is not a malformed email", () => {
     expect(route("Mail adresi vermek istemiyorum.", "email").intent).toBe("appointment_continuation");
-    const dictated = route("yusuf nokta alper et gmail nokta com", "email");
+    const dictated = route("mehmet nokta can et gmail nokta com", "email");
     expect(dictated.intent).toBe("appointment_continuation");
-    expect(dictated.entities?.email).toBe("yusuf.alper@gmail.com");
+    expect(dictated.entities?.email).toBe("mehmet.can@gmail.com");
     expect(dictated.validationError).toBeUndefined();
   });
 
@@ -148,7 +148,7 @@ describe("intent routing of email answers", () => {
   });
 
   it("malformed email is still a validation error (one natural retry)", () => {
-    expect(route("yusuf et gmail", "email").validationError).toBe("invalid_email");
+    expect(route("mehmet et gmail", "email").validationError).toBe("invalid_email");
   });
 });
 
@@ -369,14 +369,14 @@ describe("Agent Core end-to-end: appointment without email (voice and web)", () 
     expect((await say("İmplant için randevu almak istiyorum.")).state).toBe("COLLECTING_DATE");
     expect((await say("12 Ekim")).state).toBe("COLLECTING_TIME");
     expect((await say("saat 14:00")).state).toBe("COLLECTING_NAME");
-    expect((await say("Yusuf Alper")).state).toBe("COLLECTING_PHONE");
+    expect((await say("Mehmet Can")).state).toBe("COLLECTING_PHONE");
     const askEmail = await say("0532 123 45 67");
     expect(askEmail.state).toBe("COLLECTING_EMAIL");
     expect(askEmail.reply).toMatch(/e-posta adresinizi/i);
   }
 
   const EXPECTED_FIELDS = {
-    patientName: "Yusuf Alper",
+    patientName: "Mehmet Can",
     requestedDate: "2026-10-12",
     requestedTime: "14:00",
   };
@@ -426,36 +426,36 @@ describe("Agent Core end-to-end: appointment without email (voice and web)", () 
     await collectUpToEmail(say);
     expect((await say("E-posta vermek istemiyorum.")).draft.emailDisposition).toBe("DECLINED");
 
-    const provided = await say("Aslında e-posta adresim yusuf nokta alper et gmail nokta com");
+    const provided = await say("Aslında e-posta adresim mehmet nokta can et gmail nokta com");
     expect(provided.state).toBe("AWAITING_CONFIRMATION");
     expect(provided.draft.emailDisposition).toBe("PROVIDED");
-    expect(provided.draft.patientEmail).toBe("yusuf.alper@gmail.com");
+    expect(provided.draft.patientEmail).toBe("mehmet.can@gmail.com");
     expect(provided.draft).toMatchObject(EXPECTED_FIELDS);
-    expect(provided.reply).toContain("E-posta: yusuf.alper@gmail.com");
+    expect(provided.reply).toContain("E-posta: mehmet.can@gmail.com");
 
     const submitted = await say("Evet");
     expect(submitted.state).toBe("APPOINTMENT_SUBMITTED");
     expect(createCalls).toHaveLength(1);
-    expect(createCalls[0].patientEmail).toBe("yusuf.alper@gmail.com");
+    expect(createCalls[0].patientEmail).toBe("mehmet.can@gmail.com");
   });
 
   it("voice: dictated email during the email question is accepted directly", async () => {
     const { say } = makeConversation("voice");
     await collectUpToEmail(say);
-    const r = await say("yusuf alt çizgi alper et gmail nokta com");
+    const r = await say("mehmet alt çizgi can et gmail nokta com");
     expect(r.state).toBe("AWAITING_CONFIRMATION");
-    expect(r.draft).toMatchObject({ patientEmail: "yusuf_alper@gmail.com", emailDisposition: "PROVIDED" });
+    expect(r.draft).toMatchObject({ patientEmail: "mehmet_can@gmail.com", emailDisposition: "PROVIDED" });
   });
 
   it("voice: malformed email gets one plain retry, then an offer to skip — never an automatic decline", async () => {
     const { say } = makeConversation("voice");
     await collectUpToEmail(say);
-    const first = await say("yusuf et gmail");
+    const first = await say("mehmet et gmail");
     expect(first.state).toBe("COLLECTING_EMAIL");
     expect(first.reply).toMatch(/eksik veya geçersiz/);
     expect(first.draft.emailDisposition).toBe("UNSET");
 
-    const second = await say("yusuf et gmail");
+    const second = await say("mehmet et gmail");
     expect(second.state).toBe("COLLECTING_EMAIL");
     expect(second.reply).toMatch(/e-posta vermeden devam edebiliriz/);
     expect(second.draft.emailDisposition).toBe("UNSET");
@@ -469,12 +469,12 @@ describe("Agent Core end-to-end: appointment without email (voice and web)", () 
     createCalls.length = 0;
     const { say } = makeConversation("web_widget");
     await collectUpToEmail(say);
-    const r = await say("yusuf@example.org");
+    const r = await say("mehmet@example.org");
     expect(r.state).toBe("AWAITING_CONFIRMATION");
-    expect(r.draft).toMatchObject({ patientEmail: "yusuf@example.org", emailDisposition: "PROVIDED" });
-    expect(r.reply).toContain("E-posta: yusuf@example.org");
+    expect(r.draft).toMatchObject({ patientEmail: "mehmet@example.org", emailDisposition: "PROVIDED" });
+    expect(r.reply).toContain("E-posta: mehmet@example.org");
     await say("Evet");
-    expect(createCalls[0].patientEmail).toBe("yusuf@example.org");
+    expect(createCalls[0].patientEmail).toBe("mehmet@example.org");
   });
 
   describe("emailDisposition lifecycle is scoped to one appointment draft", () => {
@@ -497,7 +497,7 @@ describe("Agent Core end-to-end: appointment without email (voice and web)", () 
       const submitted = await say("Evet");
       expect(submitted.state).toBe("APPOINTMENT_SUBMITTED");
       expect(createCalls).toHaveLength(1);
-      expect(createCalls[0]).toMatchObject({ requestedDate: "2026-10-13", requestedTime: "15:00", patientName: "Yusuf Alper" });
+      expect(createCalls[0]).toMatchObject({ requestedDate: "2026-10-13", requestedTime: "15:00", patientName: "Mehmet Can" });
       expect(createCalls[0].patientEmail).toBeUndefined();
     });
 
@@ -533,14 +533,14 @@ describe("Agent Core end-to-end: appointment without email (voice and web)", () 
       const { say } = makeConversation("voice");
       await collectUpToEmail(say);
       await say("E-posta vermek istemiyorum.");
-      await say("Aslında e-posta adresim yusuf nokta alper et gmail nokta com");
+      await say("Aslında e-posta adresim mehmet nokta can et gmail nokta com");
 
       const time = await say("Saati 15:00 olarak değiştirelim.");
       expect(time.state).toBe("AWAITING_CONFIRMATION");
-      expect(time.draft).toMatchObject({ requestedTime: "15:00", patientEmail: "yusuf.alper@gmail.com", emailDisposition: "PROVIDED" });
+      expect(time.draft).toMatchObject({ requestedTime: "15:00", patientEmail: "mehmet.can@gmail.com", emailDisposition: "PROVIDED" });
 
       expect((await say("Evet")).state).toBe("APPOINTMENT_SUBMITTED");
-      expect(createCalls[0]).toMatchObject({ requestedTime: "15:00", patientEmail: "yusuf.alper@gmail.com" });
+      expect(createCalls[0]).toMatchObject({ requestedTime: "15:00", patientEmail: "mehmet.can@gmail.com" });
     });
   });
 
@@ -583,14 +583,14 @@ describe("Agent Core end-to-end: appointment without email (voice and web)", () 
         expect(askEmail.reply).toMatch(/e-posta adresinizi/i);
         const review = await say("ayse@example.org");
         expect(review.state).toBe("AWAITING_CONFIRMATION");
-        expect(review.reply).not.toMatch(/Yusuf|İmplant|14:00|532/);
+        expect(review.reply).not.toMatch(/Mehmet|İmplant|14:00|532/);
 
         expect((await say("Evet")).state).toBe("APPOINTMENT_SUBMITTED");
         await say("Evet");
         expect(createCalls).toHaveLength(2);
         const [first, second] = createCalls;
         expect(first).toMatchObject({
-          clinicId: "clinic_test", requestedService: "Diş İmplantı", requestedDate: "2026-10-12", requestedTime: "14:00", patientName: "Yusuf Alper",
+          clinicId: "clinic_test", requestedService: "Diş İmplantı", requestedDate: "2026-10-12", requestedTime: "14:00", patientName: "Mehmet Can",
         });
         expect(first.patientEmail).toBeUndefined();
         expect(second).toMatchObject({
@@ -684,14 +684,14 @@ describe("Agent Core end-to-end: appointment without email (voice and web)", () 
 
   it("no email, phone or name value reaches logs", () => {
     const joined = logs.join("\n");
-    expect(joined).not.toContain("yusuf.alper@gmail.com");
-    expect(joined).not.toContain("yusuf_alper@gmail.com");
-    expect(joined).not.toContain("yusuf@example.org");
+    expect(joined).not.toContain("mehmet.can@gmail.com");
+    expect(joined).not.toContain("mehmet_can@gmail.com");
+    expect(joined).not.toContain("mehmet@example.org");
     expect(joined).not.toContain("ayse@example.org");
     expect(joined).not.toMatch(/533\s?222\s?33\s?44|5332223344/);
     expect(joined).not.toContain("Ayşe Yılmaz");
     expect(joined).not.toMatch(/532\s?123\s?45\s?67|5321234567/);
-    expect(joined).not.toContain("Yusuf Alper");
+    expect(joined).not.toContain("Mehmet Can");
   });
 });
 
@@ -728,7 +728,7 @@ describe("appointment record without email (canonical schema)", () => {
     const { createAppointmentRecord } = await import("@/lib/appointment-service");
     const result = await createAppointmentRecord({
       clinicId: "clinic_test",
-      patientName: "Yusuf Alper",
+      patientName: "Mehmet Can",
       patientPhone: "+90 532 123 45 67",
       requestedService: "Diş İmplantı",
       requestedDate: "2026-10-12",
@@ -742,7 +742,7 @@ describe("appointment record without email (canonical schema)", () => {
     expect(written).toHaveLength(1);
     expect(written[0].patientEmail).toBe("");
     expect(written[0]).toMatchObject({
-      patientName: "Yusuf Alper",
+      patientName: "Mehmet Can",
       patientPhone: "+90 532 123 45 67",
       requestedService: "Diş İmplantı",
       requestedDate: "2026-10-12",

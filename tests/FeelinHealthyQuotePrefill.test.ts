@@ -46,7 +46,7 @@ describe("FeelinHealthy quote prefill bridge", () => {
     const prefill = buildQuotePrefillFromSession(
       {
         sessionId: "sess-1",
-        patientName: "Alper Özgül",
+        patientName: "Can Yılmaz",
         patientEmail: "alper@example.com",
         patientPhone: "+905551112233",
         patientCountry: "TR",
@@ -63,7 +63,7 @@ describe("FeelinHealthy quote prefill bridge", () => {
       "tr"
     );
 
-    expect(prefill.patientName).toBe("Alper Özgül");
+    expect(prefill.patientName).toBe("Can Yılmaz");
     expect(prefill.patientEmail).toBe("alper@example.com");
     expect(prefill.clinicId).toBe("HXMlMPZ74AXkXoR4sEnH");
     expect(prefill.treatmentCategory).toBe("implant");

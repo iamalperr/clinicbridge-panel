@@ -208,7 +208,7 @@ async function run() {
     { name: "Uzm. Dr. Meltem Kutlar", title: "Uzm. Dr.", experience: 42, languages: [], spec: null },
     { name: "Uzm. Dr. Onur Çapkan", title: "Uzm. Dr.", experience: 7, languages: [], spec: null },
     { name: "Uzm. Dr. Meltem Pelit", title: "Uzm. Dr.", experience: 38, languages: [], spec: null },
-    { name: "Dr. Öğr. Üyesi Yusuf Erkan Kılıç", title: "Dr. Öğr. Üyesi", experience: 38, languages: [], spec: null },
+    { name: "Dr. Öğr. Üyesi Y. Erkan Kılıç", title: "Dr. Öğr. Üyesi", experience: 38, languages: [], spec: null },
     { name: "Dr. Tansel Çetinkaya", title: "Dr.", experience: 39, languages: [], spec: null },
     { name: "Doç. Dr. Deniz Ersev", title: "Doç. Dr.", experience: 27, languages: [], spec: null },
     { name: "Op. Dr. Rıza Kurna", title: "Op. Dr.", experience: 32, languages: [], spec: null },

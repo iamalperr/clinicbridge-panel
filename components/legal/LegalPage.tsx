@@ -2,11 +2,10 @@
 
 import { UI_COLORS } from "@/components/ui/ui-shared";
 
+/** Public seller / data-controller identity for legal pages — no personal name or address. */
 export const SELLER = {
-  name: "Yusuf Alper Özgül (ClinicBridge AI)",
-  address: "Karacaömer Mah. Değirmenbaşı Memur TOKİ Küme Evler No: 11 D: 20 Altınordu/Ordu",
+  name: "ClinicBridge AI",
   email: "info@clinicbridge-ai.com",
-  phone: "+90 531 462 99 21",
   web: "https://clinicbridge-ai.com",
 };
 
@@ -35,7 +34,6 @@ export function SellerInfo() {
   return (
     <ul style={{ margin: 0, paddingLeft: 20 }}>
       <li>Unvan: {SELLER.name}</li>
-      <li>Adres: {SELLER.address}</li>
       <li>E-posta: <a href={`mailto:${SELLER.email}`}>{SELLER.email}</a></li>
       <li>Web: {SELLER.web}</li>
     </ul>

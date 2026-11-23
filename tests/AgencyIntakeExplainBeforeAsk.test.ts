@@ -185,7 +185,7 @@ describe("Explain-Before-Ask intake policy", () => {
 
   it("8. Group 2 explains contact purpose without stacking duplicate asks", () => {
     const ctx = {
-      patientName: "Alper Ozgul",
+      patientName: "Can Yilmaz",
       patientAge: 27,
       patientGender: "male",
       intakeProcessExplained: true,

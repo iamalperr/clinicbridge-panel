@@ -21,10 +21,10 @@ import { FEELINHEALTHY_CONFIG } from "../lib/agency/feelinhealthyConfig";
 const baseCtx = {
   sessionId: "sess-test-1",
   quoteConsent: true,
-  patientName: "Yusuf Alper",
+  patientName: "Mehmet Can",
   patientAge: 34,
   patientGender: "male",
-  patientEmail: "yusuf@example.com",
+  patientEmail: "mehmet@example.com",
   patientEmailStatus: "verified_format",
   patientPhone: "+905551112233",
   patientCountry: "TR",

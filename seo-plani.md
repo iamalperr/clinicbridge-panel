@@ -115,7 +115,7 @@ Karşılaştırma sayfaları için kural: rakip hakkında yalnızca kendi sitele
 3. Diş kliniği web sitesine AI asistan nasıl eklenir? (WordPress/Wix/Webflow)
 4. Sağlık turizminde WhatsApp: hasta iletişimi, KVKK ve doğru kurulum
 
-Her yazıda yazar adı (Alper Özgül, kurucu), tarih, kaynak linkleri. Mevzuat yazılarına "hukuki tavsiye değildir" notu.
+Her yazıda yazar olarak ClinicBridge AI, tarih ve kaynak linkleri. Mevzuat yazılarına "hukuki tavsiye değildir" notu.
 
 ---
 

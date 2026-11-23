@@ -1531,7 +1531,7 @@ export async function handleClinicAgentTurn(
       }
       console.log(`[INTENT_ROUTER] Mid-flow interruption detected: ${conversationIntent.intent}. Answering question while preserving appointment state: ${appointmentState}`);
 
-      // Mixed turn ("Yusuf Alper Özgül. Bu arada implant fiyatınız ne kadar?"): slots stated
+      // Mixed turn ("Mehmet Can Yılmaz. Bu arada implant fiyatınız ne kadar?"): slots stated
       // next to the question are validated and persisted BEFORE the knowledge answer, so a
       // failed answer can never drop them and the resume prompt comes from the new draft.
       if (appointmentState.startsWith("COLLECTING_")) {

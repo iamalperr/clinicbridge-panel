@@ -54,7 +54,7 @@ describe("FeelinHealthy Group 1 intake regression", () => {
       expect(looksLikeRequestPhrase("implant yaptırmak istiyorum")).toBe(true);
       expect(looksLikeRequestPhrase("Diş tedavisi olmak istiyorum")).toBe(true);
       expect(looksLikeRequestPhrase("randevu almak istiyorum")).toBe(true);
-      expect(looksLikeRequestPhrase("Alper Özgül")).toBe(false);
+      expect(looksLikeRequestPhrase("Can Yılmaz")).toBe(false);
       expect(looksLikeRequestPhrase("Kemal Sunal")).toBe(false);
     });
 
@@ -95,7 +95,7 @@ describe("FeelinHealthy Group 1 intake regression", () => {
     });
 
     it("still asks for age/gender when only the name is known", () => {
-      const ctx = { patientName: "Alper Özgül" };
+      const ctx = { patientName: "Can Yılmaz" };
       const status = evaluateFeelinHealthyIntake(ctx);
       const promptTr = getGroupIntakePrompt(status, ctx, "tr");
 
@@ -128,7 +128,7 @@ describe("FeelinHealthy Group 1 intake regression", () => {
     it("accepts a first name and surname supplied separately", () => {
       const status = evaluateFeelinHealthyIntake({
         firstName: "Alper",
-        lastName: "Özgül",
+        lastName: "Yılmaz",
         patientAge: 27,
         patientGender: "male",
       });
@@ -148,8 +148,8 @@ describe("FeelinHealthy Group 1 intake regression", () => {
 
   describe("A genuine Group 1 answer is understood", () => {
     it.each([
-      ["Alper Özgül, Erkek, 27", "Alper Özgül", 27, "male"],
-      ["Alper Özgül - 27 - Erkek", "Alper Özgül", 27, "male"],
+      ["Can Yılmaz, Erkek, 27", "Can Yılmaz", 27, "male"],
+      ["Can Yılmaz - 27 - Erkek", "Can Yılmaz", 27, "male"],
       ["Ayşe Yılmaz, Kadın, 34", "Ayşe Yılmaz", 34, "female"],
     ])("parses %j in a single message", (message, name, age, gender) => {
       const extracted = extract(message as string);
@@ -159,7 +159,7 @@ describe("FeelinHealthy Group 1 intake regression", () => {
     });
 
     it("completes Group 1 from one combined message", () => {
-      const extracted = extract("Alper Özgül, Erkek, 27");
+      const extracted = extract("Can Yılmaz, Erkek, 27");
       const status = evaluateFeelinHealthyIntake(extracted);
 
       expect(status.group1Complete).toBe(true);
@@ -167,11 +167,11 @@ describe("FeelinHealthy Group 1 intake regression", () => {
     });
 
     it("accepts an explicitly introduced name", () => {
-      expect(extract("Adım Alper Özgül").patientName).toBe("Alper Özgül");
+      expect(extract("Adım Can Yılmaz").patientName).toBe("Can Yılmaz");
     });
 
     it("accepts a bare name while Group 1 is open", () => {
-      expect(extractDuringGroup1("Alper Özgül").patientName).toBe("Alper Özgül");
+      expect(extractDuringGroup1("Can Yılmaz").patientName).toBe("Can Yılmaz");
     });
 
     it("asks the extractor for a name only while Group 1 is open", () => {
@@ -195,7 +195,7 @@ describe("FeelinHealthy Group 1 intake regression", () => {
 
     it("keeps Group 2 and Group 3 field sets unchanged", () => {
       const group2 = evaluateFeelinHealthyIntake({
-        patientName: "Alper Özgül",
+        patientName: "Can Yılmaz",
         patientAge: 27,
         patientGender: "male",
       });
@@ -207,7 +207,7 @@ describe("FeelinHealthy Group 1 intake regression", () => {
       ]);
 
       const group3 = evaluateFeelinHealthyIntake({
-        patientName: "Alper Özgül",
+        patientName: "Can Yılmaz",
         patientAge: 27,
         patientGender: "male",
         patientEmail: "a@b.com",

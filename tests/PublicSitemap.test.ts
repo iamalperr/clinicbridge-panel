@@ -14,12 +14,9 @@ describe("public sitemap", () => {
       "https://clinicbridge-ai.com/hakkimizda",
       "https://clinicbridge-ai.com/fiyatlandirma",
       "https://clinicbridge-ai.com/kurulum-rehberi",
-      "https://clinicbridge-ai.com/privacy",
-      "https://clinicbridge-ai.com/terms",
-      "https://clinicbridge-ai.com/kvkk",
-      "https://clinicbridge-ai.com/teslimat-ve-iade",
-      "https://clinicbridge-ai.com/mesafeli-satis-sozlesmesi",
     ]);
+    // Legal pages are noindex,follow — must not appear in the sitemap.
+    expect(urls.join("\n")).not.toMatch(/privacy|terms|kvkk|teslimat-ve-iade|mesafeli-satis/);
     expect(urls.join("\n")).not.toMatch(/onizleme|login|kayit|showcase|widget-guide|app\.clinicbridge/);
   });
 
