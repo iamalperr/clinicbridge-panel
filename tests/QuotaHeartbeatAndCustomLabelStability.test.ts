@@ -115,7 +115,7 @@ describe("Quota Incident: Heartbeat & Custom Label Stability", () => {
   });
 
   describe("3. Hidden-tab heartbeat throttling", () => {
-    it("throttles a hidden tab to a much longer interval", () => {
+    it("never sends while the tab is hidden", () => {
       const decision = shouldSendHeartbeat({
         now: NOW,
         lastSentAt: NOW - HEARTBEAT_INTERVAL_MS,
@@ -124,10 +124,10 @@ describe("Quota Incident: Heartbeat & Custom Label Stability", () => {
         retryNotBefore: null,
       });
       expect(decision.send).toBe(false);
-      expect(decision.reason).toBe("hidden_throttled");
+      expect(decision.reason).toBe("hidden");
     });
 
-    it("still reports eventually from a hidden tab", () => {
+    it("still does not send from a hidden tab even after a long gap", () => {
       const decision = shouldSendHeartbeat({
         now: NOW,
         lastSentAt: NOW - HIDDEN_TAB_MIN_INTERVAL_MS,
@@ -135,7 +135,8 @@ describe("Quota Incident: Heartbeat & Custom Label Stability", () => {
         inFlight: false,
         retryNotBefore: null,
       });
-      expect(decision.send).toBe(true);
+      expect(decision.send).toBe(false);
+      expect(decision.reason).toBe("hidden");
     });
 
     it("sends on the normal cadence when visible", () => {
@@ -160,9 +161,16 @@ describe("Quota Incident: Heartbeat & Custom Label Stability", () => {
       ).toBe("too_soon");
     });
 
-    it("uses an interval of at least five minutes", () => {
+    it("uses a visible interval of at least 60 seconds (actually five minutes)", () => {
+      expect(HEARTBEAT_INTERVAL_MS).toBeGreaterThanOrEqual(60 * 1000);
       expect(HEARTBEAT_INTERVAL_MS).toBeGreaterThanOrEqual(5 * 60 * 1000);
       expect(HIDDEN_TAB_MIN_INTERVAL_MS).toBeGreaterThan(HEARTBEAT_INTERVAL_MS);
+    });
+
+    it("tracker skips the network when the document is not visible", () => {
+      const src = readSource(TRACKER);
+      expect(src).toContain('document.visibilityState !== "visible"');
+      expect(src).toContain('document.addEventListener("visibilitychange", handleVisibilityChange)');
     });
 
     it("skips the server write when the stored activity timestamp is already recent", () => {

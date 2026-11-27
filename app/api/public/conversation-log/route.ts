@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { stableHistoryMessageDocId } from "@/lib/services/conversations/conversationTranscript";
+import { failureKindForReason } from "@/lib/services/conversations/conversationFailureKind";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -131,7 +132,7 @@ export async function POST(req: Request) {
         const existingLog = logSnap.exists ? logSnap.data() : null;
         const assistantText = turns.find((t) => t.role === "assistant")?.content || "";
         const looksTechnical =
-          /teknik bir sorun|technical issue|temporary technical|technisches problem|problème technique/i.test(
+          /teknik (?:bir )?sorun|technical issue|temporary technical|technisches problem|problème technique/i.test(
             assistantText
           );
         await logRef.set(
@@ -148,8 +149,15 @@ export async function POST(req: Request) {
               : !existingLog.createdAt
                 ? { createdAt: (typeof existingLog.updatedAt === "string" && existingLog.updatedAt) || nowIso }
                 : {}),
+            // Technical failures are not training topics; keep the server's more specific reason.
             ...(looksTechnical && existingLog?.status !== "appointment"
-              ? { status: "unanswered", fallbackReason: "technical_fallback_dual_write", needsTraining: true }
+              ? {
+                  status: "unanswered",
+                  failureKind: "technical_failure",
+                  ...(failureKindForReason(existingLog?.fallbackReason) === "technical_failure"
+                    ? {}
+                    : { fallbackReason: "technical_fallback_dual_write" }),
+                }
               : {}),
             totalMessages: after.size,
             lastMessagePreview: turns[turns.length - 1].content.slice(0, 100),

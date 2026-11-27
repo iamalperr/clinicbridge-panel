@@ -3,6 +3,8 @@ import LandingChrome from "@/components/landing/LandingChrome";
 import SetupGuideContent, { SETUP_SIGNUP_URL } from "@/components/landing/SetupGuideContent";
 import { PUBLIC_SITE_ORIGIN } from "@/lib/seo/publicSitemap";
 
+export const dynamic = "force-static";
+
 const PATH = "/kurulum-rehberi";
 const CANONICAL = `${PUBLIC_SITE_ORIGIN}${PATH}`;
 

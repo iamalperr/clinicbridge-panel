@@ -6,6 +6,8 @@ import JsonLd from "@/components/landing/JsonLd";
 import { PUBLIC_SITE_ORIGIN } from "@/lib/seo/publicSitemap";
 import { breadcrumbJsonLd, faqPageJsonLd } from "@/lib/seo/jsonLd";
 
+export const dynamic = "force-static";
+
 const PATH = "/en/sss";
 const CANONICAL = `${PUBLIC_SITE_ORIGIN}${PATH}`;
 

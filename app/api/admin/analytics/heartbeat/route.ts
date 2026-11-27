@@ -37,124 +37,137 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing user_id" }, { status: 400 });
     }
 
+    // Module-level singleton (lib/firebase-admin) — do not re-init per request.
     const adminDb = getAdminDb();
     if (!adminDb) return NextResponse.json({ error: "DB error" }, { status: 500 });
+
+    // Unload without a known session: nothing to close.
+    if (is_unload && !session_id) {
+      return NextResponse.json({ success: true, message: "Unload ignored as no active session" });
+    }
 
     const sessionsRef = adminDb.collection("user_sessions");
     const now = Date.now();
 
-    // Grab request headers for analytics
-    const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown";
-    const userAgent = req.headers.get("user-agent") || "";
-    const { browser, os, device } = parseUserAgent(userAgent);
-
-    let currentSessionId = session_id;
+    let currentSessionId = typeof session_id === "string" && session_id ? session_id : null;
     let sessionDocRef = currentSessionId ? sessionsRef.doc(currentSessionId) : null;
     let sessionData = sessionDocRef ? (await sessionDocRef.get()).data() : null;
     let isFreshSession = false;
 
-    const lastActivity = sessionData ? (parseMillis(sessionData.last_activity_at) || parseMillis(sessionData.login_at) || 0) : 0;
+    const lastActivity = sessionData
+      ? parseMillis(sessionData.last_activity_at) || parseMillis(sessionData.login_at) || 0
+      : 0;
 
-    // Check if we need to create a new session
-    const needsNewSession = !sessionData || 
-                            sessionData.status !== "active" ||
-                            (now - lastActivity > MAX_IDLE_BEFORE_EXPIRE_MS);
+    const needsNewSession =
+      !sessionData ||
+      sessionData.status !== "active" ||
+      now - lastActivity > MAX_IDLE_BEFORE_EXPIRE_MS;
 
-    if (needsNewSession) {
-      if (sessionData && sessionData.status === "active") {
-        // Close the old expired session
-        const loginAt = parseMillis(sessionData.login_at) || lastActivity;
-        const durationSec = Math.max(0, Math.floor((lastActivity - loginAt) / 1000));
-        await sessionDocRef?.update({
+    // Hot path: existing active session whose last_activity is still fresh → one read, zero writes.
+    if (!needsNewSession && sessionDocRef && currentSessionId) {
+      if (is_unload) {
+        // Beacon unload: mark idle/expire only when past the idle window; otherwise no-op.
+        if (now - lastActivity > MAX_IDLE_BEFORE_EXPIRE_MS) {
+          await sessionDocRef.update({
+            status: "expired",
+            logout_at: lastActivity,
+          });
+        }
+        return NextResponse.json({ success: true, session_id: currentSessionId });
+      }
+
+      if (!is_idle) {
+        if (!shouldPersistActivity(now, lastActivity)) {
+          return NextResponse.json({ success: true, session_id: currentSessionId });
+        }
+        const sessionLoginAt = parseMillis(sessionData!.login_at) || now;
+        await sessionDocRef.update({
+          last_activity_at: now,
+          session_duration_seconds: Math.max(0, Math.floor((now - sessionLoginAt) / 1000)),
+        });
+        return NextResponse.json({ success: true, session_id: currentSessionId });
+      }
+
+      // Idle ping: expire only when past the window.
+      if (now - lastActivity > MAX_IDLE_BEFORE_EXPIRE_MS) {
+        await sessionDocRef.update({
           status: "expired",
           logout_at: lastActivity,
-          session_duration_seconds: durationSec
         });
       }
+      return NextResponse.json({ success: true, session_id: currentSessionId });
+    }
 
-      // If they are just unloading or already idle, ignore without starting new session
-      if (is_unload) {
-        return NextResponse.json({ success: true, message: "Unload ignored as no active session" });
-      }
-
-      // Create new session
-      const newSessionData = {
-        user_id,
-        clinic_id: clinic_id || null,
-        role: role || "unknown",
-        email: email || "unknown",
-        login_at: now,
-        logout_at: null,
-        last_activity_at: now,
-        session_duration_seconds: 0,
-        ip_address: ip,
-        user_agent: userAgent,
-        browser,
-        operating_system: os,
-        device_type: device,
-        status: "active"
-      };
-
-      const newSessionRef = await sessionsRef.add(newSessionData);
-
-      currentSessionId = newSessionRef.id;
-      sessionDocRef = newSessionRef;
-      // Reuse the payload we just wrote instead of reading it back.
-      sessionData = newSessionData;
-      isFreshSession = true;
-      
-      // Log login event
-      await adminDb.collection("activity_events").add({
-        user_id,
-        clinic_id: clinic_id || null,
-        session_id: currentSessionId,
-        event_name: "user_logged_in",
-        page_path: page_path || "/",
-        created_at: now
+    // Cold path: open / rotate session (UA parse only here).
+    if (sessionData && sessionData.status === "active" && sessionDocRef) {
+      const loginAt = parseMillis(sessionData.login_at) || lastActivity;
+      const durationSec = Math.max(0, Math.floor((lastActivity - loginAt) / 1000));
+      await sessionDocRef.update({
+        status: "expired",
+        logout_at: lastActivity,
+        session_duration_seconds: durationSec,
       });
+    }
 
-      // Update user doc in 'users' collection with lastLoginAt & lastActiveAt
-      try {
-        const userDocRef = adminDb.collection("users").doc(user_id);
-        const userSnap = await userDocRef.get();
-        if (userSnap.exists) {
-          await userDocRef.set({ lastLoginAt: now, lastActiveAt: now }, { merge: true });
-        }
-      } catch (userDocErr) {
-        // Non-fatal
+    if (is_unload) {
+      return NextResponse.json({ success: true, message: "Unload ignored as no active session" });
+    }
+
+    const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown";
+    const userAgent = req.headers.get("user-agent") || "";
+    const { browser, os, device } = parseUserAgent(userAgent);
+
+    const newSessionData = {
+      user_id,
+      clinic_id: clinic_id || null,
+      role: role || "unknown",
+      email: email || "unknown",
+      login_at: now,
+      logout_at: null,
+      last_activity_at: now,
+      session_duration_seconds: 0,
+      ip_address: ip,
+      user_agent: userAgent,
+      browser,
+      operating_system: os,
+      device_type: device,
+      status: "active",
+    };
+
+    const newSessionRef = await sessionsRef.add(newSessionData);
+    currentSessionId = newSessionRef.id;
+    sessionDocRef = newSessionRef;
+    sessionData = newSessionData;
+    isFreshSession = true;
+
+    await adminDb.collection("activity_events").add({
+      user_id,
+      clinic_id: clinic_id || null,
+      session_id: currentSessionId,
+      event_name: "user_logged_in",
+      page_path: page_path || "/",
+      created_at: now,
+    });
+
+    try {
+      const userDocRef = adminDb.collection("users").doc(user_id);
+      const userSnap = await userDocRef.get();
+      if (userSnap.exists) {
+        await userDocRef.set({ lastLoginAt: now, lastActiveAt: now }, { merge: true });
       }
+    } catch {
+      // Non-fatal
     }
 
     if (!sessionData || !sessionDocRef) {
       throw new Error("Failed to resolve session");
     }
 
-    const updates: any = {};
-    const sessionLoginAt = parseMillis(sessionData.login_at) || now;
-    const currentActivity = parseMillis(sessionData.last_activity_at) || lastActivity;
-
-    if (!is_idle) {
-      // Skip the write when the stored timestamp is already recent enough.
-      // Collapses extra tabs and duplicate calls into no-ops.
-      if (!isFreshSession && shouldPersistActivity(now, currentActivity)) {
-        updates.last_activity_at = now;
-        updates.session_duration_seconds = Math.max(0, Math.floor((now - sessionLoginAt) / 1000));
-      }
-    } else {
-      // If idle for more than 30 mins, mark expired
-      if (now - lastActivity > MAX_IDLE_BEFORE_EXPIRE_MS) {
-        updates.status = "expired";
-        updates.logout_at = lastActivity;
-      }
-    }
-
-    if (Object.keys(updates).length > 0) {
-      await sessionDocRef.update(updates);
-    }
+    // Fresh session already stamped last_activity_at; no second update needed.
+    void isFreshSession;
 
     return NextResponse.json({ success: true, session_id: currentSessionId });
-
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Heartbeat error:", err);
     const mapped = mapInfrastructureError(err);
     return NextResponse.json(

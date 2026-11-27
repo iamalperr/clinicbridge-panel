@@ -11,6 +11,11 @@ import {
   formatTechnicalFallbackReply,
   looksLikeTechnicalFallbackReply,
 } from "./technicalFallback";
+import { looksLikeNoVerifiedInfoReply } from "./noVerifiedInfoReply";
+import {
+  failureKindForReason,
+  type ConversationFailureKind,
+} from "@/lib/services/conversations/conversationFailureKind";
 
 function isFirestoreAlreadyExistsError(err: unknown): boolean {
   const code = (err as { code?: unknown } | null)?.code;
@@ -174,6 +179,25 @@ export type ConversationPersistMode = "SEQUENTIAL" | "VOICE_SINGLE_BATCH";
 
 type LogConversationParams = Parameters<typeof logConversation>[0];
 
+function classifyTurnFailure(aiReply: string, fallbackReason?: string): ConversationFailureKind | null {
+  const byReason = failureKindForReason(fallbackReason);
+  if (byReason) return byReason;
+  if (looksLikeTechnicalFallbackReply(aiReply)) return "technical_failure";
+  // Other explicit reasons keep their historical "unanswered + needs training" outcome.
+  if (fallbackReason) return "knowledge_gap";
+  const lower = aiReply.toLowerCase();
+  if (
+    looksLikeNoVerifiedInfoReply(aiReply) ||
+    (lower.includes("üzgünüm") &&
+      (lower.includes("yardımcı olamıyorum") ||
+        lower.includes("anlayamadım") ||
+        lower.includes("bilgi havuzumda")))
+  ) {
+    return "knowledge_gap";
+  }
+  return null;
+}
+
 /** Conversation log doc fields for one visible turn (pure; `existing` is the doc before it). */
 function buildConversationLogData(
   params: LogConversationParams,
@@ -186,6 +210,7 @@ function buildConversationLogData(
     let trainingTopic = existing?.trainingTopic || "";
     
     const replyLower = params.aiReply.toLowerCase();
+    const failureKind = classifyTurnFailure(params.aiReply, params.fallbackReason);
     const alreadyConverted =
       Boolean(params.isAppointmentCreated) ||
       Boolean(existing?.convertedToAppointment) ||
@@ -210,23 +235,19 @@ function buildConversationLogData(
       status = "liveSupport";
     } else if (params.appointmentState && params.appointmentState !== "IDLE") {
       status = "collecting";
-    } else if (
-      looksLikeTechnicalFallbackReply(params.aiReply) ||
-      Boolean(params.fallbackReason) ||
-      (replyLower.includes("üzgünüm") &&
-        (replyLower.includes("yardımcı olamıyorum") ||
-          replyLower.includes("anlayamadım") ||
-          replyLower.includes("yanıt üretemiyorum") ||
-          replyLower.includes("bilgi havuzumda")))
-    ) {
-      // Technical / knowledge failure — never count as "Başarılı Yanıtlandı".
+    } else if (failureKind) {
+      // Technical failure or knowledge gap — never count as "Başarılı Yanıtlandı".
       status = "unanswered";
-      needsTraining = true;
-      if (!trainingTopic) trainingTopic = params.userMessage.slice(0, 60);
     } else if (replyLower.includes("canlı destek") || replyLower.includes("temsilci") || replyLower.includes("klinik ekibi") || replyLower.includes("iletişime geç") || replyLower.includes("whatsapp")) {
       status = "liveSupport";
     } else {
       status = "answered";
+    }
+
+    // Only knowledge gaps are training topics; this also applies mid-flow, where status stays "collecting".
+    if (failureKind === "knowledge_gap") {
+      needsTraining = true;
+      if (!trainingTopic) trainingTopic = params.userMessage.slice(0, 60);
     }
 
     if (params.isLiveSupport || /\bwhatsapp\b/i.test(params.userMessage) || /\bwhatsapp\b/i.test(params.aiReply)) {
@@ -242,6 +263,7 @@ function buildConversationLogData(
       lastMessagePreview: params.userMessage.slice(0, 100),
       status,
       needsTraining,
+      failureKind,
     };
 
     if (params.appointmentState) {

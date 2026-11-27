@@ -21,6 +21,7 @@ import {
   exportConversationLogsToCSV,
 } from "@/lib/services/conversations/conversationStatusResolver";
 import { canEditConversationLabel } from "@/lib/services/conversations/customLabelClient";
+import { shouldShowTrainingTopic } from "@/lib/services/conversations/conversationFailureKind";
 import {
   formatConversationListDate,
   resolveConversationTimestamp,
@@ -486,7 +487,7 @@ export default function ConversationLogsTab({ clinicId }: Props) {
                       <div style={{ fontSize: 13.5, color: UI_COLORS.textSecondary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {log.lastMessagePreview}
                       </div>
-                      {log.needsTraining && (
+                      {shouldShowTrainingTopic(log) && (
                         <div style={{ fontSize: 11, color: UI_COLORS.danger, display: "flex", alignItems: "center", gap: 4, marginTop: 4, fontWeight: 500 }}>
                           <AlertCircle size={12} /> {t("logs.trainingNeeded") || (language === "en" ? "Training Needed" : "Eğitim Gerekli")}
                         </div>

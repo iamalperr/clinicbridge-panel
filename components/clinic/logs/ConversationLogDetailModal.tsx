@@ -13,6 +13,10 @@ import {
   isConversationManuallyConverted,
 } from "@/lib/services/conversations/conversationStatusResolver";
 import { normalizeTimestamp } from "@/lib/datetime/normalizeTimestamp";
+import {
+  resolveConversationFailureKind,
+  shouldShowTrainingTopic,
+} from "@/lib/services/conversations/conversationFailureKind";
 
 interface Props {
   isOpen: boolean;
@@ -130,6 +134,8 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
   });
   const statusLabel = getConversationStatusLabel(normalizedStatus, language);
   const statusVariant = getConversationStatusVariant(normalizedStatus);
+  const isTechnicalFailure =
+    normalizedStatus === "unanswered" && resolveConversationFailureKind(log) === "technical_failure";
   const displayCount = messageCount ?? log.totalMessages;
 
   const updateContactStatus = async (next: string) => {
@@ -179,6 +185,21 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
             </div>
           )}
           <Badge variant={statusVariant} label={statusLabel} />
+          {isTechnicalFailure && (
+            <span
+              title={log.fallbackReason || undefined}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 4,
+                padding: "3px 9px", borderRadius: 99,
+                fontSize: 11, fontWeight: 600,
+                background: "rgba(100, 116, 139, 0.1)",
+                color: UI_COLORS.textSecondary,
+                border: `1px solid ${UI_COLORS.border}`,
+              }}
+            >
+              ⚙️ {language === "en" ? "Technical error" : "Teknik hata"}
+            </span>
+          )}
           <span style={{ fontSize: 12, color: UI_COLORS.textMuted }}>
             {displayCount} {t("logs.messages") || (language === "en" ? "messages" : "mesaj")}
           </span>
@@ -208,7 +229,7 @@ export default function ConversationLogDetailModal({ isOpen, onClose, log }: Pro
         </div>
 
         {/* Training Recommendation */}
-        {log.needsTraining && (
+        {shouldShowTrainingTopic(log) && (
           <div style={{ 
             background: "rgba(239, 68, 68, 0.05)", 
             border: `1px solid rgba(239, 68, 68, 0.2)`, 

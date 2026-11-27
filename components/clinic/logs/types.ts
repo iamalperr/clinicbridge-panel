@@ -1,4 +1,5 @@
 import type { CanonicalConversationStatus } from "@/lib/services/conversations/conversationStatusResolver";
+import type { ConversationFailureKind } from "@/lib/services/conversations/conversationFailureKind";
 
 export type { CanonicalConversationStatus };
 export type LogStatus = CanonicalConversationStatus | "answered" | "liveSupport" | "unanswered" | "appointment" | "collecting" | "open" | string;
@@ -27,6 +28,9 @@ export interface ConversationLog {
   lastMessagePreview: string;
   needsTraining: boolean;
   trainingTopic?: string;
+  /** Latest unanswered-turn kind (additive — historical logs may omit it). */
+  failureKind?: ConversationFailureKind | null;
+  fallbackReason?: string | null;
   convertedToAppointment: boolean;
   appointmentId?: string;
   // Custom label & manual conversion fields

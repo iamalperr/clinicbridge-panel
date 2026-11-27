@@ -5,6 +5,8 @@ import JsonLd from "@/components/landing/JsonLd";
 import { PUBLIC_SITE_ORIGIN } from "@/lib/seo/publicSitemap";
 import { breadcrumbJsonLd, softwareApplicationJsonLd } from "@/lib/seo/jsonLd";
 
+export const dynamic = "force-static";
+
 const PATH = "/fiyatlandirma";
 const CANONICAL = `${PUBLIC_SITE_ORIGIN}${PATH}`;
 

@@ -350,7 +350,10 @@ describe("handleClinicAgentTurn — LLM/RAG failure and pricing (Bug 2/3)", () =
     // Prove from the stored conversation log — not by calling normalizeConversationStatus.
     expect(logState.status).toBe("unanswered");
     expect(logState.fallbackReason).toBe("timeout");
-    expect(logState.needsTraining).toBe(true);
+    expect(logState.failureKind).toBe("technical_failure");
+    // Technical failures are not training topics.
+    expect(logState.needsTraining).toBe(false);
+    expect(logState.trainingTopic).toBeUndefined();
   });
 
   it("composite bonding with KB price → normal EN answer, not technical fallback", async () => {

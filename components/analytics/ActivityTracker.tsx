@@ -80,8 +80,11 @@ export default function ActivityTracker() {
     const sendHeartbeat = async (force = false) => {
       const now = Date.now();
 
-      // Enforced on every path: `force` may skip the cadence and visibility
-      // gates, but never the in-flight guard or a failure backoff window.
+      // Never call the endpoint while the tab is hidden — resume on visibilitychange.
+      if (document.visibilityState !== "visible") return;
+
+      // Enforced on every path: `force` may skip the cadence gate, but never the
+      // in-flight guard, a failure backoff window, or the visibility gate above.
       if (inFlightRef.current) return;
       if (retryNotBeforeRef.current !== null && now < retryNotBeforeRef.current) return;
 
@@ -89,7 +92,7 @@ export default function ActivityTracker() {
         const decision = shouldSendHeartbeat({
           now,
           lastSentAt: lastSentAtRef.current,
-          visibility: document.visibilityState === "hidden" ? "hidden" : "visible",
+          visibility: "visible",
           inFlight: inFlightRef.current,
           retryNotBefore: retryNotBeforeRef.current,
         });
@@ -144,15 +147,20 @@ export default function ActivityTracker() {
       }
     };
 
-    sendHeartbeat(true);
+    if (document.visibilityState === "visible") {
+      void sendHeartbeat(true);
+    }
 
+    // Tick every ≥60s; sendHeartbeat itself enforces the 5m cadence when visible.
     const interval = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
       void sendHeartbeat();
     }, TICK_INTERVAL_MS);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         handleActivity();
+        // Resume after backgrounding; cadence gate still applies unless first send.
         void sendHeartbeat();
       }
     };

@@ -1,13 +1,23 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
 
-// Public CORS headers — widget.js on external sites must be able to call this
+// Public CORS — no cookies/auth. CDN-friendly Cache-Control so Vercel serves
+// hot responses without invoking the function on every widget load.
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
-  "Cache-Control": "no-store, no-cache, must-revalidate",
-  "Pragma": "no-cache",
+};
+
+const CACHE_HEADERS = {
+  ...CORS_HEADERS,
+  "Cache-Control": "public, s-maxage=600, stale-while-revalidate=86400",
+};
+
+/** Errors / misses must not sit on the CDN for 10 minutes. */
+const NO_STORE_HEADERS = {
+  ...CORS_HEADERS,
+  "Cache-Control": "no-store",
 };
 
 export async function OPTIONS() {
@@ -21,7 +31,7 @@ export async function GET(
   const { clinicId } = await params;
 
   if (!clinicId) {
-    return NextResponse.json({ error: "clinicId required" }, { status: 400, headers: CORS_HEADERS });
+    return NextResponse.json({ error: "clinicId required" }, { status: 400, headers: NO_STORE_HEADERS });
   }
 
   try {
@@ -29,7 +39,7 @@ export async function GET(
 
     if (!adminDb) {
       // Firebase Admin not available — return safe defaults
-      return NextResponse.json(buildDefaults(clinicId), { headers: CORS_HEADERS });
+      return NextResponse.json(buildDefaults(clinicId), { headers: CACHE_HEADERS });
     }
 
     let raw: any = null;
@@ -61,7 +71,7 @@ export async function GET(
 
       if (!cData) {
         console.error(`[widget-settings API] FAIL LOUDLY: Clinic not found for clinicId=${clinicId}`);
-        return NextResponse.json({ error: "Clinic not found" }, { status: 404, headers: CORS_HEADERS });
+        return NextResponse.json({ error: "Clinic not found" }, { status: 404, headers: NO_STORE_HEADERS });
       }
 
       raw = {
@@ -170,12 +180,12 @@ export async function GET(
       },
     };
 
-    return NextResponse.json(publicSettings, { headers: CORS_HEADERS });
+    return NextResponse.json(publicSettings, { headers: CACHE_HEADERS });
 
   } catch (err) {
     console.error("[widget-settings API] Error:", err);
     // On error return safe defaults so the widget still loads
-    return NextResponse.json(buildDefaults(clinicId), { headers: CORS_HEADERS });
+    return NextResponse.json(buildDefaults(clinicId), { headers: NO_STORE_HEADERS });
   }
 }
 

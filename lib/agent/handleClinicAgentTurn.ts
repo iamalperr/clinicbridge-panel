@@ -74,6 +74,14 @@ import {
   logTechnicalFallbackEvent,
   resolveClinicPhoneForFallback,
 } from "./technicalFallback";
+import { formatNoVerifiedInfoReply, looksLikeNoVerifiedInfoReply } from "./noVerifiedInfoReply";
+import {
+  buildPricePolicyPromptBlock,
+  containsPriceAmount,
+  detectPriceIntent,
+  findUnverifiedPriceAmounts,
+  statesFreePrice,
+} from "./pricingPolicy";
 import {
   applySamePatientRescheduleCarryover,
   buildLastSubmittedAppointmentSnapshot,
@@ -2196,15 +2204,12 @@ export async function handleClinicAgentTurn(
     // YENİ: Konum RAG araması iyileştirmesi
     const isLocationIntent = /\b(nerede|adres|nerdesiniz|semt|ilçe|ulaşım|konum|lokasyon|address|where|get there|befindet|adresse)\b/.test(msgLower);
 
-    // YENİ: Fiyat/Ücret niyet tespiti (Priority: examination > xray > general treatment)
-    const isExaminationFeeIntent = /\b(muayene|kontrol|ilk değerlendirme|ilk randevu).*(ücret|fiyat|parası|bedeli|ne kadar|ücretsiz|free|cost|ne tutar|ne kadara mal olur)\b/i.test(msgLower) || /\b(ücret|fiyat|parası|bedeli|ne kadar|ücretsiz|cost|ne tutar).*(muayene|kontrol|ilk değerlendirme|ilk randevu)\b/i.test(msgLower);
-    const isXrayFeeIntent = /\b(röntgen|x-ray|film|tomografi).*(ücret|fiyat|parası|bedeli|ne kadar|ücretsiz|free|cost|ne tutar|ne kadara mal olur)\b/i.test(msgLower) || /\b(ücret|fiyat|parası|bedeli|ne kadar|ücretsiz|cost|ne tutar).*(röntgen|x-ray|film|tomografi)\b/i.test(msgLower);
-    const isTreatmentPriceIntent = /\b(ücret|fiyat|ne kadar|fiyatı|parası|maliyeti|cost|price|ne tutar|ne kadara mal olur)\b/i.test(msgLower) && !isExaminationFeeIntent && !isXrayFeeIntent;
-    
-    let activePriceIntent = "";
-    if (isExaminationFeeIntent) activePriceIntent = "examination_fee";
-    else if (isXrayFeeIntent) activePriceIntent = "xray_fee";
-    else if (isTreatmentPriceIntent) activePriceIntent = "treatment_price";
+    // Fiyat/Ücret niyet tespiti (Priority: examination > xray > general treatment)
+    const activePriceIntent = detectPriceIntent(msgLower);
+    const isPriceTurn =
+      Boolean(activePriceIntent) ||
+      conversationIntent.intent === "pricing_request" ||
+      conversationIntent.intent === "quote_request";
     
     debugLog.push(`intent_price=${activePriceIntent || "none"}`);
 
@@ -2912,7 +2917,7 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
 
     // clinic_policy_lookup
     if (skillOn("clinic_policy_lookup")) {
-      skillBlocks.push("\nKLİNİK POLİTİKASI: Çalışma saatleri, iptal politikası, fiyatlandırma ve randevu kuralları hakkındaki sorularda önce bilgi havuzuna bak. Bulamazsan kliniği doğrudan aramalarını öner.");
+      skillBlocks.push("\nKLİNİK POLİTİKASI: Çalışma saatleri, iptal politikası ve randevu kuralları hakkındaki sorularda önce bilgi havuzuna bak. Bulamazsan kliniği doğrudan aramalarını öner. Fiyat sorularında FİYAT POLİTİKASI geçerlidir.");
     }
 
     // emergency_guidance — always active regardless of toggle
@@ -2933,11 +2938,8 @@ Kullanıcı randevu almak istediğinde (örn: "Randevu almak istiyorum", "Yarın
       skillBlocks.push(`\nGENEL HİZMET TALEBİ: Kullanıcı kliniğin sunduğu genel hizmetleri / tedavileri soruyor. Yanıtını KLİNİK BİLGİ HAVUZU'ndaki tedavileri doğal ve hasta dostu bir şekilde özetleyerek oluştur. Belgelerin başlıklarını robotik bir liste gibi alt alta sıralama; benzer tedavileri mantıklı kategorilerde birleştirerek akıcı bir paragraf veya düzenli bir özet halinde sun.`);
     }
 
-    if (activePriceIntent) {
-      skillBlocks.push(`\nÖNEMLİ FİYATLANDIRMA KURALLARI:
-1. "Ücretsiz" (free), geçerli ve doğrulanmış bir fiyat türüdür. Bilgi Havuzunda (Örn: "İlk muayene ücretsizdir") geçiyorsa "doğrulanmış bilgi mevcut değil" DEME, "fiyatlar muayene sonrası belli olur" DEME.
-2. Soru muayene veya röntgen ücreti ise ve cevap "ücretsiz" ise, DOĞRUDAN net cevap ver: "İlk muayene kliniğimizde ücretsizdir." (veya bağlama uygun şekilde).
-3. Soruya doğrudan cevap vermeden önce asla randevu akışını veya iletişim bilgisini öne çıkarma. Önce sorulan fiyat bilgisini / ücretsizlik bilgisini ver, sonra dilerse randevu alabileceğini belirt.`);
+    if (isPriceTurn) {
+      skillBlocks.push(buildPricePolicyPromptBlock());
     }
 
     if (doctorContext) {
@@ -3087,11 +3089,27 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       durationMs: (completion as any).durationMs ?? null,
     });
 
-    let reply = completion.content?.trim()
-      || formatTechnicalFallbackReply({
+    const clinicPhoneForReply = resolveClinicPhoneForFallback(clinicData);
+    // Set when the visible reply is a "no verified information" answer (knowledge gap).
+    let noVerifiedInfoReason: "groundedness_failure" | "price_not_verified" | "" = "";
+    let reply = completion.content?.trim() || "";
+    const emptyModelReply = !reply;
+    if (emptyModelReply) {
+      // No exception was thrown, so this is not presented as a technical issue.
+      console.warn(JSON.stringify({
+        checkpoint: "EMPTY_MODEL_REPLY",
+        traceId: activeTraceId,
+        conversationId: convId,
+        clinicId: actualClinicId,
+        model: chatModel,
+      }));
+      reply = formatNoVerifiedInfoReply({
         locale: conversationLocale,
-        clinicPhone: resolveClinicPhoneForFallback(clinicData),
+        topic: isPriceTurn ? "price" : "general",
+        clinicPhone: clinicPhoneForReply,
+        offerHandoff: !isMidFlowInterruption,
       });
+    }
 
     // Strip markdown formatting characters (**, *, #) as requested
     reply = reply.replace(/\*\*|\*|#/g, '');
@@ -3231,7 +3249,7 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       conversationIntent.intent === "treatment_information" ||
       conversationIntent.intent === "quote_request";
 
-    if (knowledgeContext.length > 0 && !reply.includes("doğrulamıyorum") && !reply.includes("erişemediğim") && !isDoctorIntent && !isStateActive && !isServiceIntent && !isPricingOrInfoIntent) {
+    if (!emptyModelReply && knowledgeContext.length > 0 && !reply.includes("doğrulamıyorum") && !reply.includes("erişemediğim") && !isDoctorIntent && !isStateActive && !isServiceIntent && !isPricingOrInfoIntent) {
       const { validateGroundedness } = await import("@/lib/services/retrievalService");
       
       const fullContextForValidation = doctorContext ? `${knowledgeContext}\n\n${doctorContext}` : knowledgeContext;
@@ -3244,13 +3262,42 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
            reasonLength: validation.reason.length,
            replyLength: reply.length,
          }));
-         if (activeLang === "tr") {
-            reply = "Bu konuda doğrulanmış bir bilgim bulunmuyor. Yanlış yönlendirmemek için klinik ekibimizden teyit edilmesi gerekir. Dilerseniz sorunuzu klinik ekibimize iletebilirim.";
-         } else if (activeLang === "de") {
-            reply = "Dazu liegt mir keine bestätigte Information vor. Das Klinikteam muss dies prüfen, damit ich Sie nicht falsch informiere. Soll ich Ihre Frage an unser Klinikteam weiterleiten?";
-         } else {
-            reply = "I do not have verified information on this. Our clinic team needs to confirm it so I do not mislead you. Would you like me to forward your question to the clinic team?";
-         }
+         reply = formatNoVerifiedInfoReply({
+           locale: activeLang,
+           topic: "general",
+           clinicPhone: clinicPhoneForReply,
+         });
+         noVerifiedInfoReason = "groundedness_failure";
+      }
+    }
+
+    // Never invent prices: any amount the model quotes must exist in a verified source.
+    if (isPriceTurn && !emptyModelReply) {
+      const verifiedPriceSources = [
+        systemPrompt,
+        knowledgeTurnMessage,
+        ...history
+          .filter((h: any) => h?.role === "user")
+          .map((h: any) => String(h?.content || "")),
+      ];
+      const unverifiedAmounts = findUnverifiedPriceAmounts(reply, verifiedPriceSources);
+      if (unverifiedAmounts.length > 0) {
+        console.warn(JSON.stringify({
+          checkpoint: "PRICE_UNVERIFIED_AMOUNT_BLOCKED",
+          traceId: activeTraceId,
+          conversationId: convId,
+          clinicId: actualClinicId,
+          unverifiedAmountCount: unverifiedAmounts.length,
+        }));
+        reply = formatNoVerifiedInfoReply({
+          locale: conversationLocale,
+          topic: "price",
+          clinicPhone: clinicPhoneForReply,
+          offerHandoff: !isMidFlowInterruption,
+        });
+        noVerifiedInfoReason = "price_not_verified";
+      } else if (!containsPriceAmount(reply) && !statesFreePrice(reply)) {
+        noVerifiedInfoReason = noVerifiedInfoReason || "price_not_verified";
       }
     }
 
@@ -3565,7 +3612,10 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       promptVersionId: "production",
       knowledgeBaseId: "default",
       retrievedDocumentCount: trainingDocs.length,
-      fallbackReason: String(responsePayload.reply || "").includes("doğrulayamıyorum") ? "groundedness_failure" : "",
+      fallbackReason:
+        (emptyModelReply ? "empty_model_reply" : "") ||
+        noVerifiedInfoReason ||
+        (looksLikeNoVerifiedInfoReply(String(responsePayload.reply || "")) ? "no_verified_info" : ""),
       appointmentState,
     }));
 

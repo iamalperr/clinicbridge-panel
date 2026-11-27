@@ -157,9 +157,13 @@ describe("marketing GA / Meta host gate", () => {
   it("keeps a single direct GA4 config and does not block page_view", () => {
     const tag = readFileSync("components/analytics/MarketingGoogleTag.tsx", "utf8");
     const layout = readFileSync("app/layout.tsx", "utf8");
+    const pixelsClient = readFileSync("components/analytics/MarketingPixelsClient.tsx", "utf8");
     expect(tag.match(/gtag\('config'/g)).toHaveLength(1);
     expect(tag).not.toContain("send_page_view: false");
-    expect(layout).toContain("<MarketingGoogleTag ");
+    expect(layout).toContain("<MarketingPixelsClient");
+    expect(layout).not.toContain('from "next/headers"');
+    expect(layout).not.toContain("await headers");
+    expect(pixelsClient).toContain("<MarketingGoogleTag");
     expect(layout.match(/G-DP3FV4PQWD/g) || []).toHaveLength(0);
   });
 
@@ -170,7 +174,9 @@ describe("marketing GA / Meta host gate", () => {
     const pixel = readFileSync("components/analytics/MarketingMetaPixel.tsx", "utf8");
     expect(pixel).toContain("fbq('consent','revoke')");
     expect(pixel).toContain("PageView");
-    expect(readFileSync("app/layout.tsx", "utf8")).toContain("<MarketingMetaPixel ");
+    expect(readFileSync("components/analytics/MarketingPixelsClient.tsx", "utf8")).toContain(
+      "<MarketingMetaPixel"
+    );
   });
 });
 

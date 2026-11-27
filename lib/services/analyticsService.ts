@@ -19,6 +19,7 @@ import { isSuperAdmin } from "../types";
 import type { UserActivityStatus } from "../types/analytics";
 
 import { isConversationConverted } from "./conversations/conversationStatusResolver";
+import { shouldShowTrainingTopic } from "./conversations/conversationFailureKind";
 
 // ─── Conversation Analytics Types ───────────────────────────────────────────
 
@@ -34,6 +35,8 @@ export interface ConversationLogDoc {
   patientName?: string;
   language?: string;
   needsTraining?: boolean;
+  failureKind?: string | null;
+  fallbackReason?: string | null;
   convertedToAppointment?: boolean;
   appointmentId?: string | null;
   manualConversionStatus?: string | null;
@@ -214,7 +217,7 @@ export function calculateClinicMetrics(
   const appointments = filtered.filter((l) => isConversationConverted(l)).length;
   const liveSupport = filtered.filter((l) => l.status === "liveSupport").length;
   const unanswered = filtered.filter((l) => l.status === "unanswered").length;
-  const needsTraining = filtered.filter((l) => l.needsTraining).length;
+  const needsTraining = filtered.filter((l) => shouldShowTrainingTopic(l)).length;
 
   const resolvedRate = totalConversations > 0
     ? Math.round((resolvedCount / totalConversations) * 100)

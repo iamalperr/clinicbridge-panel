@@ -304,7 +304,28 @@
     messages: DEF_MSG,
   };
 
-  /* ─── Fetch config (no-cache) ─── */
+  /* ─── Fetch config (clinic-scoped localStorage cache, 10 min) ─── */
+  var SETTINGS_CACHE_TTL_MS = 10 * 60 * 1000;
+  function settingsCacheKey() {
+    return 'cbw_settings_v1_' + clinicId;
+  }
+  function readSettingsCache() {
+    try {
+      var raw = localStorage.getItem(settingsCacheKey());
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || !parsed.data || typeof parsed.ts !== 'number') return null;
+      if (Date.now() - parsed.ts > SETTINGS_CACHE_TTL_MS) return null;
+      return parsed.data;
+    } catch (e) {
+      return null;
+    }
+  }
+  function writeSettingsCache(data) {
+    try {
+      localStorage.setItem(settingsCacheKey(), JSON.stringify({ ts: Date.now(), data: data || {} }));
+    } catch (e) { /* private mode / quota — ignore */ }
+  }
   function fetchCfg(cb) {
     if (previewId) {
       cb({
@@ -316,12 +337,20 @@
       });
       return;
     }
+    var cached = readSettingsCache();
+    if (cached) {
+      cb(cached);
+      return;
+    }
     fetch(API_BASE + '/api/public/widget-settings/' + clinicId, {
-      cache:   'no-store',
       headers: { Accept: 'application/json' },
     })
     .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (data) { cb(data || {}); })
+    .then(function (data) {
+      var payload = data || {};
+      writeSettingsCache(payload);
+      cb(payload);
+    })
     .catch(function () { cb({}); });
   }
 
