@@ -5,8 +5,6 @@ import JsonLd from "@/components/landing/JsonLd";
 import { homeMetadata } from "@/lib/seo/homeMetadata";
 import { faqPageJsonLd, organizationJsonLd, softwareApplicationJsonLd } from "@/lib/seo/jsonLd";
 
-export const dynamic = "force-static";
-
 export const metadata: Metadata = {
   ...homeMetadata("tr"),
   icons: {

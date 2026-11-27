@@ -7,13 +7,10 @@
  * single-loop guarantees can be tested directly.
  */
 
-/** Normal cadence for an authenticated, visible tab (≥ 60s). */
+/** Normal cadence for an authenticated, visible tab. */
 export const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 
-/**
- * Legacy constant kept for tests/docs. Hidden tabs must not heartbeat at all;
- * the tracker resumes on `visibilitychange` → visible.
- */
+/** Minimum spacing between heartbeats while the tab is hidden. */
 export const HIDDEN_TAB_MIN_INTERVAL_MS = 15 * 60 * 1000;
 
 /** No user interaction for this long marks the session idle. */
@@ -38,8 +35,7 @@ export const SESSION_STORAGE_KEY = "cb_analytics_session_id";
 export type HeartbeatSkipReason =
   | "in_flight"
   | "backoff"
-  | "hidden"
-  | "hidden_throttled" // alias retained for older call sites / tests
+  | "hidden_throttled"
   | "too_soon"
   | null;
 
@@ -87,14 +83,15 @@ export function shouldSendHeartbeat(input: HeartbeatDecisionInput): HeartbeatDec
     return { send: false, reason: "backoff" };
   }
 
-  // Never hit the network while the tab is in the background.
-  if (visibility === "hidden") {
-    return { send: false, reason: "hidden" };
-  }
-
   if (lastSentAt === null) return { send: true, reason: null };
 
   const elapsed = now - lastSentAt;
+
+  if (visibility === "hidden") {
+    return elapsed >= HIDDEN_TAB_MIN_INTERVAL_MS
+      ? { send: true, reason: null }
+      : { send: false, reason: "hidden_throttled" };
+  }
 
   // Tolerance absorbs timer drift so a scheduled tick is never dropped.
   return elapsed >= HEARTBEAT_INTERVAL_MS - 1000

@@ -4,8 +4,6 @@ import LandingChrome from "@/components/landing/LandingChrome";
 import DemoCTASection from "@/components/landing/DemoCTASection";
 import { PUBLIC_SITE_ORIGIN } from "@/lib/seo/publicSitemap";
 
-export const dynamic = "force-static";
-
 const PATH = "/klinikler-icin-yapay-zeka-asistani";
 const CANONICAL = `${PUBLIC_SITE_ORIGIN}${PATH}`;
 

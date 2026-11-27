@@ -7,8 +7,6 @@ import { PUBLIC_SITE_ORIGIN } from "@/lib/seo/publicSitemap";
 import { breadcrumbJsonLd, faqPageJsonLd } from "@/lib/seo/jsonLd";
 import { hreflangAlternates } from "@/lib/seo/homeMetadata";
 
-export const dynamic = "force-static";
-
 const PATH = "/sss";
 const CANONICAL = `${PUBLIC_SITE_ORIGIN}${PATH}`;
 

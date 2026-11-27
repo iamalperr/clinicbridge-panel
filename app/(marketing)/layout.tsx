@@ -1,8 +1,18 @@
-import MarketingChrome from "./MarketingChrome";
+"use client";
 
-/** Marketing pages must be CDN-static (no serverless per request). */
-export const dynamic = "force-static";
+import "@/app/(landing)/landing.css";
+import { LandingLangProvider } from "@/lib/landing-translations";
+import LandingHeader from "@/components/landing/LandingHeader";
+import LandingFooter from "@/components/landing/LandingFooter";
 
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {
-  return <MarketingChrome>{children}</MarketingChrome>;
+  return (
+    <LandingLangProvider>
+      <div className="lp-page">
+        <LandingHeader />
+        <main className="lp-marketing-main">{children}</main>
+        <LandingFooter />
+      </div>
+    </LandingLangProvider>
+  );
 }

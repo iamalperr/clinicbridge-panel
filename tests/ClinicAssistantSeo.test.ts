@@ -41,9 +41,7 @@ describe("clinic assistant SEO page", () => {
     expect(isMarketingDocumentPath("/klinikler-icin-yapay-zeka-asistani")).toBe(true);
     expect(isMarketingDocumentPath("/clinics")).toBe(false);
     const layout = readFileSync("app/layout.tsx", "utf8");
-    expect(layout).toContain("<RootAppShell>");
-    const shell = readFileSync("components/layout/RootAppShell.tsx", "utf8");
-    expect(shell).toContain("if (isMarketingDocumentPath(pathname))");
-    expect(shell).toContain("<AuthGuard>");
+    expect(layout).toContain("isMarketingDocumentPath");
+    expect(layout).toContain("marketingDocument");
   });
 });

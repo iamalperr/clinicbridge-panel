@@ -20,12 +20,11 @@ function isClientComponent(source: string): boolean {
 const READS_REQUEST = /\bsearchParams\b|\bheaders\(\)|\bcookies\(\)/;
 const FORCE_DYNAMIC = /export const dynamic\s*=\s*["']force-dynamic["']/;
 
-describe("root layout is force-static — request-reading server pages must opt out", () => {
-  it("root layout is force-static (precondition for this guard)", () => {
-    const layout = readFileSync(path.join(APP_DIR, "layout.tsx"), "utf8");
-    expect(layout).toMatch(/export const dynamic\s*=\s*["']force-static["']/);
-  });
-
+/**
+ * A force-static ancestor layout would prerender these pages with empty request data.
+ * Explicit opt-out keeps them per-request regardless of how the root layout renders.
+ */
+describe("request-reading server pages opt out of static rendering", () => {
   it("appointment verify page renders per request (token comes from the query string)", () => {
     const page = readFileSync(path.join(APP_DIR, "action/appointment/verify/page.tsx"), "utf8");
     expect(page).toMatch(FORCE_DYNAMIC);

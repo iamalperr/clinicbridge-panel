@@ -22,12 +22,7 @@ describe("marketing Google tag host", () => {
   it("keeps a single GA4 config and does not load the id from the root layout", () => {
     const layout = readFileSync("app/layout.tsx", "utf8");
     const tag = readFileSync("components/analytics/MarketingGoogleTag.tsx", "utf8");
-    const pixelsClient = readFileSync("components/analytics/MarketingPixelsClient.tsx", "utf8");
-    // Root stays static: pixels mount via client host detection, not headers().
-    expect(layout).toContain("<MarketingPixelsClient");
-    expect(layout).not.toContain('from "next/headers"');
-    expect(layout).not.toContain("await headers");
-    expect(pixelsClient).toContain("<MarketingGoogleTag");
+    expect(layout.match(/<MarketingGoogleTag /g)).toHaveLength(1);
     expect(layout).not.toContain("G-DP3FV4PQWD");
     expect(tag).not.toContain("send_page_view: false");
     expect(tag.match(/gtag\('config'/g)).toHaveLength(1);
