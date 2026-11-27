@@ -36,6 +36,18 @@ function getOpenAI(): OpenAI {
   return openaiClient;
 }
 
+const OPENAI_QUOTA_CODES = new Set([
+  "insufficient_quota",
+  "credit_balance_exhausted",
+  "billing_hard_limit_reached",
+  "billing_not_active",
+]);
+
+/** Account-level credit/quota exhaustion: retrying cannot succeed until billing changes. */
+export function isOpenAIQuotaCode(code: unknown): boolean {
+  return typeof code === "string" && OPENAI_QUOTA_CODES.has(code.toLowerCase());
+}
+
 /**
  * Generates a unique internal ID for the request.
  */
@@ -82,6 +94,8 @@ export async function trackableAIRequest(
   
   let status: AIUsageStatus = "success";
   let errorCode: string | undefined;
+  let providerErrorCode: string | undefined;
+  let providerHttpStatus: number | undefined;
   let openaiRequestId: string | undefined;
   
   // Usage tracking variables
@@ -144,7 +158,11 @@ export async function trackableAIRequest(
         const eType = err.response?.data?.error?.type || "";
         const httpStatus = err.status || err.response?.status;
 
-        const isQuota = eCode === "insufficient_quota" || eType === "insufficient_quota";
+        providerErrorCode = typeof eCode === "string" && eCode ? eCode.slice(0, 64) : undefined;
+        providerHttpStatus = typeof httpStatus === "number" ? httpStatus : undefined;
+
+        // Billing/credit exhaustion also arrives as HTTP 429; it is not a transient rate limit.
+        const isQuota = isOpenAIQuotaCode(eCode) || isOpenAIQuotaCode(eType);
         const isRateLimit = eCode === "rate_limit_exceeded" || eType === "rate_limit_exceeded" || httpStatus === 429;
         const isTimeout = httpStatus === 408 || httpStatus === 504 || eCode === "ETIMEDOUT";
 
@@ -277,6 +295,8 @@ export async function trackableAIRequest(
   if (status === "failed") {
     const error = new Error(`OpenAI Request Failed: ${errorCode}`);
     (error as any).code = errorCode;
+    (error as any).providerErrorCode = providerErrorCode;
+    (error as any).httpStatus = providerHttpStatus;
     throw error;
   }
 

@@ -67,6 +67,8 @@ import { extractAppointmentFromHistory, parseTimeText } from "./appointmentParse
 import { saveAppointmentState, respondWithVisibleReply } from "./persistence";
 import {
   classifyTechnicalFallbackError,
+  describeTechnicalError,
+  technicalErrorCodeFor,
   fallbackReasonForErrorCategory,
   formatPostAppointmentAnythingElse,
   formatPriorAppointmentRescheduleNotice,
@@ -2718,11 +2720,13 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
       console.error("[chat] RAG hybridSearch failed:", JSON.stringify(safeErrorMeta(ragErr)));
       const category = classifyTechnicalFallbackError(ragErr, "rag");
       const fallbackReason = fallbackReasonForErrorCategory(category, "rag");
+      const errorDetails = describeTechnicalError(ragErr, "rag_retrieval");
       logTechnicalFallbackEvent({
         category,
         fallbackReason,
         clinicId: actualClinicId || clinicId,
         conversationId: convId,
+        error: errorDetails,
       });
       return respondWithVisibleReply(
         {
@@ -2737,6 +2741,7 @@ Hastaya bu linki paylaş ve şu güvenlik notunu ekle:
         basePersist({
           appointmentState,
           fallbackReason,
+          technicalErrorCode: technicalErrorCodeFor(errorDetails),
         })
       );
     }
@@ -3062,11 +3067,13 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
       console.error("[chat] LLM request failed:", JSON.stringify(safeErrorMeta(llmErr)));
       const category = classifyTechnicalFallbackError(llmErr, "llm");
       const fallbackReason = fallbackReasonForErrorCategory(category, "llm");
+      const errorDetails = describeTechnicalError(llmErr, "llm_call");
       logTechnicalFallbackEvent({
         category,
         fallbackReason,
         clinicId: actualClinicId || clinicId,
         conversationId: convId,
+        error: errorDetails,
       });
       return respondWithVisibleReply(
         {
@@ -3081,6 +3088,7 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
         basePersist({
           appointmentState,
           fallbackReason,
+          technicalErrorCode: technicalErrorCodeFor(errorDetails),
         })
       );
     }
@@ -3616,6 +3624,7 @@ GLOBAL RESPONSE STRATEGY (HYBRID KNOWLEDGE):
         (emptyModelReply ? "empty_model_reply" : "") ||
         noVerifiedInfoReason ||
         (looksLikeNoVerifiedInfoReply(String(responsePayload.reply || "")) ? "no_verified_info" : ""),
+      technicalErrorCode: emptyModelReply ? "EMPTY_MODEL_REPLY" : undefined,
       appointmentState,
     }));
 

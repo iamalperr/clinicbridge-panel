@@ -57,6 +57,44 @@ export function fallbackReasonForErrorCategory(
   return "route_unhandled_exception";
 }
 
+/** Pipeline step that threw before the technical fallback was shown. */
+export type TechnicalFailureStep = "rag_retrieval" | "llm_call" | "route" | "config" | "empty_reply";
+
+/** Content-free cause of a technical failure (no message text, stack or provider body). */
+export interface TechnicalErrorDetails {
+  step: TechnicalFailureStep;
+  errorType: string;
+  /** Gateway/app code, e.g. OPENAI_QUOTA_EXCEEDED, OPENAI_TIMEOUT. */
+  errorCode: string | null;
+  /** Provider's own code, e.g. credit_balance_exhausted. */
+  providerErrorCode: string | null;
+  httpStatus: number | null;
+}
+
+function shortCode(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  return value.trim().slice(0, 64);
+}
+
+export function describeTechnicalError(err: unknown, step: TechnicalFailureStep): TechnicalErrorDetails {
+  const e = (typeof err === "object" && err !== null ? err : {}) as {
+    name?: unknown;
+    code?: unknown;
+    providerErrorCode?: unknown;
+    httpStatus?: unknown;
+    status?: unknown;
+  };
+  const httpStatus =
+    typeof e.httpStatus === "number" ? e.httpStatus : typeof e.status === "number" ? e.status : null;
+  return {
+    step,
+    errorType: err instanceof Error ? (err.name || "Error").slice(0, 64) : err === undefined ? "none" : typeof err,
+    errorCode: shortCode(e.code) ?? (typeof e.code === "number" ? String(e.code) : null),
+    providerErrorCode: shortCode(e.providerErrorCode),
+    httpStatus,
+  };
+}
+
 /**
  * Structured server-side log for every technical-fallback turn.
  * Forbidden: message text, patient PII, secrets, raw provider bodies.
@@ -66,6 +104,7 @@ export function logTechnicalFallbackEvent(params: {
   fallbackReason: TechnicalFallbackCategory | string;
   clinicId?: string | null;
   conversationId?: string | null;
+  error?: TechnicalErrorDetails;
 }): void {
   console.error(
     JSON.stringify({
@@ -74,9 +113,23 @@ export function logTechnicalFallbackEvent(params: {
       fallbackReason: params.fallbackReason,
       clinicId: params.clinicId || "unknown",
       conversationId: params.conversationId || "unknown",
+      ...(params.error
+        ? {
+            step: params.error.step,
+            errorType: params.error.errorType,
+            errorCode: params.error.errorCode,
+            providerErrorCode: params.error.providerErrorCode,
+            httpStatus: params.error.httpStatus,
+          }
+        : {}),
       ts: new Date().toISOString(),
     })
   );
+}
+
+/** Stable code persisted on the conversation log, e.g. "OPENAI_QUOTA_EXCEEDED". */
+export function technicalErrorCodeFor(details: TechnicalErrorDetails): string {
+  return (details.errorCode || details.providerErrorCode || details.errorType || "unknown").toUpperCase();
 }
 
 export function resolveClinicPhoneForFallback(clinicData?: {

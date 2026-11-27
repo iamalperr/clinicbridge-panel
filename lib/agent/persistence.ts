@@ -104,6 +104,7 @@ export async function logConversation(params: {
   knowledgeBaseId?: string;
   retrievedDocumentCount?: number;
   fallbackReason?: string;
+  technicalErrorCode?: string;
   appointmentState?: AppointmentState;
   /** Default SEQUENTIAL. VOICE_SINGLE_BATCH: same writes, two round trips, one atomic batch. */
   persistMode?: ConversationPersistMode;
@@ -264,6 +265,8 @@ function buildConversationLogData(
       status,
       needsTraining,
       failureKind,
+      technicalErrorCode:
+        failureKind === "technical_failure" ? params.technicalErrorCode || null : null,
     };
 
     if (params.appointmentState) {
@@ -431,6 +434,8 @@ export async function respondWithVisibleReply(
     knowledgeBaseId?: string;
     retrievedDocumentCount?: number;
     fallbackReason?: string;
+    /** Content-free cause of a technical failure, e.g. OPENAI_QUOTA_EXCEEDED. */
+    technicalErrorCode?: string;
     appointmentState?: AppointmentState;
     /** When false, skip persistence (empty duplicate / no visible reply). Default true when reply non-empty. */
     skipPersist?: boolean;
@@ -491,6 +496,7 @@ export async function respondWithVisibleReply(
       knowledgeBaseId: persistOpts.knowledgeBaseId,
       retrievedDocumentCount: persistOpts.retrievedDocumentCount,
       fallbackReason: persistOpts.fallbackReason,
+      technicalErrorCode: persistOpts.technicalErrorCode,
       appointmentState: persistOpts.appointmentState,
       ...(persistOpts.persistMode ? { persistMode: persistOpts.persistMode } : {}),
     });

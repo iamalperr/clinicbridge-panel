@@ -3,9 +3,11 @@ import { getAdminDb } from "@/lib/firebase-admin";
 import { RequestTimer } from "@/lib/performance/requestTimer";
 import { safeErrorMeta } from "@/lib/services/infrastructureErrors";
 import {
+  describeTechnicalError,
   formatTechnicalFallbackReply,
   handleClinicAgentTurn,
   logTechnicalFallbackEvent,
+  technicalErrorCodeFor,
   resolveAgentChannel,
   resolveClinicPhoneForFallback,
   respondWithVisibleReply,
@@ -254,6 +256,13 @@ export async function POST(req: Request) {
         fallbackReason: "unconfigured_ai",
         clinicId,
         conversationId: convId,
+        error: {
+          step: "config",
+          errorType: "ConfigError",
+          errorCode: "OPENAI_API_KEY_MISSING",
+          providerErrorCode: null,
+          httpStatus: null,
+        },
       });
       const result = await respondWithVisibleReply(
         {
@@ -268,6 +277,7 @@ export async function POST(req: Request) {
           history,
           detectedLanguage: locale,
           fallbackReason: "unconfigured_ai",
+          technicalErrorCode: "OPENAI_API_KEY_MISSING",
         }
       );
       return agentTurnResultToResponse(result);
@@ -344,11 +354,13 @@ export async function POST(req: Request) {
     } catch {
       /* phone lookup must not block the fallback reply */
     }
+    const errorDetails = describeTechnicalError(err, "route");
     logTechnicalFallbackEvent({
       category: "unknown",
       fallbackReason: "route_unhandled_exception",
       clinicId: String(clinicId || "unknown"),
       conversationId: convId,
+      error: errorDetails,
     });
     const fallback = await respondWithVisibleReply(
       {
@@ -364,6 +376,7 @@ export async function POST(req: Request) {
         history: Array.isArray(history) ? (history as any) : [],
         detectedLanguage: locale,
         fallbackReason: "route_unhandled_exception",
+        technicalErrorCode: technicalErrorCodeFor(errorDetails),
       }
     );
     return agentTurnResultToResponse(fallback);

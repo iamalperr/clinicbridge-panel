@@ -26,6 +26,10 @@ export {
   classifyTechnicalFallbackError,
   fallbackReasonForErrorCategory,
   logTechnicalFallbackEvent,
+  describeTechnicalError,
+  technicalErrorCodeFor,
+  type TechnicalErrorDetails,
+  type TechnicalFailureStep,
   type TechnicalFallbackCategory,
   type TechnicalFallbackErrorCategory,
 } from "./technicalFallback";

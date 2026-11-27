@@ -405,6 +405,100 @@ describe("E2E handleClinicAgentTurn — no knowledge vs technical failure", () =
     expect(shouldShowTrainingTopic(saved())).toBe(false);
   });
 
+  function gatewayQuotaError() {
+    // Shape thrown by trackableAIRequest when OpenAI answers 429 credit_balance_exhausted.
+    return Object.assign(new Error("OpenAI Request Failed: OPENAI_QUOTA_EXCEEDED"), {
+      code: "OPENAI_QUOTA_EXCEEDED",
+      providerErrorCode: "credit_balance_exhausted",
+      httpStatus: 429,
+    });
+  }
+
+  function technicalFallbackLogs(): Array<Record<string, unknown>> {
+    return vi
+      .mocked(console.error)
+      .mock.calls.map((args) => args[0])
+      .filter((a): a is string => typeof a === "string" && a.includes('"event":"technical_fallback"'))
+      .map((a) => JSON.parse(a) as Record<string, unknown>);
+  }
+
+  it.each([
+    ["with KB match (production: keyword hit on 'Kompozit Bonding')", true],
+    ["without KB", false],
+  ])(
+    "'How much is composite bonding' + OpenAI credit_balance_exhausted %s → technical message, real error code logged, not training",
+    async (_label, withKb) => {
+      kbDocs = withKb
+        ? [{ title: "Kompozit Bonding", text: "Kompozit bonding estetik bir uygulamadır.", score: 0.4, vectorScore: 0, keywordScore: 0.8 }]
+        : [];
+      llmImpl = async () => {
+        throw gatewayQuotaError();
+      };
+      vi.mocked(console.error).mockClear();
+      const convId = `conv_nk_quota_${withKb ? "kb" : "nokb"}`;
+      const { say, saved } = makeConversation(convId, "en");
+      const r = await say("How much is composite bonding");
+
+      expect(r.reply).toMatch(/temporary technical issue/i);
+      expect(r.reply).toContain(CLINIC_PHONE);
+      expect(r.reply).not.toMatch(/verified price/i);
+      expect(saved().failureKind).toBe("technical_failure");
+      expect(saved().fallbackReason).toBe("llm_failure");
+      expect(saved().technicalErrorCode).toBe("OPENAI_QUOTA_EXCEEDED");
+      expect(saved().needsTraining).toBe(false);
+      expect(saved().trainingTopic).toBeUndefined();
+      expect(shouldShowTrainingTopic(saved())).toBe(false);
+
+      const events = technicalFallbackLogs();
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        category: "llm",
+        fallbackReason: "llm_failure",
+        step: "llm_call",
+        errorType: "Error",
+        errorCode: "OPENAI_QUOTA_EXCEEDED",
+        providerErrorCode: "credit_balance_exhausted",
+        httpStatus: 429,
+        clinicId: "clinic_test",
+        conversationId: convId,
+      });
+      const raw = JSON.stringify(events[0]);
+      expect(raw).not.toMatch(/composite bonding/i);
+      expect(raw).not.toContain(CLINIC_PHONE);
+    }
+  );
+
+  it("RAG failure → technical message, step rag_retrieval + code on the log, not training", async () => {
+    const { hybridSearch } = await import("@/lib/services/retrievalService");
+    vi.mocked(hybridSearch).mockImplementationOnce(async () => {
+      throw gatewayQuotaError();
+    });
+    vi.mocked(console.error).mockClear();
+    const { say, saved } = makeConversation("conv_nk_rag_err", "en");
+    const r = await say("How much is composite bonding");
+
+    expect(r.reply).toMatch(/temporary technical issue/i);
+    expect(saved().failureKind).toBe("technical_failure");
+    expect(saved().fallbackReason).toBe("rag_failure");
+    expect(saved().technicalErrorCode).toBe("OPENAI_QUOTA_EXCEEDED");
+    expect(saved().needsTraining).toBe(false);
+    expect(technicalFallbackLogs()[0]).toMatchObject({
+      step: "rag_retrieval",
+      providerErrorCode: "credit_balance_exhausted",
+      conversationId: "conv_nk_rag_err",
+    });
+  });
+
+  it("knowledge-gap turns never carry a technicalErrorCode", async () => {
+    kbDocs = [];
+    grounded = true;
+    useLlmReply("Composite bonding usually costs around 200 EUR per tooth.");
+    const { say, saved } = makeConversation("conv_nk_gap_code", "en");
+    await say("How much is composite bonding");
+    expect(saved().failureKind).toBe("knowledge_gap");
+    expect(saved().technicalErrorCode).toBeNull();
+  });
+
   it("empty model content → no technical text, logged as technical (not training)", async () => {
     kbDocs = [];
     useLlmReply("");
