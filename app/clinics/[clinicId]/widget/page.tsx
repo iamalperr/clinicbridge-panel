@@ -12,7 +12,6 @@ import { Loader2, Save, Layout, Palette, MessageCircle, Sparkles, Plus, Trash2, 
 import type { WidgetSettings, ShowBubblesConfig, QuickAction, QuickActionType, WidgetLauncherConfig, WidgetMessages, WidgetLanguage } from "@/lib/types";
 import WidgetPreview from "./WidgetPreview";
 import WidgetIntegration from "./WidgetIntegration";
-import { revalidateWidgetSettingsCache } from "./actions";
 import {
   DndContext,
   closestCenter,
@@ -507,12 +506,6 @@ export default function WidgetPage({ params }: PageProps) {
     setErrMsg("");
     try {
       await setDoc(doc(db, "widgetSettings", clinicId), { ...settings, quickActions, updatedAt: serverTimestamp() });
-      // Bust CDN / Next cache for the public embed settings payload.
-      try {
-        await revalidateWidgetSettingsCache(clinicId);
-      } catch {
-        /* revalidation must not block a successful save */
-      }
       setSaveStatus("success");
       setTimeout(() => setSaveStatus("idle"), 3000);
     } catch (err: any) {
