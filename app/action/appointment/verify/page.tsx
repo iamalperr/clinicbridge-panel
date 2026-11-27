@@ -2,6 +2,9 @@
 import { tokenService } from '@/lib/services/notifications/TokenService';
 import { getAdminDb } from '@/lib/firebase-admin';
 
+/** Reads the one-time token from the query string; must never be prerendered (root layout is force-static). */
+export const dynamic = "force-dynamic";
+
 interface PageProps {
   searchParams: { token?: string };
 }
